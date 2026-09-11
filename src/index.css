@@ -8,111 +8,167 @@
 
 @layer base {
   body {
-    @apply bg-amber-50 text-neutral-900;
+    @apply bg-gradient-to-br from-slate-950 via-purple-950 to-black text-white;
   }
 
   h1 {
-    @apply text-3xl font-extrabold tracking-tight;
+    @apply text-3xl font-extrabold tracking-tight bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent;
   }
 
   h2 {
-    @apply text-2xl font-bold tracking-tight;
+    @apply text-2xl font-bold tracking-tight text-white;
   }
 
   h3 {
-    @apply text-xl font-semibold;
+    @apply text-xl font-semibold text-purple-200;
   }
 
   p {
-    @apply text-base leading-relaxed;
+    @apply text-base leading-relaxed text-gray-100;
   }
 }
 
 @layer components {
-  /* Spiritual gradient text */
+  /* ===== SPIRITUAL GRADIENTS ===== */
   .text-gradient-warm {
-    @apply bg-gradient-to-r from-amber-500 to-purple-600 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-amber-400 via-purple-500 to-pink-500 bg-clip-text text-transparent font-bold;
   }
 
   .text-gradient-cool {
-    @apply bg-gradient-to-r from-teal-500 to-purple-700 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-cyan-400 to-purple-600 bg-clip-text text-transparent font-bold;
   }
 
-  /* Card components */
+  .text-gradient-worship {
+    @apply bg-gradient-to-r from-yellow-300 via-purple-400 to-pink-400 bg-clip-text text-transparent;
+  }
+
+  /* ===== BACKGROUNDS ===== */
+  .bg-gradient-church {
+    @apply bg-gradient-to-br from-purple-900 via-slate-900 to-black;
+  }
+
+  .bg-gradient-premium {
+    @apply bg-gradient-to-r from-purple-900/40 to-pink-900/40 backdrop-blur-md border border-purple-700/30;
+  }
+
+  .bg-card-dark {
+    @apply bg-gradient-to-br from-slate-800/60 to-slate-900/80 border border-purple-600/20 backdrop-blur-sm;
+  }
+
+  .bg-accent-glow {
+    @apply bg-gradient-to-r from-purple-600 to-pink-600 shadow-lg shadow-purple-500/50;
+  }
+
+  /* ===== CARD COMPONENTS ===== */
   .card-base {
-    @apply rounded-xl bg-white border border-neutral-100 shadow-md hover:shadow-lg transition-shadow;
+    @apply rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-purple-700/30 shadow-xl hover:shadow-2xl hover:border-purple-600/50 transition-all duration-300;
   }
 
   .card-spiritual {
-    @apply rounded-xl bg-gradient-to-br from-neutral-50 to-purple-50 border border-purple-100 shadow-md;
+    @apply rounded-2xl bg-gradient-to-br from-purple-900/50 via-slate-900/50 to-black/50 border border-purple-500/40 shadow-2xl shadow-purple-500/20;
   }
 
-  /* Button components */
+  .card-elevated {
+    @apply rounded-xl bg-gradient-to-br from-purple-800/60 to-slate-800/60 border border-purple-600/40 backdrop-blur-xl shadow-xl hover:shadow-purple-500/30 transition-all;
+  }
+
+  /* ===== BUTTON COMPONENTS ===== */
   .btn-primary {
-    @apply px-6 py-3 bg-gradient-to-r from-amber-400 to-purple-600 text-white font-semibold rounded-lg hover:shadow-lg hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2;
+    @apply px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-full hover:shadow-lg hover:shadow-purple-500/60 hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900;
+  }
+
+  .btn-primary-lg {
+    @apply px-8 py-4 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white font-bold rounded-full hover:shadow-xl hover:shadow-purple-500/70 hover:scale-110 transition-all duration-200 focus:outline-none;
   }
 
   .btn-secondary {
-    @apply px-6 py-3 bg-neutral-100 text-neutral-800 font-semibold rounded-lg hover:bg-neutral-200 transition-all duration-200;
+    @apply px-6 py-3 bg-slate-700/50 border border-purple-600/40 text-purple-200 font-semibold rounded-lg hover:bg-slate-600/50 hover:border-purple-500/60 transition-all duration-200;
   }
 
   .btn-ghost {
-    @apply px-4 py-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-all duration-200;
+    @apply px-4 py-2 text-purple-300 hover:bg-purple-900/40 rounded-lg transition-all duration-200 border border-transparent hover:border-purple-600/40;
   }
 
   .btn-sm {
-    @apply px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200;
+    @apply px-3 py-1.5 text-sm font-medium rounded-full bg-purple-700/60 text-white hover:bg-purple-600/80 transition-all duration-200;
   }
 
-  /* Input styles */
+  /* ===== INPUT STYLES ===== */
   .input-base {
-    @apply w-full px-4 py-2.5 rounded-lg border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all;
+    @apply w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-purple-600/30 text-white placeholder-gray-500 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all;
   }
 
-  /* Badge components */
+  .input-premium {
+    @apply w-full px-4 py-3.5 rounded-xl bg-gradient-to-r from-slate-800/50 to-slate-900/50 border border-purple-600/40 text-white placeholder-purple-300/50 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 focus:bg-slate-800/60 transition-all;
+  }
+
+  /* ===== BADGE COMPONENTS ===== */
   .badge-admin {
-    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white;
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50;
   }
 
   .badge-leader {
-    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white;
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-500/50;
   }
 
   .badge-member {
-    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-neutral-200 text-neutral-700;
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-full bg-slate-700/60 text-purple-200 border border-purple-600/40;
   }
 
   .badge-verified {
-    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-green-100 text-green-700 border border-green-300;
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-full bg-green-600/40 text-green-300 border border-green-500/60;
   }
 
-  /* Spiritual container */
+  .badge-worship {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-full bg-gradient-to-r from-yellow-600/60 to-amber-600/60 text-amber-100 border border-yellow-500/40;
+  }
+
+  /* ===== CONTAINERS ===== */
   .spiritual-container {
-    @apply rounded-2xl p-6 bg-gradient-to-br from-amber-50 via-white to-purple-50 border border-purple-100 shadow-xl;
+    @apply rounded-2xl p-6 bg-gradient-to-br from-purple-900/40 via-slate-900/40 to-black/40 border border-purple-600/30 shadow-2xl shadow-purple-500/20 backdrop-blur-sm;
   }
 
-  /* Story viewer gradient overlay */
+  .harvest-container {
+    @apply rounded-2xl p-6 bg-gradient-to-br from-purple-950 via-slate-950 to-black border border-purple-700/40 shadow-xl;
+  }
+
+  /* ===== STORY VIEWER ===== */
   .story-overlay {
-    @apply absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent;
+    @apply absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent;
   }
 
-  /* Smooth transitions */
+  .story-ring {
+    @apply ring-2 ring-gradient-to-r ring-purple-500 ring-offset-2 ring-offset-black;
+  }
+
+  /* ===== TRANSITIONS & EFFECTS ===== */
   .transition-smooth {
     @apply transition-all duration-300 ease-out;
   }
 
-  /* Hover lift effect */
   .hover-lift {
-    @apply hover:shadow-xl hover:-translate-y-1 transition-smooth;
+    @apply hover:shadow-2xl hover:-translate-y-2 transition-smooth;
   }
 
-  /* Loading skeleton */
+  .glow-effect {
+    @apply shadow-lg shadow-purple-500/50 hover:shadow-xl hover:shadow-purple-500/70 transition-all;
+  }
+
+  /* ===== LOADING SKELETON ===== */
   .skeleton {
-    @apply animate-pulse rounded-lg bg-gradient-to-r from-neutral-100 via-neutral-50 to-neutral-100 bg-[length:200%_100%];
+    @apply animate-pulse rounded-lg bg-gradient-to-r from-slate-700/50 via-slate-600/50 to-slate-700/50 bg-[length:200%_100%];
+  }
+
+  .skeleton-avatar {
+    @apply w-12 h-12 rounded-full bg-gradient-to-br from-slate-700/60 to-slate-800/60 animate-pulse;
+  }
+
+  .skeleton-text {
+    @apply h-4 rounded-full bg-gradient-to-r from-slate-700/50 to-slate-600/50 animate-pulse;
   }
 }
 
-/* Custom animations */
+/* ===== CUSTOM ANIMATIONS ===== */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -128,7 +184,28 @@
     transform: translateY(0px);
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(168, 85, 247, 0.8);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -140,34 +217,56 @@
   animation: float 3s ease-in-out infinite;
 }
 
-/* Scrollbar styling */
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out;
+}
+
+/* ===== SCROLLBAR STYLING ===== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #fafaf9;
+  background: rgba(15, 23, 42, 0.8);
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d6d3d1;
-  border-radius: 4px;
+  background: linear-gradient(180deg, #a855f7 0%, #ec4899 100%);
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a29e;
+  background: linear-gradient(180deg, #9333ea 0%, #db2777 100%);
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
 }
 
-/* Mobile optimizations */
+/* ===== MOBILE OPTIMIZATIONS ===== */
 @media (max-width: 640px) {
   body {
-    font-size: 16px; /* Prevent zoom on iOS */
+    font-size: 16px;
   }
 
   input,
   textarea,
   select {
     font-size: 16px;
+  }
+
+  .btn-primary-lg {
+    @apply px-6 py-3;
+  }
+}
+
+/* ===== DARK MODE (Always ON) ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
   }
 }
