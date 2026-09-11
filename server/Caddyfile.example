@@ -1,0 +1,11 @@
+api.harvestfamily.or.ke {
+  reverse_proxy api:3000
+}
+media.harvestfamily.or.ke {
+  reverse_proxy minio:9000
+}
+harvestfamily.or.ke {
+  root * /srv
+  file_server
+  try_files {path} /index.html
+}

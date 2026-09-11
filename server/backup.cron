@@ -1,0 +1,26 @@
+# backup.cron — Harvest Family nightly backup (RPO 24h, RTO 2-4h)
+# Install: sudo cp backup.cron /etc/cron.d/harvest-backup && sudo chmod 644 /etc/cron.d/harvest-backup
+# Or user crontab: crontab -e -> 0 2 * * * /opt/harvest/server/scripts/backup.sh >> /var/log/harvest-backup.log 2>&1
+#
+# Time: 02:00 EAT (Africa/Nairobi, UTC+3). Two options:
+#   Option A (host TZ = EAT): 0 2 * * * root /opt/harvest/server/scripts/backup.sh ...
+#   Option B (host TZ = UTC): 0 23 * * * root /opt/harvest/server/scripts/backup.sh ...
+# Below uses Option A with explicit TZ.
+#
+# Also: weekly provider snapshot (Contabo/Hetzner) — manual panel snapshot Sundays 03:00 EAT
+# plus docker compose config: volumes pgdata + minio_data snapshotted via provider.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# nightly pg_dump + mc mirror 02:00 EAT
+0 2 * * * root TZ="Africa/Nairobi" /opt/harvest/server/scripts/backup.sh >> /var/log/harvest-backup.log 2>&1
+
+# alt UTC cron (uncomment if host is UTC and above TZ not honored):
+# 0 23 * * * root /opt/harvest/server/scripts/backup.sh >> /var/log/harvest-backup.log 2>&1
+
+# weekly logrotate prune (keep 14d)
+30 2 * * 0 root find /var/log/harvest-backup.log -mtime +14 -delete 2>/dev/null; find /opt/harvest/server/backups -name 'pg-*.sql.gz' -mtime +7 -delete 2>/dev/null || true
+
+# optional: cert / disk health ping to Telegram every 6h (uses api /health)
+0 */6 * * * root curl -sf http://localhost:3000/health | grep -q '"status":"ok"' || curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=🚨 harvest health FAIL $(date)" >/dev/null 2>&1 || true

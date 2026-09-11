@@ -1,0 +1,40 @@
+import { useState } from 'react'
+
+export default function Search({ users, onView }: { users: any[]; onView: (u: any) => void }) {
+  const [q, setQ] = useState('')
+  const filtered = q.trim() === '' ? [] : users.filter(u => u.username.toLowerCase().includes(q.toLowerCase()) || u.name.toLowerCase().includes(q.toLowerCase()))
+  const showGrid = q.trim() === ''
+
+  return (
+    <div className="bg-black text-white min-h-[70vh] p-2">
+      <div className="bg-zinc-900 rounded-xl flex items-center gap-2 px-3 py-2.5 border border-zinc-800"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="1.7"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by username" className="bg-transparent outline-none text-sm flex-1 placeholder:text-zinc-500" /></div>
+      {q && <p className="text-xs text-zinc-500 px-1 mt-2">{filtered.length} users found for "{q}"</p>}
+      {!showGrid ? (
+        <div className="mt-3 space-y-1">
+          {filtered.map(u => (
+            <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-zinc-900 rounded-xl text-left">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-sm font-bold border border-black">{u.username[0].toUpperCase()}</div></div>
+              <div className="flex-1 min-w-0"><p className="text-sm font-semibold flex items-center gap-1">{u.username} {u.verified && <span className="w-3 h-3 rounded-full bg-blue-500 flex items-center justify-center text-[8px]">✓</span>}</p><p className="text-xs text-zinc-400 truncate">{u.name} • {u.location || 'Nyeri'} • {u.group || 'Harvest'} • {u.followers} followers</p></div>
+              <span className="text-xs bg-zinc-800 px-4 py-1.5 rounded-full font-semibold">View</span>
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="text-sm text-zinc-500 text-center py-8">No users found. Try "harvest" or "pst"</p>}
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-zinc-500 px-1 mt-3">Suggested • {users.length} members</p>
+          <div className="mt-2 space-y-1">
+            {users.slice(0, 5).map(u => (
+              <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-2 hover:bg-zinc-900 rounded-xl text-left">
+                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-xs">{u.username[0].toUpperCase()}</div>
+                <div className="flex-1"><p className="text-sm font-semibold">{u.username}</p><p className="text-xs text-zinc-500">{u.name}</p></div>
+                <span className="text-blue-500 text-sm font-semibold">View</span>
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-[2px] mt-4">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="aspect-square bg-zinc-900"><img src={`https://picsum.photos/400/400?random=${i + 30}`} alt="" className="w-full h-full object-cover" /></div>)}</div>
+        </>
+      )}
+    </div>
+  )
+}
