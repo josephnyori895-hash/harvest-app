@@ -1,6 +1,10 @@
 import jwt from 'jsonwebtoken'
 import { query } from '../db.js'
 
+function canonicalUsername(value, max = 32) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, max)
+}
+
 export function makeAuthenticate({ jwtSecret }) {
   if (!jwtSecret || jwtSecret.length < 32 || jwtSecret === 'dev-jwt-secret-change-in-prod') {
     throw new Error('JWT_SECRET must be configured with at least 32 random characters')
@@ -68,16 +72,16 @@ export function isValidMemberPin(pin) { return /^\d{4,6}$/.test(String(pin || ''
 
 export async function loginRateLimit(req, reply) {
   const ip = String(req.ip || 'unknown')
-  const uname = String(req.body?.username || '').trim().toLowerCase().slice(0, 64)
+  const uname = canonicalUsername(req.body?.username) || 'guest'
   const result = await query(
     `SELECT COUNT(*)::int AS count
        FROM login_attempts
       WHERE ip=$1 AND username=$2 AND success=false
         AND created_at > now() - interval '15 minutes'`,
-    [ip, uname || 'guest'],
+    [ip, uname],
   )
   const count = Number(result.rows[0]?.count || 0)
-  req._rateIdentity = { ip, username: uname || 'guest' }
+  req._rateIdentity = { ip, username: uname }
   if (count >= 5) {
     return reply.code(429).send({ error: 'too many login attempts — try in 15 min', retryAfter: 900 })
   }
