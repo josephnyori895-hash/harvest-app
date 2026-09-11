@@ -45,15 +45,21 @@ export default async function pendingRoutes(app) {
 
   app.post('/api/pending/:id/approve', { preHandler: [requireAdmin] }, async (req, reply) => {
     const id = req.params.id
-    const { rows } = await query('SELECT * FROM pending_queue WHERE id=$1 FOR UPDATE', [id])
-    const item = rows[0]
-    if (!item) return reply.code(404).send({ error: 'not found' })
-    if (item.status !== 'pending' && item.status !== 'transcoding') return reply.code(409).send({ error: `already ${item.status}` })
-    const u = await query('SELECT verified, group_name, constituency, faith FROM users WHERE id=$1', [item.user_id])
-    const snap = u.rows[0] || {}
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      const { rows } = await client.query('SELECT * FROM pending_queue WHERE id=$1 FOR UPDATE', [id])
+      const item = rows[0]
+      if (!item) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'not found' })
+      }
+      if (item.status !== 'pending' && item.status !== 'transcoding') {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: `already ${item.status}` })
+      }
+      const u = await client.query('SELECT verified, group_name, constituency, faith FROM users WHERE id=$1', [item.user_id])
+      const snap = u.rows[0] || {}
       if (item.type === 'post') {
         await client.query(`INSERT INTO posts (id,user_id,caption,original_key,thumb_key,blurhash,width,height,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())`, [item.id,item.user_id,item.caption,item.original_key,item.thumb_key,item.blurhash,item.width,item.height,snap.verified,snap.group_name,snap.constituency,snap.faith])
       } else if (item.type === 'story') {
@@ -62,23 +68,26 @@ export default async function pendingRoutes(app) {
         await client.query(`INSERT INTO reels (id,user_id,caption,hls_master_key,poster_key,thumb_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`, [item.id,item.user_id,item.caption,item.hls_master_key||item.original_key,item.poster_key,item.thumb_key,snap.verified,snap.group_name,snap.constituency,snap.faith])
       } else if (item.type === 'track') {
         await client.query(`INSERT INTO tracks (id,user_id,title,artist,original_key,preview_key) VALUES ($1,$2,$3,$4,$5,$5)`, [item.id,item.user_id,item.caption||'Untitled','',item.original_key])
+      } else {
+        await client.query('ROLLBACK')
+        return reply.code(400).send({ error: 'unsupported pending type' })
       }
       await client.query('DELETE FROM pending_queue WHERE id=$1', [id])
       await client.query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'approve',$2,$3,$4)`, [req.user.id,item.type,item.id,JSON.stringify({ caption:item.caption })])
       await client.query('COMMIT')
+      return reply.send({ ok:true, id, status:'approved' })
     } catch (e) {
-      await client.query('ROLLBACK')
+      await client.query('ROLLBACK').catch(() => {})
       throw e
     } finally { client.release() }
-    return reply.send({ ok:true, id, status:'approved' })
   })
 
   app.post('/api/pending/:id/reject', { preHandler: [requireAdmin] }, async (req, reply) => {
     const id = req.params.id
-    const { reason } = req.body || {}
-    const { rows } = await query(`UPDATE pending_queue SET status='rejected', reviewed_by=$2, reviewed_at=now(), reject_reason=$3 WHERE id=$1 AND status='pending' RETURNING *`, [id,req.user.id,reason||null])
+    const reason = String(req.body?.reason || '').trim().slice(0, 500)
+    const { rows } = await query(`UPDATE pending_queue SET status='rejected', reviewed_by=$2, reviewed_at=now(), reject_reason=$3 WHERE id=$1 AND status='pending' RETURNING *`, [id,req.user.id,reason || null])
     if (!rows[0]) return reply.code(404).send({ error:'not found or not pending' })
-    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'reject','pending',$2,$3)`, [req.user.id,id,JSON.stringify({ reason })])
+    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'reject','pending',$2,$3)`, [req.user.id,id,JSON.stringify({ reason: reason || null })])
     return reply.send({ ok:true, id, status:'rejected' })
   })
 
@@ -87,9 +96,12 @@ export default async function pendingRoutes(app) {
   })
 
   app.post('/api/admin/verify/:username', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const username = String(req.params.username || '').trim().toLowerCase()
     const { verified } = req.body || {}
-    await query('UPDATE users SET verified=$2 WHERE username=$1', [req.params.username,!!verified])
-    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'verify_toggle','user',$2,$3)`, [req.user.id,req.params.username,JSON.stringify({ verified:!!verified })])
-    return reply.send({ ok:true })
+    if (!username || typeof verified !== 'boolean') return reply.code(400).send({ error:'username and boolean verified are required' })
+    const updated = await query('UPDATE users SET verified=$2 WHERE username=$1 RETURNING id, username, verified', [username,verified])
+    if (!updated.rows[0]) return reply.code(404).send({ error:'user not found' })
+    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'verify_toggle','user',$2,$3)`, [req.user.id,updated.rows[0].id,JSON.stringify({ verified })])
+    return reply.send({ ok:true, user: updated.rows[0] })
   })
 }
