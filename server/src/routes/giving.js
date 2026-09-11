@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import { pool } from '../db.js'
 import { requireMember } from '../middleware/auth.js'
 
@@ -105,15 +104,15 @@ export default async function givingRoutes(app) {
     return reply.send(rows)
   })
 
-  // Safaricom callback. Do not trust the callback as proof by itself: it only updates
-  // a transaction whose CheckoutRequestID was created by our server.
+  // Safaricom callback. It only updates a transaction whose CheckoutRequestID
+  // was created by our server, and is idempotent for already-completed payments.
   app.post('/api/giving/mpesa/callback', async (req, reply) => {
     try {
       const result = req.body?.Body?.stkCallback
       const checkoutId = String(result?.CheckoutRequestID || '')
       if (!checkoutId) return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
 
-      const found = await pool.query(`SELECT id, status FROM giving_transactions WHERE checkout_request_id=$1 FOR UPDATE`, [checkoutId])
+      const found = await pool.query(`SELECT id, status FROM giving_transactions WHERE checkout_request_id=$1`, [checkoutId])
       const tx = found.rows[0]
       if (!tx) return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
       if (tx.status === 'completed') return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
