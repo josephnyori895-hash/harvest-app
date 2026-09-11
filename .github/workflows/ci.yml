@@ -26,3 +26,10 @@ jobs:
       - run: node --check server/src/index.js
       - run: node --check server/src/middleware/auth.js
       - run: node --check server/src/routes/media.js
+  server-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node --test server/src/realtime/socketSecurity.test.js
