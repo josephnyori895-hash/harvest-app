@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import multipart from '@fastify/multipart'
 import jwt from 'jsonwebtoken'
 import dotenv from 'dotenv'
 import bcrypt from 'bcryptjs'
@@ -46,6 +47,10 @@ export async function buildApp() {
   await app.register(cors, {
     origin: allowedOrigins.length ? allowedOrigins : false,
     credentials: true,
+  })
+
+  await app.register(multipart, {
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10 },
   })
 
   const authenticate = makeAuthenticate({ jwtSecret: JWT_SECRET })
@@ -122,19 +127,13 @@ export async function buildApp() {
       { expiresIn, algorithm: 'HS256' },
     )
 
-    return reply.send({
-      token,
-      role,
-      username: user.username,
-      verified: Boolean(user.verified),
-      expiresIn,
-    })
+    return reply.send({ token, role, username: user.username, verified: Boolean(user.verified), expiresIn })
   })
 
-  app.get('/health', async (req, reply) => {
+  app.get('/health', async (_req, reply) => {
     const pg = await pool.query('SELECT 1').then(() => 'ok').catch(e => e.message)
     if (pg !== 'ok') return reply.code(503).send({ status: 'degraded', pg })
-    return { status: 'ok', pg, uptime: process.uptime(), bucket: process.env.MINIO_BUCKET || 'harvest-media' }
+    return { status: 'ok', pg, storage: 'netlify-blobs', database: 'netlify-database' }
   })
 
   await app.register(mediaRoutes)
