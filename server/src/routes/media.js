@@ -1,4 +1,4 @@
-import { presignedPost, presignedGetOrNull, minio, mediaStore, BUCKET, validatePresign } from '../s3.js'
+import { presignedPost, minio, mediaStore, BUCKET, validatePresign } from '../s3.js'
 import { query } from '../db.js'
 import { requireMember } from '../middleware/auth.js'
 
@@ -23,9 +23,6 @@ export default async function mediaRoutes(app) {
     }
   })
 
-  // Netlify Functions have a request-size ceiling, so this native-only path is
-  // deliberately capped at 5 MB. Larger media needs client-side compression or
-  // a future Netlify-supported direct-upload mechanism.
   app.post('/api/media/upload', { preHandler: [requireMember] }, async (req, reply) => {
     try {
       const parts = req.parts()
@@ -41,10 +38,10 @@ export default async function mediaRoutes(app) {
       }
       if (!filePart || !key) return reply.code(400).send({ error: 'key and file are required' })
       if (!key.startsWith('originals/')) return reply.code(400).send({ error: 'invalid media key' })
-      const type = key.split('/')[1]
-      validatePresign({ type, contentType: filePart.mimetype, bytes: Number(filePart.file.bytesRead || 0) })
-      if (expectedContentType && expectedContentType !== filePart.mimetype) return reply.code(400).send({ error: 'content type mismatch' })
       const data = await filePart.toBuffer()
+      const type = key.split('/')[1]
+      validatePresign({ type, contentType: filePart.mimetype, bytes: data.length })
+      if (expectedContentType && expectedContentType !== filePart.mimetype) return reply.code(400).send({ error: 'content type mismatch' })
       await mediaStore.set(key, data, { metadata: { contentType: filePart.mimetype, ownerId: String(req.user.id), uploadedAt: new Date().toISOString() } })
       return reply.code(201).send({ ok: true, key })
     } catch (e) {
