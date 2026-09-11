@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build && npm install --prefix server --omit=dev && npm run migrate --prefix server"
+  command = "npm run build"
   publish = "dist"
 
 [functions]
