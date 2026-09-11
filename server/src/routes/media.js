@@ -43,7 +43,7 @@ export default async function mediaRoutes(app) {
     if (isAdmin) {
       const id=(await import('uuid')).v4()
       if (type==='post') {
-        await query(`INSERT INTO posts (id,user_id,caption,original_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.group_name,snap.constituency,snap.faith])
+        await query(`INSERT INTO posts (id,user_id,caption,original_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.constituency,snap.faith])
       } else if (type==='reel') {
         await query(`INSERT INTO reels (id,user_id,caption,hls_master_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.constituency,snap.faith])
       } else if (type==='track') {
