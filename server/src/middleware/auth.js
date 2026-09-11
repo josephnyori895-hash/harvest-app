@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken'
-import { pool } from '../db.js'
-import { redis } from '../redis.js'
+import { query } from '../db.js'
 
 export function makeAuthenticate({ jwtSecret }) {
   if (!jwtSecret || jwtSecret.length < 32 || jwtSecret === 'dev-jwt-secret-change-in-prod') {
@@ -29,7 +28,7 @@ export function requireRole(...allowed) {
       return reply.code(403).send({ error: 'account authentication required' })
     }
 
-    const { rows } = await pool.query('SELECT id, username, role, verified FROM users WHERE id=$1', [req.user.id])
+    const { rows } = await query('SELECT id, username, role, verified FROM users WHERE id=$1', [req.user.id])
     const current = rows[0]
     if (!current) { req.user = null; return reply.code(401).send({ error: 'account no longer exists' }) }
     if (!['admin', 'member'].includes(current.role)) return reply.code(403).send({ error: 'account role is invalid' })
@@ -70,15 +69,27 @@ export function isValidMemberPin(pin) { return /^\d{4,6}$/.test(String(pin || ''
 export async function loginRateLimit(req, reply) {
   const ip = String(req.ip || 'unknown')
   const uname = String(req.body?.username || '').trim().toLowerCase().slice(0, 64)
-  const key = `harvest:login:${ip}:${uname || 'guest'}`
-  const count = await redis.incr(key)
-  if (count === 1) await redis.expire(key, 15 * 60)
-  req._rateKey = key
-  if (count > 5) {
-    const ttl = await redis.ttl(key)
-    return reply.code(429).send({ error: 'too many login attempts — try in 15 min', retryAfter: Math.max(ttl, 1) })
+  const result = await query(
+    `SELECT COUNT(*)::int AS count
+       FROM login_attempts
+      WHERE ip=$1 AND username=$2 AND success=false
+        AND created_at > now() - interval '15 minutes'`,
+    [ip, uname || 'guest'],
+  )
+  const count = Number(result.rows[0]?.count || 0)
+  req._rateIdentity = { ip, username: uname || 'guest' }
+  if (count >= 5) {
+    return reply.code(429).send({ error: 'too many login attempts — try in 15 min', retryAfter: 900 })
   }
 }
+
 export async function clearLoginRateLimit(req) {
-  if (req._rateKey) await redis.del(req._rateKey)
+  const identity = req._rateIdentity
+  if (!identity) return
+  await query(
+    `DELETE FROM login_attempts
+      WHERE ip=$1 AND username=$2 AND success=false
+        AND created_at > now() - interval '15 minutes'`,
+    [identity.ip, identity.username],
+  ).catch(() => {})
 }
