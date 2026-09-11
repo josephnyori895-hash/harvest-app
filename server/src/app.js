@@ -22,8 +22,8 @@ import {
 
 dotenv.config()
 
-const JWT_SECRET = process.env.JWT_SECRET || ''
-if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'dev-jwt-secret-change-in-prod') {
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET is required and must be at least 32 random characters')
 }
 if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PIN_HASHES) {
@@ -97,13 +97,17 @@ export async function buildApp() {
     }
 
     const r = await pool.query(
-      'SELECT id, username, role, group_name, constituency, faith, verified, pin_hash FROM users WHERE username=$1',
+      'SELECT id, username, role, group_name, constituency, faith, verified, pin_hash, active FROM users WHERE username=$1',
       [uname],
     )
     const user = r.rows[0] || null
     if (!user) {
       await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
       return reply.code(401).send({ error: 'invalid username or PIN' })
+    }
+    if (user.active === false) {
+      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+      return reply.code(403).send({ error: 'account is deactivated' })
     }
 
     const role = user.role
