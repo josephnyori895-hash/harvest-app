@@ -1,15 +1,11 @@
-import { useState } from 'react'
 import { useAuth } from '../state/auth'
 
 export default function UserListModal({ type, userId, users, onBack }: { type: string; userId: string; users: any[]; onBack: () => void }) {
   const { isAdmin } = useAuth()
-  const [targetUser, setTargetUser] = useState<string | null>(null)
 
   // Filter users based on type
   let filteredUsers: any[] = []
   if (type === 'followers') {
-    // Get followers from followsMap
-    const followingMap: Record<string, string[]> = {}
     filteredUsers = users.filter(u => u.username !== userId)
   } else if (type === 'following') {
     filteredUsers = users.filter(u => u.username !== userId)
