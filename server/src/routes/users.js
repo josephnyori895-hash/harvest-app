@@ -2,7 +2,7 @@ import { query } from '../db.js'
 import { requireAdmin, requireMember } from '../middleware/auth.js'
 
 const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu'])
-const ROLES = new Set(['member', 'pastor', 'admin'])
+const ROLES = new Set(['member', 'admin'])
 
 export default async function usersRoutes(app) {
   app.get('/api/users', { preHandler: [requireMember] }, async (req, reply) => {
@@ -60,7 +60,7 @@ export default async function usersRoutes(app) {
     const { role, verified, group_name: groupName } = req.body || {}
     if (!username) return reply.code(400).send({ error: 'username required' })
     if (username === req.user.username && role && role !== 'admin') return reply.code(400).send({ error: 'cannot demote the current administrator' })
-    if (role !== undefined && !ROLES.has(role)) return reply.code(400).send({ error: 'role must be member, pastor, or admin' })
+    if (role !== undefined && !ROLES.has(role)) return reply.code(400).send({ error: 'role must be member or admin' })
     if (groupName !== undefined && groupName !== null && !GROUPS.has(groupName)) return reply.code(400).send({ error: 'invalid group' })
     if (verified !== undefined && typeof verified !== 'boolean') return reply.code(400).send({ error: 'verified must be boolean' })
     const target = await query('SELECT id, username, role, verified, group_name FROM users WHERE username=$1', [username])
