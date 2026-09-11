@@ -9,6 +9,7 @@ const EMOJIS = ['😀','😂','❤️','🙏','🔥','💜','😊','🎉','👏'
 
 function avatar(u: Partial<User>) { return (u.name || u.username || '?').slice(0, 1).toUpperCase() }
 function preview(m?: Message) { if (!m) return 'Tap to chat'; if (m.mediaType === 'image') return '📷 Photo'; if (m.mediaType === 'video') return '🎥 Video'; if (m.music) return `🎵 ${m.music.title}`; return m.text || 'Message' }
+function createMessageMeta() { const now = new Date(); return { id: `tmp_${now.getTime()}`, created_at: now.toISOString(), at: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } }
 
 export default function Chat({ onBack, users = [] }: { onBack: () => void; users: User[] }) {
   const [active, setActive] = useState<User | typeof GROUP | null>(null)
@@ -77,15 +78,15 @@ export default function Chat({ onBack, users = [] }: { onBack: () => void; users
     const key = conversationKey
     const media = mediaPreview
     const type = mediaType
-    const tempId = `tmp_${Date.now()}`
-    const local: Message = { id: tempId, from: currentUser, to: isGroup ? null : active.username, text: body || mediaCaption || 'Shared media', media: media || undefined, mediaType: type || undefined, status: 'sent', created_at: new Date().toISOString(), at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), ...extra }
+    const meta = createMessageMeta()
+    const local: Message = { ...meta, from: currentUser, to: isGroup ? null : active.username, text: body || mediaCaption || 'Shared media', media: media || undefined, mediaType: type || undefined, status: 'sent', ...extra }
     persist(prev => ({ ...prev, [key]: [...(prev[key] || []), local] }))
     setText(''); setMediaPreview(null); setMediaType(null); setMediaCaption(''); setEmojiOpen(false); setAttachOpen(false); setMusicOpen(false)
     emitSocket('typing:stop', { conversation_key: key })
-    const payload: any = isGroup ? { kind: 'group', groupSlug: GROUP.username, body: body || mediaCaption || 'Shared media', tempId } : { kind: 'dm', to: active.username, body: body || mediaCaption || 'Shared media', tempId }
+    const payload: any = isGroup ? { kind: 'group', groupSlug: GROUP.username, body: body || mediaCaption || 'Shared media', tempId: meta.id } : { kind: 'dm', to: active.username, body: body || mediaCaption || 'Shared media', tempId: meta.id }
     if (extra.music) payload.music = extra.music
     if (media) { payload.media = media; payload.mediaType = type }
-    emitSocket('chat:send', payload, (res: any) => { if (res?.id) persist(prev => ({ ...prev, [key]: (prev[key] || []).map(m => String(m.id) === tempId ? { ...m, id: res.id, status: res.status || 'sent' } : m) })) })
+    emitSocket('chat:send', payload, (res: any) => { if (res?.id) persist(prev => ({ ...prev, [key]: (prev[key] || []).map(m => String(m.id) === String(meta.id) ? { ...m, id: res.id, status: res.status || 'sent' } : m) })) })
   }
 
   const handleTyping = (value: string) => {
@@ -119,9 +120,7 @@ export default function Chat({ onBack, users = [] }: { onBack: () => void; users
       <button onClick={() => setGroupInfo(v => !v)} className="flex-1 min-w-0 text-left"><p className="font-semibold truncate">{active.username === GROUP.username ? 'Youth Group' : `@${active.username}`} {active.verified && <span className="text-blue-400">✓</span>}</p><p className="text-xs text-zinc-400 truncate">{active.username === GROUP.username ? '12 members • invite-only' : presence[active.username]?.online ? 'Active now' : 'Message'}</p></button>
       <button aria-label="Voice call" onClick={() => setCall({ peer: active.username, type: 'voice' })} className="text-xl px-2">☎</button><button aria-label="Video call" onClick={() => setCall({ peer: active.username, type: 'video' })} className="text-xl px-2">▣</button><button aria-label="Info" onClick={() => setGroupInfo(v => !v)} className="text-xl px-2">ⓘ</button>
     </header>
-
     {groupInfo && active.username === GROUP.username && <section className="border-b border-zinc-800 bg-zinc-950 p-4 space-y-3"><div className="flex items-center gap-3"><div className="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-500 to-blue-600 flex items-center justify-center text-xl">👥</div><div><p className="font-bold">Youth Group</p><p className="text-xs text-zinc-500">12 members • invite-only</p></div></div><div className="flex gap-2"><input value={inviteTarget} onChange={e => setInviteTarget(e.target.value)} placeholder="Username to invite" className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-2 text-sm"/><button onClick={invite} className="px-4 rounded-full bg-white text-black text-sm font-semibold">Invite</button></div>{inviteStatus && <p className="text-xs text-zinc-400">{inviteStatus}</p>}</section>}
-
     <main className="flex-1 overflow-auto px-3 sm:px-5 py-5 space-y-3">
       {thread.length === 0 && <div className="text-center py-16"><div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-[3px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-2xl">{active.username === GROUP.username ? '👥' : avatar(active)}</div></div><p className="font-semibold mt-3">{active.username === GROUP.username ? 'Youth Group' : active.username}</p><p className="text-sm text-zinc-500 mt-1">Start the conversation.</p></div>}
       {thread.map(m => <div key={m.id} className={`flex ${m.from === currentUser ? 'justify-end' : 'justify-start'}`}><div className="max-w-[78%] flex flex-col">
@@ -135,7 +134,6 @@ export default function Chat({ onBack, users = [] }: { onBack: () => void; users
       </div></div>)}
       {typing[conversationKey] && <p className="text-xs text-zinc-500 px-3">{typing[conversationKey]} is typing…</p>}
     </main>
-
     {musicOpen && <section className="border-t border-zinc-800 bg-zinc-950 p-3"><div className="flex gap-2"><input autoFocus value={musicQuery} onChange={e => searchMusic(e.target.value)} placeholder="Search music" className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2 text-sm"/><button onClick={() => setMusicOpen(false)}>✕</button></div><div className="mt-2 space-y-1 max-h-36 overflow-auto">{musicResults.map(m => <button key={m.id} onClick={() => send(`🎵 ${m.title} • ${m.artist}`, { music: m })} className="w-full flex items-center gap-2 p-2 rounded-xl hover:bg-zinc-900 text-left"><img src={m.cover} alt="" className="w-9 h-9 rounded"/><span className="flex-1 min-w-0"><b className="block text-xs truncate">{m.title}</b><small className="text-zinc-500 truncate block">{m.artist}</small></span><span className="text-xs text-blue-400">Send</span></button>)}</div></section>}
     {attachOpen && <section className="border-t border-zinc-800 bg-zinc-950 p-3 flex justify-center gap-3"><button onClick={() => fileRef.current?.click()} className="px-4 py-2 rounded-full bg-zinc-900 text-sm">📷 Photo</button><button onClick={() => fileRef.current?.click()} className="px-4 py-2 rounded-full bg-zinc-900 text-sm">🎥 Video</button><input ref={fileRef} type="file" accept="image/*,video/*" onChange={chooseMedia} className="hidden" /></section>}
     {mediaPreview && <section className="border-t border-zinc-800 bg-zinc-950 p-3"><div className="flex items-end gap-3"><div className="relative">{mediaType === 'image' ? <img src={mediaPreview} alt="Preview" className="w-24 h-24 object-cover rounded-xl" /> : <video src={mediaPreview} controls className="w-24 h-24 object-cover rounded-xl" />}<button onClick={() => { setMediaPreview(null); setMediaType(null) }} className="absolute -right-2 -top-2 w-6 h-6 rounded-full bg-white text-black">×</button></div><input value={mediaCaption} onChange={e => setMediaCaption(e.target.value)} placeholder="Add a caption…" className="flex-1 bg-zinc-900 border border-zinc-800 rounded-full px-4 py-2.5 text-sm"/><button onClick={() => send(mediaCaption)} className="w-10 h-10 rounded-full bg-[#3797f0]">➤</button></div></section>}
