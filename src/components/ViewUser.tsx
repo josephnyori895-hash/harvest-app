@@ -1,19 +1,17 @@
 import { useState, useMemo } from 'react'
 import { isMutual, toggleFollowMutual, getFollowsMap } from '../state/auth'
 import StoryViewer from './Stories'
-import { IgIcon } from './Icons'
 
 const postsStatic = [
   { user: 'allan', verified: true, loc: 'Nyeri • Main Sanctuary', time: '2h', likes: 1243, img: 'https://images.unsplash.com/photo-1507692049790-de582271b65a?w=500&h=500&fit=crop', caption: 'Blessed Sunday service 🙏' },
 ]
 
 export default function ViewUser({ user, onBack }: { user: any; onBack: () => void }) {
-  if (!user) return null
-
+  const username = user?.username || ''
   const approvedPosts: any[] = (() => { try { return JSON.parse(localStorage.getItem('harvest_approved_posts') || '[]') } catch { return [] } })()
-  const allUserPosts = [...approvedPosts.filter((p: any) => p.user === user.username), ...postsStatic.filter(p => p.user === user.username)]
+  const allUserPosts = [...approvedPosts.filter((p: any) => p.user === username), ...postsStatic.filter(p => p.user === username)]
   const approvedStories: any[] = (() => { try { return JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]') } catch { return [] } })()
-  const userStories = approvedStories.filter((s: any) => s.name === user.username || String(s.id).startsWith(user.username + '_'))
+  const userStories = approvedStories.filter((s: any) => s.name === username || String(s.id).startsWith(username + '_'))
   const hasStory = userStories.length > 0
 
   const [storyIdx, setStoryIdx] = useState<number | null>(null)
@@ -22,13 +20,14 @@ export default function ViewUser({ user, onBack }: { user: any; onBack: () => vo
 
   const currentUser = (() => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || localStorage.getItem('harvest_username') || 'allan' } catch { return 'allan' } })()
   const viewerIsAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' || currentUser === 'allan' } catch { return false } })()
-  const { role: myRole } = (() => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0] || {} } catch { return {} } })()
 
-  const [tick, setTick] = useState(0)
+  const [, setTick] = useState(0)
   const followingMap = getFollowsMap()
-  const viewerFollowsTarget = (followingMap[currentUser] ?? []).includes(user.username)
-  const canSee = viewerIsAdmin || isMutual(currentUser, user.username)
-  const toggle = () => { toggleFollowMutual(currentUser, user.username); setTick(x => x + 1) }
+  const viewerFollowsTarget = (followingMap[currentUser] ?? []).includes(username)
+  const canSee = viewerIsAdmin || isMutual(currentUser, username)
+  const toggle = () => { toggleFollowMutual(currentUser, username); setTick(x => x + 1) }
+
+  if (!user) return null
 
   const toggleVerify = () => {
     const updated = JSON.parse(localStorage.getItem('harvest_users') || '[]').map((u: any) => u.username === user.username ? { ...u, verified: !u.verified } : u)
