@@ -12,6 +12,7 @@ import feedRoutes from './routes/feed.js'
 import pendingRoutes from './routes/pending.js'
 import chatRoutes from './routes/chat.js'
 import usersRoutes from './routes/users.js'
+import givingRoutes from './routes/giving.js'
 import { attachRealtime } from './realtime/io.js'
 
 const JWT_SECRET = process.env.JWT_SECRET || ''
@@ -27,14 +28,10 @@ await app.register(cors, {
   credentials: true,
 })
 
-// --- hardened auth hook ---
 import { makeAuthenticate, isAdminPin, isValidMemberPin, loginRateLimit, clearLoginRateLimit } from './middleware/auth.js'
 const authenticate = makeAuthenticate({ jwtSecret: JWT_SECRET })
 app.addHook('onRequest', authenticate)
 
-// --- hardened PIN login ---
-// Security invariant: an admin PIN authenticates an existing DB admin; it can never
-// promote an arbitrary member or create a privileged account.
 app.post('/api/auth/login', { preHandler: [loginRateLimit] }, async (req, reply) => {
   const { pin, username } = req.body || {}
   const p = String(pin || '').trim()
@@ -47,70 +44,65 @@ app.post('/api/auth/login', { preHandler: [loginRateLimit] }, async (req, reply)
     return reply.code(400).send({ error: 'PIN must be 4-6 digits' })
   }
 
-  let role = 'guest'
-  let user = null
-
-  if (uname) {
-    const r = await pool.query('SELECT id, username, role, group_name, constituency, faith, verified, pin_hash FROM users WHERE username=$1', [uname])
-    user = r.rows[0] || null
-
-    if (!user) {
-      if (adminCredential) {
-        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-        return reply.code(403).send({ error: 'admin account must already exist and be provisioned' })
-      }
-      if (!memberPinOk) {
-        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-        return reply.code(400).send({ error: 'member PIN required' })
-      }
-      const hash = await bcrypt.hash(p, 10)
-      const ins = await pool.query('INSERT INTO users (username,name,group_name,role,pin_hash) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,role,group_name,constituency,faith,verified', [uname, uname, 'Harvest Central', 'member', hash])
-      user = ins.rows[0]
-      role = user.role
-      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,true)`, [req.ip, uname]).catch(() => {})
-    } else {
-      if (!['member', 'admin'].includes(user.role)) {
-        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-        return reply.code(403).send({ error: 'account role is invalid' })
-      }
-      if (adminCredential && user.role !== 'admin') {
-        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-        return reply.code(403).send({ error: 'admin credentials cannot elevate this account' })
-      }
-
-      if (user.role === 'admin') {
-        if (!adminCredential) {
-          await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-          return reply.code(401).send({ error: 'admin PIN incorrect' })
-        }
-        if (!user.pin_hash) {
-          const hash = await bcrypt.hash(p, 10)
-          await pool.query('UPDATE users SET pin_hash=$2 WHERE id=$1', [user.id, hash])
-        }
-        role = 'admin'
-      } else {
-        if (!memberPinOk) {
-          await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-          return reply.code(401).send({ error: 'PIN required' })
-        }
-        if (!user.pin_hash) {
-          await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-          return reply.code(403).send({ error: 'account PIN not enrolled — ask an administrator to provision this account' })
-        }
-        const ok = await bcrypt.compare(p, user.pin_hash).catch(() => false)
-        if (!ok) {
-          await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-          return reply.code(401).send({ error: 'PIN incorrect' })
-        }
-        role = 'member'
-      }
-      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,true)`, [req.ip, uname]).catch(() => {})
-    }
-  } else {
-    // No username means no authenticated product user. Do not mint a privileged or
-    // member token from an arbitrary PIN.
+  if (!uname) {
     clearLoginRateLimit(req)
     return reply.code(401).send({ error: 'username and PIN are required' })
+  }
+
+  let role = 'member'
+  let user = null
+  const r = await pool.query('SELECT id, username, role, group_name, constituency, faith, verified, pin_hash FROM users WHERE username=$1', [uname])
+  user = r.rows[0] || null
+
+  if (!user) {
+    if (adminCredential) {
+      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+      return reply.code(403).send({ error: 'admin account must already exist and be provisioned' })
+    }
+    if (!memberPinOk) {
+      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+      return reply.code(400).send({ error: 'member PIN required' })
+    }
+    const hash = await bcrypt.hash(p, 10)
+    const ins = await pool.query('INSERT INTO users (username,name,group_name,role,pin_hash) VALUES ($1,$2,$3,$4,$5) RETURNING id,username,role,group_name,constituency,faith,verified', [uname, uname, 'Harvest Central', 'member', hash])
+    user = ins.rows[0]
+    await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,true)`, [req.ip, uname]).catch(() => {})
+  } else {
+    if (!['member', 'admin'].includes(user.role)) {
+      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+      return reply.code(403).send({ error: 'account role is invalid' })
+    }
+    if (adminCredential && user.role !== 'admin') {
+      await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+      return reply.code(403).send({ error: 'admin credentials cannot elevate this account' })
+    }
+    if (user.role === 'admin') {
+      if (!adminCredential) {
+        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+        return reply.code(401).send({ error: 'admin PIN incorrect' })
+      }
+      if (!user.pin_hash) {
+        const hash = await bcrypt.hash(p, 10)
+        await pool.query('UPDATE users SET pin_hash=$2 WHERE id=$1', [user.id, hash])
+      }
+      role = 'admin'
+    } else {
+      if (!memberPinOk) {
+        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+        return reply.code(401).send({ error: 'PIN required' })
+      }
+      if (!user.pin_hash) {
+        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+        return reply.code(403).send({ error: 'account PIN not enrolled — ask an administrator to provision this account' })
+      }
+      const ok = await bcrypt.compare(p, user.pin_hash).catch(() => false)
+      if (!ok) {
+        await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+        return reply.code(401).send({ error: 'PIN incorrect' })
+      }
+      role = 'member'
+    }
+    await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,true)`, [req.ip, uname]).catch(() => {})
   }
 
   clearLoginRateLimit(req)
@@ -130,6 +122,7 @@ await app.register(feedRoutes)
 await app.register(pendingRoutes)
 await app.register(chatRoutes)
 await app.register(usersRoutes)
+await app.register(givingRoutes)
 
 const port = parseInt(process.env.PORT || '3000', 10)
 await ensureBucket().catch(e => {
