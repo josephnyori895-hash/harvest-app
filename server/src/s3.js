@@ -17,16 +17,10 @@ export async function ensureBucket() {
     await minio.makeBucket(BUCKET, '')
     console.log(`[s3] bucket created ${BUCKET}`)
   }
-  // private — presigned GET only
-  const policy = JSON.stringify({
-    Version: '2012-10-17',
-    Statement: [{ Effect: 'Allow', Principal: '*', Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${BUCKET}/*`], Condition: { StringEquals: { 's3:ExistingObjectTag/public': 'true' } } }],
-  })
-  // keep bucket private; no public policy needed — we use presigned URLs
 }
 
 const MAX_BYTES = { image: 8*1024*1024, video: 80*1024*1024, audio: 15*1024*1024 }
-const ALLOW_CT = { // strict allow-list prevents bottlenecks from junk uploads during live
+const ALLOW_CT = {
   post: ['image/jpeg','image/png','image/webp','image/heic'],
   story: ['image/jpeg','image/png','image/webp'],
   reel: ['video/mp4','video/quicktime','video/webm'],
@@ -49,7 +43,6 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
   const yyyy = String(now.getFullYear()), mm = String(now.getMonth()+1).padStart(2,'0')
   const safeExt = (ext||'').replace(/[^a-z0-9]/gi,'').toLowerCase() || (contentType.includes('png')?'png': contentType.includes('webp')?'webp': type==='reel'?'mp4': type==='track'?'mp3':'jpg')
   const key = `originals/${type}/${yyyy}/${mm}/${uuid}.${safeExt}`
-  // MinIO presignedPostPolicy
   const policy = minio.newPostPolicy()
   policy.setBucket(BUCKET)
   policy.setKey(key)
@@ -57,7 +50,6 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
   policy.setContentType(contentType)
   policy.setContentLengthRange(1, max)
   const data = await minio.presignedPostPolicy(policy)
-  // data: { postURL, formData: {key, policy, x-amz-signature...} }
   return { url: data.postURL, fields: data.formData, key, expiresAt: new Date(Date.now()+15*60*1000).toISOString(), maxBytes: max }
 }
 
@@ -68,4 +60,15 @@ export async function presignedGet(key, expirySec=900) {
 export async function presignedGetOrNull(key, expirySec=900) {
   if (!key) return null
   try { return await presignedGet(key, expirySec) } catch { return null }
+}
+
+export async function removeObjectOrIgnore(key) {
+  if (!key) return false
+  try {
+    await minio.removeObject(BUCKET, key)
+    return true
+  } catch (error) {
+    console.warn(`[s3] unable to remove ${key}: ${error?.message || error}`)
+    return false
+  }
 }
