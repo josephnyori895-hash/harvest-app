@@ -37,6 +37,7 @@ export async function buildApp() {
   const app = Fastify({
     logger: true,
     trustProxy: process.env.TRUST_PROXY === 'true',
+    bodyLimit: 1024 * 1024,
   })
 
   const allowedOrigins = String(process.env.CORS_ORIGINS || '')
@@ -46,11 +47,33 @@ export async function buildApp() {
 
   await app.register(cors, {
     origin: allowedOrigins.length ? allowedOrigins : false,
-    credentials: true,
+    credentials: false,
   })
 
   await app.register(multipart, {
     limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10 },
+  })
+
+  // API-wide browser hardening. Authentication is bearer-token based, so the API
+  // does not need credentialed CORS or cookie-based CSRF allowances.
+  app.addHook('onSend', async (req, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('X-Frame-Options', 'DENY')
+    reply.header('Referrer-Policy', 'no-referrer')
+    reply.header('Permissions-Policy', 'geolocation=(), payment=()')
+    reply.header('Cache-Control', 'no-store')
+    if (process.env.NODE_ENV === 'production') {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    }
+  })
+
+  app.setErrorHandler((error, req, reply) => {
+    req.log.error({ err: error }, 'unhandled API error')
+    if (reply.sent) return
+    if (error.statusCode && error.statusCode < 500) {
+      return reply.code(error.statusCode).send({ error: error.message || 'request failed' })
+    }
+    return reply.code(500).send({ error: 'internal server error' })
   })
 
   const authenticate = makeAuthenticate({ jwtSecret: JWT_SECRET })
@@ -63,9 +86,9 @@ export async function buildApp() {
     const adminCredential = p ? await isAdminPin(p) : false
     const memberPinOk = p ? isValidMemberPin(p) : false
 
-    if (p && !memberPinOk && !adminCredential) {
+    if (!p || (!memberPinOk && !adminCredential)) {
       await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname || 'guest']).catch(() => {})
-      return reply.code(400).send({ error: 'PIN must be 4-6 digits' })
+      return reply.code(401).send({ error: 'invalid username or PIN' })
     }
 
     if (!uname) {
@@ -92,7 +115,7 @@ export async function buildApp() {
     if (role === 'admin') {
       if (!adminCredential) {
         await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
-        return reply.code(401).send({ error: 'admin PIN incorrect' })
+        return reply.code(401).send({ error: 'invalid username or PIN' })
       }
       if (!user.pin_hash) {
         const hash = await bcrypt.hash(p, 12)
