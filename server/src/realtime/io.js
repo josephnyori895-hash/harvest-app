@@ -5,8 +5,16 @@ import { query } from '../db.js'
 // VPS-only realtime: single instance → Memory adapter is fine for 500 users.
 // If REDIS_URL is set, use the Redis adapter for horizontal scaling.
 export async function attachRealtime(httpServer) {
+  const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+
   const io = new Server(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: allowedOrigins.length ? allowedOrigins : false,
+      credentials: true,
+    },
     transports: ['websocket', 'polling'],
     pingInterval: 25000,
     pingTimeout: 20000,
@@ -39,14 +47,14 @@ export async function attachRealtime(httpServer) {
     if (typeof ack === 'function') ack(payload)
   }
 
-  // Re-read the account before accepting a privileged/action event. JWT is only
+  // Re-read the account before accepting every sensitive action. JWT is only
   // the session proof; PostgreSQL remains the authority for identity and role.
   async function refreshSocketUser(socket) {
     const id = socket.user?.id
     if (!id) return null
     const { rows } = await query('SELECT id, username, role, group_name FROM users WHERE id=$1', [id])
     const user = rows[0]
-    if (!user || !['admin', 'pastor', 'member'].includes(user.role)) return null
+    if (!user || !['admin', 'member'].includes(user.role)) return null
     socket.user = user
     return user
   }
@@ -74,7 +82,7 @@ export async function attachRealtime(httpServer) {
     if (names.length !== 2 || !names[0] || !names[1]) return false
     const { rows } = await query(
       'SELECT 1 FROM users WHERE id=$1 AND username=$2 AND EXISTS (SELECT 1 FROM users WHERE username=$3)',
-      [userId, names[0] === names[1] ? names[0] : names[0], names[1]]
+      [userId, names[0], names[1]]
     )
     if (!rows[0]) {
       const me = await query('SELECT username FROM users WHERE id=$1', [userId])
@@ -85,7 +93,7 @@ export async function attachRealtime(httpServer) {
 
   async function canCallTarget(userId, username) {
     if (!username) return false
-    const { rows } = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'pastor\',\'admin\')', [username])
+    const { rows } = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [username])
     if (!rows[0]) return false
     return rows[0].id !== userId
   }
@@ -131,12 +139,25 @@ export async function attachRealtime(httpServer) {
 
     socket.emit('presence:snapshot', Object.fromEntries([...presence.entries()].map(([u, v]) => [u, { online: v.online, lastSeen: v.lastSeen }])))
 
+    // Basic abuse protection: a single socket cannot flood the message endpoint.
+    let messageWindowStarted = Date.now()
+    let messageCount = 0
+    function allowMessage() {
+      const now = Date.now()
+      if (now - messageWindowStarted >= 60_000) {
+        messageWindowStarted = now
+        messageCount = 0
+      }
+      messageCount += 1
+      return messageCount <= 60
+    }
+
     socket.on('chat:join', async ({ peer } = {}, ack) => {
       const user = await requireFreshUser(socket, ack)
       if (!user) return
       const other = String(peer || '').trim()
       if (!other || other === user.username) return safeAck(ack, { error: 'invalid peer' })
-      const target = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'pastor\',\'admin\')', [other])
+      const target = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [other])
       if (!target.rows[0]) return safeAck(ack, { error: 'user not found' })
       socket.join(keyFor(user.username, other))
       safeAck(ack, { ok: true, conversation_key: keyFor(user.username, other) })
@@ -162,6 +183,7 @@ export async function attachRealtime(httpServer) {
     socket.on('chat:send', async ({ to, body, tempId, kind = 'dm', groupSlug } = {}, ack) => {
       const user = await requireFreshUser(socket, ack)
       if (!user) return
+      if (!allowMessage()) return safeAck(ack, { error: 'message rate limit exceeded' })
       const text = String(body || '').trim()
       if (!text || text.length > 4000) return safeAck(ack, { error: 'body 1..4000 chars required' })
       const now = new Date()
@@ -188,7 +210,7 @@ export async function attachRealtime(httpServer) {
 
         const targetUsername = String(to || '').trim()
         if (!targetUsername || targetUsername === user.username) return safeAck(ack, { error: 'invalid recipient' })
-        const recipient = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'pastor\',\'admin\')', [targetUsername])
+        const recipient = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [targetUsername])
         if (!recipient.rows[0]) return safeAck(ack, { error: 'user not found' })
         const recipientId = recipient.rows[0].id
         const conv = keyFor(user.username, targetUsername)
@@ -266,7 +288,7 @@ export async function attachRealtime(httpServer) {
       if (!g.rows[0]) return safeAck(ack, { error: 'group not found' })
       const ga = await query('SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2 AND role=$3', [g.rows[0].id, user.id, 'admin'])
       if (user.role !== 'admin' && !ga.rows[0]) return safeAck(ack, { error: 'group admin required' })
-      const target = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'pastor\',\'admin\')', [String(targetUsername).trim()])
+      const target = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [String(targetUsername).trim()])
       if (!target.rows[0]) return safeAck(ack, { error: 'target user not found' })
       const { rows } = await query(
         `INSERT INTO group_invites (group_id, invited_username, invited_user_id, inviter_id, status) VALUES ($1,$2,$3,$4,'pending') RETURNING id`,
