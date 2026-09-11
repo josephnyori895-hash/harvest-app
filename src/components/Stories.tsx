@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type Story = {
   id?: string | number
@@ -11,48 +11,46 @@ type Story = {
 
 type User = { username?: string; role?: string }
 
+const STORY_DURATION_MS = 4000
+
 // STORY VIEWER — defensive, deterministic viewer. Never assumes optional story/user data exists.
 export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: Story[]; users?: User[] }) {
-  const story = allStories?.[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Hooks must run on every render. Do not return before hooks: the story list can change while the viewer is open.
-  const duration = 4000
   const safeStories = Array.isArray(allStories) ? allStories : []
   const safeIdx = Number.isInteger(idx) && idx >= 0 && idx < safeStories.length ? idx : -1
   const current = safeIdx >= 0 ? safeStories[safeIdx] : null
   const isLast = safeIdx >= 0 && safeIdx === safeStories.length - 1
 
-  const close = () => {
+  const close = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = null
     setIdx(null)
-  }
+  }, [setIdx])
 
   useEffect(() => {
-    if (!current) {
-      close()
-      return
-    }
-    setProgress(0)
-    setIsPaused(false)
+    if (!current) return
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
       setIdx(safeIdx < safeStories.length - 1 ? safeIdx + 1 : null)
-    }, duration)
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [safeIdx, safeStories.length, current?.id])
+    }, STORY_DURATION_MS)
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }, [close, current?.id, safeIdx, safeStories.length, setIdx])
 
   useEffect(() => {
     if (!current || isPaused) return
     const started = Date.now()
     const interval = setInterval(() => {
-      setProgress(Math.min(100, ((Date.now() - started) / duration) * 100))
+      setProgress(Math.min(100, ((Date.now() - started) / STORY_DURATION_MS) * 100))
     }, 50)
     return () => clearInterval(interval)
-  }, [safeIdx, isPaused, current?.id])
+  }, [current?.id, isPaused])
 
   if (!current) return null
 
@@ -62,7 +60,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
   const go = (next: number) => {
     if (timerRef.current) clearTimeout(timerRef.current)
     if (next < 0 || next >= safeStories.length) close()
-    else setIdx(next)
+    else {
+      setIsPaused(false)
+      setIdx(next)
+    }
   }
 
   const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -76,8 +77,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={handleTap} role="dialog" aria-label={`${storyName} story`}>
       <div className="flex gap-1 p-2 pt-3">
-        {safeStories.map((_, i) => (
-          <div key={String(_.id ?? i)} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden">
+        {safeStories.map((storyItem, i) => (
+          <div key={String(storyItem.id ?? i)} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden">
             <div className="h-full bg-white rounded" style={{ width: i < safeIdx ? '100%' : i === safeIdx ? `${progress}%` : '0%' }} />
           </div>
         ))}
@@ -140,16 +141,11 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const [filter, setFilter] = useState('Original')
   const [textOverlay, setTextOverlay] = useState('')
-  const [textColor, setTextColor] = useState('#ffffff')
-  const [textBold, setTextBold] = useState(true)
   const [stickers, setStickers] = useState<string[]>([])
   const [musicTrack, setMusicTrack] = useState<any | null>(null)
   const [musicQuery, setMusicQuery] = useState('')
   const [musicResults, setMusicResults] = useState<any[]>([])
   const [musicLoading, setMusicLoading] = useState(false)
-  const [previewId, setPreviewId] = useState<any>(null)
-  const previewRef = useRef<HTMLAudioElement | null>(null)
-  const [timer, setTimer] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
   const [showMusic, setShowMusic] = useState(false)
@@ -160,7 +156,6 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
   const applyFilter = (imgUrl: string, f: string) => { if (f === 'Original') return imgUrl; const c = document.createElement('canvas'); const ctx = c.getContext('2d'); if (!ctx) return imgUrl; const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => { c.width = img.width; c.height = img.height; ctx.filter = f === 'Clarendon' ? 'saturate(1.2) contrast(1.1)' : f === 'Juno' ? 'saturate(1.4) contrast(1.15) brightness(1.1)' : f === 'Moody' ? 'saturate(0.8) contrast(1.3) brightness(0.85)' : f === 'Valencia' ? 'saturate(1.5) contrast(1.1) brightness(1.1)' : f === 'Willow' ? 'saturate(0.7) contrast(1.15) brightness(1.1)' : f === 'Gingham' ? 'saturate(1.3) contrast(1.2) brightness(1.1)' : f === 'Lark' ? 'saturate(0.9) contrast(1.0) brightness(1.1)' : f === 'Perpetua' ? 'saturate(1.1) contrast(1.2) brightness(1.15)' : f === 'Aden' ? 'saturate(1.3) contrast(1.0) brightness(0.95)' : ''; ctx.drawImage(img, 0, 0); setFileUrl(c.toDataURL()) }; img.src = imgUrl }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
-  const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
 
   const searchMusic = async (term: string) => {
     if (!term.trim()) { setMusicResults([]); return }
@@ -169,15 +164,10 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     setMusicLoading(false)
   }
 
-  const togglePreview = (m: any) => {
-    if (previewId === m.id) { previewRef.current?.pause(); setPreviewId(null); return }
-    if (previewRef.current) previewRef.current.pause()
-    const a = new Audio(m.url); a.play().catch(() => {}); (previewRef as any).current = a; setPreviewId(m.id); a.onended = () => setPreviewId(null)
-  }
   const chooseMusic = (m: any) => { setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
   const MOOD_PICKS = [{ mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] }, { mood: '🎶 Choir', tags: ['choir', 'choral'] }, { mood: '🔥 Youth', tags: ['youth', 'gospel'] }, { mood: '❤️ Hymns', tags: ['hymn', 'traditional'] }, { mood: '🎤 Gospel', tags: ['gospel', 'praise'] }]
-  const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t))); if (matches.length) chooseMusic(matches[Math.floor(Math.random() * matches.length)]) }
-  const submit = () => { const story = { id: `${getUser()}_${Date.now()}`, name: getUser(), caption: caption || 'Harvest testimony 🙏', img: fileUrl || `https://picsum.photos/300/500?random=${Date.now()}`, textOverlay, stickers, music: musicTrack, filter, timer, textBold, at: new Date().toISOString() }; let approved: any[] = []; try { const parsed = JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]'); approved = Array.isArray(parsed) ? parsed : [] } catch {} localStorage.setItem('harvest_approved_stories', JSON.stringify([story, ...approved])); window.dispatchEvent(new Event('harvest:approved')); alert('Story posted instantly ✓'); onDone() }
+  const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter(m => tags.some(t => m.toLowerCase().includes(t))); if (matches.length) chooseMusic(matches[0]) }
+  const submit = () => { const timestamp = Date.now(); const user = getUser(); const story = { id: `${user}_${timestamp}`, name: user, caption: caption || 'Harvest testimony 🙏', img: fileUrl || `https://picsum.photos/300/500?random=${timestamp}`, textOverlay, stickers, music: musicTrack, filter, at: new Date(timestamp).toISOString() }; let approved: any[] = []; try { const parsed = JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]'); approved = Array.isArray(parsed) ? parsed : [] } catch {} localStorage.setItem('harvest_approved_stories', JSON.stringify([story, ...approved])); window.dispatchEvent(new Event('harvest:approved')); alert('Story posted instantly ✓'); onDone() }
 
   return (
     <div className="bg-zinc-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
