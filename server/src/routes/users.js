@@ -15,12 +15,10 @@ export default async function usersRoutes(app) {
     return reply.send({ users: rows })
   })
 
-  // GET /api/users/map — coords gated by mutual OR admin (fixes leak 723)
-  // Returns: visible precise lat/lng for mutual/admin, approx group centroid + hidden flag otherwise
+  // GET /api/users/map — coords gated by mutual OR admin
   app.get('/api/users/map', { preHandler: [requireMember] }, async (req, reply) => {
     const viewerId = req.user.id
     const isAdmin = req.user.role === 'admin'
-    // groupCoords map (mirrors src/components/HarvestMap.tsx:14)
     const groupCentroids = {
       'Harvest Central': [-0.4197, 36.9475],
       'Harvest Ruringu': [-0.432, 36.95],
@@ -32,23 +30,14 @@ export default async function usersRoutes(app) {
     const { rows } = await query(
       `SELECT id, username, name, group_name, location, verified, lat, lng FROM users ORDER BY group_name, username LIMIT 500`
     )
-    // batch mutual check: single query for viewer follows
-    const { rows: follows } = await query(
-      `SELECT followee_id FROM follows WHERE follower_id=$1`, [viewerId]
-    )
+    const { rows: follows } = await query(`SELECT followee_id FROM follows WHERE follower_id=$1`, [viewerId])
     const followsSet = new Set(follows.map(r => r.followee_id))
-    // need reverse: who follows viewer? for mutual
-    const { rows: followers } = await query(
-      `SELECT follower_id FROM follows WHERE followee_id=$1`, [viewerId]
-    )
+    const { rows: followers } = await query(`SELECT follower_id FROM follows WHERE followee_id=$1`, [viewerId])
     const followersSet = new Set(followers.map(r => r.follower_id))
 
     const out = rows.map(u => {
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === viewerId
-      if (mutual) {
-        return { ...u, lat: u.lat, lng: u.lng, hidden: false }
-      }
-      // not mutual: jitter centroid, hide precise
+      if (mutual) return { ...u, lat: u.lat, lng: u.lng, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475]
       const jitter = () => [gc[0] + (Math.random()-0.5)*0.008, gc[1] + (Math.random()-0.5)*0.008]
       const [al, ag] = jitter()
@@ -57,7 +46,6 @@ export default async function usersRoutes(app) {
     return reply.send({ users: out, viewer: req.user.username, isAdmin })
   })
 
-  // POST /api/users/:username/follow — toggle (mutual logic 98)
   app.post('/api/users/:username/follow', { preHandler: [requireMember] }, async (req, reply) => {
     const target = req.params.username
     if (!target || target === req.user.username) return reply.code(400).send({ error: 'invalid target' })
@@ -69,15 +57,12 @@ export default async function usersRoutes(app) {
     if (existing.rows[0]) {
       await query('DELETE FROM follows WHERE follower_id=$1 AND followee_id=$2', [viewerId, targetId])
       return reply.send({ following: false, mutual: false })
-    } else {
-      await query('INSERT INTO follows (follower_id, followee_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [viewerId, targetId])
-      // check mutual after
-      const rev = await query('SELECT 1 FROM follows WHERE follower_id=$1 AND followee_id=$2', [targetId, viewerId])
-      return reply.send({ following: true, mutual: !!rev.rows[0] })
     }
+    await query('INSERT INTO follows (follower_id, followee_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [viewerId, targetId])
+    const rev = await query('SELECT 1 FROM follows WHERE follower_id=$1 AND followee_id=$2', [targetId, viewerId])
+    return reply.send({ following: true, mutual: !!rev.rows[0] })
   })
 
-  // GET /api/users/:username/mutual — check mutual (for ViewUser canSee)
   app.get('/api/users/:username/mutual', { preHandler: [requireMember] }, async (req, reply) => {
     const target = req.params.username
     const t = await query('SELECT id FROM users WHERE username=$1', [target])
@@ -91,10 +76,12 @@ export default async function usersRoutes(app) {
     return reply.send({ mutual: rows[0].mutual })
   })
 
-  // GET /api/me — whoami (for frontend to know role w/o decoding JWT)
+  // GET /api/me — DB-backed identity; never report a stale JWT role.
   app.get('/api/me', async (req, reply) => {
-    if (!req.user) return reply.send({ user: null, role: 'guest' })
+    if (!req.user || req.user.id === '00000000-0000-0000-0000-000000000000') return reply.send({ user: null, role: 'guest' })
     const { rows } = await query('SELECT id, username, name, group_name, constituency, faith, verified, role, last_seen FROM users WHERE id=$1', [req.user.id])
-    return reply.send({ user: rows[0] || req.user, role: req.user.role })
+    const user = rows[0]
+    if (!user) return reply.send({ user: null, role: 'guest' })
+    return reply.send({ user, role: user.role })
   })
 }
