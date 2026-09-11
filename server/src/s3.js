@@ -2,11 +2,17 @@ import * as Minio from 'minio'
 import dotenv from 'dotenv'
 dotenv.config()
 
-const endPoint = process.env.MINIO_ENDPOINT || 'localhost'
+function requiredEnv(name) {
+  const value = process.env[name]
+  if (!value) throw new Error(`[config] Missing required environment variable: ${name}`)
+  return value
+}
+
+const endPoint = requiredEnv('MINIO_ENDPOINT')
 const port = parseInt(process.env.MINIO_PORT || '9000', 10)
 const useSSL = (process.env.MINIO_USE_SSL || 'false') === 'true'
-const accessKey = process.env.MINIO_ACCESS_KEY || 'harvest'
-const secretKey = process.env.MINIO_SECRET_KEY || 'harvest1234567890'
+const accessKey = requiredEnv('MINIO_ACCESS_KEY')
+const secretKey = requiredEnv('MINIO_SECRET_KEY')
 export const BUCKET = process.env.MINIO_BUCKET || 'harvest-media'
 
 export const minio = new Minio.Client({ endPoint, port, useSSL, accessKey, secretKey })
@@ -17,16 +23,11 @@ export async function ensureBucket() {
     await minio.makeBucket(BUCKET, '')
     console.log(`[s3] bucket created ${BUCKET}`)
   }
-  // private — presigned GET only
-  const policy = JSON.stringify({
-    Version: '2012-10-17',
-    Statement: [{ Effect: 'Allow', Principal: '*', Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${BUCKET}/*`], Condition: { StringEquals: { 's3:ExistingObjectTag/public': 'true' } } }],
-  })
-  // keep bucket private; no public policy needed — we use presigned URLs
+  // Keep the bucket private; callers receive short-lived presigned URLs.
 }
 
 const MAX_BYTES = { image: 8*1024*1024, video: 80*1024*1024, audio: 15*1024*1024 }
-const ALLOW_CT = { // strict allow-list prevents bottlenecks from junk uploads during live
+const ALLOW_CT = {
   post: ['image/jpeg','image/png','image/webp','image/heic'],
   story: ['image/jpeg','image/png','image/webp'],
   reel: ['video/mp4','video/quicktime','video/webm'],
@@ -38,7 +39,7 @@ export function validatePresign({ type, contentType, bytes }) {
   const allowed = ALLOW_CT[type]
   if (!allowed.includes(contentType)) throw Object.assign(new Error(`contentType not allowed for ${type}: ${contentType}`), { statusCode: 400 })
   const max = type==='reel' ? MAX_BYTES.video : type==='track' ? MAX_BYTES.audio : MAX_BYTES.image
-  if (bytes > max) throw Object.assign(new Error(`bytes ${bytes} > max ${max} for ${type}`), { statusCode: 400 })
+  if (!Number.isInteger(bytes) || bytes < 1 || bytes > max) throw Object.assign(new Error(`bytes must be between 1 and ${max} for ${type}`), { statusCode: 400 })
   return max
 }
 
@@ -47,9 +48,13 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
   const uuid = (await import('uuid')).v4()
   const now = new Date()
   const yyyy = String(now.getFullYear()), mm = String(now.getMonth()+1).padStart(2,'0')
-  const safeExt = (ext||'').replace(/[^a-z0-9]/gi,'').toLowerCase() || (contentType.includes('png')?'png': contentType.includes('webp')?'webp': type==='reel'?'mp4': type==='track'?'mp3':'jpg')
+  // Never trust the client extension for the object suffix.
+  const safeExt = contentType.includes('png') ? 'png'
+    : contentType.includes('webp') ? 'webp'
+    : contentType.includes('heic') ? 'heic'
+    : type==='reel' ? 'mp4'
+    : type==='track' ? 'mp3' : 'jpg'
   const key = `originals/${type}/${yyyy}/${mm}/${uuid}.${safeExt}`
-  // MinIO presignedPostPolicy
   const policy = minio.newPostPolicy()
   policy.setBucket(BUCKET)
   policy.setKey(key)
@@ -57,7 +62,6 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
   policy.setContentType(contentType)
   policy.setContentLengthRange(1, max)
   const data = await minio.presignedPostPolicy(policy)
-  // data: { postURL, formData: {key, policy, x-amz-signature...} }
   return { url: data.postURL, fields: data.formData, key, expiresAt: new Date(Date.now()+15*60*1000).toISOString(), maxBytes: max }
 }
 
