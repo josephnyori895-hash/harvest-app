@@ -4,23 +4,32 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
+      - name: Install backend dependencies
+        run: npm install --prefix server --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
       - name: Sync Capacitor Android
         run: npx cap sync android
+
   server-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm install --prefix server --no-audit --no-fund
       - name: Syntax-check server and Netlify modules
         run: find server/src server/netlify -type f -name '*.js' -print0 | xargs -0 -n1 node --check
