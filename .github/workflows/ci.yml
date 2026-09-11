@@ -19,6 +19,7 @@ jobs:
         run: npm install --prefix server --no-audit --no-fund
       - run: npm run lint
       - run: npm run test:admin
+      - run: npm run test:security
       - run: npm run build
       - name: Sync Capacitor Android
         run: npx cap sync android
