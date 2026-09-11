@@ -1,15 +1,12 @@
 import jwt from 'jsonwebtoken'
+import { pool } from '../db.js'
 
 /**
  * Hardened auth middleware — VPS-only, PIN bcrypt kept, no OTP.
- * Roles: admin | pastor | member | guest  (extends 001_init.sql member|admin)
- * - guest: no PIN / no JWT or expired -> req.user = null
- * - member: any 4-6 digit PIN (bcrypt hash stored in users.pin_hash)
- * - pastor: whitelisted username OR pin_hash + role='pastor' in DB (no separate PIN list)
- * - admin: PIN matches ADMIN_PIN_HASHES (bcrypt) — never plaintext in prod
+ * Roles: admin | pastor | member | guest.
+ * JWTs identify the account, but the database remains the source of truth for role privileges.
  */
 
-// --- JWT authenticate (replaces inline hook at src/index.js:20) ---
 export function makeAuthenticate({ jwtSecret }) {
   if (!jwtSecret || jwtSecret === 'dev-jwt-secret-change-in-prod') {
     console.warn('[auth] JWT_SECRET is default — set JWT_SECRET env in prod (openssl rand -hex 32)')
@@ -24,52 +21,59 @@ export function makeAuthenticate({ jwtSecret }) {
     if (!token) { req.user = null; return }
     try {
       const payload = jwt.verify(token, jwtSecret)
-      // enforce shape: id, username, role in {admin,pastor,member,guest}
       if (!payload?.id || !payload?.username || !payload?.role) throw new Error('bad payload shape')
       if (!['admin','pastor','member','guest'].includes(payload.role)) throw new Error('bad role')
       req.user = payload
-      // optional: attach token iat/exp for sliding refresh check
     } catch (e) {
-      // do NOT swallow silently — set null and optionally log once per IP (rate-limited)
       req.user = null
-      // let protected routes reject with 401; public routes continue
-      // attach error for downstream to inspect if needed
       req.authError = e.message
     }
   }
 }
 
-// --- RBAC guard factory (fixes Guard Admin 188) ---
-// Usage: app.get('/api/pending', { preHandler: [authenticate, requireRole('admin')] }, handler)
-// Admin bypasses pastor check; pastor can approve where allowed.
+// --- RBAC guard: database is the authority, not the role stored in a client JWT ---
 const RANK = { guest: 0, member: 1, pastor: 2, admin: 3 }
 export function requireRole(...allowed) {
   const set = new Set(allowed.flat())
   return async function guard(req, reply) {
-    const role = req.user?.role || 'guest'
     if (!req.user) {
       return reply.code(401).send({ error: 'auth required — POST /api/auth/login {pin, username} to get JWT' })
     }
-    // admin always passes (superuser)
+
+    // Synthetic guest tokens must never receive member/admin privileges.
+    if (req.user.id === '00000000-0000-0000-0000-000000000000') {
+      return reply.code(403).send({ error: 'account authentication required' })
+    }
+
+    // Re-read the current role on every protected request so demotions/deactivations
+    // take effect immediately instead of waiting for a long-lived JWT to expire.
+    const { rows } = await pool.query('SELECT id, username, role FROM users WHERE id=$1', [req.user.id])
+    const current = rows[0]
+    if (!current) {
+      req.user = null
+      return reply.code(401).send({ error: 'account no longer exists' })
+    }
+    if (!['admin','pastor','member','guest'].includes(current.role)) {
+      return reply.code(403).send({ error: 'account role is invalid' })
+    }
+
+    req.user = { ...req.user, id: current.id, username: current.username, role: current.role }
+    const role = current.role
     if (role === 'admin') return
     if (set.has(role)) return
-    // also allow higher rank if allowed includes lower rank? e.g. pastor can do member routes
-    // Explicit: if route allows 'member', pastor+admin pass
+
     const needRank = Math.min(...[...set].map(r => RANK[r] ?? 99))
     if ((RANK[role] ?? -1) >= needRank && needRank <= 1) return
     return reply.code(403).send({ error: `role ${role} not allowed — need ${[...set].join('|')}` })
   }
 }
 
-// convenience shorthands for route files
 export const requireAdmin = requireRole('admin')
 export const requirePastor = requireRole('pastor', 'admin')
 export const requireMember = requireRole('member', 'pastor', 'admin')
 
-// --- PIN helpers (kept) ---
+// --- PIN helpers ---
 import bcrypt from 'bcryptjs'
-// ADMIN PINs: never plaintext in prod. Env ADMIN_PIN_HASHES='["$2a$10$...","..."]'
-// Dev fallback only when NODE_ENV !== 'production'
 export function getAdminPinHashes() {
   try {
     const raw = process.env.ADMIN_PIN_HASHES
@@ -81,7 +85,7 @@ export function getAdminPinHashes() {
 
 export async function isAdminPin(pin) {
   const p = String(pin || '').trim()
-  if (!/^\d{4,6}$/.test(p) && p !== '7C3AED') return false // PIN kept: 4-6 digits + legacy 7C3AED
+  if (!/^\d{4,6}$/.test(p) && p !== '7C3AED') return false
   const hashes = getAdminPinHashes()
   if (hashes) {
     for (const h of hashes) {
@@ -91,22 +95,19 @@ export async function isAdminPin(pin) {
   }
   if (process.env.NODE_ENV === 'production') {
     console.warn('[auth] ADMIN_PIN_HASHES not set in production — admin login disabled (set hashes)')
-    return false // fail-closed in prod, no plaintext fallback
+    return false
   }
   const PLAIN_FALLBACK = ['7777','0000','7C3AED']
   return PLAIN_FALLBACK.includes(p)
 }
 
-// member PIN policy: 4-6 digits, not sequential like 1234? keep simple for church 500 users
 export function isValidMemberPin(pin) {
   const p = String(pin || '').trim()
   return /^\d{4,6}$/.test(p)
 }
 
-// --- light in-memory rate limit for /api/auth/login (VPS 500 users, no Redis) ---
-// 5 attempts / 15 min per IP+username, then 429. Single VPS memory is fine for 500 users.
-// If REDIS_URL set, could upgrade to Redis; kept in-memory to save 64M.
-const buckets = new Map() // key -> { count, resetAt }
+// --- light in-memory rate limit for /api/auth/login ---
+const buckets = new Map()
 export async function loginRateLimit(req, reply) {
   const ip = req.ip
   const uname = String(req.body?.username || '').toLowerCase()
@@ -125,7 +126,6 @@ export async function loginRateLimit(req, reply) {
 export function clearLoginRateLimit(req) {
   if (req._rateKey) buckets.delete(req._rateKey)
 }
-// periodic GC every 30 min
 setInterval(() => {
   const now = Date.now()
   for (const [k,v] of buckets) if (now > v.resetAt) buckets.delete(k)
