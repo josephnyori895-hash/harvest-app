@@ -1,5 +1,6 @@
 import { query } from '../db.js'
 import { requireAdmin, requireMember } from '../middleware/auth.js'
+import bcrypt from 'bcryptjs'
 
 const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu'])
 const ROLES = new Set(['member', 'admin'])
@@ -29,6 +30,25 @@ export default async function usersRoutes(app) {
       return { id: u.id, username: u.username, name: u.name, group_name: u.group_name, location: null, verified: u.verified, role: undefined, lat: al, lng: ag, hidden: true, approx: true }
     })
     return reply.send({ users: out, viewer: req.user.username, isAdmin })
+  })
+
+  app.post('/api/admin/users', { preHandler: [requireAdmin] }, async (req, reply) => {
+    const { username, name, pin, role = 'member', group_name: groupName = 'Harvest Central', verified = false } = req.body || {}
+    const uname = String(username || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32)
+    const displayName = String(name || uname).trim().slice(0, 120)
+    const p = String(pin || '').trim()
+    if (!uname || uname.length < 2) return reply.code(400).send({ error: 'valid username required' })
+    if (!/^\d{4,6}$/.test(p)) return reply.code(400).send({ error: 'PIN must be 4-6 digits' })
+    if (!ROLES.has(role)) return reply.code(400).send({ error: 'role must be member or admin' })
+    if (!GROUPS.has(groupName)) return reply.code(400).send({ error: 'invalid group' })
+    if (typeof verified !== 'boolean') return reply.code(400).send({ error: 'verified must be boolean' })
+
+    const exists = await query('SELECT 1 FROM users WHERE username=$1', [uname])
+    if (exists.rows[0]) return reply.code(409).send({ error: 'username already exists' })
+    const pinHash = await bcrypt.hash(p, 12)
+    const created = await query(`INSERT INTO users (username,name,group_name,role,pin_hash,verified) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, username, name, group_name, role, verified, created_at`, [uname, displayName, groupName, role, pinHash, verified])
+    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'user_provisioned','user',$2,$3)`, [req.user.id, created.rows[0].id, JSON.stringify({ role, verified, group_name: groupName })])
+    return reply.code(201).send({ user: created.rows[0] })
   })
 
   app.post('/api/users/:username/follow', { preHandler: [requireMember] }, async (req, reply) => {
