@@ -5,7 +5,7 @@
 const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')
 const USE_API = import.meta.env.VITE_USE_API === 'true'
 
-export const useApi = () => USE_API && Boolean(BASE)
+export const isApiEnabled = () => USE_API && Boolean(BASE)
 
 export class ApiError extends Error {
   status: number
