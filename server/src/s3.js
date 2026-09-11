@@ -2,11 +2,16 @@ import * as Minio from 'minio'
 import dotenv from 'dotenv'
 dotenv.config()
 
-const endPoint = process.env.MINIO_ENDPOINT || 'localhost'
-const port = parseInt(process.env.MINIO_PORT || '9000', 10)
+const endPoint = process.env.MINIO_ENDPOINT
+const port = parseInt(process.env.MINIO_PORT || (process.env.MINIO_USE_SSL === 'true' ? '443' : '9000'), 10)
 const useSSL = (process.env.MINIO_USE_SSL || 'false') === 'true'
-const accessKey = process.env.MINIO_ACCESS_KEY || 'harvest'
-const secretKey = process.env.MINIO_SECRET_KEY || 'harvest1234567890'
+const accessKey = process.env.MINIO_ACCESS_KEY
+const secretKey = process.env.MINIO_SECRET_KEY
+
+if (!endPoint || !accessKey || !secretKey) {
+  throw new Error('MINIO_ENDPOINT, MINIO_ACCESS_KEY and MINIO_SECRET_KEY are required')
+}
+
 export const BUCKET = process.env.MINIO_BUCKET || 'harvest-media'
 
 export const minio = new Minio.Client({ endPoint, port, useSSL, accessKey, secretKey })
