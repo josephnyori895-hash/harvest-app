@@ -53,11 +53,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T
 }
 
+export type AuthSession = {
+  token: string
+  role: 'member' | 'leader' | 'pastor' | 'admin' | 'guest'
+  username: string
+}
+
 export async function login(username: string, pin: string) {
-  return request<{
-    token: string
-    user: { id: string; username: string; role: 'member' | 'leader' | 'pastor' | 'admin' | 'guest' }
-  }>('/api/auth/login', {
+  return request<AuthSession>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username: username.trim(), pin: pin.trim() }),
   })
