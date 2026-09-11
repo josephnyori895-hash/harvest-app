@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { getSocket, onSocket, emitSocket, getIceServers } from '../lib/realtime'
+import { onSocket, emitSocket, getIceServers } from '../lib/realtime'
 
 export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 'voice' | 'video'; onEnd: () => void }) {
   const [status, setStatus] = useState('Calling...')
   const [muted, setMuted] = useState(false)
   const [camOff, setCamOff] = useState(false)
   const localRef = useRef<HTMLVideoElement>(null)
-  const remoteRef = useRef<HTMLVideoElement | null>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
@@ -69,7 +68,7 @@ export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp))
       setStatus('Connected')
     })
-    const offOffer = onSocket('call:offer', async ({ from, sdp, type: offerType }: any) => {
+    const offOffer = onSocket('call:offer', async ({ from, sdp }: any) => {
       if (from !== peer) return
       // incoming call: if we're caller and already offered, ignore duplicate
       if (pc.signalingState !== 'stable') return
