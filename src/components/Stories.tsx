@@ -1,137 +1,135 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-// STORY VIEWER — immersive full-screen, auto-advance to next USER
-export default function StoryViewer({ idx, setIdx, allStories, users }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users: any[] }) {
-  const s = allStories[idx]
-  if (!s) return null
+type Story = {
+  id?: string | number
+  name?: string
+  img?: string
+  video?: string
+  caption?: string
+  music?: { cover?: string; title?: string; artist?: string; url?: string }
+}
+
+type User = { username?: string; role?: string }
+
+// STORY VIEWER — defensive, deterministic viewer. Never assumes optional story/user data exists.
+export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: Story[]; users?: User[] }) {
+  const story = allStories?.[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const duration = 4000 // 4s per story
 
-  // Determine if this is the LAST story of the LAST user
-  const isLastStory = idx >= allStories.length - 1
+  // Hooks must run on every render. Do not return before hooks: the story list can change while the viewer is open.
+  const duration = 4000
+  const safeStories = Array.isArray(allStories) ? allStories : []
+  const safeIdx = Number.isInteger(idx) && idx >= 0 && idx < safeStories.length ? idx : -1
+  const current = safeIdx >= 0 ? safeStories[safeIdx] : null
+  const isLast = safeIdx >= 0 && safeIdx === safeStories.length - 1
 
-  // Auto-advance to next story (or next user)
+  const close = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = null
+    setIdx(null)
+  }
+
   useEffect(() => {
+    if (!current) {
+      close()
+      return
+    }
     setProgress(0)
     setIsPaused(false)
     if (timerRef.current) clearTimeout(timerRef.current)
-    if (isPaused) return
     timerRef.current = setTimeout(() => {
-      if (idx < allStories.length - 1) {
-        setIdx(idx + 1)
-      } else {
-        // Last story — close viewer (Instagram-style: back to feed)
-        setIdx(null)
-      }
+      setIdx(safeIdx < safeStories.length - 1 ? safeIdx + 1 : null)
     }, duration)
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [idx, isPaused, setIdx, allStories.length, duration])
+  }, [safeIdx, safeStories.length, current?.id])
 
-  // Handle tap: left half = previous, right half = next, hold = pause
-  const handleTap = (e: any) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    if (x < rect.width / 3) {
-      // previous
-      if (timerRef.current) clearTimeout(timerRef.current)
-      setIdx(idx > 0 ? idx - 1 : null)
-    } else if (x > rect.width * 2 / 3) {
-      // next
-      if (timerRef.current) clearTimeout(timerRef.current)
-      if (idx < allStories.length - 1) setIdx(idx + 1)
-      else setIdx(null)
-    } else {
-      // toggle pause
-      setIsPaused(p => !p)
-    }
-  }
-
-  // Progress bar update
   useEffect(() => {
-    if (isPaused) return
-    const start = Date.now()
+    if (!current || isPaused) return
+    const started = Date.now()
     const interval = setInterval(() => {
-      const elapsed = Date.now() - start
-      const p = Math.min(100, (elapsed / duration) * 100)
-      setProgress(p)
-      if (p >= 100) clearInterval(interval)
+      setProgress(Math.min(100, ((Date.now() - started) / duration) * 100))
     }, 50)
     return () => clearInterval(interval)
-  }, [idx, isPaused, duration])
+  }, [safeIdx, isPaused, current?.id])
 
-  // Check if this is the last story of the last user
-  const isLastUserStory = idx === allStories.length - 1
+  if (!current) return null
+
+  const storyName = typeof current.name === 'string' && current.name.trim() ? current.name : 'Harvest'
+  const matchedUser = users.find(u => u?.username === storyName)
+  const role = matchedUser?.role
+  const go = (next: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (next < 0 || next >= safeStories.length) close()
+    else setIdx(next)
+  }
+
+  const handleTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    if (x < rect.width / 3) go(safeIdx - 1)
+    else if (x > rect.width * 2 / 3) go(safeIdx + 1)
+    else setIsPaused(p => !p)
+  }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={handleTap}>
-      {/* Progress bars — one per story */}
+    <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={handleTap} role="dialog" aria-label={`${storyName} story`}>
       <div className="flex gap-1 p-2 pt-3">
-        {allStories.map((_: any, i: number) => (
-          <div key={i} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden relative">
-            <div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} />
+        {safeStories.map((_, i) => (
+          <div key={String(_.id ?? i)} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden">
+            <div className="h-full bg-white rounded" style={{ width: i < safeIdx ? '100%' : i === safeIdx ? `${progress}%` : '0%' }} />
           </div>
         ))}
       </div>
 
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]">
-            <div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div>
+            <div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{storyName[0]?.toUpperCase() || 'H'}</div>
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">{s.name}</p>
-            {users.find((u: any) => u.username === s.name)?.role && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>
-                {users.find((u: any) => u.username === s.name)?.role || 'member'}
-              </span>
-            )}
+            <p className="text-sm font-semibold text-white">{storyName}</p>
+            {role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{role}</span>}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!isLastUserStory && (
-            <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="text-xl px-2 text-white">⏸</button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="text-xl px-2 text-white">✕</button>
+          <button onClick={e => { e.stopPropagation(); setIsPaused(p => !p) }} className="text-xl px-2 text-white" aria-label={isPaused ? 'Resume story' : 'Pause story'}>{isPaused ? '▶' : '⏸'}</button>
+          <button onClick={e => { e.stopPropagation(); close() }} className="text-xl px-2 text-white" aria-label="Close story">✕</button>
         </div>
       </div>
 
-      {/* Media — full-screen immersive */}
-      <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-        {s.img && <img src={s.img} alt="" className="w-full h-full object-cover" />}
-        {s.video && <video src={s.video} autoPlay muted playsInline className="w-full h-full object-cover" />}
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-black">
+        {current.video ? (
+          <video src={current.video} autoPlay muted playsInline controls={false} className="w-full h-full object-contain" onEnded={() => go(safeIdx + 1)} onError={() => go(safeIdx + 1)} />
+        ) : current.img ? (
+          <img src={current.img} alt={current.caption || `${storyName} story`} className="w-full h-full object-contain" onError={e => { e.currentTarget.style.display = 'none' }} />
+        ) : (
+          <div className="px-8 text-center text-zinc-400">This story has no media.</div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
-        {/* Story content */}
-        <div className="absolute bottom-0 left-0 right-0 p-6">
-          <p className="font-bold text-white text-lg">{s.name}</p>
-          <p className="text-sm text-zinc-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>
-          {s.music && (
+        <div className="absolute bottom-0 left-0 right-0 p-6 pointer-events-none">
+          <p className="font-bold text-white text-lg">{storyName}</p>
+          <p className="text-sm text-zinc-300 mt-1">{current.caption || 'Harvest story 🙏'}</p>
+          {current.music?.title && (
             <div className="flex gap-2 items-center mt-2 p-2 bg-black/60 rounded-lg">
-              <img src={s.music.cover} className="w-8 h-8 rounded" />
-              <div className="flex-1"><p className="text-xs font-semibold">🎵 {s.music.title}</p><p className="text-[11px] text-zinc-400">{s.music.artist}</p></div>
-              <a href={s.music.url} target="_blank" className="text-xs bg-white text-black px-2 py-1 rounded-full">▶</a>
+              {current.music.cover && <img src={current.music.cover} alt="" className="w-8 h-8 rounded" />}
+              <div className="flex-1"><p className="text-xs font-semibold">🎵 {current.music.title}</p><p className="text-[11px] text-zinc-400">{current.music.artist || ''}</p></div>
             </div>
           )}
         </div>
 
-        {/* Navigation arrows */}
-        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
-        {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
+        {safeIdx > 0 && <button onClick={e => { e.stopPropagation(); go(safeIdx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl" aria-label="Previous story">‹</button>}
+        {!isLast && <button onClick={e => { e.stopPropagation(); go(safeIdx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl" aria-label="Next story">›</button>}
       </div>
 
-      {/* Bottom hint */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-500">
-        {isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Tap to forward'}
-      </div>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-500 pointer-events-none">{isLast ? 'Tap to close' : '← Previous • Center pause • Next →'}</div>
     </div>
   )
 }
 
-// STORY CREATE — Instagram-style story editor with brighter UI
+// STORY CREATE — Instagram-style story editor.
 const FILTERS = ['Original', 'Clarendon', 'Juno', 'Aden', 'Lark', 'Moody', 'Valencia', 'Perpetua', 'Willow', 'Gingham']
 const STORY_STICKERS = ['🙏', '🔥', '❤️', '🎵', '🎤', '📍', '📷', '✝️', '🕊️', '💜', '👏', '😍', '🤗', '✨', '🎉', '🍕', '🌟', '⚽', '🎸', '💎']
 const STORY_MUSIC = ['Worship 🎵', 'Hillsong 🎶', 'Sinach 🎤', 'Maverick 🔥', 'Elevation 🙏', 'Harvest 🎹']
@@ -159,7 +157,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const getUser = () => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || 'allan' } catch { return 'allan' } }
-  const onFile = (e: any) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
   const applyFilter = (imgUrl: string, f: string) => { if (f === 'Original') return imgUrl; const c = document.createElement('canvas'); const ctx = c.getContext('2d'); if (!ctx) return imgUrl; const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => { c.width = img.width; c.height = img.height; ctx.filter = f === 'Clarendon' ? 'saturate(1.2) contrast(1.1)' : f === 'Juno' ? 'saturate(1.4) contrast(1.15) brightness(1.1)' : f === 'Moody' ? 'saturate(0.8) contrast(1.3) brightness(0.85)' : f === 'Valencia' ? 'saturate(1.5) contrast(1.1) brightness(1.1)' : f === 'Willow' ? 'saturate(0.7) contrast(1.15) brightness(1.1)' : f === 'Gingham' ? 'saturate(1.3) contrast(1.2) brightness(1.1)' : f === 'Lark' ? 'saturate(0.9) contrast(1.0) brightness(1.1)' : f === 'Perpetua' ? 'saturate(1.1) contrast(1.2) brightness(1.15)' : f === 'Aden' ? 'saturate(1.3) contrast(1.0) brightness(0.95)' : ''; ctx.drawImage(img, 0, 0); setFileUrl(c.toDataURL()) }; img.src = imgUrl }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
@@ -174,81 +172,25 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const togglePreview = (m: any) => {
     if (previewId === m.id) { previewRef.current?.pause(); setPreviewId(null); return }
     if (previewRef.current) previewRef.current.pause()
-    const a = new Audio(m.url); a.play().catch(() => {})
-    (previewRef as any).current = a
-    setPreviewId(m.id)
-    a.onended = () => setPreviewId(null)
+    const a = new Audio(m.url); a.play().catch(() => {}); (previewRef as any).current = a; setPreviewId(m.id); a.onended = () => setPreviewId(null)
   }
   const chooseMusic = (m: any) => { setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
-
-  const MOOD_PICKS = [
-    { mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] },
-    { mood: '🎶 Choir', tags: ['choir', 'choral'] },
-    { mood: '🔥 Youth', tags: ['youth', 'gospel'] },
-    { mood: '❤️ Hymns', tags: ['hymn', 'traditional'] },
-    { mood: '🎤 Gospel', tags: ['gospel', 'praise'] },
-  ]
-
-  const filterByMood = (tags: string[]) => {
-    setShowMood(false)
-    const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t)))
-    if (matches.length) { chooseMusic(matches[Math.floor(Math.random() * matches.length)]) }
-  }
-
-  const submit = () => {
-    const story = { id: `${getUser()}_${Date.now()}`, name: getUser(), caption: caption || 'Harvest testimony 🙏', img: fileUrl || `https://picsum.photos/300/500?random=${Date.now()}`, textOverlay, stickers, music: musicTrack, filter, timer, textBold, at: new Date().toISOString() }
-    const approved = JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]')
-    localStorage.setItem('harvest_approved_stories', JSON.stringify([story, ...approved]))
-    window.dispatchEvent(new Event('harvest:approved'))
-    alert('Story posted instantly ✓')
-    onDone()
-  }
+  const MOOD_PICKS = [{ mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] }, { mood: '🎶 Choir', tags: ['choir', 'choral'] }, { mood: '🔥 Youth', tags: ['youth', 'gospel'] }, { mood: '❤️ Hymns', tags: ['hymn', 'traditional'] }, { mood: '🎤 Gospel', tags: ['gospel', 'praise'] }]
+  const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t))); if (matches.length) chooseMusic(matches[Math.floor(Math.random() * matches.length)]) }
+  const submit = () => { const story = { id: `${getUser()}_${Date.now()}`, name: getUser(), caption: caption || 'Harvest testimony 🙏', img: fileUrl || `https://picsum.photos/300/500?random=${Date.now()}`, textOverlay, stickers, music: musicTrack, filter, timer, textBold, at: new Date().toISOString() }; let approved: any[] = []; try { const parsed = JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]'); approved = Array.isArray(parsed) ? parsed : [] } catch {} localStorage.setItem('harvest_approved_stories', JSON.stringify([story, ...approved])); window.dispatchEvent(new Event('harvest:approved')); alert('Story posted instantly ✓'); onDone() }
 
   return (
     <div className="bg-zinc-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-zinc-200 bg-white">
-        <button onClick={onDone} className="text-xl text-zinc-700">✕</button>
-        <p className="font-semibold text-sm text-zinc-900">Create Story</p>
-        <button onClick={submit} className="text-[#0095f6] font-semibold text-sm">Share</button>
-      </div>
+      <div className="flex justify-between items-center px-4 h-[56px] border-b border-zinc-200 bg-white"><button onClick={onDone} className="text-xl text-zinc-700">✕</button><p className="font-semibold text-sm text-zinc-900">Create Story</p><button onClick={submit} className="text-[#0095f6] font-semibold text-sm">Share</button></div>
       <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-zinc-50 to-white">
-        {!fileUrl ? (
-          <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-zinc-300 flex flex-col items-center justify-center cursor-pointer hover:border-[#0095f6] transition">
-            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />
-            <div className="w-20 h-20 rounded-full bg-[#0095f6] flex items-center justify-center text-4xl text-white">📷</div>
-            <p className="text-sm text-zinc-600 mt-2">Tap to add story photo/video</p>
-            <p className="text-xs text-zinc-400 mt-1">Record with camera or pick from gallery</p>
-          </label>
-        ) : (
-          <div className="relative aspect-[9/16] w-full max-w-[320px] mx-auto overflow-hidden rounded-2xl border border-zinc-200 shadow-lg bg-white">
-            <img src={fileUrl} alt="" className="w-full h-full object-cover" />
-            {filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">🎨 {filter}</div>}
-            {fileName && <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">📎 {fileName}</div>}
-            {textOverlay && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-black/30 rounded-xl px-4 py-2" style={{ color: textColor, fontSize: '24px', fontWeight: textBold ? 'bold' : 'normal', textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>{textOverlay}</div></div>}
-            <div className="absolute bottom-8 left-4 flex gap-1 flex-wrap">{stickers.map((s, i) => <span key={i} className="text-2xl bg-black/50 rounded-full px-1 cursor-pointer hover:scale-110 transition" onClick={() => removeSticker(s)}>{s}</span>)}</div>
-            {musicTrack && <div className="absolute top-14 right-4 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">🎵 {musicTrack.title}</div>}
-          </div>
-        )}
+        {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-zinc-300 flex flex-col items-center justify-center cursor-pointer hover:border-[#0095f6] transition"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" /><div className="w-20 h-20 rounded-full bg-[#0095f6] flex items-center justify-center text-4xl text-white">📷</div><p className="text-sm text-zinc-600 mt-2">Tap to add story photo/video</p><p className="text-xs text-zinc-400 mt-1">Record with camera or pick from gallery</p></label> : <div className="relative aspect-[9/16] w-full max-w-[320px] mx-auto overflow-hidden rounded-2xl border border-zinc-200 shadow-lg bg-white"><img src={fileUrl} alt="Story preview" className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" /><div className="absolute bottom-4 left-4 right-4"><p className="text-white text-lg font-bold">{textOverlay || 'Your Story'}</p><p className="text-white/80 text-xs mt-1">{fileName || 'Media selected'}</p></div></div>}
       </div>
-
-      {fileUrl && (
-        <>
-          <div className="px-4 pb-2 bg-white border-t border-zinc-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-xs text-[#0095f6] font-semibold">🎨 Filter: {filter}</button>
-            {showFilters && <div className="flex gap-2 overflow-x-auto pb-2 mt-1">{FILTERS.map(f => <button key={f} onClick={() => { setFilter(f); applyFilter(fileUrl, f); setShowFilters(false) }} className={`px-3 py-1 rounded-full text-xs whitespace-nowrap ${filter === f ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{f}</button>)}</div>}
-          </div>
-          <div className="px-4 pb-2 bg-white border-t border-zinc-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-xs text-[#0095f6] font-semibold">📷 Stickers: {stickers.length > 0 ? stickers.join(' ') : 'none'}</button>
-            {showStickers && <div className="flex gap-2 overflow-x-auto pb-2 mt-1 flex-wrap">{STORY_STICKERS.map(s => <button key={s} onClick={() => stickers.includes(s) ? removeSticker(s) : addSticker(s)} className={`text-xl px-2 py-1 rounded-full ${stickers.includes(s) ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{s}</button>)}</div>}
-          </div>
-          <div className="px-4 pb-2 bg-white border-t border-zinc-200 rounded-xl p-2"><button onClick={() => { setShowMusic(!showMusic); setShowMood(!showMood); setShowFilters(false); setShowStickers(false) }} className="text-xs text-[#0095f6] font-semibold">🎵 Music {musicTrack ? `• ${musicTrack.title} ✓` : ''}</button>
-            {musicTrack && <div className="flex gap-2 items-center mt-2 p-2 bg-zinc-50 rounded-lg"><img src={musicTrack.cover} className="w-10 h-10 rounded"/><div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{musicTrack.title}</p><p className="text-[11px] text-zinc-400 truncate">{musicTrack.artist}</p></div><button onClick={() => togglePreview(musicTrack)} className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center text-xs">{previewId === musicTrack.id ? '⏸' : '▶'}</button><button onClick={() => setMusicTrack(null)} className="text-xs text-red-400">✕</button></div>}
-            {showMood && <div className="flex gap-2 flex-wrap mt-2">{MOOD_PICKS.map(m => <button key={m.mood} onClick={() => filterByMood(m.tags)} className="px-3 py-2 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">{m.mood}</button>)}</div>}
-            {showMusic && !showMood && <div className="mt-2"><div className="flex gap-2"><input value={musicQuery} onChange={e => { setMusicQuery(e.target.value); searchMusic(e.target.value) }} onKeyDown={e => e.key === 'Enter' && searchMusic(musicQuery)} placeholder="Search Hillsong/Maverick..." className="flex-1 bg-zinc-50 border border-zinc-200 rounded-full px-3 py-2 text-xs outline-none" /><button onClick={() => searchMusic(musicQuery)} className="px-3 py-2 rounded-full bg-[#0095f6] text-white text-xs font-bold">Search</button></div>{musicLoading && <p className="text-xs text-zinc-500 text-center py-2">Searching…</p>}{!musicLoading && musicResults.length === 0 && musicQuery && <p className="text-xs text-zinc-500 text-center py-2">No results — try Hillsong/Maverick/Sinach</p>}{!musicLoading && musicResults.length === 0 && !musicQuery && <div className="flex gap-2 flex-wrap mt-2">{['Hillsong', 'Maverick', 'Sinach', 'Elevation', 'Harvest'].map(t => <button key={t} onClick={() => { setMusicQuery(t); searchMusic(t) }} className="px-3 py-1 rounded-full bg-zinc-100 text-xs">{t}</button>)}</div>}{musicResults.map((m: any) => <div key={m.id} className="flex gap-2 p-2 bg-zinc-50 rounded-lg items-center"><img src={m.cover} className="w-10 h-10 rounded"/><div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{m.title}</p><p className="text-[11px] text-zinc-400 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} className="w-7 h-7 rounded-full bg-zinc-200 flex items-center justify-center text-xs">{previewId === m.id ? '⏸' : '▶'}</button><button onClick={() => chooseMusic(m)} className="px-3 py-1 rounded-full bg-[#0095f6] text-white text-xs">Use</button></div>)}</div>}
-          </div>
-          <div className="px-4 pb-2 bg-white border-t border-zinc-200"><p className="text-xs text-[#0095f6] mb-1 font-semibold">✏️ Text overlay</p><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Add bold text..." className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-sm outline-none" /><div className="flex gap-2 mt-1 items-center"><span className="text-xs text-zinc-400">Color:</span>{['#ffffff', '#0095f6', '#ed4956', '#f77737', '#40d657', '#b546cf', '#000000'].map(c => <button key={c} onClick={() => setTextColor(c)} className="w-6 h-6 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: c }} />)}<button onClick={() => setTextBold(!textBold)} className={`ml-2 px-2 py-1 rounded-full text-xs font-bold ${textBold ? 'bg-[#0095f6] text-white' : 'bg-zinc-200 text-zinc-600'}`}>B:{textBold?'on':'off'}</button></div></div>
-          <div className="px-4 pb-2 bg-white border-t border-zinc-200"><p className="text-xs text-[#0095f6] mb-1 font-semibold">⏱️ Story timer</p><div className="flex gap-2">{[0, 3, 5, 10, 15].map(s => <button key={s} onClick={() => setTimer(s)} className={`px-3 py-1 rounded-full text-xs ${timer === s ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{s === 0 ? 'Off' : `${s}s`}</button>)}</div></div>
-        </>
-      )}
-      <div className="px-4 pb-4 bg-white border-t border-zinc-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none" /></div>
+      <div className="px-4 py-3 bg-white border-t border-zinc-200 flex gap-2 overflow-x-auto"><button onClick={() => setShowFilters(v => !v)} className="px-3 py-2 rounded-full bg-zinc-100 text-zinc-800 text-xs">Filters</button><button onClick={() => setShowStickers(v => !v)} className="px-3 py-2 rounded-full bg-zinc-100 text-zinc-800 text-xs">Stickers</button><button onClick={() => setShowMusic(v => !v)} className="px-3 py-2 rounded-full bg-zinc-100 text-zinc-800 text-xs">Music</button><button onClick={() => setShowMood(v => !v)} className="px-3 py-2 rounded-full bg-zinc-100 text-zinc-800 text-xs">Mood</button></div>
+      {showFilters && <div className="p-3 bg-white flex gap-2 overflow-x-auto">{FILTERS.map(f => <button key={f} onClick={() => { setFilter(f); if (fileUrl) applyFilter(fileUrl, f) }} className="px-3 py-2 rounded-lg bg-zinc-100 text-xs text-zinc-800">{f}</button>)}</div>}
+      {showStickers && <div className="p-3 bg-white grid grid-cols-10 gap-2">{STORY_STICKERS.map(s => <button key={s} onClick={() => addSticker(s)} className="text-xl">{s}</button>)}</div>}
+      {showMusic && <div className="p-3 bg-white text-zinc-900"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') searchMusic(musicQuery) }} placeholder="Search music" className="w-full border rounded-lg p-2 text-sm" />{musicLoading && <p className="text-xs text-zinc-500 mt-2">Searching…</p>}{musicResults.map(m => <button key={m.id} onClick={() => chooseMusic(m)} className="block w-full text-left py-2 text-xs">{m.title} — {m.artist}</button>)}</div>}
+      {showMood && <div className="p-3 bg-white flex gap-2 overflow-x-auto">{MOOD_PICKS.map(m => <button key={m.mood} onClick={() => filterByMood(m.tags)} className="px-3 py-2 rounded-full bg-zinc-100 text-xs text-zinc-800">{m.mood}</button>)}</div>}
+      <div className="p-4 bg-white border-t border-zinc-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Add a caption…" className="w-full border rounded-xl px-3 py-2 text-sm text-zinc-800" /><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Text overlay…" className="w-full border rounded-xl px-3 py-2 text-sm text-zinc-800 mt-2" /></div>
     </div>
   )
 }
