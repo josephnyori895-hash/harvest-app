@@ -1,191 +1,88 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-const reelsData = [
-  { user: 'allan', verified: true, cap: 'Sunday highlight — Compelled 🔥', views: '12.4k', likes: 892, comments: 34, img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=700&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', music: { title: 'Compelled Anthem', artist: 'Harvest Worship', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=100&h=100&fit=crop' } },
-  { user: 'youth_harvest', verified: true, cap: 'Youth worship moment 🙏', views: '8.2k', likes: 645, comments: 28, img: 'https://images.unsplash.com/photo-1516450360452-9312abbf86c1?w=400&h=700&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4', music: { title: 'Raise Me Up', artist: 'Grace & Team', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&h=100&fit=crop' } },
-  { user: 'pst.simon', verified: false, cap: 'Daily verse — Jeremiah 29:11', views: '5.1k', likes: 423, comments: 15, img: 'https://images.unsplash.com/photo-1527525443983-6e60c75fff46?w=400&h=700&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', music: null },
+const videosData = [
+  { user: 'allan', verified: true, cap: 'Sunday highlight — Compelled', views: '12.4k', responses: 892, comments: 34, img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', music: { title: 'Compelled Anthem', artist: 'Harvest Worship', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=100&h=100&fit=crop' } },
+  { user: 'youth_harvest', verified: true, cap: 'Youth worship moment', views: '8.2k', responses: 645, comments: 28, img: 'https://images.unsplash.com/photo-1516450360452-9312abbf86c1?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4', music: { title: 'Raise Me Up', artist: 'Grace & Team', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&h=100&fit=crop' } },
+  { user: 'pst.simon', verified: false, cap: 'Daily verse — Jeremiah 29:11', views: '5.1k', responses: 423, comments: 15, img: 'https://images.unsplash.com/photo-1527525443983-6e60c75fff46?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', music: null },
 ]
 
 export default function Reels() {
   const [idx, setIdx] = useState(0)
-  const [liked, setLiked] = useState<Record<string, boolean>>({})
+  const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const approvedVideos: any[] = useMemo(() => { try { return JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]') } catch { return [] } }, [])
+  const allVideos = useMemo(() => [...approvedVideos, ...videosData], [approvedVideos])
+  const cur = allVideos[idx] ?? videosData[0]
 
-  const approvedReels: any[] = useMemo(() => { try { return JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]') } catch { return [] } }, [])
-  const allReels = useMemo(() => [...approvedReels, ...reelsData], [approvedReels])
-  const cur = allReels[idx] ?? reelsData[0]
-
-  // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowUp') setIdx(i => (i - 1 + allReels.length) % allReels.length)
-      if (e.key === 'ArrowDown') setIdx(i => (i + 1) % allReels.length)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp') setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
+      if (e.key === 'ArrowDown') setIdx(i => (i + 1) % allVideos.length)
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [allReels.length])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [allVideos.length])
 
-  const toggleLike = () => {
-    setLiked(prev => ({ ...prev, [idx]: !prev[idx] }))
-  }
-
-  const handleNext = () => setIdx((idx + 1) % allReels.length)
-  const handlePrev = () => setIdx((idx - 1 + allReels.length) % allReels.length)
+  const next = () => setIdx(i => (i + 1) % allVideos.length)
+  const prev = () => setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
+  const key = `${cur.user}-${idx}`
 
   return (
-    <div className="relative min-h-[calc(100vh-49px)] bg-black text-white overflow-hidden">
-      {/* Main Video */}
-      <div className="w-full h-[calc(100vh-49px)] relative flex items-center justify-center">
-        {cur.video ? (
-          <video
-            ref={videoRef}
-            src={cur.video}
-            autoPlay
-            muted={muted}
-            loop
-            playsInline
-            className="w-full h-full object-cover"
-            poster={cur.img}
-          />
-        ) : (
-          <img src={cur.img} alt="" className="w-full h-full object-cover" />
-        )}
-
-        {/* Gradient Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/40 pointer-events-none" />
-
-        {/* Header */}
-        <div className="absolute top-0 left-0 right-0 px-4 pt-4 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-lg">Reels</span>
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-600 text-white">LIVE</span>
+    <div className="min-h-[calc(100vh-76px)] bg-[#211d19] text-white">
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300 font-bold">Harvest Family Church</p>
+            <h1 className="text-2xl md:text-3xl font-bold mt-1">Community Videos</h1>
+            <p className="text-sm text-white/60 mt-1">Worship, testimonies, encouragement and moments from our family.</p>
           </div>
-          <button
-            onClick={() => setMuted(!muted)}
-            className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition"
-          >
-            {muted ? '🔇' : '🔊'}
-          </button>
+          <button onClick={() => setMuted(m => !m)} className="min-w-11 min-h-11 rounded-full bg-white/10 border border-white/10 hover:bg-white/15" aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? '🔇' : '🔊'}</button>
         </div>
 
-        {/* User Info - Bottom Left */}
-        <div className="absolute bottom-24 left-4 z-10 max-w-[280px]">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-              {cur.user.charAt(0).toUpperCase()}
+        <div className="grid lg:grid-cols-[minmax(0,760px)_260px] gap-5 items-stretch">
+          <section className="relative overflow-hidden rounded-[28px] bg-black min-h-[600px] lg:h-[calc(100vh-190px)] lg:max-h-[760px] border border-white/10 shadow-2xl">
+            {cur.video ? <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={cur.img} className="absolute inset-0 w-full h-full object-cover" /> : <img src={cur.img} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-black/30" />
+            <div className="absolute inset-x-0 top-0 p-5 flex justify-between items-center">
+              <span className="rounded-full bg-white/12 backdrop-blur px-3 py-1.5 text-xs font-semibold border border-white/10">Harvest Videos</span>
+              <span className="rounded-full bg-amber-400 text-[#29251F] px-3 py-1.5 text-xs font-bold">{idx + 1} / {allVideos.length}</span>
             </div>
-            <div className="flex-1">
-              <p className="font-bold text-sm flex items-center gap-1">
-                {cur.user}
-                {cur.verified && <span className="text-blue-400 text-xs">✓</span>}
-              </p>
-              <p className="text-xs text-gray-300">Harvest Family Church</p>
-            </div>
-          </div>
 
-          {/* Caption */}
-          <p className="text-sm font-medium mb-3 leading-snug">{cur.cap}</p>
-
-          {/* Music Info */}
-          {cur.music && (
-            <div className="flex gap-2 items-center p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 mb-3">
-              <img src={cur.music.cover} alt="" className="w-8 h-8 rounded" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate">🎵 {cur.music.title}</p>
-                <p className="text-[10px] text-gray-400 truncate">{cur.music.artist}</p>
+            <div className="absolute left-5 right-20 bottom-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold">{cur.user.charAt(0).toUpperCase()}</div>
+                <div><p className="font-bold text-sm">{cur.user} {cur.verified && <span className="text-amber-300">✓</span>}</p><p className="text-xs text-white/65">Harvest Family Church · Nyeri</p></div>
               </div>
+              <p className="font-semibold leading-snug text-base">{cur.cap}</p>
+              {cur.music && <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-black/35 backdrop-blur px-2.5 py-2 border border-white/10"><img src={cur.music.cover} alt="" className="w-8 h-8 rounded-lg" /><div><p className="text-xs font-semibold">{cur.music.title}</p><p className="text-[10px] text-white/55">{cur.music.artist}</p></div></div>}
+              <div className="mt-3 flex gap-4 text-xs text-white/60"><span>👀 {cur.views}</span><span>💬 {cur.comments} responses</span></div>
             </div>
-          )}
 
-          {/* Engagement Stats */}
-          <div className="flex gap-3 text-xs text-gray-300 mb-2">
-            <span>👀 {cur.views} views</span>
-            <span>💬 {cur.comments} comments</span>
-          </div>
+            <div className="absolute right-4 bottom-6 flex flex-col gap-3">
+              <button onClick={() => setEncouraged(p => ({ ...p, [key]: !p[key] }))} className={`w-12 h-12 rounded-2xl border flex items-center justify-center text-lg ${encouraged[key] ? 'bg-purple-500 border-purple-400' : 'bg-white/10 border-white/10'}`} aria-label="Encourage">{encouraged[key] ? '✓' : '🤲'}</button>
+              <span className="text-[10px] text-center text-white/65">{encouraged[key] ? 'Encouraged' : 'Encourage'}</span>
+              <button className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Respond">💬</button>
+              <button className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Share">↗</button>
+            </div>
+
+            <button onClick={prev} className="absolute left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/35 backdrop-blur border border-white/10" aria-label="Previous video">↑</button>
+            <button onClick={next} className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/35 backdrop-blur border border-white/10" aria-label="Next video">↓</button>
+          </section>
+
+          <aside className="hidden lg:block rounded-[24px] bg-[#2c2722] border border-white/10 p-4">
+            <p className="text-xs uppercase tracking-wider text-amber-300 font-bold">Community life</p>
+            <h2 className="font-bold text-lg mt-1">Watch with purpose</h2>
+            <div className="space-y-2 mt-4">
+              {['Worship & praise', 'Testimonies', 'Youth & groups', 'Encouragement'].map((label, i) => <button key={label} onClick={() => setIdx(i % allVideos.length)} className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5"><p className="text-sm font-semibold">{label}</p><p className="text-[11px] text-white/45 mt-0.5">Explore Harvest community videos</p></button>)}
+            </div>
+            <div className="mt-5 p-4 rounded-2xl bg-purple-500/15 border border-purple-300/15"><p className="text-sm font-semibold">A word for today</p><p className="text-xs text-white/60 mt-1">Use your voice to encourage someone in the family.</p></div>
+          </aside>
         </div>
-
-        {/* Engagement Buttons - Right Side */}
-        <div className="absolute right-4 bottom-28 flex flex-col gap-6 z-10">
-          {/* Like Button */}
-          <button
-            onClick={toggleLike}
-            className={`group flex flex-col items-center gap-1 transition-all ${liked[idx] ? 'text-red-500' : 'text-white hover:text-red-500'}`}
-          >
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              liked[idx]
-                ? 'bg-red-500/20 animate-pulse'
-                : 'bg-white/10 hover:bg-white/20'
-            }`}>
-              <span className={`text-2xl transition-transform ${liked[idx] ? 'scale-125 animate-bounce' : 'group-hover:scale-110'}`}>
-                {liked[idx] ? '❤️' : '🤍'}
-              </span>
-            </div>
-            <span className={`text-xs font-bold ${liked[idx] ? 'text-red-500' : 'text-gray-300'}`}>
-              {(cur.likes || 0) + (liked[idx] ? 1 : 0)}
-            </span>
-          </button>
-
-          {/* Comment Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">💬</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">{cur.comments || 0}</span>
-          </button>
-
-          {/* Share Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-green-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">📤</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">Share</span>
-          </button>
-
-          {/* Save Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-purple-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">🔖</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">Save</span>
-          </button>
-        </div>
-
-        {/* Navigation Arrows */}
-        <button
-          onClick={handlePrev}
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-all z-10 backdrop-blur-sm"
-          aria-label="previous reel"
-        >
-          <span className="text-white text-2xl">‹</span>
-        </button>
-
-        <button
-          onClick={handleNext}
-          className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-all z-10 backdrop-blur-sm"
-          aria-label="next reel"
-        >
-          <span className="text-white text-2xl">›</span>
-        </button>
-
-        {/* Progress Bar */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
-          <div
-            className="h-full bg-gradient-to-r from-amber-400 to-purple-600 transition-all"
-            style={{ width: `${((idx + 1) / allReels.length) * 100}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Bottom Info */}
-      <div className="absolute bottom-1 left-0 right-0 text-center text-xs text-gray-500 pointer-events-none">
-        Tap ▶ • Swipe Up/Down • {idx + 1}/{allReels.length}
       </div>
     </div>
   )
 }
-
 
 export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
@@ -193,89 +90,15 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const getUser = () => {
-    try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || 'allan' } catch { return 'allan' }
-  }
-
-  const onFile = (e: any) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setFileName(f.name)
-    const reader = new FileReader()
-    reader.onload = () => setFileUrl(reader.result as string)
-    reader.readAsDataURL(f)
-  }
-
+  const getUser = () => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || localStorage.getItem('harvest_username') || 'member' } catch { return 'member' } }
+  const onFile = (e: any) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
   const submit = () => {
-    const reel = {
-      id: Date.now(),
-      user: getUser(),
-      cap: caption || 'Harvest Reel 🙏',
-      img: fileUrl || `https://picsum.photos/400/700?random=${Date.now()}`,
-      video: fileUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      views: '0',
-      likes: 0,
-      comments: 0,
-      at: new Date().toISOString()
-    }
+    const video = { id: Date.now(), user: getUser(), cap: caption || 'A moment from Harvest', img: fileUrl || `https://picsum.photos/400/700?random=${Date.now()}`, video: fileUrl || undefined, views: '0', responses: 0, comments: 0, at: new Date().toISOString() }
     const approved = JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]')
-    localStorage.setItem('harvest_approved_reels', JSON.stringify([reel, ...approved]))
+    localStorage.setItem('harvest_approved_reels', JSON.stringify([video, ...approved]))
     window.dispatchEvent(new Event('harvest:approved'))
-    alert('Reel shared ✓')
     onDone()
   }
 
-  return (
-    <div className="min-h-[calc(100vh-49px)] bg-gradient-to-b from-neutral-900 to-black text-white flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center px-4 h-14 border-b border-neutral-800 sticky top-0 bg-black/80 backdrop-blur">
-        <button onClick={onDone} className="text-2xl hover:opacity-70">✕</button>
-        <p className="font-bold text-sm">Create Reel</p>
-        <button onClick={submit} className="font-bold text-purple-500 hover:text-purple-400">Share</button>
-      </div>
-
-      {/* Video Preview */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        {!fileUrl ? (
-          <label className="w-full aspect-[9/16] bg-neutral-900 rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-neutral-700 cursor-pointer hover:border-purple-500 transition-all group">
-            <input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" />
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">
-              🎬
-            </div>
-            <p className="text-sm text-gray-400 mt-4 font-medium">Upload or Record</p>
-            <p className="text-xs text-gray-500 mt-1">Up to 60s • 1080p</p>
-          </label>
-        ) : (
-          <div className="relative aspect-[9/16] w-full max-w-[320px] mx-auto overflow-hidden rounded-2xl border-2 border-purple-500/50 bg-black">
-            <video src={fileUrl} autoPlay muted loop playsInline className="w-full h-full object-cover" />
-            {fileName && (
-              <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur">
-                📎 {fileName.slice(0, 15)}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Caption Input */}
-      <div className="px-4 pb-6 space-y-3">
-        <textarea
-          value={caption}
-          onChange={e => setCaption(e.target.value)}
-          placeholder="Write a caption (hashtags, emojis welcome)…"
-          maxLength={150}
-          className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-3 text-sm placeholder-gray-500 focus:border-purple-500 focus:outline-none transition resize-none"
-          rows={3}
-        />
-        <p className="text-xs text-gray-500 text-right">{caption.length}/150</p>
-
-        <button
-          onClick={submit}
-          className="w-full py-3 rounded-full bg-gradient-to-r from-amber-400 to-purple-600 text-black font-bold transition-all hover:shadow-xl hover:from-amber-300 hover:to-purple-500"
-        >
-          🚀 Share Reel
-        </button>
-      </div>
-    </div>
-  )
+  return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-10 h-10 rounded-full bg-[#FFFBF0]">✕</button></div><div className="p-5 space-y-4"><label className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden cursor-pointer">{fileUrl ? <video src={fileUrl} controls className="w-full h-full object-cover" /> : <div className="h-full flex flex-col items-center justify-center text-white"><span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p></div>}<input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" /></label>{fileName && <p className="text-xs text-zinc-500">{fileName}</p>}<textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="What would you like to share with your church family?" maxLength={180} rows={4} className="w-full rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] p-4 outline-none focus:ring-2 focus:ring-purple-200 resize-none" /><button onClick={submit} className="w-full min-h-12 rounded-full bg-[#7C3AED] text-white font-bold hover:bg-[#6D28D9]">Share with Harvest family</button></div></div></div>
 }
