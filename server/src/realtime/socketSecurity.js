@@ -3,6 +3,7 @@
 const buckets = new Map()
 
 export function rateLimit(socket, action, limit, windowMs = 60_000) {
+  // Key by authenticated user, not socket, so opening multiple sockets cannot bypass the limit.
   const key = `${socket.user?.id || socket.handshake.address}:${action}`
   const now = Date.now()
   let bucket = buckets.get(key)
