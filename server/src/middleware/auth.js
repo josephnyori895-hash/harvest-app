@@ -1,16 +1,10 @@
 import jwt from 'jsonwebtoken'
 import { pool } from '../db.js'
+import { redis } from '../redis.js'
 
-/**
- * Harvest authorization model:
- * - member
- * - verified member (users.verified=true; never a role)
- * - admin
- * Guest is an unauthenticated transport state only and cannot pass a protected guard.
- */
 export function makeAuthenticate({ jwtSecret }) {
-  if (!jwtSecret || jwtSecret === 'dev-jwt-secret-change-in-prod') {
-    throw new Error('JWT_SECRET must be configured; refusing to start with the development secret')
+  if (!jwtSecret || jwtSecret.length < 32 || jwtSecret === 'dev-jwt-secret-change-in-prod') {
+    throw new Error('JWT_SECRET must be configured with at least 32 random characters')
   }
   return async function authenticate(req, reply) {
     const h = req.headers.authorization
@@ -18,7 +12,7 @@ export function makeAuthenticate({ jwtSecret }) {
     const token = h.slice(7).trim()
     if (!token) { req.user = null; return }
     try {
-      const payload = jwt.verify(token, jwtSecret)
+      const payload = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] })
       if (!payload?.id || !payload?.username || !payload?.role) throw new Error('bad payload shape')
       if (!['admin', 'member', 'guest'].includes(payload.role)) throw new Error('bad role')
       req.user = payload
@@ -58,37 +52,33 @@ export function getAdminPinHashes() {
     const raw = process.env.ADMIN_PIN_HASHES
     if (!raw) return null
     const arr = JSON.parse(raw)
-    return Array.isArray(arr) && arr.length ? arr : null
+    return Array.isArray(arr) && arr.every(v => typeof v === 'string' && v.startsWith('$2')) ? arr : null
   } catch { return null }
 }
 export async function isAdminPin(pin) {
   const p = String(pin || '').trim()
-  if (!/^\d{4,6}$/.test(p) && p !== '7C3AED') return false
+  if (!/^\d{4,6}$/.test(p)) return false
   const hashes = getAdminPinHashes()
-  if (hashes) {
-    for (const h of hashes) {
-      try { if (await bcrypt.compare(p, h)) return true } catch {}
-    }
-    return false
+  if (!hashes?.length) return false
+  for (const h of hashes) {
+    try { if (await bcrypt.compare(p, h)) return true } catch {}
   }
-  if (process.env.NODE_ENV === 'production') return false
-  return ['7777', '0000', '7C3AED'].includes(p)
+  return false
 }
 export function isValidMemberPin(pin) { return /^\d{4,6}$/.test(String(pin || '').trim()) }
 
-const buckets = new Map()
 export async function loginRateLimit(req, reply) {
-  const ip = req.ip
-  const uname = String(req.body?.username || '').toLowerCase()
-  const key = `${ip}:${uname || 'guest'}`
-  const now = Date.now()
-  const rec = buckets.get(key)
-  if (rec && now > rec.resetAt) buckets.delete(key)
-  const cur = buckets.get(key) || { count: 0, resetAt: now + 15 * 60 * 1000 }
-  if (cur.count >= 5) return reply.code(429).send({ error: 'too many login attempts — try in 15 min', retryAfter: Math.ceil((cur.resetAt - now) / 1000) })
-  cur.count++
-  buckets.set(key, cur)
+  const ip = String(req.ip || 'unknown')
+  const uname = String(req.body?.username || '').trim().toLowerCase().slice(0, 64)
+  const key = `harvest:login:${ip}:${uname || 'guest'}`
+  const count = await redis.incr(key)
+  if (count === 1) await redis.expire(key, 15 * 60)
   req._rateKey = key
+  if (count > 5) {
+    const ttl = await redis.ttl(key)
+    return reply.code(429).send({ error: 'too many login attempts — try in 15 min', retryAfter: Math.max(ttl, 1) })
+  }
 }
-export function clearLoginRateLimit(req) { if (req._rateKey) buckets.delete(req._rateKey) }
-setInterval(() => { const now = Date.now(); for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k) }, 30 * 60 * 1000).unref?.()
+export async function clearLoginRateLimit(req) {
+  if (req._rateKey) await redis.del(req._rateKey)
+}
