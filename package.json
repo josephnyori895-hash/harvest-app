@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "oxlint",
     "test:admin": "node --test scripts/test-admin-controls.mjs",
+    "test:security": "node --test scripts/test-security-hardening.mjs",
     "smoke:netlify": "node scripts/netlify-smoke-test.mjs",
     "preview": "vite preview"
   },
