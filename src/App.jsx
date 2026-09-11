@@ -402,7 +402,7 @@ function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, o
         <div className="mt-2 flex flex-wrap gap-2">
           <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
           <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group || 'Harvest Nyeri'}</span>
-          {!isAdmin && <span className="text-[11px] text-zinc-500 self-center">Member • PIN 7777 for admin</span>}
+           {!isAdmin && import.meta.env.DEV && <span className="text-[11px] text-zinc-500 self-center">Member • PIN 7777 for admin (dev only)</span>}
         </div></div>
       <button onClick={()=>onSwitch&&onSwitch()} className="mx-4 mt-3 w-[calc(100%-2rem)] py-2 rounded-full bg-zinc-800 text-white text-xs font-semibold">🔄 Switch account — 4 active (IG style)</button>
       <p className="text-[11px] text-zinc-500 text-center mt-1">Allan ✓ • Youth Harvest ✓ • Worship Team ✓ • Pst Simon</p>

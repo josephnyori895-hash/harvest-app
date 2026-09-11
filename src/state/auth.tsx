@@ -2,7 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 
 export type Role = 'member' | 'leader' | 'admin' | 'guest'
 
-const ADMIN_PINS = ['7777', '0000', '7C3AED']
+// Admin PINs: DEV-only fallback for offline demo. Prod must use backend JWT — never rely on this array when VITE_USE_API=true.
+// See server/middleware/auth.js ADMIN_PIN_HASHES (bcrypt). This fallback is stripped in production builds when USE_API=true.
+const ADMIN_PINS: string[] = (import.meta.env.DEV && import.meta.env.VITE_USE_API !== 'true') ? ['7777', '0000', '7C3AED'] : []
 const LS_ROLE = 'harvest_role'
 const LS_PIN = 'harvest_pin'
 const LS_USERNAME = 'harvest_username'
@@ -55,14 +57,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback((p: string) => {
     const trimmed = p.trim()
-    const isAdmin = ADMIN_PINS.includes(trimmed)
-    const r: Role = isAdmin ? 'admin' : trimmed ? 'member' : 'guest'
+    // offline fallback only: when USE_API=true, admin must come from JWT (server/src/middleware/auth.js), not local PIN
+    const isAdminOffline = ADMIN_PINS.length > 0 && ADMIN_PINS.includes(trimmed)
+    if (import.meta.env.VITE_USE_API === 'true' && trimmed) {
+      console.warn('[auth] VITE_USE_API=true — PIN login is offline fallback only; prefer POST /api/auth/login for JWT')
+    }
+    const r: Role = isAdminOffline ? 'admin' : trimmed ? 'member' : 'guest'
     setPinState(trimmed)
     setRole(r)
     localStorage.setItem(LS_PIN, trimmed)
     localStorage.setItem(LS_ROLE, r)
     if (username) localStorage.setItem(`harvest_token_${username}`, localStorage.getItem('harvest_token')||'')
-    return isAdmin
+    return isAdminOffline
   }, [setRole])
 
   const logout = useCallback(() => {
