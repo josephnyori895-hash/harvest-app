@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build && npm install --prefix server --omit=dev"
+  publish = "dist"
+
+[functions]
+  directory = "server/netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["sharp"]
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
