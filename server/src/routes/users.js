@@ -2,7 +2,7 @@ import { query } from '../db.js'
 import { requireAdmin, requireMember } from '../middleware/auth.js'
 import bcrypt from 'bcryptjs'
 
-const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu'])
+const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'])
 const ROLES = new Set(['member', 'admin'])
 
 export default async function usersRoutes(app) {
@@ -47,12 +47,12 @@ export default async function usersRoutes(app) {
     if (exists.rows[0]) return reply.code(409).send({ error: 'username already exists' })
     const pinHash = await bcrypt.hash(p, 12)
     const created = await query(`INSERT INTO users (username,name,group_name,role,pin_hash,verified) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, username, name, group_name, role, verified, created_at`, [uname, displayName, groupName, role, pinHash, verified])
-    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'user_provisioned','user',$2,$3)`, [req.user.id, created.rows[0].id, JSON.stringify({ role, verified, group_name: groupName })])
+    await query(`INSERT INTO audit_log (actor_id,actor_role,action,target_type,target_id,meta) VALUES ($1,$2,'user_provisioned','user',$3,$4)`, [req.user.id, req.user.role, created.rows[0].id, JSON.stringify({ role, verified, group_name: groupName })])
     return reply.code(201).send({ user: created.rows[0] })
   })
 
   app.post('/api/users/:username/follow', { preHandler: [requireMember] }, async (req, reply) => {
-    const target = req.params.username
+    const target = String(req.params.username || '').trim().toLowerCase()
     if (!target || target === req.user.username) return reply.code(400).send({ error: 'invalid target' })
     const t = await query('SELECT id, username FROM users WHERE username=$1', [target])
     if (!t.rows[0]) return reply.code(404).send({ error: 'user not found' })
@@ -90,7 +90,7 @@ export default async function usersRoutes(app) {
     const nextVerified = verified === undefined ? before.verified : verified
     const nextGroup = groupName === undefined ? before.group_name : groupName
     const updated = await query(`UPDATE users SET role=$2, verified=$3, group_name=$4 WHERE id=$1 RETURNING id, username, name, group_name, constituency, faith, verified, role, last_seen`, [before.id, nextRole, nextVerified, nextGroup])
-    await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'user_privilege_update','user',$2,$3)`, [req.user.id, before.id, JSON.stringify({ before: { role: before.role, verified: before.verified, group_name: before.group_name }, after: { role: nextRole, verified: nextVerified, group_name: nextGroup } })])
+    await query(`INSERT INTO audit_log (actor_id,actor_role,action,target_type,target_id,meta) VALUES ($1,$2,'user_privilege_update','user',$3,$4)`, [req.user.id, req.user.role, before.id, JSON.stringify({ before: { role: before.role, verified: before.verified, group_name: before.group_name }, after: { role: nextRole, verified: nextVerified, group_name: nextGroup } })])
     return reply.send({ user: updated.rows[0] })
   })
 
