@@ -31,12 +31,19 @@ export default async function mediaRoutes(app) {
     const snap=u.rows[0]||{}
     const isAdmin=req.user.role==='admin'
 
+    // Stories are ephemeral community moments. Every authenticated member may
+    // publish one immediately; they are not part of the admin moderation queue.
+    if (type==='story') {
+      const id=(await import('uuid')).v4()
+      await query(`INSERT INTO stories (id,user_id,original_key,expires_at) VALUES ($1,$2,$3,now()+interval '24 hours')`,[id,userId,key])
+      await query(`INSERT INTO audit_log (actor_id,action,target_type,target_id,meta) VALUES ($1,'direct_publish','story',$2,$3)`,[userId,id,JSON.stringify({ key,caption })])
+      return reply.code(201).send({ id,status:'published',key })
+    }
+
     if (isAdmin) {
       const id=(await import('uuid')).v4()
       if (type==='post') {
-        await query(`INSERT INTO posts (id,user_id,caption,original_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.constituency,snap.faith])
-      } else if (type==='story') {
-        await query(`INSERT INTO stories (id,user_id,original_key,expires_at) VALUES ($1,$2,$3,now()+interval '24 hours')`,[id,userId,key])
+        await query(`INSERT INTO posts (id,user_id,caption,original_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.group_name,snap.constituency,snap.faith])
       } else if (type==='reel') {
         await query(`INSERT INTO reels (id,user_id,caption,hls_master_key,verified_snapshot,group_name,constituency,faith,approved_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[id,userId,caption||'',key,snap.verified,snap.group_name,snap.constituency,snap.faith])
       } else if (type==='track') {
