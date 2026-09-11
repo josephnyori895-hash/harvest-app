@@ -47,8 +47,6 @@ export async function attachRealtime(httpServer) {
     if (typeof ack === 'function') ack(payload)
   }
 
-  // Re-read the account before accepting every sensitive action. JWT is only
-  // the session proof; PostgreSQL remains the authority for identity and role.
   async function refreshSocketUser(socket) {
     const id = socket.user?.id
     if (!id) return null
@@ -110,7 +108,6 @@ export async function attachRealtime(httpServer) {
     io.emit('presence:update', { username, online, lastSeen: rec.lastSeen })
   }
 
-  // JWT proves possession of a session token. Do not trust its role claim.
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '')
     if (!token) return next(new Error('auth required: send {auth:{token}}'))
@@ -141,7 +138,6 @@ export async function attachRealtime(httpServer) {
 
     socket.emit('presence:snapshot', Object.fromEntries([...presence.entries()].map(([u, v]) => [u, { online: v.online, lastSeen: v.lastSeen }])))
 
-    // Basic abuse protection: a single socket cannot flood the message endpoint.
     let messageWindowStarted = Date.now()
     let messageCount = 0
     function allowMessage() {
@@ -353,7 +349,7 @@ export async function attachRealtime(httpServer) {
 
     socket.on('call:decline', async ({ to } = {}, ack) => {
       const user = await requireFreshUser(socket, ack)
-      if (!user || !sdp || !(await canCallTarget(user.id, to))) return safeAck(ack, { error: 'call target unavailable' })
+      if (!user || !(await canCallTarget(user.id, to))) return safeAck(ack, { error: 'call target unavailable' })
       io.to(`user:${to}`).emit('call:decline', { from: user.username })
       safeAck(ack, { ok: true })
     })
