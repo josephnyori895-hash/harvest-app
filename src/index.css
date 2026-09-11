@@ -1,4 +1,173 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-* { font-family: Inter, system-ui, sans-serif; }
+
+* {
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-amber-50 text-neutral-900;
+  }
+
+  h1 {
+    @apply text-3xl font-extrabold tracking-tight;
+  }
+
+  h2 {
+    @apply text-2xl font-bold tracking-tight;
+  }
+
+  h3 {
+    @apply text-xl font-semibold;
+  }
+
+  p {
+    @apply text-base leading-relaxed;
+  }
+}
+
+@layer components {
+  /* Spiritual gradient text */
+  .text-gradient-warm {
+    @apply bg-gradient-to-r from-amber-500 to-purple-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-cool {
+    @apply bg-gradient-to-r from-teal-500 to-purple-700 bg-clip-text text-transparent;
+  }
+
+  /* Card components */
+  .card-base {
+    @apply rounded-xl bg-white border border-neutral-100 shadow-md hover:shadow-lg transition-shadow;
+  }
+
+  .card-spiritual {
+    @apply rounded-xl bg-gradient-to-br from-neutral-50 to-purple-50 border border-purple-100 shadow-md;
+  }
+
+  /* Button components */
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-amber-400 to-purple-600 text-white font-semibold rounded-lg hover:shadow-lg hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-neutral-100 text-neutral-800 font-semibold rounded-lg hover:bg-neutral-200 transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-all duration-200;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200;
+  }
+
+  /* Input styles */
+  .input-base {
+    @apply w-full px-4 py-2.5 rounded-lg border border-neutral-200 bg-white text-neutral-900 placeholder-neutral-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition-all;
+  }
+
+  /* Badge components */
+  .badge-admin {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-purple-500 to-purple-600 text-white;
+  }
+
+  .badge-leader {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white;
+  }
+
+  .badge-member {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-neutral-200 text-neutral-700;
+  }
+
+  .badge-verified {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-bold rounded-full bg-green-100 text-green-700 border border-green-300;
+  }
+
+  /* Spiritual container */
+  .spiritual-container {
+    @apply rounded-2xl p-6 bg-gradient-to-br from-amber-50 via-white to-purple-50 border border-purple-100 shadow-xl;
+  }
+
+  /* Story viewer gradient overlay */
+  .story-overlay {
+    @apply absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent;
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    @apply hover:shadow-xl hover:-translate-y-1 transition-smooth;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-gradient-to-r from-neutral-100 via-neutral-50 to-neutral-100 bg-[length:200%_100%];
+  }
+}
+
+/* Custom animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #fafaf9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  body {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
