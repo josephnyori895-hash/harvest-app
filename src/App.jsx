@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
-import { AuthProvider, useAuth, getFollowsMap, toggleFollowMutual, isMutual } from './state/auth'
+import { AuthProvider, useAuth } from './state/auth'
 import Home from './components/Home'
 import Reels from './components/Reels'
 import Search from './components/Search'
@@ -13,13 +13,10 @@ import Music from './components/Music'
 import Give from './components/Give'
 import PostCreate from './components/PostCreate'
 import AccountSwitcher from './components/AccountSwitcher'
-import { StoryCreate } from './components/Stories'
 import Groups from './components/Groups'
-import { RequireRole } from './components/Protected'
 import GroupDetails from './components/GroupDetails'
 import UserListModal from './components/UserListModal'
 
-// FIX L icon 404 — ensure default marker loads via CDN
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -104,9 +101,7 @@ function InnerApp() {
   })
   const [groupDetail, setGroupDetail] = useState(null)
   const [userList, setUserList] = useState(null)
-  // request permissions runtime (camera/mic) - IG style - triggers native prompt
   useEffect(()=>{ (async()=>{ try{ if(navigator.mediaDevices?.getUserMedia){ const s=await navigator.mediaDevices.getUserMedia({audio:true,video:true}).catch(()=>null); if(s) s.getTracks().forEach(t=>t.stop()) } }catch{}})() },[])
-  // migration harvest_nyeri → allan (keep app name)
   useEffect(() => {
     try {
       const OLD='harvest_nyeri', NEW='allan'
@@ -116,7 +111,7 @@ function InnerApp() {
         let arr=JSON.parse(raw)
         let changed=false
         arr=arr.map((u)=>{ if(u.username===OLD){ changed=true; return {...u, username:NEW, name: u.name==='Harvest Family Church'?'Allan':u.name, verified:true}} return u})
-        if(changed){ localStorage.setItem('harvest_users', JSON.stringify(arr)); setUsers(arr); migrated=true }
+        if(changed){ localStorage.setItem('harvest_users', JSON.stringify(arr)); setTimeout(() => setUsers(arr), 0); migrated=true }
       }
       if(localStorage.getItem('harvest_username')===OLD){ localStorage.setItem('harvest_username', NEW); migrated=true }
       ;['harvest_pending','harvest_approved_posts','harvest_approved_stories','harvest_approved_reels'].forEach(k=>{
@@ -126,7 +121,6 @@ function InnerApp() {
     } catch {}
   }, [])
 
-  // Cache clearing listener — forces state refresh when Home.tsx clears storage
   useEffect(() => {
     const handler = () => { window.dispatchEvent(new Event('harvest:verified')); setHomeRefresh(x=>x+1) }
     window.addEventListener('harvest:cache-clear', handler)
@@ -195,14 +189,12 @@ function InnerApp() {
       const reordered=[{...picked,me:true},...rest.map((u)=>({...u,me:false}))]
       localStorage.setItem('harvest_users',JSON.stringify(reordered))
       localStorage.setItem('harvest_username',username)
-      // swap token per-account — no leakage
       const nextTok = localStorage.getItem(`harvest_token_${username}`)||''
       if(nextTok) localStorage.setItem('harvest_token', nextTok)
       else localStorage.removeItem('harvest_token')
       setUsers(reordered)
       setUsername(username)
       if(username==='allan'){ setRole('admin'); localStorage.setItem('harvest_role','admin'); localStorage.setItem('harvest_pin','7777') } else { setRole('member'); localStorage.setItem('harvest_role','member') }
-      // force socket reconnect with new token
       try{ if(window.__harvest_reconnect){ window.__harvest_reconnect()} }catch{}
       window.dispatchEvent(new Event('harvest:verified'))
       window.dispatchEvent(new Event('harvest:switched'))
@@ -227,7 +219,6 @@ function InnerApp() {
       }
       setRole('member')
     } else {
-      // skip path -> demo user
       const demo = users[0]?.username || 'allan'
       setUsername(demo)
       if (role === 'guest') setRole('member')
@@ -247,17 +238,17 @@ function InnerApp() {
           {tab === 'reels' && <Reels />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} onSubmit={submitPost} />}
           {tab === 'activity' && <Activity />}
-           {tab === 'profile' && <Profile first={first} last={last} pending={pending} onApprove={approve} onReject={reject} users={users} onSwitch={()=>setShowSwitcher(true)} onStatClick={(type,uid)=>setUserList({type,userId:uid})} onGroupClick={(gid)=>setGroupDetail(gid)} />}
-           {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
-           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
-           {tab === 'music' && <Music musics={musics} onAdd={addMusic} />}
-           {tab === 'give' && <Give />}
-           {tab === 'map' && <HarvestMap users={users} setUsers={setUsers} />}
-         </div>
-         {showSwitcher && <AccountSwitcher users={users} onSwitch={switchAccount} onClose={()=>setShowSwitcher(false)} />}
-         {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} onSwitch={()=>setGroupDetail(null)} />}
-         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
-         <Nav tab={tab} setTab={handleTab} onProfileLongPress={()=>setShowSwitcher(true)} />
+          {tab === 'profile' && <Profile first={first} last={last} pending={pending} onApprove={approve} onReject={reject} users={users} onSwitch={()=>setShowSwitcher(true)} onStatClick={(type,uid)=>setUserList({type,userId:uid})} onGroupClick={(gid)=>setGroupDetail(gid)} />}
+          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
+          {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
+          {tab === 'music' && <Music musics={musics} onAdd={addMusic} />}
+          {tab === 'give' && <Give />}
+          {tab === 'map' && <HarvestMap users={users} setUsers={setUsers} />}
+        </div>
+        {showSwitcher && <AccountSwitcher users={users} onSwitch={switchAccount} onClose={()=>setShowSwitcher(false)} />}
+        {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} onSwitch={()=>setGroupDetail(null)} />}
+        {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
+        <Nav tab={tab} setTab={handleTab} onProfileLongPress={()=>setShowSwitcher(true)} />
       </div>
     </div>
   )
@@ -275,86 +266,44 @@ function Onboarding({ step, setStep, first, setFirst, last, setLast, phone, setP
   return (
     <div className="min-h-screen bg-white flex justify-center">
       <div className="w-full max-w-[390px] bg-white min-h-screen flex flex-col">
-        {/* header */}
         <div className="h-[44px] flex items-center justify-between px-4">
           <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg bg-[#7C3AED] text-white flex items-center justify-center text-[11px] font-bold">HF</div><span className="text-[13px] font-semibold text-zinc-900">Harvest Family Church</span><span className="text-[11px] text-zinc-500 -ml-1 hidden sm:inline"> Nyeri</span></div>
           <button onClick={onDone} className="text-[13px] font-semibold px-3 py-1 rounded-full border border-zinc-200 text-zinc-700">Skip</button>
         </div>
         <div className="px-4 flex gap-1">{[1, 2, 3].map(i => <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-[#7C3AED]' : 'bg-[#EDE9FE]'}`} />)}</div>
         <p className="px-4 text-[11px] text-zinc-500 text-right mt-1">Step {step} of 3</p>
-
-        {/* COMPEL polish Step 1 */}
         {step === 1 && (
           <div className="px-6 mt-4 flex-1">
             <div className="rounded-[20px] p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE] relative overflow-hidden">
               <span className="inline-flex text-[11px] font-bold tracking-wide bg-[#F59E0B] text-white px-3 py-1 rounded-full">Step 1</span>
               <h1 className="text-[22px] font-extrabold leading-tight tracking-tight text-[#5B21B6] mt-3">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
-              <div className="absolute right-3 bottom-3 opacity-90">
-                {/* waving hand emoji stylized */}
-                <div className="text-[72px] leading-none select-none" style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.15))' }}>👋</div>
-              </div>
+              <div className="absolute right-3 bottom-3 opacity-90"><div className="text-[72px] leading-none select-none" style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.15))' }}>👋</div></div>
             </div>
-
             <div className="mt-6">
               <h2 className="text-[15px] font-bold text-zinc-900">What's your name?</h2>
               <p className="text-[13px] text-zinc-500">We'd love to know you personally.</p>
               <div className="space-y-3 mt-4">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>
-                  <input value={first} onChange={e => setFirst(e.target.value)} placeholder="First Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" />
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>
-                  <input value={last} onChange={e => setLast(e.target.value)} placeholder="Last Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" />
-                </div>
+                <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span><input value={first} onChange={e => setFirst(e.target.value)} placeholder="First Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" /></div>
+                <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span><input value={last} onChange={e => setLast(e.target.value)} placeholder="Last Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" /></div>
               </div>
-              <div className="mt-4 rounded-xl bg-[#F5F0FF] border border-[#EDE9FE] px-4 py-3 flex items-center gap-2">
-                <span className="text-[#7C3AED] font-bold text-sm">❝</span><span className="text-[12px] font-semibold tracking-widest text-[#7C3AED]">COMPEL · RAISE · RELEASE</span>
-              </div>
+              <div className="mt-4 rounded-xl bg-[#F5F0FF] border border-[#EDE9FE] px-4 py-3 flex items-center gap-2"><span className="text-[#7C3AED] font-bold text-sm">❝</span><span className="text-[12px] font-semibold tracking-widest text-[#7C3AED]">COMPEL · RAISE · RELEASE</span></div>
             </div>
           </div>
         )}
-
         {step === 2 && (
           <div className="px-6 mt-4 flex-1">
             <h1 className="text-[22px] font-bold leading-tight tracking-tight text-zinc-900">Tell us about yourself</h1><p className="text-[13px] text-zinc-500 mt-1">We’ll personalize your feed.</p>
             <div className="space-y-3 mt-6">
               <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone or email" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
               <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Estate / Area in Nyeri (e.g., Majengo, Ruringu)" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-              <div>
-                <p className="text-xs font-bold text-zinc-700 mb-1">Choose Harvest Group *</p>
-                <select value={chosenGroup} onChange={e => setChosenGroup(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#7C3AED]">
-                  {Object.keys(groupCoords).map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <p className="text-[11px] text-zinc-500 mt-1">Required — you will be grouped by location</p>
-              </div>
-              <div className="rounded-xl overflow-hidden border border-zinc-200 h-[160px]">
-                <MapContainer center={groupCoords[chosenGroup] || [-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }} dragging={false} zoomControl={false}>
-                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  {Object.entries(groupCoords).map(([g, c]) => (
-                    <Marker key={g} position={c}>
-                      <Popup>{g}</Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
-              </div>
+              <div><p className="text-xs font-bold text-zinc-700 mb-1">Choose Harvest Group *</p><select value={chosenGroup} onChange={e => setChosenGroup(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#7C3AED]">{Object.keys(groupCoords).map(g => <option key={g} value={g}>{g}</option>)}</select><p className="text-[11px] text-zinc-500 mt-1">Required — you will be grouped by location</p></div>
+              <div className="rounded-xl overflow-hidden border border-zinc-200 h-[160px]"><MapContainer center={groupCoords[chosenGroup] || [-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }} dragging={false} zoomControl={false}><TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />{Object.entries(groupCoords).map(([g, c]) => <Marker key={g} position={c}><Popup>{g}</Popup></Marker>)}</MapContainer></div>
               <p className="text-[11px] text-zinc-500 text-center">Map shows available Harvest groups nearby</p>
             </div>
           </div>
         )}
-
         {step === 3 && (<div className="flex-1 text-center py-10 px-6"><div className="w-20 h-20 rounded-full bg-[#7C3AED] text-white flex items-center justify-center text-2xl mx-auto">✓</div><p className="font-semibold mt-4 text-zinc-900">Karibu {first || 'Family'}!</p><p className="text-sm text-zinc-500 mt-1">Feed + Reels + Chat ready.</p></div>)}
-
-        <div className="p-4">
-          <button
-            onClick={() => step < 3 ? setStep(step + 1) : onDone()}
-            disabled={step === 1 && (!first.trim() || !last.trim())}
-            className={`w-full py-4 rounded-full font-semibold text-[15px] flex items-center justify-center gap-2 ${step === 1 && (!first.trim() || !last.trim()) ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'}`}
-          >
-            {step < 3 ? 'Continue' : 'Enter Harvest'} <span>→</span>
-          </button>
-          {step === 1 && (!first.trim() || !last.trim()) && <p className="text-[11px] text-zinc-500 text-center mt-2">Enter both names to continue</p>}
-        </div>
+        <div className="p-4"><button onClick={() => step < 3 ? setStep(step + 1) : onDone()} disabled={step === 1 && (!first.trim() || !last.trim())} className={`w-full py-4 rounded-full font-semibold text-[15px] flex items-center justify-center gap-2 ${step === 1 && (!first.trim() || !last.trim()) ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'}`}>{step < 3 ? 'Continue' : 'Enter Harvest'} <span>→</span></button>{step === 1 && (!first.trim() || !last.trim()) && <p className="text-[11px] text-zinc-500 text-center mt-2">Enter both names to continue</p>}</div>
       </div>
     </div>
   )
@@ -368,96 +317,18 @@ function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, o
   const username = ((first || 'harvest').toLowerCase().replace(/\s+/g, '') + '_' + (last || 'family').toLowerCase().replace(/\s+/g, ''))
   const me = users.find(u => u.username === username) || users[0]
   const { isAdmin, role } = useAuth()
-
-  // Build groups from user data
   const groups = {}
   users.forEach(u => { const g = u.group || 'Harvest Nyeri'; if(!groups[g]) groups[g]=[]; groups[g].push(u.username) })
-
-  // Pending approvals only visible to admin
   const myPending = pending.filter(p => p.user === username || (isAdmin && true))
-
   return (
     <div className="bg-black text-white">
-      <div className="px-4 pt-2 flex justify-between items-center">
-        <button onClick={()=>onSwitch&&onSwitch()} className="font-bold flex items-center gap-1">{(first || 'harvest') + (last ? '_' + last : '_family')} ⌄</button>
-        <div className="flex gap-2 items-center">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role==='admin' ? 'bg-[#7C3AED] text-white' : role==='leader' ? 'bg-blue-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>
-            {role === 'admin' ? '★ Admin' : role === 'leader' ? '★ Leader' : 'Member'}
-          </span>
-          {isAdmin && <span className="text-[10px] bg-amber-500 text-black px-2 py-0.5 rounded-full">{pending.length} pending</span>}
-        </div>
-      </div>
-
-      {/* Stats — clickable */}
-      <div className="px-4 mt-4 flex gap-4 items-center">
-        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black">{(first[0] || 'H') + (last[0] || 'F')}</div></div>
-        <div className="flex gap-6 flex-1 justify-around text-center">
-          <button onClick={() => onStatClick?.('posts', username)} className="hover:opacity-70"><p className="font-bold">12</p><p className="text-xs text-zinc-400">posts</p></button>
-          <button onClick={() => onStatClick?.('followers', username)} className="hover:opacity-70"><p className="font-bold">1.2k</p><p className="text-xs text-zinc-400">followers</p></button>
-          <button onClick={() => onStatClick?.('following', username)} className="hover:opacity-70"><p className="font-bold">48</p><p className="text-xs text-zinc-400">following</p></button>
-        </div>
-      </div>
-
-      <div className="px-4 mt-3"><p className="text-[13px] font-semibold">{first} {last}</p><p className="text-[13px]">Harvest Family Church Nyeri ✦</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
-          <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group || 'Harvest Nyeri'}</span>
-           {!isAdmin && import.meta.env.DEV && <span className="text-[11px] text-zinc-500 self-center">Member • PIN 7777 for admin (dev only)</span>}
-        </div></div>
-      <button onClick={()=>onSwitch&&onSwitch()} className="mx-4 mt-3 w-[calc(100%-2rem)] py-2 rounded-full bg-zinc-800 text-white text-xs font-semibold">🔄 Switch account — 4 active (IG style)</button>
-      <p className="text-[11px] text-zinc-500 text-center mt-1">Allan ✓ • Youth Harvest ✓ • Worship Team ✓ • Pst Simon</p>
-
-      {/* Admin-only: Pending Approvals */}
-      {isAdmin && myPending.length > 0 && (
-        <div className="mt-4 border-t border-zinc-800 pt-3">
-          <h3 className="text-sm font-bold px-4 text-amber-400 mb-2">⏳ Pending ({myPending.length})</h3>
-          <div className="space-y-2 px-4">
-            {myPending.map(item => (
-              <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center">
-                <div><p className="text-xs font-semibold">{item.user}</p><p className="text-[11px] text-zinc-400">{item.type} • {item.caption?.slice(0,30)}</p></div>
-                <div className="flex gap-2">
-                  <button onClick={() => onApprove(item.id)} className="px-3 py-1 rounded-full bg-green-600 text-white text-[10px] font-bold">✓</button>
-                  <button onClick={() => onReject(item.id)} className="px-3 py-1 rounded-full bg-zinc-700 text-white text-[10px] font-bold">✕</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Admin-only: Verified Accounts */}
-      {isAdmin && (
-        <div className="mt-4 border-t border-zinc-800 pt-3">
-          <h3 className="text-sm font-bold px-4 text-blue-400 mb-2">✓ Verified Accounts</h3>
-          <div className="space-y-2 px-4">
-            {users.filter(u=>u.verified).map(u => (
-              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-zinc-900 border border-zinc-800">
-                <div className="flex gap-2 items-center"><div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{u.username[0].toUpperCase()}</div><div><p className="text-xs font-semibold">{u.username} <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /></p></div></div>
-                <button onClick={() => {
-                  const updated = users.map(x => x.username === u.username ? {...x, verified: !x.verified} : x)
-                  setUsers(updated)
-                  localStorage.setItem('harvest_users', JSON.stringify(updated))
-                  window.dispatchEvent(new Event('harvest:verified'))
-                }} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Groups — clickable cards */}
-      <div className="mt-4 border-t border-zinc-800 pt-3">
-        <h3 className="text-sm font-bold px-4 text-white mb-2">Harvest Groups by Location</h3>
-        <div className="space-y-2 px-4">
-          {Object.entries(groups).map(([g, members]) => (
-            <button key={g} onClick={() => onGroupClick?.(g)} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left hover:bg-zinc-800">
-              <div><p className="text-sm font-semibold text-white">{g}</p><p className="text-xs text-zinc-400">{members.length} members</p></div>
-              <span className="text-xs bg-white text-black px-3 py-1 rounded-full">{members.length} 👥</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
+      <div className="px-4 pt-2 flex justify-between items-center"><button onClick={()=>onSwitch&&onSwitch()} className="font-bold flex items-center gap-1">{(first || 'harvest') + (last ? '_' + last : '_family')} ⌄</button><div className="flex gap-2 items-center"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role==='admin' ? 'bg-[#7C3AED] text-white' : role==='leader' ? 'bg-blue-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{role === 'admin' ? '★ Admin' : role === 'leader' ? '★ Leader' : 'Member'}</span>{isAdmin && <span className="text-[10px] bg-amber-500 text-black px-2 py-0.5 rounded-full">{pending.length} pending</span>}</div></div>
+      <div className="px-4 mt-4 flex gap-4 items-center"><div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black">{(first[0] || 'H') + (last[0] || 'F')}</div></div><div className="flex gap-6 flex-1 justify-around text-center"><button onClick={() => onStatClick?.('posts', username)} className="hover:opacity-70"><p className="font-bold">12</p><p className="text-xs text-zinc-400">posts</p></button><button onClick={() => onStatClick?.('followers', username)} className="hover:opacity-70"><p className="font-bold">1.2k</p><p className="text-xs text-zinc-400">followers</p></button><button onClick={() => onStatClick?.('following', username)} className="hover:opacity-70"><p className="font-bold">48</p><p className="text-xs text-zinc-400">following</p></button></div></div>
+      <div className="px-4 mt-3"><p className="text-[13px] font-semibold">{first} {last}</p><p className="text-[13px]">Harvest Family Church Nyeri ✦</p><div className="mt-2 flex flex-wrap gap-2"><span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span><span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group || 'Harvest Nyeri'}</span>{!isAdmin && import.meta.env.DEV && <span className="text-[11px] text-zinc-500 self-center">Member • PIN 7777 for admin (dev only)</span>}</div></div>
+      <button onClick={()=>onSwitch&&onSwitch()} className="mx-4 mt-3 w-[calc(100%-2rem)] py-2 rounded-full bg-zinc-800 text-white text-xs font-semibold">🔄 Switch account — 4 active (IG style)</button><p className="text-[11px] text-zinc-500 text-center mt-1">Allan ✓ • Youth Harvest ✓ • Worship Team ✓ • Pst Simon</p>
+      {isAdmin && myPending.length > 0 && <div className="mt-4 border-t border-zinc-800 pt-3"><h3 className="text-sm font-bold px-4 text-amber-400 mb-2">⏳ Pending ({myPending.length})</h3><div className="space-y-2 px-4">{myPending.map(item => <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center"><div><p className="text-xs font-semibold">{item.user}</p><p className="text-[11px] text-zinc-400">{item.type} • {item.caption?.slice(0,30)}</p></div><div className="flex gap-2"><button onClick={() => onApprove(item.id)} className="px-3 py-1 rounded-full bg-green-600 text-white text-[10px] font-bold">✓</button><button onClick={() => onReject(item.id)} className="px-3 py-1 rounded-full bg-zinc-700 text-white text-[10px] font-bold">✕</button></div></div>)}</div></div>}
+      {isAdmin && <div className="mt-4 border-t border-zinc-800 pt-3"><h3 className="text-sm font-bold px-4 text-blue-400 mb-2">✓ Verified Accounts</h3><div className="space-y-2 px-4">{users.filter(u=>u.verified).map(u => <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-zinc-900 border border-zinc-800"><div className="flex gap-2 items-center"><div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{u.username[0].toUpperCase()}</div><div><p className="text-xs font-semibold">{u.username} <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /></p></div></div><button onClick={() => { const updated = users.map(x => x.username === u.username ? {...x, verified: !x.verified} : x); setUsers(updated); localStorage.setItem('harvest_users', JSON.stringify(updated)); window.dispatchEvent(new Event('harvest:verified')) }} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button></div>)}</div></div>}
+      <div className="mt-4 border-t border-zinc-800 pt-3"><h3 className="text-sm font-bold px-4 text-white mb-2">Harvest Groups by Location</h3><div className="space-y-2 px-4">{Object.entries(groups).map(([g, members]) => <button key={g} onClick={() => onGroupClick?.(g)} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left hover:bg-zinc-800"><div><p className="text-sm font-semibold text-white">{g}</p><p className="text-xs text-zinc-400">{members.length} members</p></div><span className="text-xs bg-white text-black px-3 py-1 rounded-full">{members.length} 👥</span></button>)}</div></div>
       <Groups users={users} onSelectGroup={(g) => onGroupClick?.(g)} />
       <div className="grid grid-cols-3 gap-[1px] bg-zinc-800 mt-4">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="aspect-square bg-zinc-900"><img src={`https://picsum.photos/300/300?random=${i + 50}`} alt="" className="w-full h-full object-cover" /></div>)}</div>
     </div>
@@ -465,22 +336,6 @@ function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, o
 }
 
 function Nav({ tab, setTab, onProfileLongPress }) {
-  const items = [
-    ['home', 'home'],
-    ['search', 'search'],
-    ['reels', 'reels'],
-    ['map', 'map'],
-    ['give', 'give'],
-    ['music', 'music'],
-    ['profile', 'profile'],
-  ]
-  return (
-    <div className="flex justify-around items-center h-[49px] border-t border-zinc-800 bg-black sticky bottom-0">
-      {items.map(([id]) => (
-        <button key={id} onClick={() => setTab(id)} onTouchStart={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onTouchEnd={()=>clearTimeout(window.__pressTimer)} onMouseDown={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onMouseUp={()=>clearTimeout(window.__pressTimer)} className="p-2">
-          <IgIcon name={id} active={tab === id} />
-        </button>
-      ))}
-    </div>
-  )
+  const items = [['home', 'home'], ['search', 'search'], ['reels', 'reels'], ['map', 'map'], ['give', 'give'], ['music', 'music'], ['profile', 'profile']]
+  return <div className="flex justify-around items-center h-[49px] border-t border-zinc-800 bg-black sticky bottom-0">{items.map(([id]) => <button key={id} onClick={() => setTab(id)} onTouchStart={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onTouchEnd={()=>clearTimeout(window.__pressTimer)} onMouseDown={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onMouseUp={()=>clearTimeout(window.__pressTimer)} className="p-2"><IgIcon name={id} active={tab === id} /></button>)}</div>
 }

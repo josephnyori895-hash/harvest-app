@@ -1,54 +1,100 @@
-// src/lib/api.ts — Harvest Family API client (VPS MinIO presigned flow)
-// Feature-flagged: VITE_USE_API=true switches PostCreate/Home/Reels from localStorage to real API.
-// Falls back to localStorage when offline or flag off (keeps shallow 238 working).
+// Harvest Family API client.
+// Feature-flagged so the existing demo/localStorage experience can coexist with
+// the backend migration. New features should use this module instead of calling fetch directly.
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')
 const USE_API = import.meta.env.VITE_USE_API === 'true'
 
-export const useApi = () => USE_API
+export const isApiEnabled = () => USE_API && Boolean(BASE)
+
+export class ApiError extends Error {
+  status: number
+  details: unknown
+
+  constructor(message: string, status: number, details?: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.details = details
+  }
+}
 
 function authHeader() {
-  const t = localStorage.getItem('harvest_token')
-  return t ? { Authorization: `Bearer ${t}` } : {}
+  const token = localStorage.getItem('harvest_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers)
+  headers.set('Accept', 'application/json')
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  Object.entries(authHeader()).forEach(([key, value]) => headers.set(key, value))
+
+  const response = await fetch(`${BASE}${path.startsWith('/') ? path : `/${path}`}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  })
+
+  const contentType = response.headers.get('content-type') || ''
+  const payload = contentType.includes('application/json')
+    ? await response.json().catch(() => null)
+    : await response.text().catch(() => '')
+
+  if (!response.ok) {
+    const message = typeof payload === 'object' && payload && 'error' in payload
+      ? String((payload as { error?: unknown }).error || 'Request failed')
+      : `Request failed with status ${response.status}`
+    throw new ApiError(message, response.status, payload)
+  }
+
+  return payload as T
+}
+
+export type AuthSession = {
+  token: string
+  role: 'member' | 'leader' | 'pastor' | 'admin' | 'guest'
+  username: string
+}
+
+export async function login(username: string, pin: string) {
+  return request<AuthSession>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: username.trim(), pin: pin.trim() }),
+  })
 }
 
 export async function presign(params: { type: 'post'|'story'|'reel'|'track', contentType: string, bytes: number, ext?: string }) {
-  const r = await fetch(`${BASE}/api/media/presign`, {
-    method: 'POST', headers: { 'Content-Type':'application/json', ...authHeader() },
-    body: JSON.stringify(params)
+  return request<{ url: string, fields: Record<string, string>, key: string, expiresAt: string }>('/api/media/presign', {
+    method: 'POST',
+    body: JSON.stringify(params),
   })
-  if (!r.ok) throw new Error(await r.text())
-  return r.json() as Promise<{ url:string, fields:Record<string,string>, key:string, expiresAt:string }>
 }
 
-export async function uploadToMinio(url:string, fields:Record<string,string>, file:File) {
+export async function uploadToMinio(url: string, fields: Record<string, string>, file: File) {
   const fd = new FormData()
-  Object.entries(fields).forEach(([k,v])=> fd.append(k, v))
-  fd.append('file', file) // MinIO expects 'file' last
-  // Note: Content-Type must match presigned contentType; FormData sets it.
-  const r = await fetch(url, { method:'POST', body: fd })
-  if (!r.ok) throw new Error(`MinIO upload failed ${r.status} ${await r.text()}`)
+  Object.entries(fields).forEach(([key, value]) => fd.append(key, value))
+  fd.append('file', file)
+  const response = await fetch(url, { method: 'POST', body: fd })
+  if (!response.ok) throw new ApiError(`MinIO upload failed (${response.status})`, response.status)
 }
 
-export async function confirmMedia(body: { key:string, type:string, caption?:string, title?:string, artist?:string }) {
-  const r = await fetch(`${BASE}/api/media/confirm`, {
-    method:'POST', headers:{'Content-Type':'application/json',...authHeader()}, body: JSON.stringify(body)
-  })
-  if (!r.ok) throw new Error(await r.text())
-  return r.json()
+export async function confirmMedia(body: { key: string, type: string, caption?: string, title?: string, artist?: string }) {
+  return request('/api/media/confirm', { method: 'POST', body: JSON.stringify(body) })
 }
 
-export async function fetchFeed(offset=0, limit=20) {
-  const r = await fetch(`${BASE}/api/feed?offset=${offset}&limit=${limit}`, { headers: authHeader() })
-  if (!r.ok) throw new Error(await r.text())
-  return r.json() as Promise<{ posts:any[], stories:any[], nextOffset:number, hasMore:boolean }>
+export async function fetchFeed(offset = 0, limit = 20) {
+  return request<{ posts: any[], stories: any[], nextOffset: number, hasMore: boolean }>(`/api/feed?offset=${offset}&limit=${limit}`)
 }
 
-// Example: PostCreate.tsx:12 migration
-// Before: const img = `https://picsum.photos/400/400?random=${Date.now()%100}` // line 13-14
-// After (when USE_API):
-//   const file = input.files[0]
-//   const {url, fields, key} = await presign({type, contentType: file.type, bytes: file.size, ext: file.name.split('.').pop()})
-//   await uploadToMinio(url, fields, file)
-//   await confirmMedia({key, type, caption})
-// Home.tsx:34: replace approvedPosts localStorage with fetchFeed(); stories top 51 from feed.stories
+export async function getHealth() {
+  return request<{ ok: boolean }>('/health')
+}
+
+export function clearSession() {
+  localStorage.removeItem('harvest_token')
+  localStorage.removeItem('harvest_role')
+  localStorage.removeItem('harvest_pin')
+}

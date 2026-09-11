@@ -1,25 +1,40 @@
 name: harvest-ci
+
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - run: npm ci
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint
       - run: npm run build
-      - run: npx cap sync android --no-update 2>&1 | head -20 || true
+
   server-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with:
+          node-version: 22
       - run: node --check server/src/index.js
       - run: node --check server/src/middleware/auth.js
       - run: node --check server/src/routes/media.js
+
+  server-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test server/src/realtime/socketSecurity.test.js

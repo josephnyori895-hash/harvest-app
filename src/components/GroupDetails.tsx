@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useAuth } from '../state/auth'
 
-export default function GroupDetails({ groupId, users, onBack, onSwitch }: { groupId: string; users: any[]; onBack: () => void; onSwitch: () => void }) {
-  const { isAdmin, role } = useAuth()
+export default function GroupDetails({ groupId, users, onBack }: { groupId: string; users: any[]; onBack: () => void; onSwitch?: () => void }) {
+  const { isAdmin } = useAuth()
   const groupUsers = users.filter((u: any) => (u.group || 'Harvest Nyeri') === groupId)
   const [addName, setAddName] = useState('')
 
