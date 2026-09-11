@@ -22,7 +22,8 @@ export default function Give() {
   const [phone, setPhone] = useState('')
   const [showTxns, setShowTxns] = useState(false)
   const [tab, setTab] = useState<'give'|'admin'>('give')
-  const currentRole = (()=>{ try{ return localStorage.getItem('harvest_role') }catch{return 'member'}})() const isAdmin = currentRole==='admin'
+  const currentRole = (()=>{ try{ return localStorage.getItem('harvest_role') }catch{return 'member'}})();
+  const isAdmin = currentRole==='admin'
 
   const totalCollected = useMemo(()=>mockTxns.filter(t=>t.status==='completed').reduce((s,t)=>s+t.amount,0),[])
   const pendingCount = mockTxns.filter(t=>t.status==='pending').length

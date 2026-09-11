@@ -72,7 +72,9 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     showToast('Liked ❤️', 'success', 1000)
   }
 
-  const currentUser = (()=>{ try{ return JSON.parse(localStorage.getItem('harvest_users')||'[]')[0]?.username || localStorage.getItem('harvest_username')||'' }catch{return ''}})() const isAdmin = (()=>{ try{ return localStorage.getItem('harvest_role')==='admin' || currentUser==='allan'}catch{return false}})() const [menuPost, setMenuPost] = useState<string|null>(null)
+  const currentUser = (()=>{ try{ return JSON.parse(localStorage.getItem('harvest_users')||'[]')[0]?.username || localStorage.getItem('harvest_username')||'' }catch{return ''}})();
+  const isAdmin = (()=>{ try{ return localStorage.getItem('harvest_role')==='admin' || currentUser==='allan'}catch{return false}})();
+  const [menuPost, setMenuPost] = useState<string|null>(null)
   const clearCache = () => {
     localStorage.removeItem('harvest_pending')
     localStorage.removeItem('harvest_approved_posts')

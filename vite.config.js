@@ -6,18 +6,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-      },
-    },
+    minify: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          leaflet: ['leaflet', 'react-leaflet'],
-          socket: ['socket.io-client'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor'
+            if (id.includes('leaflet')) return 'leaflet'
+            if (id.includes('socket.io-client')) return 'socket'
+          }
         },
       },
     },
