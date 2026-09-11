@@ -16,7 +16,6 @@ export default function Reels() {
   const allReels = useMemo(() => [...approvedReels, ...reelsData], [approvedReels])
   const cur = allReels[idx] ?? reelsData[0]
 
-  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowUp') setIdx(i => (i - 1 + allReels.length) % allReels.length)
@@ -26,166 +25,57 @@ export default function Reels() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [allReels.length])
 
-  const toggleLike = () => {
-    setLiked(prev => ({ ...prev, [idx]: !prev[idx] }))
-  }
-
-  const handleNext = () => setIdx((idx + 1) % allReels.length)
-  const handlePrev = () => setIdx((idx - 1 + allReels.length) % allReels.length)
+  const toggleLike = () => setLiked(prev => ({ ...prev, [idx]: !prev[idx] }))
+  const handleNext = () => setIdx(i => (i + 1) % allReels.length)
+  const handlePrev = () => setIdx(i => (i - 1 + allReels.length) % allReels.length)
 
   return (
-    <div className="relative min-h-[calc(100vh-49px)] bg-black text-white overflow-hidden">
-      {/* Main Video */}
-      <div className="w-full h-[calc(100vh-49px)] relative flex items-center justify-center">
-        {cur.video ? (
-          <video
-            ref={videoRef}
-            src={cur.video}
-            autoPlay
-            muted={muted}
-            loop
-            playsInline
-            className="w-full h-full object-cover"
-            poster={cur.img}
-          />
-        ) : (
-          <img src={cur.img} alt="" className="w-full h-full object-cover" />
-        )}
+    <div className="relative min-h-[calc(100vh-49px)] overflow-hidden bg-[#130f1c] text-white">
+      <div className="mx-auto flex h-[calc(100vh-49px)] max-w-6xl items-center justify-center px-2 py-2 sm:px-4 sm:py-4">
+        <div className="relative h-full w-full max-w-[520px] overflow-hidden rounded-[28px] bg-black shadow-2xl shadow-purple-950/40 ring-1 ring-white/10 sm:max-h-[900px]">
+          {cur.video ? <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline className="h-full w-full object-cover" poster={cur.img} /> : <img src={cur.img} alt="" className="h-full w-full object-cover" />}
 
-        {/* Gradient Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/40 pointer-events-none" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-black/45" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-purple-950/20 via-transparent to-black/25" />
 
-        {/* Header */}
-        <div className="absolute top-0 left-0 right-0 px-4 pt-4 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <span className="font-bold text-lg">Reels</span>
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-600 text-white">LIVE</span>
-          </div>
-          <button
-            onClick={() => setMuted(!muted)}
-            className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition"
-          >
-            {muted ? '🔇' : '🔊'}
-          </button>
-        </div>
-
-        {/* User Info - Bottom Left */}
-        <div className="absolute bottom-24 left-4 z-10 max-w-[280px]">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-              {cur.user.charAt(0).toUpperCase()}
+          <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pb-5 pt-5 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-purple-600 text-sm font-extrabold shadow-lg ring-1 ring-white/20">HF</div>
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200">Harvest Family</p><p className="text-lg font-extrabold tracking-tight">Reels</p></div>
             </div>
-            <div className="flex-1">
-              <p className="font-bold text-sm flex items-center gap-1">
-                {cur.user}
-                {cur.verified && <span className="text-blue-400 text-xs">✓</span>}
-              </p>
-              <p className="text-xs text-gray-300">Harvest Family Church</p>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-amber-400/15 px-3 py-1.5 text-[10px] font-extrabold tracking-widest text-amber-200 ring-1 ring-amber-200/20">COMMUNITY</span>
+              <button onClick={() => setMuted(!muted)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/12 text-sm shadow-lg ring-1 ring-white/15 backdrop-blur-md transition hover:bg-white/20" aria-label={muted ? 'Unmute reel' : 'Mute reel'}>{muted ? '⌁' : '♪'}</button>
             </div>
           </div>
 
-          {/* Caption */}
-          <p className="text-sm font-medium mb-3 leading-snug">{cur.cap}</p>
-
-          {/* Music Info */}
-          {cur.music && (
-            <div className="flex gap-2 items-center p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20 mb-3">
-              <img src={cur.music.cover} alt="" className="w-8 h-8 rounded" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold truncate">🎵 {cur.music.title}</p>
-                <p className="text-[10px] text-gray-400 truncate">{cur.music.artist}</p>
-              </div>
+          <div className="absolute bottom-6 left-4 z-10 max-w-[calc(100%-100px)] sm:left-6 sm:max-w-[360px]">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-purple-600 text-sm font-extrabold shadow-lg ring-2 ring-white/25">{cur.user.charAt(0).toUpperCase()}</div>
+              <div className="min-w-0"><p className="flex items-center gap-1 text-sm font-extrabold">@{cur.user}{cur.verified && <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] text-purple-950">✓</span>}</p><p className="text-[11px] text-white/70">Harvest Family Church</p></div>
             </div>
-          )}
-
-          {/* Engagement Stats */}
-          <div className="flex gap-3 text-xs text-gray-300 mb-2">
-            <span>👀 {cur.views} views</span>
-            <span>💬 {cur.comments} comments</span>
+            <p className="mb-3 text-sm font-semibold leading-relaxed text-white sm:text-[15px]">{cur.cap}</p>
+            {cur.music && <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white/10 p-2.5 ring-1 ring-white/15 backdrop-blur-xl"><img src={cur.music.cover} alt="" className="h-9 w-9 rounded-xl object-cover ring-1 ring-white/20" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{cur.music.title}</p><p className="truncate text-[10px] text-white/60">{cur.music.artist}</p></div><span className="text-amber-300">♫</span></div>}
+            <div className="flex items-center gap-3 text-[10px] font-semibold text-white/60"><span>◉ {cur.views} views</span><span>•</span><span>{cur.comments} comments</span><span>•</span><span>{idx + 1}/{allReels.length}</span></div>
           </div>
+
+          <div className="absolute bottom-8 right-3 z-10 flex flex-col items-center gap-3 sm:right-5">
+            <button onClick={toggleLike} className="group flex flex-col items-center gap-1" aria-label={liked[idx] ? 'Unlike reel' : 'Like reel'}><span className={`flex h-12 w-12 items-center justify-center rounded-2xl ring-1 backdrop-blur-xl transition group-hover:scale-105 ${liked[idx] ? 'bg-amber-400/20 text-amber-300 ring-amber-300/30' : 'bg-white/10 text-white ring-white/15'}`}>{liked[idx] ? '♥' : '♡'}</span><span className="text-[10px] font-bold text-white/80">{(cur.likes || 0) + (liked[idx] ? 1 : 0)}</span></button>
+            <button className="group flex flex-col items-center gap-1" aria-label="Comments"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-lg ring-1 ring-white/15 backdrop-blur-xl transition group-hover:scale-105">◌</span><span className="text-[10px] font-bold text-white/80">{cur.comments || 0}</span></button>
+            <button className="group flex flex-col items-center gap-1" aria-label="Share reel"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-lg ring-1 ring-white/15 backdrop-blur-xl transition group-hover:scale-105">↗</span><span className="text-[10px] font-bold text-white/80">Share</span></button>
+            <button className="group flex flex-col items-center gap-1" aria-label="Save reel"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-lg ring-1 ring-white/15 backdrop-blur-xl transition group-hover:scale-105">◇</span><span className="text-[10px] font-bold text-white/80">Save</span></button>
+          </div>
+
+          <button onClick={handlePrev} className="absolute left-3 top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-2xl text-white ring-1 ring-white/15 backdrop-blur-md transition hover:bg-white/15 sm:flex" aria-label="previous reel">‹</button>
+          <button onClick={handleNext} className="absolute right-3 top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-2xl text-white ring-1 ring-white/15 backdrop-blur-md transition hover:bg-white/15 sm:flex" aria-label="next reel">›</button>
+
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10"><div className="h-full bg-gradient-to-r from-amber-400 via-purple-500 to-purple-700 transition-all" style={{ width: `${((idx + 1) / allReels.length) * 100}%` }} /></div>
+          <div className="pointer-events-none absolute bottom-1 left-1/2 hidden -translate-x-1/2 text-[9px] font-medium text-white/35 sm:block">Use ↑ ↓ to browse</div>
         </div>
-
-        {/* Engagement Buttons - Right Side */}
-        <div className="absolute right-4 bottom-28 flex flex-col gap-6 z-10">
-          {/* Like Button */}
-          <button
-            onClick={toggleLike}
-            className={`group flex flex-col items-center gap-1 transition-all ${liked[idx] ? 'text-red-500' : 'text-white hover:text-red-500'}`}
-          >
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              liked[idx]
-                ? 'bg-red-500/20 animate-pulse'
-                : 'bg-white/10 hover:bg-white/20'
-            }`}>
-              <span className={`text-2xl transition-transform ${liked[idx] ? 'scale-125 animate-bounce' : 'group-hover:scale-110'}`}>
-                {liked[idx] ? '❤️' : '🤍'}
-              </span>
-            </div>
-            <span className={`text-xs font-bold ${liked[idx] ? 'text-red-500' : 'text-gray-300'}`}>
-              {(cur.likes || 0) + (liked[idx] ? 1 : 0)}
-            </span>
-          </button>
-
-          {/* Comment Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">💬</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">{cur.comments || 0}</span>
-          </button>
-
-          {/* Share Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-green-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">📤</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">Share</span>
-          </button>
-
-          {/* Save Button */}
-          <button className="group flex flex-col items-center gap-1 text-white hover:text-purple-400 transition-all">
-            <div className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group-hover:scale-110">
-              <span className="text-2xl">🔖</span>
-            </div>
-            <span className="text-xs font-bold text-gray-300">Save</span>
-          </button>
-        </div>
-
-        {/* Navigation Arrows */}
-        <button
-          onClick={handlePrev}
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-all z-10 backdrop-blur-sm"
-          aria-label="previous reel"
-        >
-          <span className="text-white text-2xl">‹</span>
-        </button>
-
-        <button
-          onClick={handleNext}
-          className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-all z-10 backdrop-blur-sm"
-          aria-label="next reel"
-        >
-          <span className="text-white text-2xl">›</span>
-        </button>
-
-        {/* Progress Bar */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
-          <div
-            className="h-full bg-gradient-to-r from-amber-400 to-purple-600 transition-all"
-            style={{ width: `${((idx + 1) / allReels.length) * 100}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Bottom Info */}
-      <div className="absolute bottom-1 left-0 right-0 text-center text-xs text-gray-500 pointer-events-none">
-        Tap ▶ • Swipe Up/Down • {idx + 1}/{allReels.length}
       </div>
     </div>
   )
 }
-
 
 export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
@@ -193,9 +83,7 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const getUser = () => {
-    try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || 'allan' } catch { return 'allan' }
-  }
+  const getUser = () => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || 'allan' } catch { return 'allan' } }
 
   const onFile = (e: any) => {
     const f = e.target.files?.[0]
@@ -207,17 +95,7 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   }
 
   const submit = () => {
-    const reel = {
-      id: Date.now(),
-      user: getUser(),
-      cap: caption || 'Harvest Reel 🙏',
-      img: fileUrl || `https://picsum.photos/400/700?random=${Date.now()}`,
-      video: fileUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      views: '0',
-      likes: 0,
-      comments: 0,
-      at: new Date().toISOString()
-    }
+    const reel = { id: Date.now(), user: getUser(), cap: caption || 'Harvest Reel 🙏', img: fileUrl || `https://picsum.photos/400/700?random=${Date.now()}`, video: fileUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', views: '0', likes: 0, comments: 0, at: new Date().toISOString() }
     const approved = JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]')
     localStorage.setItem('harvest_approved_reels', JSON.stringify([reel, ...approved]))
     window.dispatchEvent(new Event('harvest:approved'))
@@ -226,55 +104,31 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="min-h-[calc(100vh-49px)] bg-gradient-to-b from-neutral-900 to-black text-white flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center px-4 h-14 border-b border-neutral-800 sticky top-0 bg-black/80 backdrop-blur">
-        <button onClick={onDone} className="text-2xl hover:opacity-70">✕</button>
-        <p className="font-bold text-sm">Create Reel</p>
-        <button onClick={submit} className="font-bold text-purple-500 hover:text-purple-400">Share</button>
-      </div>
+    <div className="min-h-[calc(100vh-49px)] bg-[#FFFBF0] text-neutral-900">
+      <div className="mx-auto flex min-h-[calc(100vh-49px)] max-w-3xl flex-col px-4 pb-6">
+        <div className="sticky top-0 z-20 -mx-4 flex h-16 items-center justify-between border-b border-purple-100 bg-[#FFFBF0]/90 px-4 backdrop-blur-xl">
+          <button onClick={onDone} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-lg text-neutral-600 shadow-sm ring-1 ring-neutral-100" aria-label="Close">×</button>
+          <div className="text-center"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-purple-600">Harvest Family</p><p className="text-sm font-extrabold">Create a Reel</p></div>
+          <button onClick={submit} className="rounded-full bg-gradient-to-r from-purple-600 to-amber-500 px-4 py-2 text-xs font-extrabold text-white shadow-md">Share</button>
+        </div>
 
-      {/* Video Preview */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        {!fileUrl ? (
-          <label className="w-full aspect-[9/16] bg-neutral-900 rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-neutral-700 cursor-pointer hover:border-purple-500 transition-all group">
-            <input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" />
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-4xl group-hover:scale-110 transition-transform">
-              🎬
-            </div>
-            <p className="text-sm text-gray-400 mt-4 font-medium">Upload or Record</p>
-            <p className="text-xs text-gray-500 mt-1">Up to 60s • 1080p</p>
-          </label>
-        ) : (
-          <div className="relative aspect-[9/16] w-full max-w-[320px] mx-auto overflow-hidden rounded-2xl border-2 border-purple-500/50 bg-black">
-            <video src={fileUrl} autoPlay muted loop playsInline className="w-full h-full object-cover" />
-            {fileName && (
-              <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur">
-                📎 {fileName.slice(0, 15)}
-              </div>
-            )}
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 py-5">
+          {!fileUrl ? (
+            <label className="flex aspect-[9/16] w-full max-w-[330px] cursor-pointer flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-purple-200 bg-gradient-to-br from-purple-50 via-white to-amber-50 shadow-sm transition hover:border-purple-400 hover:shadow-lg">
+              <input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" />
+              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-amber-400 to-purple-600 text-3xl font-extrabold text-white shadow-xl">▶</div>
+              <p className="mt-5 text-base font-extrabold text-neutral-800">Add your moment</p><p className="mt-1 text-xs text-neutral-500">Choose a worship, fellowship or church video</p>
+            </label>
+          ) : (
+            <div className="relative aspect-[9/16] w-full max-w-[330px] overflow-hidden rounded-[28px] bg-black shadow-2xl ring-2 ring-purple-200"><video src={fileUrl} autoPlay muted loop playsInline className="h-full w-full object-cover" />{fileName && <div className="absolute right-3 top-3 rounded-full bg-black/65 px-3 py-1.5 text-[10px] font-semibold text-white backdrop-blur">{fileName.slice(0, 20)}</div>}<button onClick={() => { setFileUrl(null); setFileName(null) }} className="absolute bottom-3 left-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-bold text-purple-700">Choose another</button></div>
+          )}
+
+          <div className="w-full max-w-[520px] rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between"><p className="text-sm font-extrabold">Tell the family about it</p><span className="text-[10px] font-semibold text-neutral-400">{caption.length}/150</span></div>
+            <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Share a caption, verse, prayer or encouragement…" maxLength={150} className="w-full resize-none rounded-2xl border border-neutral-200 bg-[#FFFBF0] px-4 py-3 text-sm outline-none transition placeholder:text-neutral-400 focus:border-purple-400 focus:ring-4 focus:ring-purple-50" rows={3} />
+            <button onClick={submit} className="mt-3 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-amber-500 py-3.5 text-sm font-extrabold text-white shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">Share with the family</button>
           </div>
-        )}
-      </div>
-
-      {/* Caption Input */}
-      <div className="px-4 pb-6 space-y-3">
-        <textarea
-          value={caption}
-          onChange={e => setCaption(e.target.value)}
-          placeholder="Write a caption (hashtags, emojis welcome)…"
-          maxLength={150}
-          className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-4 py-3 text-sm placeholder-gray-500 focus:border-purple-500 focus:outline-none transition resize-none"
-          rows={3}
-        />
-        <p className="text-xs text-gray-500 text-right">{caption.length}/150</p>
-
-        <button
-          onClick={submit}
-          className="w-full py-3 rounded-full bg-gradient-to-r from-amber-400 to-purple-600 text-black font-bold transition-all hover:shadow-xl hover:from-amber-300 hover:to-purple-500"
-        >
-          🚀 Share Reel
-        </button>
+        </div>
       </div>
     </div>
   )
