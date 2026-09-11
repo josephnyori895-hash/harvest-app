@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build && npm install --prefix server --omit=dev"
+  command = "npm run build && npm install --prefix server --omit=dev && npm run migrate --prefix server"
   publish = "dist"
 
 [functions]
@@ -9,6 +9,12 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/*"
