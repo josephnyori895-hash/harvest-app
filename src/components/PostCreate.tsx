@@ -3,8 +3,8 @@ import { useAuth } from '../state/auth'
 import { allowedDestinations, canCreateContent, canSubmitForApproval, type ContentType, type Destination } from '../state/permissions'
 
 type Props = { onDone: () => void; onSubmit?: (type: string, data: any) => void }
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const USE_API = import.meta.env.VITE_USE_API === 'true'
+const API = import.meta.env.VITE_API_URL || ''
+const USE_API = import.meta.env.VITE_USE_API !== 'false'
 const labels: Record<ContentType, string> = { post: 'Community post', story: 'Community Moment', video: 'Community video', music: 'Worship music', announcement: 'Church announcement' }
 const destinationLabels: Record<Destination, string> = { community: 'Harvest Community', group: 'My Groups', ministry: 'Ministry', worship: 'Worship', official: 'Official Church' }
 
@@ -21,8 +21,11 @@ async function uploadToServer(fileUrl: string, type: 'post'|'story'|'reel'|'trac
   const form = new FormData()
   Object.entries(presign.fields || {}).forEach(([key, value]) => form.append(key, String(value)))
   form.append('file', blob)
-  const uploadResponse = await fetch(presign.url, { method: 'POST', body: form })
-  if (!uploadResponse.ok) throw new Error('Media upload failed')
+  const uploadResponse = await fetch(`${API}${presign.url}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
+  if (!uploadResponse.ok) {
+    const uploadError = await uploadResponse.json().catch(() => ({}))
+    throw new Error(uploadError.error || 'Media upload failed')
+  }
   const confirmResponse = await fetch(`${API}/api/media/confirm`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ key: presign.key, type, caption }),
