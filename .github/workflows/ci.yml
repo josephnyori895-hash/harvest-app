@@ -15,7 +15,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - name: Sync Capacitor Android
-        run: npx cap sync android --no-update
+        run: npx cap sync android
   server-lint:
     runs-on: ubuntu-latest
     steps:
