@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useAuth, type Role } from '../state/auth'
-import { login as apiLogin, useApi } from '../lib/api'
+import { login as apiLogin, isApiEnabled } from '../lib/api'
 
 export function RequireRole({ role, children, fallback }: { role: Role; children: React.ReactNode; fallback?: React.ReactNode }) {
   const { role: cur, login, isAdmin, username, setRole } = useAuth()
@@ -20,7 +20,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       return
     }
 
-    if (useApi()) {
+    if (isApiEnabled()) {
       if (!username) {
         setErr('Complete your account setup before unlocking this area')
         return
