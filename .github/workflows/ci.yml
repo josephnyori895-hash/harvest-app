@@ -12,6 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
       - run: npx cap sync android --no-update 2>&1 | head -20 || true
   server-lint:
@@ -20,6 +21,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - run: node --check server/src/index.js
-      - run: node --check server/src/middleware/auth.js
-      - run: node --check server/src/routes/media.js
+      - name: Syntax-check every server module
+        run: find server/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
