@@ -5,13 +5,11 @@ services:
     environment:
       POSTGRES_DB: harvest
       POSTGRES_USER: harvest
-      POSTGRES_PASSWORD: ${MINIO_SECRET_KEY:-harvest1234567890}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
-      # host backups mounted for pg_dump cron (host path /opt/harvest/backups)
       - ./backups:/backups
-    ports: ["127.0.0.1:5432:5432"]  # not public; Caddy/API only via internal net
+    ports: ["127.0.0.1:5432:5432"]
     healthcheck: { test: ["CMD-SHELL","pg_isready -U harvest -d harvest"], interval: 10s, retries: 5, timeout: 5s }
     deploy: { resources: { limits: { memory: 400M } } }
 
@@ -20,10 +18,9 @@ services:
     restart: unless-stopped
     command: server /data --console-address :9001
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-harvest}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-harvest1234567890}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
     volumes: [minio_data:/data]
-    # 9000 = S3 API (proxied via Caddy media.*), 9001 = console (127.0.0.1 only)
     ports: ["127.0.0.1:9001:9001"]
     expose: ["9000"]
     healthcheck: { test: ["CMD","curl","-f","http://localhost:9000/minio/health/live"], interval: 15s, retries: 5 }
@@ -31,31 +28,38 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --save "" --appendonly no --maxmemory 64mb --maxmemory-policy allkeys-lru
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     ports: ["127.0.0.1:6379:6379"]
-    healthcheck: { test: ["CMD","redis-cli","ping"], interval: 10s, retries: 5 }
+    healthcheck: { test: ["CMD-SHELL","redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"], interval: 10s, retries: 5 }
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     deploy: { resources: { limits: { memory: 80M } } }
 
   api:
     build: .
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://harvest:${MINIO_SECRET_KEY:-harvest1234567890}@postgres:5432/harvest
+      DATABASE_URL: postgres://harvest:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/harvest
+      DATABASE_SSL: "false"
+      DB_POOL_MAX: 20
+      DB_CONNECTION_TIMEOUT_MS: 10000
+      DB_IDLE_TIMEOUT_MS: 30000
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-harvest}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-harvest1234567890}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
       MINIO_BUCKET: harvest-media
       MINIO_USE_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-prod}
-      REDIS_URL: redis://redis:6379
-      COTURN_URL: turns:${COTURN_HOST:-harvestfamily.or.ke}:5349
-      COTURN_HOST: ${COTURN_HOST:-harvestfamily.or.ke}
-      ADMIN_PIN_HASHES: ${ADMIN_PIN_HASHES:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ADMIN_PIN_HASHES: ${ADMIN_PIN_HASHES:?ADMIN_PIN_HASHES is required}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      COTURN_URL: turns:${COTURN_HOST:?COTURN_HOST is required}:5349
+      COTURN_HOST: ${COTURN_HOST:?COTURN_HOST is required}
       PORT: 3000
       NODE_ENV: production
     expose: ["3000"]
-    # not mapped to host — Caddy reverse_proxies via docker net
     depends_on:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
@@ -66,10 +70,10 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    ports: ["80:80","443:443","443:443/udp"] # 443/udp for HTTP/3
+    ports: ["80:80","443:443","443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../dist:/srv:ro              # vite build output — host path on VPS is /opt/harvest/dist
+      - ../dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [api, minio]
@@ -81,18 +85,14 @@ services:
     network_mode: host
     volumes: ["./coturn.conf:/etc/coturn/turnserver.conf:ro"]
     command: -c /etc/coturn/turnserver.conf
-    # host mode required for 3478/5349 UDP+TCP; no ports mapping
 
-  # Optional: Cloudflare Tunnel for free .tk domains where Let's Encrypt/80 blocked
-  # Enable with: docker compose --profile tunnel up -d
-  # Set TUNNEL_TOKEN from cloudflared tunnel create + route dns api/media/apex -> http://caddy:80
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?TUNNEL_TOKEN is required when tunnel profile is enabled}
     profiles: ["tunnel"]
     depends_on: [caddy]
-    network_mode: host  # tunnel egress only, no ingress ports
+    network_mode: host
 
 volumes:
   pgdata:
