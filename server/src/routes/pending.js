@@ -93,7 +93,3 @@ export default async function pendingRoutes(app) {
     return reply.send({ ok:true })
   })
 }
-
-// Keep cleanup best-effort and bounded. The API endpoint above is available for an admin
-// and this timer handles abandoned uploads even when nobody opens the moderation screen.
-setInterval(() => cleanupOrphanedUploads().catch(err => console.warn('[pending] cleanup failed', err?.message || err)), 60 * 60 * 1000).unref?.()
