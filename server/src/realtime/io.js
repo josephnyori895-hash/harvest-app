@@ -13,7 +13,7 @@ export async function attachRealtime(httpServer) {
   const io = new Server(httpServer, {
     cors: {
       origin: allowedOrigins.length ? allowedOrigins : false,
-      credentials: true,
+      credentials: false,
     },
     transports: ['websocket', 'polling'],
     pingInterval: 25000,
@@ -52,9 +52,9 @@ export async function attachRealtime(httpServer) {
   async function refreshSocketUser(socket) {
     const id = socket.user?.id
     if (!id) return null
-    const { rows } = await query('SELECT id, username, role, group_name FROM users WHERE id=$1', [id])
+    const { rows } = await query('SELECT id, username, role, group_name, active FROM users WHERE id=$1', [id])
     const user = rows[0]
-    if (!user || !['admin', 'member'].includes(user.role)) return null
+    if (!user || user.active === false || !['admin', 'member'].includes(user.role)) return null
     socket.user = user
     return user
   }
@@ -115,7 +115,9 @@ export async function attachRealtime(httpServer) {
     const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace(/^Bearer\s+/i, '')
     if (!token) return next(new Error('auth required: send {auth:{token}}'))
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET || 'dev-jwt-secret-change-in-prod')
+      const secret = process.env.JWT_SECRET
+      if (!secret || secret.length < 32) return next(new Error('realtime authentication unavailable'))
+      const payload = jwt.verify(token, secret, { algorithms: ['HS256'] })
       socket.user = payload
       const user = await refreshSocketUser(socket)
       if (!user) return next(new Error('account inactive or unauthorized'))
@@ -157,7 +159,7 @@ export async function attachRealtime(httpServer) {
       if (!user) return
       const other = String(peer || '').trim()
       if (!other || other === user.username) return safeAck(ack, { error: 'invalid peer' })
-      const target = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [other])
+      const target = await query('SELECT id FROM users WHERE username=$1 AND role IN (\'member\',\'admin\') AND active IS NOT FALSE', [other])
       if (!target.rows[0]) return safeAck(ack, { error: 'user not found' })
       socket.join(keyFor(user.username, other))
       safeAck(ack, { ok: true, conversation_key: keyFor(user.username, other) })
@@ -210,7 +212,7 @@ export async function attachRealtime(httpServer) {
 
         const targetUsername = String(to || '').trim()
         if (!targetUsername || targetUsername === user.username) return safeAck(ack, { error: 'invalid recipient' })
-        const recipient = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [targetUsername])
+        const recipient = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\') AND active IS NOT FALSE', [targetUsername])
         if (!recipient.rows[0]) return safeAck(ack, { error: 'user not found' })
         const recipientId = recipient.rows[0].id
         const conv = keyFor(user.username, targetUsername)
@@ -288,7 +290,7 @@ export async function attachRealtime(httpServer) {
       if (!g.rows[0]) return safeAck(ack, { error: 'group not found' })
       const ga = await query('SELECT 1 FROM group_members WHERE group_id=$1 AND user_id=$2 AND role=$3', [g.rows[0].id, user.id, 'admin'])
       if (user.role !== 'admin' && !ga.rows[0]) return safeAck(ack, { error: 'group admin required' })
-      const target = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\')', [String(targetUsername).trim()])
+      const target = await query('SELECT id, username FROM users WHERE username=$1 AND role IN (\'member\',\'admin\') AND active IS NOT FALSE', [String(targetUsername).trim()])
       if (!target.rows[0]) return safeAck(ack, { error: 'target user not found' })
       const { rows } = await query(
         `INSERT INTO group_invites (group_id, invited_username, invited_user_id, inviter_id, status) VALUES ($1,$2,$3,$4,'pending') RETURNING id`,
@@ -351,7 +353,7 @@ export async function attachRealtime(httpServer) {
 
     socket.on('call:decline', async ({ to } = {}, ack) => {
       const user = await requireFreshUser(socket, ack)
-      if (!user || !(await canCallTarget(user.id, to))) return safeAck(ack, { error: 'call target unavailable' })
+      if (!user || !sdp || !(await canCallTarget(user.id, to))) return safeAck(ack, { error: 'call target unavailable' })
       io.to(`user:${to}`).emit('call:decline', { from: user.username })
       safeAck(ack, { ok: true })
     })
