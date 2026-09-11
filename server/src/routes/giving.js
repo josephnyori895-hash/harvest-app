@@ -103,17 +103,24 @@ export default async function givingRoutes(app) {
       const result = req.body?.Body?.stkCallback
       const checkoutId = String(result?.CheckoutRequestID || '')
       if (!checkoutId) return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
-      const found = await pool.query(`SELECT id, status FROM giving_transactions WHERE checkout_request_id=$1`, [checkoutId])
+      const found = await pool.query(`SELECT id, status, phone, amount_kes FROM giving_transactions WHERE checkout_request_id=$1`, [checkoutId])
       const tx = found.rows[0]
       if (!tx || tx.status === 'completed') return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
 
       const code = String(result.ResultCode ?? '')
       const metadata = Object.fromEntries((result.CallbackMetadata?.Item || []).map(item => [item.Name, item.Value]))
       if (code === '0') {
+        const callbackAmount = Number(metadata.Amount)
+        const callbackPhone = normalizePhone(metadata.PhoneNumber)
+        const storedAmount = Number(tx.amount_kes)
+        if (!Number.isFinite(callbackAmount) || callbackAmount !== storedAmount || !callbackPhone || callbackPhone !== tx.phone) {
+          req.log.warn({ checkoutId }, 'rejected M-Pesa callback with mismatched transaction details')
+          return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
+        }
         const receipt = String(metadata.MpesaReceiptNumber || '').slice(0, 64)
-        await pool.query(`UPDATE giving_transactions SET status='completed', receipt_number=$2, provider_result_code=$3, provider_result_description=$4, metadata=metadata || $5::jsonb, completed_at=now() WHERE id=$1`, [tx.id, receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata)])
+        await pool.query(`UPDATE giving_transactions SET status='completed', receipt_number=$2, provider_result_code=$3, provider_result_description=$4, metadata=metadata || $5::jsonb, completed_at=now() WHERE id=$1 AND status='pending'`, [tx.id, receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata)])
       } else {
-        await pool.query(`UPDATE giving_transactions SET status='failed', provider_result_code=$2, provider_result_description=$3 WHERE id=$1`, [tx.id, code, String(result.ResultDesc || 'M-Pesa payment failed')])
+        await pool.query(`UPDATE giving_transactions SET status='failed', provider_result_code=$2, provider_result_description=$3 WHERE id=$1 AND status='pending'`, [tx.id, code, String(result.ResultDesc || 'M-Pesa payment failed')])
       }
       return reply.send({ ResultCode: 0, ResultDesc: 'Accepted' })
     } catch (error) {
