@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useAuth, type Role } from '../state/auth'
+import { login as apiLogin, useApi } from '../lib/api'
 
 export function RequireRole({ role, children, fallback }: { role: Role; children: React.ReactNode; fallback?: React.ReactNode }) {
   const { role: cur, login, isAdmin, username, setRole } = useAuth()
@@ -19,7 +20,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       return
     }
 
-    if (import.meta.env.VITE_USE_API === 'true') {
+    if (useApi()) {
       if (!username) {
         setErr('Complete your account setup before unlocking this area')
         return
@@ -27,21 +28,12 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       setBusy(true)
       setErr('')
       try {
-        const base = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-        if (!base) throw new Error('API URL is not configured')
-        const response = await fetch(`${base}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ username, pin: trimmed }),
-        })
-        const data = await response.json().catch(() => ({}))
-        if (!response.ok || !data.token) throw new Error(data.error || 'Authentication failed')
+        const data = await apiLogin(username, trimmed)
         localStorage.setItem('harvest_token', data.token)
-        localStorage.setItem('harvest_username', data.username || username)
-        localStorage.setItem('harvest_role', data.role || 'member')
-        setRole(data.role || 'member')
+        localStorage.setItem('harvest_username', data.username)
+        localStorage.setItem('harvest_role', data.role)
+        setRole(data.role)
         window.dispatchEvent(new Event('harvest:auth'))
-        return
       } catch (error) {
         setErr(error instanceof Error ? error.message : 'Authentication failed')
       } finally {
