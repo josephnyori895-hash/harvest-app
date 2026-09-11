@@ -10,7 +10,7 @@ const expectSource = (pattern, message) => {
 
 test('admin controls expose server-backed Edit profile action', () => {
   expectSource(/Edit profile/, 'Edit profile control is missing')
-  expectSource(//api\/admin\/users\/\$\{encodeURIComponent\(u\.username\)\}/, 'Admin user endpoint is missing')
+  expectSource(/\/api\/admin\/users\/\$\{encodeURIComponent\(u\.username\)\}/, 'Admin user endpoint is missing')
   expectSource(/method:'PATCH'/, 'Edit/profile updates must use PATCH')
   expectSource(/name:\(document\.getElementById\('admin-name'\)/, 'Edit form does not submit the name field')
   expectSource(/phone:\(document\.getElementById\('admin-phone'\)/, 'Edit form does not submit the phone field')
