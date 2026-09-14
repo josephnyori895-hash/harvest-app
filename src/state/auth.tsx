@@ -2,11 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 
 // Exactly three Harvest account types: normal member, verified member, admin.
 // Verified is deliberately separate from the authorization role.
-export type Role = 'member' | 'admin' | 'guest'
-
 const ADMIN_PINS: string[] = (import.meta.env.DEV && import.meta.env.VITE_USE_API !== 'true') ? ['7777', '0000', '7C3AED'] : []
 const LS_ROLE = 'harvest_role'
-const LS_PIN = 'harvest_pin'
 const LS_USERNAME = 'harvest_username'
 const LS_VERIFIED = 'harvest_verified'
 
@@ -16,6 +13,7 @@ interface AuthCtx {
   login: (pin: string) => boolean; logout: () => void
   setUsername: (u: string) => void; setRole: (r: Role) => void; setVerified: (v: boolean) => void
 }
+export type Role = 'member' | 'admin' | 'guest'
 const Ctx = createContext<AuthCtx | null>(null)
 export function useAuth(): AuthCtx { const v = useContext(Ctx); if (!v) throw new Error('useAuth must be inside AuthProvider'); return v }
 
@@ -23,7 +21,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRoleState] = useState<Role>(() => { const s = localStorage.getItem(LS_ROLE) as Role | null; return s === 'leader' ? 'member' : (s ?? 'guest') })
   const [username, setUsernameState] = useState(() => localStorage.getItem(LS_USERNAME) ?? '')
   const [verified, setVerifiedState] = useState(() => localStorage.getItem(LS_VERIFIED) === 'true')
-  const [pin, setPinState] = useState(() => localStorage.getItem(LS_PIN) ?? '')
+  // PINs are never persisted. The backend/JWT is the production authority.
+  const [pin, setPinState] = useState('')
 
   const setRole = useCallback((r: Role) => { setRoleState(r); localStorage.setItem(LS_ROLE, r) }, [])
   const setVerified = useCallback((v: boolean) => { setVerifiedState(v); localStorage.setItem(LS_VERIFIED, String(v)) }, [])
@@ -48,11 +47,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const trimmed = p.trim()
     const isAdminOffline = ADMIN_PINS.length > 0 && ADMIN_PINS.includes(trimmed)
     const r: Role = isAdminOffline ? 'admin' : trimmed ? 'member' : 'guest'
-    setPinState(trimmed); setRole(r); localStorage.setItem(LS_PIN, trimmed); localStorage.setItem(LS_ROLE, r)
+    setPinState(trimmed)
+    setRole(r)
     return isAdminOffline
   }, [setRole])
 
-  const logout = useCallback(() => { setPinState(''); setVerified(false); setRole('guest'); localStorage.removeItem(LS_PIN); localStorage.setItem(LS_ROLE, 'guest') }, [setRole, setVerified])
+  const logout = useCallback(() => {
+    setPinState('')
+    setVerified(false)
+    setRole('guest')
+    localStorage.removeItem('harvest_token')
+    localStorage.removeItem(LS_USERNAME)
+    localStorage.setItem(LS_ROLE, 'guest')
+  }, [setRole, setVerified])
 
   useEffect(() => {
     if (localStorage.getItem(LS_ROLE) === 'leader') { setRole('member'); setVerified(true) }

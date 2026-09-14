@@ -6,7 +6,7 @@ function canonicalUsername(value, max = 32) {
 }
 
 export function makeAuthenticate({ jwtSecret }) {
-  if (!jwtSecret || jwtSecret.length < 32 || jwtSecret === 'dev-jwt-secret-change-in-prod') {
+  if (!jwtSecret || jwtSecret.length < 32) {
     throw new Error('JWT_SECRET must be configured with at least 32 random characters')
   }
   return async function authenticate(req, reply) {
@@ -32,9 +32,10 @@ export function requireRole(...allowed) {
       return reply.code(403).send({ error: 'account authentication required' })
     }
 
-    const { rows } = await query('SELECT id, username, role, verified FROM users WHERE id=$1', [req.user.id])
+    const { rows } = await query('SELECT id, username, role, verified, active FROM users WHERE id=$1', [req.user.id])
     const current = rows[0]
     if (!current) { req.user = null; return reply.code(401).send({ error: 'account no longer exists' }) }
+    if (current.active === false) { req.user = null; return reply.code(403).send({ error: 'account is deactivated' }) }
     if (!['admin', 'member'].includes(current.role)) return reply.code(403).send({ error: 'account role is invalid' })
 
     req.user = { ...req.user, id: current.id, username: current.username, role: current.role, verified: Boolean(current.verified) }

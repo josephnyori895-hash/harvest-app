@@ -39,6 +39,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
   const [progress, setProgress] = useState({ id: null as string | null, seconds: 0, duration: 0 })
   const [serverTracks, setServerTracks] = useState<Track[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
+  const [error, setError] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const useServer = useApi()
 
@@ -95,6 +96,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
   useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
 
   const togglePlay = (track: Track) => {
+    setError('')
     if (!track.url) { showToast('This track has no audio source yet'); return }
     if (playingId === track.id) {
       audioRef.current?.pause()
@@ -105,9 +107,11 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
     const audio = new Audio(track.url)
     audio.onended = () => { setPlayingId(null); setProgress(p => ({ ...p, id: null, seconds: 0 })) }
     audio.ontimeupdate = () => setProgress({ id: track.id, seconds: audio.currentTime, duration: audio.duration || 0 })
-    audio.play().catch(() => showToast('Tap again to allow audio playback'))
-    audioRef.current = audio
-    setPlayingId(track.id)
+    audio.onerror = () => { setPlayingId(null); setError(`Unable to play "${track.title}". Try another track.`) }
+    audio.play().then(() => {
+      audioRef.current = audio
+      setPlayingId(track.id)
+    }).catch(() => { showToast('Tap again to allow audio playback') })
   }
 
   const seek = (track: Track, e: React.MouseEvent<HTMLDivElement>) => {
@@ -124,46 +128,35 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
       if (exists) { showToast('Already in your Harvest library'); return }
       const next = [{ id: `loc_${Date.now()}`, title: track.title, artist: track.artist, url: track.url || undefined, cover: track.cover }, ...lib]
       localStorage.setItem('harvest_musics', JSON.stringify(next))
-      showToast(`“${track.title}” added to your library`)
+      showToast(`"${track.title}" added to your library`)
     } catch { showToast('Could not add to library') }
   }
 
   return (
     <div className="min-h-[calc(100vh-49px)] bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold">🎵</div>
-            <h1 className="text-xl font-extrabold text-gradient-warm">Harvest Music</h1>
+      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold">🎵</div>
+            <h1 className="text-xl font-extrabold truncate">Harvest Music</h1>
           </div>
-          <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-100 text-purple-700">WORSHIP</span>
+          <span className="shrink-0 text-xs font-bold px-3 py-1 rounded-full bg-purple-100 text-purple-700">WORSHIP</span>
         </div>
 
-        {/* Search — filters whichever tab is active */}
         <div className="flex gap-2 mb-4">
-          <div className="flex-1 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
+          <div className="flex-1 min-w-0 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
             <IgIcon name="search" size={20} />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={tab === 'local' ? 'Search your library...' : 'Search songs, artists...'}
-              className="flex-1 bg-transparent outline-none text-sm"
+              className="min-w-0 flex-1 bg-transparent outline-none text-sm"
             />
           </div>
-          {q && (
-            <button
-              onClick={() => setQ('')}
-              className="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center hover:bg-neutral-300 transition"
-              aria-label="Clear search"
-            >
-              ✕
-            </button>
-          )}
+          {q && <button onClick={() => setQ('')} className="touch-target w-10 h-10 shrink-0 rounded-full bg-neutral-200 flex items-center justify-center" aria-label="Clear search">✕</button>}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           {[
             ['trending', '🔥 Trending Worship'],
             ['local', `🎧 Local Music${localTracks.length ? ` (${localTracks.length})` : ''}`],
@@ -171,7 +164,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
             <button
               key={t}
               onClick={() => setTab(t as any)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+              className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                 tab === t
                   ? 'bg-gradient-to-r from-amber-400 to-purple-600 text-white shadow-lg'
                   : 'bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300'
@@ -183,8 +176,8 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-4 py-6 space-y-4">
+        {error && <div role="status" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {tab === 'local' && localTracks.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">🎧</div>
@@ -195,7 +188,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
           <div className="text-center py-12">
             <div className="text-6xl mb-4">🎵</div>
             <p className="text-neutral-500 font-medium">No songs found</p>
-            <p className="text-sm text-neutral-400">Try searching “Worship” or artist names</p>
+            <p className="text-sm text-neutral-400">Try searching "Worship" or artist names</p>
           </div>
         ) : (
           filtered.map((track) => {
@@ -207,13 +200,12 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
                 key={track.id}
                 className="card-spiritual hover:shadow-xl transition-all duration-300 overflow-hidden group"
               >
-                <div className="flex gap-4 p-4">
-                  {/* Album Art */}
+                <div className="flex gap-3 sm:gap-4 p-4 items-center">
                   <div className="relative flex-shrink-0">
                     <img
                       src={track.cover || FALLBACK_COVER}
                       alt={track.title}
-                      className="w-20 h-20 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
                     />
                     <button
                       onClick={() => togglePlay(track)}
@@ -226,14 +218,10 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
                     </button>
                   </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <h3 className="font-bold text-neutral-900 truncate group-hover:text-gradient-warm">
-                      {track.title}
-                    </h3>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-neutral-900 truncate">{track.title}</h3>
                     <p className="text-sm text-neutral-600 truncate">{track.artist}</p>
 
-                    {/* Progress bar — real audio position, tap to seek */}
                     {showBar && (
                       <div
                         className="mt-2 flex items-center gap-2 cursor-pointer"
@@ -251,13 +239,12 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
                           />
                         </div>
                         <span className="text-xs text-neutral-500 font-mono">
-                          {fmt(progress.seconds)} / {fmt(progress.duration || 0)}
+                          {fmt(progress.seconds)} / {fmt(progress.duration || track.seconds || 0)}
                         </span>
                       </div>
                     )}
 
-                    {/* Type Badge */}
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex gap-2 mt-2 flex-wrap">
                       <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                         track.type === 'worship'
                           ? 'badge-admin'
@@ -271,19 +258,19 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex flex-col gap-2 justify-center">
+                  <div className="flex flex-col gap-2 shrink-0">
                     <button
                       onClick={() => togglePlay(track)}
-                      className="btn-primary py-2 px-4 text-sm"
-                      aria-label={isPlaying ? 'Pause' : 'Play'}
+                      className="btn-primary py-2 px-3 text-sm min-w-[48px]"
+                      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
                     >
                       {isPlaying ? '⏸' : '▶'}
                     </button>
                     <button
                       onClick={() => { addToLibrary(track); onAdd?.(track) }}
-                      className="btn-secondary py-2 px-4 text-sm"
-                      title={track.source === 'local' ? 'Already saved — use in a story/post' : 'Save to Local Music'}
+                      className="btn-secondary py-2 px-3 text-sm min-w-[48px]"
+                      title={track.source === 'local' ? 'Use in a story or post' : 'Save to Local Music + use in a story/post'}
+                      aria-label={`Add ${track.title} to library and story`}
                     >
                       ➕
                     </button>

@@ -1,6 +1,10 @@
 // src/lib/api.ts — Harvest Family API client
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const USE_API = import.meta.env.VITE_USE_API === 'true'
+// In production the API is same-origin so the Netlify /api rewrite is used.
+// A custom VITE_API_URL is still supported for local development or a separate API.
+const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const USE_API = import.meta.env.PROD
+  ? import.meta.env.VITE_USE_API !== 'false'
+  : import.meta.env.VITE_USE_API === 'true'
 
 export const useApi = () => USE_API
 
@@ -10,9 +14,29 @@ function authHeader() {
 }
 
 async function apiJson(path: string, init: RequestInit = {}) {
-  const r = await fetch(`${BASE}${path}`, { ...init, headers: { ...authHeader(), ...(init.headers || {}) } })
-  if (!r.ok) throw new Error(await r.text())
-  return r.json()
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 15_000)
+  try {
+    const r = await fetch(`${BASE}${path}`, {
+      ...init,
+      signal: init.signal || controller.signal,
+      headers: { ...authHeader(), ...(init.headers || {}) },
+    })
+    if (!r.ok) {
+      let message = `API request failed (${r.status})`
+      try {
+        const body = await r.text()
+        if (body) message = body
+      } catch { /* keep status message */ }
+      throw new Error(message)
+    }
+    return r.json()
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('Request timed out. Please try again.')
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 export async function presign(params: { type: 'post'|'story'|'reel'|'track', contentType: string, bytes: number, ext?: string }) {
@@ -24,7 +48,7 @@ export async function uploadToMinio(url:string, fields:Record<string,string>, fi
   Object.entries(fields).forEach(([k,v]) => fd.append(k, v))
   fd.append('file', file)
   const r = await fetch(url, { method:'POST', body:fd })
-  if (!r.ok) throw new Error(`MinIO upload failed ${r.status} ${await r.text()}`)
+  if (!r.ok) throw new Error(`Media upload failed (${r.status})`)
 }
 
 export async function confirmMedia(body: {key:string,type:string,caption?:string,title?:string,artist?:string}) {

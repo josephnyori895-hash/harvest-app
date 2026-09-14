@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth, type Role } from '../state/auth'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const USE_API = import.meta.env.VITE_USE_API === 'true'
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const USE_API = import.meta.env.PROD ? import.meta.env.VITE_USE_API !== 'false' : import.meta.env.VITE_USE_API === 'true'
 
 export function RequireRole({ role, children, fallback }: { role: Role; children: React.ReactNode; fallback?: React.ReactNode }) {
-  const { role: cur, login, isAdmin, username, setRole, setUsername, setVerified } = useAuth()
+  const { role: cur, login, username, setRole, setUsername, setVerified } = useAuth()
   const [pin, setPin] = useState('')
   const [err, setErr] = useState('')
   const [checking, setChecking] = useState(USE_API)
   const needAdmin = role === 'admin'
-  const localOk = needAdmin ? isAdmin : cur !== 'guest'
+  const localOk = needAdmin ? cur === 'admin' : cur !== 'guest'
 
   useEffect(() => {
     if (!USE_API) { setChecking(false); return }
@@ -22,17 +22,9 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       .then(data => {
         if (cancelled) return
         if (!data.user) throw new Error('session expired')
-        setUsername(data.user.username)
-        setRole(data.role as Role)
-        setVerified(Boolean(data.user.verified))
+        setUsername(data.user.username); setRole(data.role as Role); setVerified(Boolean(data.user.verified))
       })
-      .catch(() => {
-        if (cancelled) return
-        localStorage.removeItem('harvest_token')
-        setRole('guest')
-        setVerified(false)
-        setErr('Session expired — sign in again')
-      })
+      .catch(() => { if (!cancelled) { localStorage.removeItem('harvest_token'); setRole('guest'); setVerified(false); setErr('Session expired — sign in again') } })
       .finally(() => { if (!cancelled) setChecking(false) })
     return () => { cancelled = true }
   }, [setRole, setUsername, setVerified])
@@ -67,8 +59,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
     }
     const isAdminLogin = login(trimmed)
     if (needAdmin && !isAdminLogin) { setErr('PIN invalid — admin access denied'); return }
-    setErr('')
-    setPin('')
+    setErr(''); setPin('')
   }
 
   if (fallback) return <>{fallback}</>
@@ -77,10 +68,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       <div className="w-14 h-14 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center text-xl mb-3">🔒</div>
       <h2 className="font-bold text-lg">{needAdmin ? 'Admin access required' : 'Member access required'}</h2>
       <p className="text-sm text-[#766E63] mt-1 max-w-[300px]">{needAdmin ? 'Sign in with an administrator account to continue.' : 'Enter your account PIN to continue.'}</p>
-      <div className="w-full max-w-[300px] mt-4 flex gap-2">
-        <input type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" className="flex-1 bg-white border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" onKeyDown={e => e.key === 'Enter' && void tryLogin()} />
-        <button onClick={() => void tryLogin()} className="px-5 py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-semibold">Unlock</button>
-      </div>
+      <div className="w-full max-w-[300px] mt-4 flex gap-2"><input type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" className="flex-1 bg-white border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" onKeyDown={e => e.key === 'Enter' && void tryLogin()} /><button onClick={() => void tryLogin()} className="px-5 py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-semibold">Unlock</button></div>
       {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
       {!USE_API && <p className="text-[11px] text-[#766E63] mt-3">Offline demo mode</p>}
     </div>
