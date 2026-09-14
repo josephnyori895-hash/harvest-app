@@ -4,8 +4,10 @@
 
 [functions]
   directory = "server/netlify/functions"
-  node_bundler = "esbuild"
-  external_node_modules = ["sharp"]
+  # nft (Node file trace) runs the ESM sources natively; esbuild's ESM shim
+  # double-declares __dirname and crashes the api function at boot.
+  node_bundler = "nft"
+  external_node_modules = ["sharp", "@netlify/database"]
 
 [build.environment]
   NODE_VERSION = "22"

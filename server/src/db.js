@@ -1,23 +1,16 @@
 import pg from 'pg'
-import { getConnectionString } from '@netlify/database'
 import dotenv from 'dotenv'
 dotenv.config()
 
-// Netlify Database injects NETLIFY_DB_URL; the self-hosted Docker Compose stack
-// supplies DATABASE_URL. Only consult the Netlify helper when neither is present.
-function resolveConnectionString() {
-  const explicit = process.env.NETLIFY_DB_URL || process.env.DATABASE_URL
-  if (explicit) return explicit
-  try {
-    return getConnectionString()
-  } catch {
-    return null
-  }
-}
-
-const connectionString = resolveConnectionString()
+// Connection resolution order:
+//   1. NETLIFY_DB_URL — injected automatically by the Netlify Database integration
+//   2. DATABASE_URL   — set by the self-hosted Docker Compose stack / VPS deploys
+// The @netlify/database helper package is intentionally not imported: it cannot be
+// bundled for Lambda (runtime file resolution) and is redundant, since the
+// integration provides the same URL via NETLIFY_DB_URL.
+const connectionString = process.env.NETLIFY_DB_URL || process.env.DATABASE_URL
 if (!connectionString) {
-  throw new Error('Database connection required: set NETLIFY_DB_URL (Netlify) or DATABASE_URL (self-hosted)')
+  throw new Error('Database connection required: set NETLIFY_DB_URL (Netlify Database integration) or DATABASE_URL (self-hosted)')
 }
 
 const useSsl = String(process.env.DATABASE_SSL || 'true').toLowerCase() === 'true'

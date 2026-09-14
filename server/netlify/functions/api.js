@@ -1,27 +1,32 @@
 import awsLambdaFastify from '@fastify/aws-lambda'
-import { withLambda } from '@netlify/aws-lambda-compat'
 import { buildApp } from '../../src/app.js'
 import { ensureBucket } from '../../src/s3.js'
-import { runMigrations } from '../../src/migrate.js'
 
-const app = await buildApp()
-await ensureBucket()
+// Lazily build the Fastify app on first invocation (avoids top-level await,
+// which is invalid in the CJS output Netlify's function bundler produces).
+// No withLambda wrapper: @netlify/aws-lambda-compat double-declares __dirname
+// in the bundled output and crashed the function at boot.
+let handlerPromise
 
-// Apply pending SQL migrations on cold start (idempotent — schema_migrations
-// tracks applied files, so this is a single fast query once up to date).
-try {
-  await runMigrations()
-} catch (e) {
-  console.error('[migrate] failed', e?.message || e)
+function getHandler() {
+  if (!handlerPromise) {
+    handlerPromise = (async () => {
+      const app = await buildApp()
+      await ensureBucket()
+      await app.ready()
+      return awsLambdaFastify(app, { decorateRequest: false })
+    })().catch(err => {
+      handlerPromise = undefined
+      throw err
+    })
+  }
+  return handlerPromise
 }
 
-const proxy = awsLambdaFastify(app, {
-  decorateRequest: false,
-})
-
-await app.ready()
-
-export default withLambda(proxy)
+export async function handler(event, context) {
+  const fastifyHandler = await getHandler()
+  return fastifyHandler(event, context)
+}
 
 export const config = {
   path: '/api/*',

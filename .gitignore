@@ -49,3 +49,4 @@ server/backups/
 
 # OS
 Thumbs.db
+.netlify/

@@ -1,0 +1,8 @@
+# Health check (used by scripts/netlify-smoke-test.mjs)
+/health  /.netlify/functions/api/health  200
+
+# API -> Fastify Netlify Function. Must come before the SPA fallback.
+/api/*  /.netlify/functions/api/:splat  200
+
+# SPA fallback: every other route renders the app.
+/*  /index.html  200
