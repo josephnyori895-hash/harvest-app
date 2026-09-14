@@ -278,6 +278,7 @@ export default function Admin({ onBack, users, setUsers }: Props) {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-[#7C3AED]">✓</span>}</p>
                   <p className="text-xs text-[#766E63] truncate">@{u.username} · {u.group_name}</p>
+                  {u.phone && <p className="text-xs text-[#766E63] truncate">📞 {u.phone}</p>}
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-[#F3E8FF] text-[#5B21B6]' : 'bg-[#F5EEDF] text-[#766E63]'}`}>{(u.role || 'member').toUpperCase()}</span>
               </button>

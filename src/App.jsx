@@ -56,13 +56,20 @@ function IgIcon({ name, active }) {
 }
 
 function InnerApp() {
-  const { setUsername, setRole, role } = useAuth()
-  const [step, setStep] = useState(1)
+  const { setUsername, setRole, setVerified, role } = useAuth()
   const [first, setFirst] = useState('')
   const [last, setLast] = useState('')
   const [phone, setPhone] = useState('')
   const [location, setLocation] = useState('')
-  const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_onboarded'))
+  // Onboarding is now the auth gate: register or sign in. A valid token means onboarded.
+  const [onboarded, setOnboarded] = useState(() => {
+    if (!localStorage.getItem('harvest_token')) return false
+    const u = localStorage.getItem('harvest_username') || ''
+    const parts = u.split('_')
+    if (parts[0]) setFirst(parts[0][0].toUpperCase() + parts[0].slice(1))
+    if (parts[1]) setLast(parts[1][0].toUpperCase() + parts[1].slice(1))
+    return true
+  })
   const [tab, setTab] = useState('home')
   const [homeRefresh, setHomeRefresh] = useState(0)
   const handleTab = (t) => {
@@ -215,34 +222,24 @@ function InnerApp() {
     }catch{}
   }
 
-  const handleOnboardDone = () => {
-    if (first.trim() && last.trim()) {
-      if (!chosenGroup) { alert('Choose a Harvest group'); return }
-      const username = (first.toLowerCase().replace(/\s+/g, '') + '_' + last.toLowerCase().replace(/\s+/g, '')).slice(0, 15)
-      const exists = users.find(u => u.username === username)
-      if (!exists) {
-        const loc = location.trim() || 'Nyeri'
-        const coords = groupCoords[chosenGroup] || [-0.4197, 36.9475]
-        const newUser = { username, name: first + ' ' + last, verified: false, followers: 0, me: true, location: loc, group: chosenGroup, phone, lat: coords[0], lng: coords[1] }
-        const updated = [newUser, ...users]
-        setUsers(updated)
-        localStorage.setItem('harvest_users', JSON.stringify(updated))
-        setUsername(username)
-      } else {
-        setUsername(username)
-      }
-      setRole('member')
-    } else {
-      // skip path -> demo user
-      const demo = users[0]?.username || 'allan'
-      setUsername(demo)
-      if (role === 'guest') setRole('member')
-    }
+  const handleAuthSuccess = (data) => {
+    localStorage.setItem('harvest_token', data.token)
+    localStorage.setItem(`harvest_token_${data.username}`, data.token)
+    localStorage.setItem('harvest_username', data.username)
     localStorage.setItem('harvest_onboarded', '1')
+    localStorage.setItem('harvest_role', data.role)
+    setUsername(data.username)
+    setRole(data.role)
+    setVerified(Boolean(data.verified))
+    const parts = String(data.username || '').split('_')
+    setFirst(parts[0] ? parts[0][0].toUpperCase() + parts[0].slice(1) : '')
+    setLast(parts[1] ? parts[1][0].toUpperCase() + parts[1].slice(1) : '')
     setOnboarded(true)
+    try { if (window.__harvest_reconnect) window.__harvest_reconnect() } catch {}
+    window.dispatchEvent(new Event('harvest:verified'))
   }
 
-  if (!onboarded) return <Onboarding step={step} setStep={setStep} first={first} setFirst={setFirst} last={last} setLast={setLast} phone={phone} setPhone={setPhone} location={location} setLocation={setLocation} chosenGroup={chosenGroup} setChosenGroup={setChosenGroup} onDone={handleOnboardDone} />
+  if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
     <div className="min-h-screen bg-black flex justify-center">
@@ -283,89 +280,91 @@ export default function App() {
   )
 }
 
-function Onboarding({ step, setStep, first, setFirst, last, setLast, phone, setPhone, location, setLocation, chosenGroup, setChosenGroup, onDone }) {
+function Onboarding({ onAuthSuccess }) {
+  const [mode, setMode] = useState('register') // 'register' | 'login'
+  const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', group_name: 'Harvest Central' })
+  const [loginId, setLoginId] = useState('')
+  const [loginPass, setLoginPass] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+  const submitRegister = async () => {
+    if (busy) return
+    setBusy(true); setError('')
+    try {
+      const response = await fetch(`${API}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.token) throw new Error(data.error || 'Registration failed')
+      onAuthSuccess?.(data)
+    } catch (e) { setError(e?.message || 'Registration failed') } finally { setBusy(false) }
+  }
+
+  const submitLogin = async () => {
+    if (busy) return
+    setBusy(true); setError('')
+    try {
+      const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginId, password: loginPass }) })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.token) throw new Error(data.error || 'Sign in failed')
+      onAuthSuccess?.(data)
+    } catch (e) { setError(e?.message || 'Sign in failed') } finally { setBusy(false) }
+  }
+
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
+
   return (
     <div className="min-h-screen bg-white flex justify-center">
       <div className="w-full max-w-[390px] bg-white min-h-screen flex flex-col">
-        {/* header */}
         <div className="h-[44px] flex items-center justify-between px-4">
           <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg bg-[#7C3AED] text-white flex items-center justify-center text-[11px] font-bold">HF</div><span className="text-[13px] font-semibold text-zinc-900">Harvest Family Church</span><span className="text-[11px] text-zinc-500 -ml-1 hidden sm:inline"> Nyeri</span></div>
-          <button onClick={onDone} className="text-[13px] font-semibold px-3 py-1 rounded-full border border-zinc-200 text-zinc-700">Skip</button>
+          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="text-[13px] font-semibold px-3 py-1 rounded-full border border-zinc-200 text-zinc-700">
+            {mode === 'register' ? 'Sign in' : 'New here?'}
+          </button>
         </div>
-        <div className="px-4 flex gap-1">{[1, 2, 3].map(i => <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-[#7C3AED]' : 'bg-[#EDE9FE]'}`} />)}</div>
-        <p className="px-4 text-[11px] text-zinc-500 text-right mt-1">Step {step} of 3</p>
 
-        {/* COMPEL polish Step 1 */}
-        {step === 1 && (
-          <div className="px-6 mt-4 flex-1">
-            <div className="rounded-[20px] p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE] relative overflow-hidden">
-              <span className="inline-flex text-[11px] font-bold tracking-wide bg-[#F59E0B] text-white px-3 py-1 rounded-full">Step 1</span>
-              <h1 className="text-[22px] font-extrabold leading-tight tracking-tight text-[#5B21B6] mt-3">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
-              <div className="absolute right-3 bottom-3 opacity-90">
-                {/* waving hand emoji stylized */}
-                <div className="text-[72px] leading-none select-none" style={{ filter: 'drop-shadow(0 2px 8px rgba(124,58,237,0.15))' }}>👋</div>
-              </div>
-            </div>
+        <div className="rounded-[20px] mx-4 mt-4 p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE]">
+          <span className="inline-flex text-[11px] font-bold tracking-wide bg-[#F59E0B] text-white px-3 py-1 rounded-full">Karibu</span>
+          <h1 className="text-[22px] font-extrabold leading-tight tracking-tight text-[#5B21B6] mt-3">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
+          <p className="text-[12px] font-semibold tracking-widest text-[#7C3AED] mt-2">COMPEL · RAISE · RELEASE</p>
+        </div>
 
-            <div className="mt-6">
-              <h2 className="text-[15px] font-bold text-zinc-900">What's your name?</h2>
-              <p className="text-[13px] text-zinc-500">We'd love to know you personally.</p>
-              <div className="space-y-3 mt-4">
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>
-                  <input value={first} onChange={e => setFirst(e.target.value)} placeholder="First Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" />
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>
-                  <input value={last} onChange={e => setLast(e.target.value)} placeholder="Last Name" className="w-full bg-white border border-zinc-300 rounded-xl pl-10 pr-4 py-3.5 text-[15px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#EDE9FE] placeholder:text-zinc-400" />
-                </div>
-              </div>
-              <div className="mt-4 rounded-xl bg-[#F5F0FF] border border-[#EDE9FE] px-4 py-3 flex items-center gap-2">
-                <span className="text-[#7C3AED] font-bold text-sm">❝</span><span className="text-[12px] font-semibold tracking-widest text-[#7C3AED]">COMPEL · RAISE · RELEASE</span>
-              </div>
+        {mode === 'register' ? (
+          <div className="px-6 mt-4 flex-1 space-y-3 overflow-auto">
+            <h2 className="text-[15px] font-bold text-zinc-900">Create your account</h2>
+            <p className="text-[13px] text-zinc-500">Use your phone number and a password you'll remember.</p>
+            <input value={form.username} onChange={set('username')} placeholder="Username (e.g. joy_wambui)" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            <input value={form.name} onChange={set('name')} placeholder="Full name" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            <input value={form.phone} onChange={set('phone')} placeholder="Phone number (07xx / 01xx)" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            <input value={form.password} onChange={set('password')} placeholder="Password (min 8 characters)" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            <div>
+              <p className="text-xs font-bold text-zinc-700 mb-1">Choose Harvest Group *</p>
+              <select value={form.group_name} onChange={set('group_name')} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#7C3AED]">
+                {['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'].map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <p className="text-[11px] text-zinc-500 mt-1">You'll be grouped with members near you</p>
             </div>
+            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+          </div>
+        ) : (
+          <div className="px-6 mt-4 flex-1 space-y-3 overflow-auto">
+            <h2 className="text-[15px] font-bold text-zinc-900">Sign in</h2>
+            <p className="text-[13px] text-zinc-500">Username or phone number + your password.</p>
+            <input value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="Username or phone" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            <input value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Password or PIN" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
           </div>
         )}
-
-        {step === 2 && (
-          <div className="px-6 mt-4 flex-1">
-            <h1 className="text-[22px] font-bold leading-tight tracking-tight text-zinc-900">Tell us about yourself</h1><p className="text-[13px] text-zinc-500 mt-1">We’ll personalize your feed.</p>
-            <div className="space-y-3 mt-6">
-              <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone or email" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-              <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Estate / Area in Nyeri (e.g., Majengo, Ruringu)" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-              <div>
-                <p className="text-xs font-bold text-zinc-700 mb-1">Choose Harvest Group *</p>
-                <select value={chosenGroup} onChange={e => setChosenGroup(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#7C3AED]">
-                  {Object.keys(groupCoords).map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <p className="text-[11px] text-zinc-500 mt-1">Required — you will be grouped by location</p>
-              </div>
-              <div className="rounded-xl overflow-hidden border border-zinc-200 h-[160px]">
-                <MapContainer center={groupCoords[chosenGroup] || [-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }} dragging={false} zoomControl={false}>
-                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  {Object.entries(groupCoords).map(([g, c]) => (
-                    <Marker key={g} position={c}>
-                      <Popup>{g}</Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
-              </div>
-              <p className="text-[11px] text-zinc-500 text-center">Map shows available Harvest groups nearby</p>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (<div className="flex-1 text-center py-10 px-6"><div className="w-20 h-20 rounded-full bg-[#7C3AED] text-white flex items-center justify-center text-2xl mx-auto">✓</div><p className="font-semibold mt-4 text-zinc-900">Karibu {first || 'Family'}!</p><p className="text-sm text-zinc-500 mt-1">Feed + Reels + Chat ready.</p></div>)}
 
         <div className="p-4">
           <button
-            onClick={() => step < 3 ? setStep(step + 1) : onDone()}
-            disabled={step === 1 && (!first.trim() || !last.trim())}
-            className={`w-full py-4 rounded-full font-semibold text-[15px] flex items-center justify-center gap-2 ${step === 1 && (!first.trim() || !last.trim()) ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'}`}
+            onClick={() => void (mode === 'register' ? submitRegister() : submitLogin())}
+            disabled={busy}
+            className={`w-full py-4 rounded-full font-semibold text-[15px] flex items-center justify-center gap-2 ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'}`}
           >
-            {step < 3 ? 'Continue' : 'Enter Harvest'} <span>→</span>
+            {busy ? 'Please wait…' : mode === 'register' ? 'Create my account →' : 'Sign in →'}
           </button>
-          {step === 1 && (!first.trim() || !last.trim()) && <p className="text-[11px] text-zinc-500 text-center mt-2">Enter both names to continue</p>}
+          {mode === 'register' && <p className="text-[11px] text-zinc-500 text-center mt-2">Admin approval is not needed to join — welcome to the family.</p>}
         </div>
       </div>
     </div>

@@ -6,7 +6,28 @@ import { mediaUrl } from './mediaToken.js'
 dotenv.config()
 
 export const BUCKET = 'harvest-media'
-export const mediaStore = getStore(BUCKET)
+
+// The Blobs store needs Netlify's injected siteID/token. Resolve it lazily so the
+// API can also run outside Netlify (local dev, self-hosted) — there it falls back
+// to an ephemeral in-memory store and media uploads simply do not persist.
+let _store = null
+function store() {
+  if (_store) return _store
+  try {
+    _store = getStore(BUCKET)
+  } catch (e) {
+    console.warn('[blobs] Netlify Blobs unavailable, using in-memory store:', e?.message || e)
+    const mem = new Map()
+    _store = {
+      async get(key) { const v = mem.get(key); return v ? { data: v.data, metadata: v.metadata } : null },
+      async set(key, data, opts = {}) { mem.set(key, { data, metadata: opts.metadata || {} }); return key },
+      async delete(key) { mem.delete(key) },
+      async getMetadata(key) { const v = mem.get(key); return v ? v.metadata : null },
+      async getWithMetadata(key, _opts) { const v = mem.get(key); return v ? { data: v.data, metadata: v.metadata } : null },
+    }
+  }
+  return _store
+}
 
 const MAX_BYTES = { image: 5 * 1024 * 1024, video: 5 * 1024 * 1024, audio: 5 * 1024 * 1024 }
 const ALLOW_CT = {
@@ -45,7 +66,7 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
 export async function presignedGetOrNull(key, ttlSeconds) {
   if (!key) return null
   try {
-    const metadata = await mediaStore.getMetadata(key)
+    const metadata = await store().getMetadata(key)
     if (!metadata) return null
     // Signed, short-lived URL: <img>/<video> cannot send a bearer token.
     return mediaUrl(key, ttlSeconds)
@@ -57,9 +78,9 @@ export async function presignedGetOrNull(key, ttlSeconds) {
 export async function removeObjectOrIgnore(key) {
   if (!key) return false
   try {
-    const existing = await mediaStore.getMetadata(key)
+    const existing = await store().getMetadata(key)
     if (!existing) return false
-    await mediaStore.delete(key)
+    await store().delete(key)
     return true
   } catch (error) {
     console.warn(`[blobs] unable to remove ${key}: ${error?.message || error}`)
@@ -100,6 +121,15 @@ export const minio = {
     await mediaStore.set(key, data, { metadata: normalizeMetadata(metadata) })
   },
 }
+
+export const mediaStore = new Proxy({}, {
+  get: (_t, prop) => (...args) => {
+    const s = store()
+    const fn = s[prop]
+    if (typeof fn !== 'function') throw new Error(`mediaStore.${String(prop)} is not a function`)
+    return fn.apply(s, args)
+  },
+})
 
 export async function ensureBucket() {
   // Netlify Blobs stores are provisioned automatically; no bucket creation is required.

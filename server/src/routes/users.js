@@ -35,14 +35,15 @@ export default async function usersRoutes(app) {
     const viewerId = req.user.id
     const isAdmin = req.user.role === 'admin'
     const groupCentroids = { 'Harvest Central': [-0.4197, 36.9475], 'Harvest Ruringu': [-0.432, 36.95], 'Harvest Skuta': [-0.41, 36.94], 'Harvest Majengo': [-0.425, 36.945], 'Harvest Kamakwa': [-0.415, 36.955], 'Harvest Nyeri': [-0.4197, 36.9475] }
-    const { rows } = await query(`SELECT id, username, name, group_name, location, verified, lat, lng FROM users WHERE active=TRUE ORDER BY group_name, username LIMIT 500`)
+    // Phone numbers are admin-only: members never receive other people's numbers.
+    const { rows } = await query(`SELECT id, username, name, group_name, location, verified, lat, lng${isAdmin ? ', phone, phone_normalized' : ''} FROM users WHERE active=TRUE ORDER BY group_name, username LIMIT 500`)
     const { rows: follows } = await query(`SELECT followee_id FROM follows WHERE follower_id=$1`, [viewerId])
     const followsSet = new Set(follows.map(r => r.followee_id))
     const { rows: followers } = await query(`SELECT follower_id FROM follows WHERE followee_id=$1`, [viewerId])
     const followersSet = new Set(followers.map(r => r.follower_id))
     const out = rows.map(u => {
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === viewerId
-      if (mutual) return { ...u, lat: u.lat, lng: u.lng, hidden: false }
+      if (mutual) return { ...u, ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), lat: u.lat, lng: u.lng, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475]
       const [al, ag] = [gc[0] + (Math.random()-0.5)*0.008, gc[1] + (Math.random()-0.5)*0.008]
       return { id: u.id, username: u.username, name: u.name, group_name: u.group_name, location: null, verified: u.verified, role: undefined, lat: al, lng: ag, hidden: true, approx: true }
