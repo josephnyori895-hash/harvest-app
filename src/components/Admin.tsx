@@ -4,9 +4,6 @@ const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const USE_API = import.meta.env.VITE_USE_API === 'true'
 
 type Props = {
-  pending: any[]
-  onApprove: (id: number) => void
-  onReject: (id: number) => void
   onBack: () => void
   users: any[]
   setUsers: (u: any[]) => void

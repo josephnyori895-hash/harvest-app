@@ -61,7 +61,8 @@ export async function buildApp() {
     reply.header('X-Frame-Options', 'DENY')
     reply.header('Referrer-Policy', 'no-referrer')
     reply.header('Permissions-Policy', 'geolocation=(), payment=()')
-    reply.header('Cache-Control', 'no-store')
+    // Routes may set a narrower value (e.g. signed media is privately cacheable).
+    if (!reply.getHeader('Cache-Control')) reply.header('Cache-Control', 'no-store')
     if (process.env.NODE_ENV === 'production') {
       reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     }
@@ -113,13 +114,21 @@ export async function buildApp() {
     }
 
     if (role === 'admin') {
-      if (!adminCredential) {
+      // Admin accounts are bound to their own PIN once provisioned. ADMIN_PIN_HASHES is a
+      // bootstrap credential only: it can claim an account that has no pin_hash yet, but it
+      // can never authenticate an account that already set one.
+      if (user.pin_hash) {
+        const ok = await bcrypt.compare(p, user.pin_hash).catch(() => false)
+        if (!ok) {
+          await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
+          return reply.code(401).send({ error: 'invalid username or PIN' })
+        }
+      } else if (adminCredential) {
+        const hash = await bcrypt.hash(p, 12)
+        await pool.query('UPDATE users SET pin_hash=$2 WHERE id=$1 AND pin_hash IS NULL', [user.id, hash])
+      } else {
         await pool.query(`INSERT INTO login_attempts (ip, username, success) VALUES ($1,$2,false)`, [req.ip, uname]).catch(() => {})
         return reply.code(401).send({ error: 'invalid username or PIN' })
-      }
-      if (!user.pin_hash) {
-        const hash = await bcrypt.hash(p, 12)
-        await pool.query('UPDATE users SET pin_hash=$2 WHERE id=$1', [user.id, hash])
       }
     } else {
       if (!memberPinOk || !user.pin_hash) {

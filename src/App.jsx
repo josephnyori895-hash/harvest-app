@@ -18,6 +18,7 @@ import Groups from './components/Groups'
 import { RequireRole } from './components/Protected'
 import GroupDetails from './components/GroupDetails'
 import UserListModal from './components/UserListModal'
+import Admin from './components/Admin'
 
 // FIX L icon 404 — ensure default marker loads via CDN
 delete L.Icon.Default.prototype._getIconUrl
@@ -81,6 +82,9 @@ function InnerApp() {
     return s ? JSON.parse(s) : [...mockMusics]
   })
   const addMusic = (m) => {
+    // Idempotent: skip if the same title+artist is already saved (Music.tsx also guards this)
+    const dup = musics.some(x => String(x.title||'').toLowerCase() === String(m.title||'').toLowerCase() && String(x.artist||'').toLowerCase() === String(m.artist||'').toLowerCase())
+    if (dup) return
     const updated = [{ id: Date.now(), ...m }, ...musics]
     setMusics(updated)
     localStorage.setItem('harvest_musics', JSON.stringify(updated))
@@ -104,8 +108,8 @@ function InnerApp() {
   })
   const [groupDetail, setGroupDetail] = useState(null)
   const [userList, setUserList] = useState(null)
-  // request permissions runtime (camera/mic) - IG style - triggers native prompt
-  useEffect(()=>{ (async()=>{ try{ if(navigator.mediaDevices?.getUserMedia){ const s=await navigator.mediaDevices.getUserMedia({audio:true,video:true}).catch(()=>null); if(s) s.getTracks().forEach(t=>t.stop()) } }catch{}})() },[])
+  // Camera/microphone access is requested only from an explicit call or capture
+  // action (CallScreen, file pickers) — never during application startup.
   // migration harvest_nyeri → allan (keep app name)
   useEffect(() => {
     try {
@@ -195,10 +199,12 @@ function InnerApp() {
       const reordered=[{...picked,me:true},...rest.map((u)=>({...u,me:false}))]
       localStorage.setItem('harvest_users',JSON.stringify(reordered))
       localStorage.setItem('harvest_username',username)
-      // swap token per-account — no leakage
+      // swap token per-account — no leakage. Keep the current token when the
+      // target account has none (e.g. offline/demo accounts) so an admin does
+      // not silently lose their authenticated session on switch.
       const nextTok = localStorage.getItem(`harvest_token_${username}`)||''
       if(nextTok) localStorage.setItem('harvest_token', nextTok)
-      else localStorage.removeItem('harvest_token')
+      else if(username!==prev && !curTok) localStorage.removeItem('harvest_token')
       setUsers(reordered)
       setUsername(username)
       if(username==='allan'){ setRole('admin'); localStorage.setItem('harvest_role','admin'); localStorage.setItem('harvest_pin','7777') } else { setRole('member'); localStorage.setItem('harvest_role','member') }
@@ -247,12 +253,18 @@ function InnerApp() {
           {tab === 'reels' && <Reels />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} onSubmit={submitPost} />}
           {tab === 'activity' && <Activity />}
-           {tab === 'profile' && <Profile first={first} last={last} pending={pending} onApprove={approve} onReject={reject} users={users} onSwitch={()=>setShowSwitcher(true)} onStatClick={(type,uid)=>setUserList({type,userId:uid})} onGroupClick={(gid)=>setGroupDetail(gid)} />}
+           {tab === 'profile' && <Profile first={first} last={last} pending={pending} onApprove={approve} onReject={reject} users={users} onSwitch={()=>setShowSwitcher(true)} onStatClick={(type,uid)=>setUserList({type,userId:uid})} onGroupClick={(gid)=>setGroupDetail(gid)} setUsers={setUsers} onOpenAdmin={()=>setTab('admin')} />}
            {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
            {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
            {tab === 'music' && <Music musics={musics} onAdd={addMusic} />}
            {tab === 'give' && <Give />}
            {tab === 'map' && <HarvestMap users={users} setUsers={setUsers} />}
+           {tab === 'groups' && <Groups users={users} onSelectGroup={(g) => setGroupDetail(g)} />}
+           {tab === 'admin' && (
+             <RequireRole role="admin">
+               <Admin onBack={() => setTab('profile')} users={users} setUsers={setUsers} />
+             </RequireRole>
+           )}
          </div>
          {showSwitcher && <AccountSwitcher users={users} onSwitch={switchAccount} onClose={()=>setShowSwitcher(false)} />}
          {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} onSwitch={()=>setGroupDetail(null)} />}
@@ -364,7 +376,7 @@ function Activity() {
   return <div className="bg-black text-white min-h-[70vh] p-4"><h1 className="font-bold">Activity</h1><div className="mt-4 space-y-4">{[{ u: 'pst.simon', t: 'liked your photo.' }, { u: 'allan', t: 'followed you.' }].map(x => <div key={x.u} className="flex gap-3 items-center"><div className="w-10 h-10 rounded-full bg-zinc-800" /><p className="text-[13px] flex-1"><b>{x.u}</b> {x.t}</p><div className="w-10 h-10 bg-zinc-800 rounded" /></div>)}</div></div>
 }
 
-function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, onStatClick, onGroupClick }) {
+function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, onStatClick, onGroupClick, setUsers, onOpenAdmin }) {
   const username = ((first || 'harvest').toLowerCase().replace(/\s+/g, '') + '_' + (last || 'family').toLowerCase().replace(/\s+/g, ''))
   const me = users.find(u => u.username === username) || users[0]
   const { isAdmin, role } = useAuth()
@@ -406,6 +418,14 @@ function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, o
         </div></div>
       <button onClick={()=>onSwitch&&onSwitch()} className="mx-4 mt-3 w-[calc(100%-2rem)] py-2 rounded-full bg-zinc-800 text-white text-xs font-semibold">🔄 Switch account — 4 active (IG style)</button>
       <p className="text-[11px] text-zinc-500 text-center mt-1">Allan ✓ • Youth Harvest ✓ • Worship Team ✓ • Pst Simon</p>
+
+      {/* Admin-only: server-backed moderation queue */}
+      {isAdmin && (
+        <div className="mt-4 border-t border-zinc-800 pt-3 px-4">
+          <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold">🛡 Open moderation queue</button>
+          <p className="text-[11px] text-zinc-500 text-center mt-2">Review posts, stories and reels submitted by members</p>
+        </div>
+      )}
 
       {/* Admin-only: Pending Approvals */}
       {isAdmin && myPending.length > 0 && (

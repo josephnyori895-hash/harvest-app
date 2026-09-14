@@ -51,6 +51,7 @@ services:
       MINIO_BUCKET: harvest-media
       MINIO_USE_SSL: "false"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      MEDIA_URL_SECRET: ${MEDIA_URL_SECRET:-${JWT_SECRET}}
       ADMIN_PIN_HASHES: ${ADMIN_PIN_HASHES:?ADMIN_PIN_HASHES is required}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}

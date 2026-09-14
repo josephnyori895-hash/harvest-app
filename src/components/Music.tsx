@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { IgIcon } from './Icons'
+import { showToast } from './Toast'
+import { fetchMusic, useApi } from '../lib/api'
 
 const HARVEST_SONGS = [
   { id: 'h1', title: 'Compelled Anthem', artist: 'Harvest Worship', type: 'worship', duration: '3:45', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -9,33 +11,121 @@ const HARVEST_SONGS = [
   { id: 'h5', title: 'Way Maker', artist: 'Sinach', type: 'worship', duration: '4:33', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
 ]
 
+type Track = {
+  id: string
+  title: string
+  artist: string
+  type?: string
+  duration?: string
+  cover?: string
+  url?: string | null
+  source: 'demo' | 'server' | 'local'
+  seconds?: number
+}
+
+const FALLBACK_COVER = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop'
+
+function fmt(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any) => void }) {
   const [q, setQ] = useState('')
   const [tab, setTab] = useState<'trending' | 'local'>('trending')
-  const [playing, setPlaying] = useState<string | null>(null)
-  const [currentTime, setCurrentTime] = useState<Record<string, number>>({})
-  const audioRefs = useRef<Record<string, HTMLAudioElement>>({})
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [progress, setProgress] = useState({ id: null as string | null, seconds: 0, duration: 0 })
+  const [serverTracks, setServerTracks] = useState<Track[]>([])
+  const [loadingServer, setLoadingServer] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const useServer = useApi()
 
-  const filteredSongs = HARVEST_SONGS.filter(m =>
-    m.title.toLowerCase().includes(q.toLowerCase()) ||
-    m.artist.toLowerCase().includes(q.toLowerCase())
-  )
+  // Server library (tracks uploaded via /api/media/confirm type=track) — merged with demo list
+  useEffect(() => {
+    if (!useServer) return
+    let cancelled = false
+    setLoadingServer(true)
+    fetchMusic()
+      .then(r => {
+        if (cancelled) return
+        const mapped: Track[] = (r.tracks || [])
+          .filter(t => t.url)
+          .map(t => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, type: 'worship', url: t.url, source: 'server' as const }))
+        setServerTracks(mapped)
+      })
+      .catch(() => { /* offline — demo list still works */ })
+      .finally(() => { if (!cancelled) setLoadingServer(false) })
+    return () => { cancelled = true }
+  }, [useServer])
 
-  const togglePlay = (track: any) => {
-    if (playing === track.id) {
-      audioRefs.current[track.id]?.pause()
-      setPlaying(null)
-    } else {
-      Object.values(audioRefs.current).forEach(a => a?.pause())
-      const audio = new Audio(track.url)
-      audio.onended = () => setPlaying(null)
-      audio.ontimeupdate = () => {
-        setCurrentTime(prev => ({ ...prev, [track.id]: audio.currentTime }))
-      }
-      audioRefs.current[track.id] = audio
-      audio.play()
-      setPlaying(track.id)
+  const localTracks: Track[] = useMemo(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('harvest_musics') || '[]')
+      return (Array.isArray(raw) ? raw : []).map((m: any) => ({
+        id: m.id || `loc_${m.title}`,
+        title: m.title || 'Untitled',
+        artist: m.artist || 'Harvest member',
+        url: typeof m.url === 'string' && m.url ? m.url : undefined,
+        cover: m.cover,
+        source: 'local' as const,
+      }))
+    } catch { return [] }
+  }, [musics])
+
+  const tracks: Track[] = useMemo(() => {
+    const base = tab === 'local' ? localTracks : [...serverTracks, ...HARVEST_SONGS]
+    const seen = new Set<string>()
+    return base.filter(t => {
+      const k = `${t.title.toLowerCase()}|${t.artist.toLowerCase()}`
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+  }, [tab, localTracks, serverTracks])
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return tracks
+    return tracks.filter(t => `${t.title} ${t.artist}`.toLowerCase().includes(needle))
+  }, [tracks, q])
+
+  // Single shared audio element — never more than one playing, cleaned up on unmount
+  useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
+
+  const togglePlay = (track: Track) => {
+    if (!track.url) { showToast('This track has no audio source yet'); return }
+    if (playingId === track.id) {
+      audioRef.current?.pause()
+      setPlayingId(null)
+      return
     }
+    audioRef.current?.pause()
+    const audio = new Audio(track.url)
+    audio.onended = () => { setPlayingId(null); setProgress(p => ({ ...p, id: null, seconds: 0 })) }
+    audio.ontimeupdate = () => setProgress({ id: track.id, seconds: audio.currentTime, duration: audio.duration || 0 })
+    audio.play().catch(() => showToast('Tap again to allow audio playback'))
+    audioRef.current = audio
+    setPlayingId(track.id)
+  }
+
+  const seek = (track: Track, e: React.MouseEvent<HTMLDivElement>) => {
+    if (playingId !== track.id || !audioRef.current || !audioRef.current.duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+    audioRef.current.currentTime = ratio * audioRef.current.duration
+  }
+
+  const addToLibrary = (track: Track) => {
+    try {
+      const lib = JSON.parse(localStorage.getItem('harvest_musics') || '[]')
+      const exists = lib.some((m: any) => (m.title || '').toLowerCase() === track.title.toLowerCase() && (m.artist || '').toLowerCase() === track.artist.toLowerCase())
+      if (exists) { showToast('Already in your Harvest library'); return }
+      const next = [{ id: `loc_${Date.now()}`, title: track.title, artist: track.artist, url: track.url || undefined, cover: track.cover }, ...lib]
+      localStorage.setItem('harvest_musics', JSON.stringify(next))
+      showToast(`“${track.title}” added to your library`)
+    } catch { showToast('Could not add to library') }
   }
 
   return (
@@ -50,14 +140,14 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
           <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-100 text-purple-700">WORSHIP</span>
         </div>
 
-        {/* Search */}
+        {/* Search — filters whichever tab is active */}
         <div className="flex gap-2 mb-4">
           <div className="flex-1 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
             <IgIcon name="search" size={20} />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search songs, artists..."
+              placeholder={tab === 'local' ? 'Search your library...' : 'Search songs, artists...'}
               className="flex-1 bg-transparent outline-none text-sm"
             />
           </div>
@@ -65,6 +155,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
             <button
               onClick={() => setQ('')}
               className="w-10 h-10 rounded-full bg-neutral-200 flex items-center justify-center hover:bg-neutral-300 transition"
+              aria-label="Clear search"
             >
               ✕
             </button>
@@ -75,7 +166,7 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
         <div className="flex gap-2">
           {[
             ['trending', '🔥 Trending Worship'],
-            ['local', '🎧 Local Music'],
+            ['local', `🎧 Local Music${localTracks.length ? ` (${localTracks.length})` : ''}`],
           ].map(([t, label]) => (
             <button
               key={t}
@@ -94,94 +185,115 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
 
       {/* Content */}
       <div className="px-4 py-6 space-y-4">
-        {filteredSongs.length === 0 ? (
+        {tab === 'local' && localTracks.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">🎧</div>
+            <p className="text-neutral-500 font-medium">Your library is empty</p>
+            <p className="text-sm text-neutral-400 mt-1">Add ➕ tracks from Trending Worship to build your Harvest library</p>
+          </div>
+        ) : filtered.length === 0 && q ? (
           <div className="text-center py-12">
             <div className="text-6xl mb-4">🎵</div>
             <p className="text-neutral-500 font-medium">No songs found</p>
-            <p className="text-sm text-neutral-400">Try searching "Worship" or artist names</p>
+            <p className="text-sm text-neutral-400">Try searching “Worship” or artist names</p>
           </div>
         ) : (
-          filteredSongs.map((track) => (
-            <div
-              key={track.id}
-              className="card-spiritual hover:shadow-xl transition-all duration-300 overflow-hidden group"
-            >
-              <div className="flex gap-4 p-4">
-                {/* Album Art */}
-                <div className="relative flex-shrink-0">
-                  <img
-                    src={track.cover}
-                    alt={track.title}
-                    className="w-20 h-20 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
-                  />
-                  <button
-                    onClick={() => togglePlay(track)}
-                    className={`absolute inset-0 flex items-center justify-center rounded-xl transition-all ${
-                      playing === track.id
-                        ? 'bg-purple-600/90'
-                        : 'bg-black/40 group-hover:bg-purple-600/80'
-                    }`}
-                  >
-                    <span className="text-white text-2xl">
-                      {playing === track.id ? '⏸' : '▶'}
-                    </span>
-                  </button>
-                </div>
+          filtered.map((track) => {
+            const isPlaying = playingId === track.id
+            const showBar = progress.id === track.id && isPlaying
+            const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
+            return (
+              <div
+                key={track.id}
+                className="card-spiritual hover:shadow-xl transition-all duration-300 overflow-hidden group"
+              >
+                <div className="flex gap-4 p-4">
+                  {/* Album Art */}
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={track.cover || FALLBACK_COVER}
+                      alt={track.title}
+                      className="w-20 h-20 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
+                    />
+                    <button
+                      onClick={() => togglePlay(track)}
+                      className={`absolute inset-0 flex items-center justify-center rounded-xl transition-all ${
+                        isPlaying ? 'bg-purple-600/90' : 'bg-black/40 group-hover:bg-purple-600/80'
+                      }`}
+                      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+                    >
+                      <span className="text-white text-2xl">{isPlaying ? '⏸' : '▶'}</span>
+                    </button>
+                  </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <h3 className="font-bold text-neutral-900 truncate group-hover:text-gradient-warm">
-                    {track.title}
-                  </h3>
-                  <p className="text-sm text-neutral-600 truncate">{track.artist}</p>
-                  
-                  {/* Progress Bar */}
-                  {playing === track.id && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className="flex-1 h-1 bg-neutral-300 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-amber-400 to-purple-600 transition-all"
-                          style={{ width: `${((currentTime[track.id] || 0) / 225) * 100}%` }}
-                        />
+                  {/* Info */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <h3 className="font-bold text-neutral-900 truncate group-hover:text-gradient-warm">
+                      {track.title}
+                    </h3>
+                    <p className="text-sm text-neutral-600 truncate">{track.artist}</p>
+
+                    {/* Progress bar — real audio position, tap to seek */}
+                    {showBar && (
+                      <div
+                        className="mt-2 flex items-center gap-2 cursor-pointer"
+                        onClick={(e) => seek(track, e)}
+                        role="slider"
+                        aria-label={`Seek ${track.title}`}
+                        aria-valuenow={Math.floor(progress.seconds)}
+                        aria-valuemin={0}
+                        aria-valuemax={Math.floor(progress.duration || 0)}
+                      >
+                        <div className="flex-1 h-1 bg-neutral-300 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-amber-400 to-purple-600"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-neutral-500 font-mono">
+                          {fmt(progress.seconds)} / {fmt(progress.duration || 0)}
+                        </span>
                       </div>
-                      <span className="text-xs text-neutral-500 font-mono">{track.duration}</span>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Type Badge */}
-                  <div className="flex gap-2 mt-2">
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                      track.type === 'worship'
-                        ? 'badge-admin'
-                        : track.type === 'praise'
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'badge-member'
-                    }`}>
-                      {track.type.charAt(0).toUpperCase() + track.type.slice(1)}
-                    </span>
+                    {/* Type Badge */}
+                    <div className="flex gap-2 mt-2">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                        track.type === 'worship'
+                          ? 'badge-admin'
+                          : track.type === 'praise'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'badge-member'
+                      }`}>
+                        {track.source === 'server' ? 'Church upload' : (track.type || 'Local').charAt(0).toUpperCase() + (track.type || 'Local').slice(1)}
+                      </span>
+                      {track.source === 'local' && <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Saved</span>}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col gap-2 justify-center">
+                    <button
+                      onClick={() => togglePlay(track)}
+                      className="btn-primary py-2 px-4 text-sm"
+                      aria-label={isPlaying ? 'Pause' : 'Play'}
+                    >
+                      {isPlaying ? '⏸' : '▶'}
+                    </button>
+                    <button
+                      onClick={() => { addToLibrary(track); onAdd?.(track) }}
+                      className="btn-secondary py-2 px-4 text-sm"
+                      title={track.source === 'local' ? 'Already saved — use in a story/post' : 'Save to Local Music'}
+                    >
+                      ➕
+                    </button>
                   </div>
                 </div>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col gap-2 justify-center">
-                  <button
-                    onClick={() => togglePlay(track)}
-                    className="btn-primary py-2 px-4 text-sm"
-                  >
-                    {playing === track.id ? '⏸' : '▶'}
-                  </button>
-                  <button
-                    onClick={() => onAdd?.(track)}
-                    className="btn-secondary py-2 px-4 text-sm"
-                    title="Add to story/post"
-                  >
-                    ➕
-                  </button>
-                </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
+        {tab === 'trending' && loadingServer && <p className="text-center text-xs text-neutral-400">Loading church uploads…</p>}
       </div>
     </div>
   )

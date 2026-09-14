@@ -39,6 +39,14 @@ export async function startGiving(params: {amount:number,phone:string,purpose:st
   return apiJson('/api/giving/mpesa/stkpush', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{transactionId:string,checkoutRequestId:string,message:string}>
 }
 
+export async function fetchMusic() {
+  return apiJson('/api/music') as Promise<{ tracks: any[] }>
+}
+
+export async function fetchReels(offset = 0, limit = 20) {
+  return apiJson(`/api/reels?offset=${offset}&limit=${limit}`) as Promise<{ reels: any[], nextOffset: number }>
+}
+
 export async function fetchMyGiving() {
   return apiJson('/api/giving/mine') as Promise<any[]>
 }

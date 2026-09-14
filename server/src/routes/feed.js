@@ -85,4 +85,29 @@ export default async function feedRoutes(app) {
     const out = await Promise.all(rows.map(async r=> ({ ...r, hls_url: await presignedGetOrNull(r.hls_master_key||r.poster_key, 900), poster_url: await presignedGetOrNull(r.poster_key, 900) })))
     return reply.send({ reels: out, nextOffset: offset+limit })
   })
+
+  // GET /api/music — worship tracks for the Music tab (presigned streaming URL)
+  app.get('/api/music', async (req, reply) => {
+    const limit = Math.min(parseInt(req.query.limit||'50',10), 100)
+    try {
+      const { rows } = await query(`SELECT t.id, t.user_id, u.username AS uploaded_by, u.verified,
+                                          t.title, t.artist, t.original_key, t.created_at
+                                     FROM tracks t JOIN users u ON u.id=t.user_id
+                                    ORDER BY t.created_at DESC LIMIT $1`, [limit])
+      const out = await Promise.all(rows.map(async r => ({
+        id: r.id,
+        title: r.title,
+        artist: r.artist || r.uploaded_by || 'Harvest Worship',
+        uploaded_by: r.uploaded_by,
+        verified: Boolean(r.verified),
+        type: 'worship',
+        url: await presignedGetOrNull(r.original_key, 3600),
+        created_at: r.created_at,
+      })))
+      return reply.send({ tracks: out })
+    } catch (e) {
+      console.error('[music] list error', e.message)
+      return reply.send({ tracks: [] })
+    }
+  })
 }

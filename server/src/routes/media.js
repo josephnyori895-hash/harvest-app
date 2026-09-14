@@ -1,9 +1,20 @@
 import { presignedPost, minio, mediaStore, BUCKET, validatePresign } from '../s3.js'
 import { query } from '../db.js'
 import { requireMember } from '../middleware/auth.js'
+import { verifyMediaSignature, contentTypeForKey } from '../mediaToken.js'
 import { v4 as uuid } from 'uuid'
 
+// Upload keys are restricted to originals/<type>/<yyyy>/<mm>/<uuid>.<ext>.
 const KEY_RE = /^originals\/(post|story|reel|track)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+
+// Reads also serve derived assets written by the workers.
+const READ_KEY_RES = [
+  KEY_RE,
+  /^thumbs\/(post|story|reel|track)\/[0-9a-f-]+(-\d+w)?\.(webp|jpg|jpeg|png)$/i,
+  /^posters\/[0-9a-f-]+\.(jpg|jpeg|webp|png)$/i,
+  /^hls\/[0-9a-f-]+\/[a-zA-Z0-9._-]+\.(m3u8|ts)$/,
+]
+const isReadableKey = key => READ_KEY_RES.some(re => re.test(key))
 
 export default async function mediaRoutes(app) {
   app.post('/api/media/presign', { preHandler: [requireMember] }, async (req, reply) => {
@@ -98,13 +109,18 @@ export default async function mediaRoutes(app) {
     return reply.code(202).send({ id: rows[0].id, status: 'pending', at: rows[0].created_at })
   })
 
-  app.get('/api/media/*', { preHandler: [requireMember] }, async (req, reply) => {
+  // Media reads accept either a valid short-lived signature (so <img>/<video>
+  // can load them) or an authenticated member token.
+  app.get('/api/media/*', async (req, reply) => {
     const key = req.params['*']
-    if (!KEY_RE.test(key)) return reply.code(400).send({ error: 'invalid media key' })
+    if (!isReadableKey(key)) return reply.code(400).send({ error: 'invalid media key' })
+    const signed = verifyMediaSignature(key, req.query.expires, req.query.signature)
+    const member = req.user && ['member', 'admin'].includes(req.user.role)
+    if (!signed && !member) return reply.code(401).send({ error: 'signed media URL required' })
     const entry = await mediaStore.getWithMetadata(key, { type: 'arrayBuffer' })
     if (!entry?.data) return reply.code(404).send({ error: 'not found' })
     return reply
-      .header('Content-Type', entry.metadata?.contentType || 'application/octet-stream')
+      .header('Content-Type', contentTypeForKey(key, entry.metadata?.contentType || entry.metadata?.['Content-Type']))
       .header('Cache-Control', 'private, max-age=300')
       .send(Buffer.from(entry.data))
   })

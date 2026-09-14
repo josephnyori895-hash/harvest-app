@@ -1,6 +1,8 @@
+import fs from 'node:fs/promises'
 import { getStore } from '@netlify/blobs'
 import { v4 as uuid } from 'uuid'
 import dotenv from 'dotenv'
+import { mediaUrl } from './mediaToken.js'
 dotenv.config()
 
 export const BUCKET = 'harvest-media'
@@ -40,12 +42,13 @@ export async function presignedPost({ type, contentType, bytes, ext }) {
   }
 }
 
-export async function presignedGetOrNull(key) {
+export async function presignedGetOrNull(key, ttlSeconds) {
   if (!key) return null
   try {
     const metadata = await mediaStore.getMetadata(key)
     if (!metadata) return null
-    return `/api/media/${encodeURIComponent(key)}`
+    // Signed, short-lived URL: <img>/<video> cannot send a bearer token.
+    return mediaUrl(key, ttlSeconds)
   } catch {
     return null
   }
@@ -64,7 +67,17 @@ export async function removeObjectOrIgnore(key) {
   }
 }
 
-// Small compatibility surface for existing routes while the app migrates off MinIO.
+// Small compatibility surface for existing routes and workers while the app
+// migrates off MinIO. Bucket arguments are accepted and ignored.
+function normalizeMetadata(metadata = {}) {
+  const out = {}
+  for (const [rawKey, value] of Object.entries(metadata)) {
+    if (rawKey === 'Content-Type') out.contentType = value
+    else out[rawKey[0].toLowerCase() + rawKey.slice(1)] = value
+  }
+  return out
+}
+
 export const minio = {
   async statObject(_bucket, key) {
     const metadata = await mediaStore.getMetadata(key)
@@ -75,7 +88,16 @@ export const minio = {
     await mediaStore.delete(key)
   },
   async putObject(_bucket, key, data, _size, metadata = {}) {
-    await mediaStore.set(key, data, { metadata })
+    await mediaStore.set(key, data, { metadata: normalizeMetadata(metadata) })
+  },
+  async fGetObject(_bucket, key, filePath) {
+    const data = await mediaStore.get(key, { type: 'arrayBuffer' })
+    if (!data) throw new Error(`object not found: ${key}`)
+    await fs.writeFile(filePath, Buffer.from(data))
+  },
+  async fPutObject(_bucket, key, filePath, metadata = {}) {
+    const data = await fs.readFile(filePath)
+    await mediaStore.set(key, data, { metadata: normalizeMetadata(metadata) })
   },
 }
 

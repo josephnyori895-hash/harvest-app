@@ -54,7 +54,10 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
         if (!response.ok || !data.token) throw new Error(data.error || 'Login failed')
         localStorage.setItem('harvest_token', data.token)
         localStorage.setItem(`harvest_token_${data.username}`, data.token)
+        // setUsername() swaps per-account tokens internally, so stash this
+        // session's token under the account first (done above), then switch.
         setUsername(data.username)
+        localStorage.setItem('harvest_username', data.username)
         setRole(data.role as Role)
         setVerified(Boolean(data.user?.verified ?? data.verified))
         setPin('')

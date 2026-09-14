@@ -3,8 +3,22 @@ import { getConnectionString } from '@netlify/database'
 import dotenv from 'dotenv'
 dotenv.config()
 
-const connectionString = process.env.NETLIFY_DB_URL || getConnectionString()
-if (!connectionString) throw new Error('Netlify Database is required: create a Netlify Database for this site')
+// Netlify Database injects NETLIFY_DB_URL; the self-hosted Docker Compose stack
+// supplies DATABASE_URL. Only consult the Netlify helper when neither is present.
+function resolveConnectionString() {
+  const explicit = process.env.NETLIFY_DB_URL || process.env.DATABASE_URL
+  if (explicit) return explicit
+  try {
+    return getConnectionString()
+  } catch {
+    return null
+  }
+}
+
+const connectionString = resolveConnectionString()
+if (!connectionString) {
+  throw new Error('Database connection required: set NETLIFY_DB_URL (Netlify) or DATABASE_URL (self-hosted)')
+}
 
 const useSsl = String(process.env.DATABASE_SSL || 'true').toLowerCase() === 'true'
 
