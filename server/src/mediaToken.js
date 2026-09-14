@@ -26,7 +26,10 @@ export function signMediaKey(key, ttlSeconds = DEFAULT_TTL_SECONDS) {
 export function mediaUrl(key, ttlSeconds) {
   if (!key) return null
   const { expires, signature } = signMediaKey(key, ttlSeconds)
-  return `/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}`
+  // Relative by default (same-origin web). When PUBLIC_BASE_URL is set — e.g. the
+  // Netlify site URL — links become absolute so the Capacitor APK WebView can load them.
+  const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '')
+  return `${base}/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}`
 }
 
 export function verifyMediaSignature(key, expires, signature) {
