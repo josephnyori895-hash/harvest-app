@@ -1,0 +1,40 @@
+# Cloudflare Workers — Harvest Family API (port of server/ Fastify + Netlify Blobs)
+# Secrets (set via `npx wrangler secret put`): JWT_SECRET, MPESA_CONSUMER_KEY,
+# MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, ADMIN_PIN_HASHES (optional bootstrap).
+
+name = "harvestfamily-api"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# ── Bindings ──
+# DB ids are filled in by `npm run cf:provision` (wrangler d1 create / r2 create).
+[[d1_databases]]
+binding = "DB"
+database_name = "harvestfamily"
+database_id = "44fbd1de-cafd-45f5-b047-b1023d05bd75"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "harvest-media"
+
+[durable_objects]
+bindings = [{ name = "REALTIME", class_name = "Realtime" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Realtime"]
+
+# Stories expiry + orphan cleanup + attempt-table GC (Netlify cleanup.js equivalent)
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Static assets: the APK download lives here (assets first, then Worker for everything else).
+[assets]
+directory = "./downloads"
+
+# ── Non-secret vars (APK WebView origin is https://localhost) ──
+[vars]
+CORS_ORIGINS = "https://localhost,https://harvestfamily.or.ke,capacitor://localhost"
+# Public base for absolute signed-media URLs served to the APK (relative URLs break in the WebView).
+PUBLIC_BASE_URL = "https://harvestfamily-api.harvestfamily.workers.dev"
