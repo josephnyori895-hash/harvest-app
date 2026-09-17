@@ -78,7 +78,10 @@ const STORY_MUSIC = ['Worship 🎵', 'Hillsong 🎶', 'Sinach 🎤', 'Maverick �
 export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
   const [fileUrl, setFileUrl] = useState<string | null>(null)
+  const [fileObj, setFileObj] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const [filter, setFilter] = useState('Original')
   const [textOverlay, setTextOverlay] = useState('')
   const [textColor, setTextColor] = useState('#ffffff')
@@ -96,8 +99,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [showMusic, setShowMusic] = useState(false)
   const [showMood, setShowMood] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const getUser = () => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || 'allan' } catch { return 'allan' } }
-  const onFile = (e: any) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
+  const onFile = (e: any) => { const f: File | undefined = e.target.files?.[0]; if (!f) return; setFileObj(f); setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
   const applyFilter = (imgUrl: string, f: string) => { if (f === 'Original') return imgUrl; const c = document.createElement('canvas'); const ctx = c.getContext('2d'); if (!ctx) return imgUrl; const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => { c.width = img.width; c.height = img.height; ctx.filter = f === 'Clarendon' ? 'saturate(1.2) contrast(1.1)' : f === 'Juno' ? 'saturate(1.4) contrast(1.15) brightness(1.1)' : f === 'Moody' ? 'saturate(0.8) contrast(1.3) brightness(0.85)' : f === 'Valencia' ? 'saturate(1.5) contrast(1.1) brightness(1.1)' : f === 'Willow' ? 'saturate(0.7) contrast(1.15) brightness(1.1)' : f === 'Gingham' ? 'saturate(1.3) contrast(1.2) brightness(1.1)' : f === 'Lark' ? 'saturate(0.9) contrast(1.0) brightness(1.1)' : f === 'Perpetua' ? 'saturate(1.1) contrast(1.2) brightness(1.15)' : f === 'Aden' ? 'saturate(1.3) contrast(1.0) brightness(0.95)' : ''; ctx.drawImage(img, 0, 0); setFileUrl(c.toDataURL()) }; img.src = imgUrl }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
@@ -112,12 +114,51 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     { mood: '🎤 Gospel', tags: ['gospel', 'praise'] },
   ]
   const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t))); if (matches.length) chooseMusic(matches[Math.floor(Math.random() * matches.length)]) }
-  const submit = () => { const story = { id: `${getUser()}_${Date.now()}`, name: getUser(), caption: caption || 'Harvest testimony 🙏', img: fileUrl || `https://picsum.photos/300/500?random=${Date.now()}`, textOverlay, stickers, music: musicTrack, filter, timer, textBold, at: new Date().toISOString() }; const approved = JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]'); localStorage.setItem('harvest_approved_stories', JSON.stringify([story, ...approved])); window.dispatchEvent(new Event('harvest:approved')); alert('Story posted instantly ✓'); onDone() }
+  // Story uploads go straight to the server and publish instantly (24h expiry).
+  const submit = async () => {
+    if (busy) return
+    if (!fileObj) { setNotice('Add a photo or video first'); return }
+    setBusy(true); setNotice('')
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      if (!token || !API) { setNotice('You need to be signed in to share a story'); return }
+      const blob = fileObj
+      const ext = blob.type.split('/')[1]?.split('+')[0] || (blob.type.startsWith('video') ? 'mp4' : 'jpg')
+      const presignResponse = await fetch(`${API}/api/media/presign`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'story', contentType: blob.type, bytes: blob.size, ext }),
+      })
+      const presign = await presignResponse.json().catch(() => ({}))
+      if (!presignResponse.ok) throw new Error(presign.error || 'Unable to prepare upload')
+      const form = new FormData()
+      Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
+      form.append('file', blob)
+      const isDirectR2 = /^https?:\/\//.test(presign.url)
+      const up = await fetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
+        method: 'POST',
+        body: form,
+        headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
+      })
+      if (!up.ok) throw new Error('Story upload failed')
+      const confirm = await fetch(`${API}/api/media/confirm`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key: presign.key, type: 'story', caption: caption.trim() }),
+      })
+      const result = await confirm.json().catch(() => ({}))
+      if (!confirm.ok) throw new Error(result.error || 'Unable to share your story')
+      window.dispatchEvent(new Event('harvest:approved'))
+      onDone()
+    } catch (e: any) {
+      setNotice(e?.message || 'Could not share your story')
+    } finally { setBusy(false) }
+  }
   return (
     <div className="bg-zinc-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-zinc-200 bg-white"><button onClick={onDone} className="text-xl text-zinc-700">✕</button><p className="font-semibold text-sm text-zinc-900">Create Story</p><button onClick={submit} className="text-[#0095f6] font-semibold text-sm">Share</button></div>
+      <div className="flex justify-between items-center px-4 h-[56px] border-b border-zinc-200 bg-white"><button onClick={onDone} className="text-xl text-zinc-700">✕</button><p className="font-semibold text-sm text-zinc-900">Create Story</p><button onClick={() => void submit()} disabled={busy} className={`font-semibold text-sm ${busy ? 'text-zinc-400' : 'text-[#0095f6]'}`}>{busy ? 'Sharing…' : 'Share'}</button></div>
       <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-zinc-50 to-white">{!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-zinc-300 flex flex-col items-center justify-center cursor-pointer hover:border-[#0095f6] transition"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" /><div className="w-20 h-20 rounded-full bg-[#0095f6] flex items-center justify-center text-4xl text-white">📷</div><p className="text-sm text-zinc-600 mt-2">Tap to add story photo/video</p><p className="text-xs text-zinc-400 mt-1">Record with camera or pick from gallery</p></label> : <div className="relative aspect-[9/16] w-full max-w-[320px] mx-auto overflow-hidden rounded-2xl border border-zinc-200 shadow-lg bg-white"><img src={fileUrl} alt="" className="w-full h-full object-cover" />{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">🎨 {filter}</div>}{fileName && <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">📎 {fileName}</div>}{textOverlay && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="bg-black/30 rounded-xl px-4 py-2" style={{ color: textColor, fontSize: '24px', fontWeight: textBold ? 'bold' : 'normal', textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>{textOverlay}</div></div>}<div className="absolute bottom-8 left-4 flex gap-1 flex-wrap">{stickers.map((s, i) => <span key={i} className="text-2xl bg-black/50 rounded-full px-1 cursor-pointer hover:scale-110 transition" onClick={() => removeSticker(s)}>{s}</span>)}</div>{musicTrack && <div className="absolute top-14 right-4 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full">🎵 {musicTrack.title}</div>}</div>}</div>
       {fileUrl && <><div className="px-4 pb-2 bg-white border-t border-zinc-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-xs text-[#0095f6] font-semibold">🎨 Filter: {filter}</button>{showFilters && <div className="flex gap-2 overflow-x-auto pb-2 mt-1">{FILTERS.map(f => <button key={f} onClick={() => { setFilter(f); applyFilter(fileUrl, f); setShowFilters(false) }} className={`px-3 py-1 rounded-full text-xs whitespace-nowrap ${filter === f ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{f}</button>)}</div>}</div><div className="px-4 pb-2 bg-white border-t border-zinc-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-xs text-[#0095f6] font-semibold">📷 Stickers: {stickers.length > 0 ? stickers.join(' ') : 'none'}</button>{showStickers && <div className="flex gap-2 overflow-x-auto pb-2 mt-1 flex-wrap">{STORY_STICKERS.map(s => <button key={s} onClick={() => stickers.includes(s) ? removeSticker(s) : addSticker(s)} className={`text-xl px-2 py-1 rounded-full ${stickers.includes(s) ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{s}</button>)}</div>}</div><div className="px-4 pb-2 bg-white border-t border-zinc-200 rounded-xl p-2"><button onClick={() => { setShowMusic(!showMusic); setShowMood(!showMood); setShowFilters(false); setShowStickers(false) }} className="text-xs text-[#0095f6] font-semibold">🎵 Music {musicTrack ? `• ${musicTrack.title} ✓` : ''}</button>{musicTrack && <div className="flex gap-2 items-center mt-2 p-2 bg-zinc-50 rounded-lg"><img src={musicTrack.cover} className="w-10 h-10 rounded"/><div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{musicTrack.title}</p><p className="text-[11px] text-zinc-400 truncate">{musicTrack.artist}</p></div><button onClick={() => togglePreview(musicTrack)} className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center text-xs">{previewId === musicTrack.id ? '⏸' : '▶'}</button><button onClick={() => setMusicTrack(null)} className="text-xs text-red-400">✕</button></div>}{showMood && <div className="flex gap-2 flex-wrap mt-2">{MOOD_PICKS.map(m => <button key={m.mood} onClick={() => filterByMood(m.tags)} className="px-3 py-2 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">{m.mood}</button>)}</div>}{showMusic && !showMood && <div className="mt-2"><div className="flex gap-2"><input value={musicQuery} onChange={e => { setMusicQuery(e.target.value); searchMusic(e.target.value) }} onKeyDown={e => e.key === 'Enter' && searchMusic(musicQuery)} placeholder="Search Hillsong/Maverick..." className="flex-1 bg-zinc-50 border border-zinc-200 rounded-full px-3 py-2 text-xs outline-none" /><button onClick={() => searchMusic(musicQuery)} className="px-3 py-2 rounded-full bg-[#0095f6] text-white text-xs font-bold">Search</button></div>{musicLoading && <p className="text-xs text-zinc-500 text-center py-2">Searching…</p>}{!musicLoading && musicResults.length === 0 && musicQuery && <p className="text-xs text-zinc-500 text-center py-2">No results — try Hillsong/Maverick/Sinach</p>}{!musicLoading && musicResults.length === 0 && !musicQuery && <div className="flex gap-2 flex-wrap mt-2">{['Hillsong', 'Maverick', 'Sinach', 'Elevation', 'Harvest'].map(t => <button key={t} onClick={() => { setMusicQuery(t); searchMusic(t) }} className="px-3 py-1 rounded-full bg-zinc-100 text-xs">{t}</button>)}</div>}{musicResults.map((m: any) => <div key={m.id} className="flex gap-2 p-2 bg-zinc-50 rounded-lg items-center"><img src={m.cover} className="w-10 h-10 rounded"/><div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{m.title}</p><p className="text-[11px] text-zinc-400 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} className="w-7 h-7 rounded-full bg-zinc-200 flex items-center justify-center text-xs">{previewId === m.id ? '⏸' : '▶'}</button><button onClick={() => chooseMusic(m)} className="px-3 py-1 rounded-full bg-[#0095f6] text-white text-xs">Use</button></div>)}</div>}</div><div className="px-4 pb-2 bg-white border-t border-zinc-200"><p className="text-xs text-[#0095f6] mb-1 font-semibold">✏️ Text overlay</p><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Add bold text..." className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-sm outline-none" /><div className="flex gap-2 mt-1 items-center"><span className="text-xs text-zinc-400">Color:</span>{['#ffffff', '#0095f6', '#ed4956', '#f77737', '#40d657', '#b546cf', '#000000'].map(c => <button key={c} onClick={() => setTextColor(c)} className="w-6 h-6 rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: c }} />)}<button onClick={() => setTextBold(!textBold)} className={`ml-2 px-2 py-1 rounded-full text-xs font-bold ${textBold ? 'bg-[#0095f6] text-white' : 'bg-zinc-200 text-zinc-600'}`}>B:{textBold?'on':'off'}</button></div></div><div className="px-4 pb-2 bg-white border-t border-zinc-200"><p className="text-xs text-[#0095f6] mb-1 font-semibold">⏱️ Story timer</p><div className="flex gap-2">{[0, 3, 5, 10, 15].map(s => <button key={s} onClick={() => setTimer(s)} className={`px-3 py-1 rounded-full text-xs ${timer === s ? 'bg-[#0095f6] text-white' : 'bg-zinc-100 text-zinc-700'}`}>{s === 0 ? 'Off' : `${s}s`}</button>)}</div></div></>}
+      {notice && <div role="alert" className="mx-4 mb-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
       <div className="px-4 pb-4 bg-white border-t border-zinc-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm outline-none" /></div>
     </div>
   )

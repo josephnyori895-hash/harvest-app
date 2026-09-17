@@ -3,11 +3,7 @@ import { fetchReels, useApi } from '../lib/api'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; responses?: number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
-const videosData: Reel[] = [
-  { user: 'allan', verified: true, cap: 'Sunday highlight — Compelled', views: '12.4k', responses: 892, comments: 34, img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', music: { title: 'Compelled Anthem', artist: 'Harvest Worship', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=100&h=100&fit=crop' } },
-  { user: 'youth_harvest', verified: true, cap: 'Youth worship moment', views: '8.2k', responses: 645, comments: 28, img: 'https://images.unsplash.com/photo-1516450360452-9312abbf86c1?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4', music: { title: 'Raise Me Up', artist: 'Grace & Team', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&h=100&fit=crop' } },
-  { user: 'pst.simon', verified: false, cap: 'Daily verse — Jeremiah 29:11', views: '5.1k', responses: 423, comments: 15, img: 'https://images.unsplash.com/photo-1527525443983-6e60c75fff46?w=700&h=900&fit=crop', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', music: null },
-]
+// No demo videos: this screen shows only real approved reels from the server.
 
 function getResponses(): Record<string, string[]> { try { return JSON.parse(localStorage.getItem('harvest_reel_responses') || '{}') } catch { return {} } }
 
@@ -39,28 +35,27 @@ export default function Reels() {
       .then(r => {
         if (cancelled) return
         const mapped: Reel[] = (r.reels || [])
-          .filter((r: any) => r.user && (r.cap || r.caption))
+          .filter((r: any) => (r.username || r.user) && (r.caption || r.cap))
           .map((r: any) => ({
             id: r.id,
-            user: r.user,
+            user: r.username || r.user,
             verified: Boolean(r.verified),
-            cap: r.cap || r.caption || '',
+            cap: r.caption || r.cap || '',
             views: r.views || 0,
             comments: r.comments || 0,
-            img: r.img || r.poster_url || r.thumbnail || undefined,
-            video: r.video || r.hls_url || r.url || undefined,
+            img: r.poster_url || r.img || undefined,
+            video: r.hls_url || r.video || undefined,
             music: r.music || null,
           }))
         setServerReels(mapped)
       })
-      .catch(() => { /* offline — demo reels still work */ })
+      .catch(() => { /* offline — empty state shows */ })
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
   }, [useServer])
 
-  const approvedVideos: Reel[] = useMemo(() => { try { return JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]') } catch { return [] } }, [])
-  const allVideos = useMemo(() => [...serverReels, ...approvedVideos, ...videosData], [serverReels, approvedVideos])
-  const cur = allVideos[idx] ?? videosData[0]
+  const allVideos = useMemo(() => [...serverReels], [serverReels])
+  const cur = allVideos[idx] ?? serverReels[0]
   const key = `${cur.user}-${cur.id ?? idx}`
 
   useEffect(() => { const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => (i - 1 + allVideos.length) % allVideos.length) } if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => (i + 1) % allVideos.length) } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }, [allVideos.length])
@@ -83,6 +78,7 @@ export default function Reels() {
           <button onClick={() => setMuted(m => !m)} className="shrink-0 min-w-11 min-h-11 rounded-full bg-white/10 border border-white/10" aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? '🔇' : '🔊'}</button>
         </div>
         {loadingServer && <p className="mb-3 text-xs text-white/45">Loading church reels…</p>}
+        {!loadingServer && allVideos.length === 0 && <div className="mb-3 rounded-xl bg-white/5 border border-white/10 px-4 py-6 text-center"><p className="text-sm font-semibold">No videos yet</p><p className="text-xs text-white/55 mt-1">Approved community videos will appear here.</p></div>}
         {notice && <div role="status" className="mb-3 rounded-xl bg-purple-500/20 border border-purple-300/20 px-3 py-2 text-xs text-purple-100">{notice}</div>}
         <div className="grid lg:grid-cols-[minmax(0,760px)_260px] gap-5 items-stretch">
           <section className="relative overflow-hidden rounded-[24px] sm:rounded-[28px] bg-black min-h-[520px] sm:min-h-[600px] lg:h-[calc(100vh-190px)] lg:max-h-[760px] border border-white/10 shadow-2xl">
@@ -144,7 +140,6 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   const USE_API = import.meta.env.VITE_USE_API === 'true'
   const API = import.meta.env.VITE_API_URL || ''
 
-  const getUser = () => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || localStorage.getItem('harvest_username') || 'member' } catch { return 'member' } }
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
 
   const uploadServer = async () => {
@@ -160,7 +155,12 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     const form = new FormData()
     Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
     form.append('file', blob)
-    const up = await fetch(`${API}${presign.url}`, { method: 'POST', body: form })
+    const isDirectR2 = /^https?:\/\//.test(presign.url)
+    const up = await fetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
+      method: 'POST',
+      body: form,
+      headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
+    })
     if (!up.ok) throw new Error('Video upload failed')
     const confirm = await fetch(`${API}/api/media/confirm`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -179,12 +179,9 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
       if (USE_API && fileUrl) {
         const status = await uploadServer()
         setNotice(status === 'approved' ? 'Published to the Harvest family.' : 'Submitted for Harvest review.')
-      } else {
-        const video = { id: Date.now(), user: getUser(), cap: caption || 'A moment from Harvest', img: fileUrl || `https://picsum.photos/400/700?random=${Date.now()}`, video: fileUrl || undefined, views: '0', responses: 0, comments: 0, at: new Date().toISOString() }
-        const approved = JSON.parse(localStorage.getItem('harvest_approved_reels') || '[]')
-        localStorage.setItem('harvest_approved_reels', JSON.stringify([video, ...approved]))
-        window.dispatchEvent(new Event('harvest:approved'))
-        setNotice('Shared with the Harvest family.')
+      } else if (!USE_API) {
+        // Dev-only offline path (no API configured). Never used in the installed app.
+        setNotice('Offline dev mode: video not uploaded (no API configured).')
       }
       window.setTimeout(onDone, 600)
     } catch (e: any) {
