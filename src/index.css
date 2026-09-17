@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted variable font (latin subset) — the APK renders it offline. */
+@font-face {
+  font-family: 'Outfit';
+  src: url('/fonts/outfit-var.woff2') format('woff2-variations');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root { color-scheme: light; }
 * { font-family: 'Outfit', 'Inter', system-ui, sans-serif; box-sizing: border-box; }
 html, body, #root { min-height: 100%; width: 100%; }
@@ -45,6 +54,9 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   .story-overlay { @apply absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent; }
   .transition-smooth { @apply transition-all duration-200 ease-out; }
   .hover-lift { @apply hover:-translate-y-0.5 hover:shadow-md transition; }
+  /* Horizontal scroll strips without a visible scrollbar (Home, Stories). */
+  .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
   .skeleton { @apply animate-pulse rounded-xl bg-stone-200; }
   .skeleton-avatar { @apply w-12 h-12 rounded-2xl bg-stone-200 animate-pulse; }
   .skeleton-text { @apply h-4 rounded-full bg-stone-200 animate-pulse; }
