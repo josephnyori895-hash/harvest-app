@@ -287,7 +287,9 @@ export default function Music() {
     const showBar = progress.id === track.id && isPlaying
     const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
     const serverId = track.id.startsWith('srv_') ? track.id.slice(4) : null
-    const isEditing = editingId === serverId
+    // Only library tracks can be edited; never match the null default (which
+    // previously put every online/saved track into edit mode).
+    const isEditing = serverId !== null && editingId === serverId
     if (isEditing) {
       return (
         <div className="p-4 rounded-2xl bg-white border-2 border-purple-300 shadow-sm space-y-2">
