@@ -19,6 +19,7 @@ import GroupDetails from './components/GroupDetails'
 import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
 import { showToast } from './components/Toast'
+import UploadPill from './components/UploadPill'
 
 // FIX L icon 404 — ensure default marker loads via CDN
 delete L.Icon.Default.prototype._getIconUrl
@@ -161,6 +162,7 @@ function InnerApp() {
         </div>
         {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} />}
         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
+        <UploadPill />
         <Nav tab={tab} setTab={handleTab} />
       </div>
     </div>

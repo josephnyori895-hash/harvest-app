@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
 
 // STORY VIEWER — immersive full-screen, auto-advance to next USER
 export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[] }) {
@@ -114,7 +115,8 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     { mood: '🎤 Gospel', tags: ['gospel', 'praise'] },
   ]
   const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t))); if (matches.length) chooseMusic(matches[Math.floor(Math.random() * matches.length)]) }
-  // Story uploads go straight to the server and publish instantly (24h expiry).
+  // Story uploads run in the background: the composer closes instantly and a
+  // floating progress pill tracks the transfer (stories publish instantly, 24h expiry).
   const submit = async () => {
     if (busy) return
     if (!fileObj) { setNotice('Add a photo or video first'); return }
@@ -122,36 +124,29 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     try {
       const token = localStorage.getItem('harvest_token') || ''
       const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-      if (!token || !API) { setNotice('You need to be signed in to share a story'); return }
+      if (!token || !API) { setNotice('You need to be signed in to share a story'); setBusy(false); return }
       const blob = fileObj
       const ext = blob.type.split('/')[1]?.split('+')[0] || (blob.type.startsWith('video') ? 'mp4' : 'jpg')
-      const presignResponse = await fetch(`${API}/api/media/presign`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ type: 'story', contentType: blob.type, bytes: blob.size, ext }),
-      })
-      const presign = await presignResponse.json().catch(() => ({}))
-      if (!presignResponse.ok) throw new Error(presign.error || 'Unable to prepare upload')
-      const form = new FormData()
-      Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
-      form.append('file', blob)
-      const isDirectR2 = /^https?:\/\//.test(presign.url)
-      const up = await fetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
-        method: 'POST',
-        body: form,
-        headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
-      })
-      if (!up.ok) throw new Error('Story upload failed')
-      const confirm = await fetch(`${API}/api/media/confirm`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ key: presign.key, type: 'story', caption: caption.trim() }),
-      })
-      const result = await confirm.json().catch(() => ({}))
-      if (!confirm.ok) throw new Error(result.error || 'Unable to share your story')
-      window.dispatchEvent(new Event('harvest:approved'))
+      void startBackgroundUpload({
+        label: 'story',
+        successMsg: 'Story shared — visible for 24 hours ✓',
+        run: async onPct => {
+          const presign = await apiJson(`${API}/api/media/presign`, token, { type: 'story', contentType: blob.type, bytes: blob.size, ext })
+          const form = new FormData()
+          Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
+          form.append('file', blob)
+          const isDirectR2 = /^https?:\/\//.test(presign.url)
+          const up = await xhrSend(isDirectR2 ? presign.url : `${API}${presign.url}`, 'POST', form, isDirectR2 ? undefined : { Authorization: `Bearer ${token}` }, onPct)
+          if (!up.ok) throw new Error('Story upload failed')
+          await apiJson(`${API}/api/media/confirm`, token, { key: presign.key, type: 'story', caption: caption.trim() })
+          window.dispatchEvent(new Event('harvest:approved'))
+        },
+      }).catch(() => {})
       onDone()
     } catch (e: any) {
       setNotice(e?.message || 'Could not share your story')
-    } finally { setBusy(false) }
+      setBusy(false)
+    }
   }
   return (
     <div className="bg-zinc-50 text-white min-h-[calc(100vh-49px)] flex flex-col">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
+import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -181,32 +182,19 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
 
-  const uploadServer = async () => {
+  // Runs as a background job: presign → upload (with progress) → confirm.
+  const uploadServer = async (onPct: (pct: number) => void) => {
     const token = localStorage.getItem('harvest_token') || ''
     const blob = await (await fetch(fileUrl as string)).blob()
     const ext = blob.type.split('/')[1]?.split('+')[0] || 'mp4'
-    const presignResponse = await fetch(`${API}/api/media/presign`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ type: 'reel', contentType: blob.type, bytes: blob.size, ext }),
-    })
-    const presign = await presignResponse.json().catch(() => ({}))
-    if (!presignResponse.ok) throw new Error(presign.error || 'Unable to prepare upload')
+    const presign = await apiJson(`${API}/api/media/presign`, token, { type: 'reel', contentType: blob.type, bytes: blob.size, ext })
     const form = new FormData()
     Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
     form.append('file', blob)
     const isDirectR2 = /^https?:\/\//.test(presign.url)
-    const up = await fetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
-      method: 'POST',
-      body: form,
-      headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
-    })
+    const up = await xhrSend(isDirectR2 ? presign.url : `${API}${presign.url}`, 'POST', form, isDirectR2 ? undefined : { Authorization: `Bearer ${token}` }, onPct)
     if (!up.ok) throw new Error('Video upload failed')
-    const confirm = await fetch(`${API}/api/media/confirm`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ key: presign.key, type: 'reel', caption: caption.trim() }),
-    })
-    const result = await confirm.json().catch(() => ({}))
-    if (!confirm.ok) throw new Error(result.error || 'Unable to submit video')
+    const result = await apiJson(`${API}/api/media/confirm`, token, { key: presign.key, type: 'reel', caption: caption.trim() })
     return result.status as string
   }
 
@@ -216,16 +204,22 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     setBusy(true); setNotice('')
     try {
       if (USE_API && fileUrl) {
-        const status = await uploadServer()
-        setNotice(status === 'approved' ? 'Published to the Harvest family.' : 'Submitted for Harvest review.')
-      } else if (!USE_API) {
+        // Background hand-off: close now, progress pill + toast take over.
+        void startBackgroundUpload({
+          label: 'video',
+          successMsg: 'Video shared with the Harvest family ✓',
+          run: async onPct => { await uploadServer(onPct) },
+        }).catch(() => {})
+        onDone()
+      } else {
         // Dev-only offline path (no API configured). Never used in the installed app.
         setNotice('Offline dev mode: video not uploaded (no API configured).')
+        setBusy(false)
       }
-      window.setTimeout(onDone, 600)
     } catch (e: any) {
       setNotice(e?.message || 'Unable to share this video')
-    } finally { setBusy(false) }
+      setBusy(false)
+    }
   }
 
   return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-11 h-11 rounded-full bg-[#FFFBF0] border border-[#E8DEC9]" aria-label="Close">✕</button></div><div className="p-5 space-y-4"><label className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden cursor-pointer">{fileUrl ? <video src={fileUrl} controls className="w-full h-full object-cover" /> : <div className="h-full flex flex-col items-center justify-center text-white p-4 text-center"><span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p></div>}<input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" /></label>{fileName && <p className="text-xs text-zinc-500 truncate">{fileName}</p>}<textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="What would you like to share with your church family?" maxLength={180} rows={4} className="w-full rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] p-4 outline-none focus:ring-2 focus:ring-purple-200 resize-none" />{notice && <div role="status" className="p-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] text-sm font-semibold text-[#5B21B6]">{notice}</div>}<button onClick={() => void submit()} disabled={busy} className="w-full min-h-12 rounded-full bg-[#7C3AED] text-white font-bold hover:bg-[#6D28D9] disabled:opacity-50">{busy ? 'Uploading…' : 'Share with Harvest family'}</button></div></div></div>

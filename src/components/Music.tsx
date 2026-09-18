@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IgIcon } from './Icons'
 import { showToast } from './Toast'
 import { fetchMusic, useApi } from '../lib/api'
+import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
 
 // Worship room: the church library (admin uploads) + online search with
@@ -67,18 +68,14 @@ export default function Music() {
   const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
   // Upload one file (audio or cover image) → returns the storage key.
-  const uploadBlob = async (file: File, type: 'track' | 'post') => {
-    const pr = await fetch(`${API}/api/media/presign`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() },
-      body: JSON.stringify({ type, contentType: file.type, bytes: file.size, ext: file.name.split('.').pop() }),
-    })
-    const presign = await pr.json().catch(() => ({}))
-    if (!pr.ok) throw new Error(presign.error || 'presign failed')
+  // xhrSend reports real upload progress to the background pill.
+  const uploadBlob = async (file: File, type: 'track' | 'post', onPct: (pct: number) => void) => {
+    const presign = await apiJson(`${API}/api/media/presign`, localStorage.getItem('harvest_token') || '', { type, contentType: file.type, bytes: file.size, ext: file.name.split('.').pop() })
     const fd = new FormData()
     Object.entries(presign.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
     fd.append('file', file)
     const direct = /^https?:\/\//.test(presign.url)
-    const up = await fetch(direct ? presign.url : `${API}${presign.url}`, { method: 'POST', body: fd, headers: direct ? undefined : authHdr() })
+    const up = await xhrSend(direct ? presign.url : `${API}${presign.url}`, 'POST', fd, direct ? undefined : authHdr(), onPct)
     if (!up.ok) throw new Error('upload failed')
     return presign.key as string
   }
@@ -87,24 +84,30 @@ export default function Music() {
     if (!upFile || upBusy) return
     if (!upTitle.trim()) { showToast('Give the track a title'); return }
     setUpBusy(true); setUpPct(5)
+    const title = upTitle.trim()
+    const artist = upArtist.trim()
+    const audio = upFile
+    const cover = upCover
     try {
-      const audioKey = await uploadBlob(upFile, 'track')
-      setUpPct(55)
-      let coverKey: string | undefined
-      if (upCover) coverKey = await uploadBlob(upCover, 'post')
-      const cf = await fetch(`${API}/api/media/confirm`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() },
-        body: JSON.stringify({ key: audioKey, type: 'track', title: upTitle.trim(), artist: upArtist.trim(), cover_key: coverKey }),
-      })
-      const d = await cf.json().catch(() => ({}))
-      if (!cf.ok) throw new Error(d.error || 'publish failed')
-      showToast(`"${upTitle.trim()}" added to the church library 🎵`)
-      setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
-      // Reload the church library
-      fetchMusic().then(r => {
-        const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
-        setServerTracks(mapped)
+      // Background hand-off: the panel closes now; progress moves to the
+      // floating pill (audio bytes count for ~90%, cover + confirm finish it).
+      void startBackgroundUpload({
+        label: `music: ${title}`,
+        successMsg: `"${title}" added to the church library 🎵`,
+        run: async onPct => {
+          const audioKey = await uploadBlob(audio, 'track', p => onPct(Math.round(p * 0.9)))
+          let coverKey: string | undefined
+          if (cover) coverKey = await uploadBlob(cover, 'post', p => onPct(90 + Math.round(p * 0.05)))
+          await apiJson(`${API}/api/media/confirm`, localStorage.getItem('harvest_token') || '', { key: audioKey, type: 'track', title, artist, cover_key: coverKey })
+          onPct(100)
+          // Refresh the church library once published.
+          fetchMusic().then(r => {
+            const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
+            setServerTracks(mapped)
+          }).catch(() => {})
+        },
       }).catch(() => {})
+      setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
     } catch (e: any) { showToast(e?.message || 'Upload failed') } finally { setUpBusy(false); setUpPct(0) }
   }
 
