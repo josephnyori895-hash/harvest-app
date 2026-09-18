@@ -1,27 +1,73 @@
 import { useState, useEffect, useRef } from 'react'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 
-// STORY VIEWER — immersive full-screen, auto-advance to next USER
+// STORY VIEWER — immersive full-screen, auto-advance to next USER.
+// Photo stories advance on a 4s timer; VIDEO stories play in full — the
+// progress bar tracks the video itself and the next story loads on 'ended'.
 export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[] }) {
   const s = allStories[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [videoState, setVideoState] = useState<'loading' | 'playing' | 'blocked' | 'error'>('loading')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
   const duration = 4000
   const isLastStory = idx >= allStories.length - 1
+  const isVideo = Boolean(s?.video)
 
+  // Advance helper shared by photo timer and video 'ended'.
+  const goNext = () => {
+    if (idx < allStories.length - 1) setIdx(idx + 1)
+    else setIdx(null)
+  }
+
+  // Photo auto-advance (videos advance via onended instead).
   useEffect(() => {
-    if (!s) return undefined
+    if (!s || isVideo) return undefined
     setProgress(0)
     setIsPaused(false)
     if (timerRef.current) clearTimeout(timerRef.current)
     if (isPaused) return undefined
-    timerRef.current = setTimeout(() => {
-      if (idx < allStories.length - 1) setIdx(idx + 1)
-      else setIdx(null)
-    }, duration)
+    timerRef.current = setTimeout(() => goNext(), duration)
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [idx, isPaused, setIdx, allStories.length, duration, s])
+  }, [idx, isPaused, setIdx, allStories.length, duration, s, isVideo])
+
+  // Reset per-story state.
+  useEffect(() => {
+    setVideoState('loading')
+    setProgress(0)
+    setIsPaused(false)
+  }, [idx])
+
+  // Video: try autoplay (muted is allowed in WebViews); fall back to an
+  // explicit play() and, if that is blocked, a tap-to-play overlay. Without
+  // this the raw video element shows a giant dead play glyph.
+  useEffect(() => {
+    if (!s || !isVideo) return
+    const v = videoRef.current
+    if (!v) return
+    v.currentTime = 0
+    const tryPlay = () => {
+      v.play().then(() => setVideoState('playing')).catch(() => setVideoState('blocked'))
+    }
+    if (v.readyState >= 2) tryPlay()
+    else {
+      const onCan = () => { tryPlay(); v.removeEventListener('canplay', onCan) }
+      v.addEventListener('canplay', onCan)
+      const onFail = () => setVideoState('error')
+      v.addEventListener('error', onFail)
+      return () => { v.removeEventListener('canplay', onCan); v.removeEventListener('error', onFail) }
+    }
+    return undefined
+  }, [idx, s, isVideo])
+
+  // Pause/play sync for videos.
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v || !isVideo || videoState === 'error') return
+    if (isPaused) v.pause()
+    else if (videoState === 'playing') v.play().catch(() => setVideoState('blocked'))
+  }, [isPaused, isVideo, videoState])
 
   const handleTap = (e: any) => {
     if (!s) return
@@ -32,13 +78,13 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
       setIdx(idx > 0 ? idx - 1 : null)
     } else if (x > rect.width * 2 / 3) {
       if (timerRef.current) clearTimeout(timerRef.current)
-      if (idx < allStories.length - 1) setIdx(idx + 1)
-      else setIdx(null)
+      goNext()
     } else setIsPaused(p => !p)
   }
 
+  // Photo progress interval (video progress comes from onTimeUpdate).
   useEffect(() => {
-    if (!s || isPaused) return undefined
+    if (!s || isVideo || isPaused) return undefined
     const start = Date.now()
     const interval = setInterval(() => {
       const elapsed = Date.now() - start
@@ -47,7 +93,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
       if (p >= 100) clearInterval(interval)
     }, 50)
     return () => clearInterval(interval)
-  }, [idx, isPaused, duration, s])
+  }, [idx, isPaused, duration, s, isVideo])
 
   if (!s) return null
   const isLastUserStory = idx === allStories.length - 1
@@ -60,8 +106,38 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
         <div className="flex items-center gap-2">{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="text-xl px-2 text-white">⏸</button>}<button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="text-xl px-2 text-white">✕</button></div>
       </div>
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
-        {s.img && <img src={s.img} alt="" className="w-full h-full object-cover" />}
-        {s.video && <video src={s.video} autoPlay muted playsInline className="w-full h-full object-cover" />}
+        {s.img && !isVideo && <img src={s.img} alt="" className="w-full h-full object-cover" />}
+        {isVideo && (
+          <>
+            <video
+              ref={videoRef}
+              src={s.video}
+              muted
+              playsInline
+              preload="auto"
+              onEnded={goNext}
+              onTimeUpdate={e => { const el = e.currentTarget; if (el.duration > 0) setProgress((el.currentTime / el.duration) * 100) }}
+              onError={() => setVideoState('error')}
+              className="w-full h-full object-cover"
+            />
+            {videoState === 'loading' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-12 h-12 rounded-full border-2 border-white/30 border-t-white animate-spin" /></div>}
+            {videoState === 'blocked' && (
+              <button
+                onClick={e => { e.stopPropagation(); const v = videoRef.current; if (v) v.play().then(() => setVideoState('playing')).catch(() => setVideoState('error')) }}
+                className="absolute inset-0 flex items-center justify-center bg-black/40"
+                aria-label="Play story video"
+              >
+                <span className="w-20 h-20 rounded-full bg-white/90 flex items-center justify-center text-3xl text-black shadow-2xl">▶</span>
+              </button>
+            )}
+            {videoState === 'error' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 pointer-events-none">
+                <p className="text-sm text-zinc-300">Video could not load</p>
+                <p className="text-[11px] text-zinc-500 mt-1">Check your connection and try again</p>
+              </div>
+            )}
+          </>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6"><p className="font-bold text-white text-lg">{s.name}</p><p className="text-sm text-zinc-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>{s.music && <div className="flex gap-2 items-center mt-2 p-2 bg-black/60 rounded-lg"><img src={s.music.cover} className="w-8 h-8 rounded" /><div className="flex-1"><p className="text-xs font-semibold">🎵 {s.music.title}</p><p className="text-[11px] text-zinc-400">{s.music.artist}</p></div><a href={s.music.url} target="_blank" rel="noreferrer" className="text-xs bg-white text-black px-2 py-1 rounded-full">▶</a></div>}</div>
         {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
