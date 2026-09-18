@@ -12,7 +12,7 @@ function slugify(name) {
 }
 
 async function getGroup(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, lat, lng, location_label, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
 
