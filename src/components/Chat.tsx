@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
+import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
@@ -16,6 +17,13 @@ const sectionMeta: Record<Section, { label: string; icon: string; description: s
 }
 
 const keyFor = (a: string, b: string) => `harvest:chat:${[a, b].sort().join(':')}`
+
+// Stable positive int from a string — notification IDs must be ints.
+function hashCode(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) { h = (Math.imul(31, h) + s.charCodeAt(i)) | 0 }
+  return h
+}
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('harvest_token') || ''
@@ -94,6 +102,11 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pressTimer = useRef<number | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
+  // Last-seen unread counts (peer → count) + currently open conversation,
+  // so the background poller can detect FRESH incoming messages.
+  const inboxRef = useRef<Record<string, number> | null>(null)
+  const activeRef = useRef<ChatUser | null>(null)
+  useEffect(() => { activeRef.current = active }, [active])
 
   const conversationKey = active ? keyFor(currentUser, active.username) : ''
   const thread = conversationKey ? (msgs[conversationKey] || []) : []
@@ -110,9 +123,23 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
     if (!localStorage.getItem('harvest_token')) return
     try {
       const r = await api<{ conversations: any[] }>('/api/chat/conversations')
-      setInbox(r.conversations || [])
+      const next = r.conversations || []
+      // Background alerts: notify about unread messages that arrived since the last
+      // poll while the user is NOT inside this conversation. Skips the very first
+      // load (no baseline yet) so reopening the app doesn't replay old messages.
+      if (inboxRef.current) {
+        const prevUnread = inboxRef.current
+        for (const c of next) {
+          const before = prevUnread[c.peer] ?? 0
+          if (c.unread > before && c.last_from !== currentUser && activeRef.current?.username !== c.peer) {
+            void showMessageNotification(c.peer_name || c.peer, c.last_text || 'New message', Math.abs(hashCode(c.conversation_key)) % 2000000000)
+          }
+        }
+      }
+      inboxRef.current = Object.fromEntries(next.map(c => [c.peer, c.unread || 0]))
+      setInbox(next)
     } catch { /* keep last inbox */ }
-  }, [])
+  }, [currentUser])
 
   const syncPresence = useCallback(async () => {
     if (!localStorage.getItem('harvest_token')) return
@@ -126,6 +153,7 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   }, [])
 
   useEffect(() => {
+    void ensureNotificationChannel()
     void refreshInbox(); void syncPresence()
     const t = window.setInterval(() => { void refreshInbox(); void syncPresence() }, 30000)
     return () => window.clearInterval(t)

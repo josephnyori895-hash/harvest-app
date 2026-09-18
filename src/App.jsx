@@ -28,6 +28,8 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
+import { initNotifications } from './lib/notifications'
+
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function authHeaders() {
@@ -98,6 +100,9 @@ function InnerApp() {
     setRole(data.role)
     setVerified(Boolean(data.verified))
     setOnboarded(true)
+    // Ask for notification permission right after sign-in — the OS prompt is
+    // allowed only in direct response to a user action, which this is.
+    void initNotifications()
   }
 
   const signOut = () => {
