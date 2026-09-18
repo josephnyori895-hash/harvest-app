@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
+import { startBackgroundUpload } from '../lib/backgroundUploads'
 
 // STORY VIEWER — immersive full-screen, auto-advance to next USER
 export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[] }) {
@@ -126,20 +126,13 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
       const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
       if (!token || !API) { setNotice('You need to be signed in to share a story'); setBusy(false); return }
       const blob = fileObj
-      const ext = blob.type.split('/')[1]?.split('+')[0] || (blob.type.startsWith('video') ? 'mp4' : 'jpg')
       void startBackgroundUpload({
         label: 'story',
         successMsg: 'Story shared — visible for 24 hours ✓',
-        run: async onPct => {
-          const presign = await apiJson(`${API}/api/media/presign`, token, { type: 'story', contentType: blob.type, bytes: blob.size, ext })
-          const form = new FormData()
-          Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
-          form.append('file', blob)
-          const isDirectR2 = /^https?:\/\//.test(presign.url)
-          const up = await xhrSend(isDirectR2 ? presign.url : `${API}${presign.url}`, 'POST', form, isDirectR2 ? undefined : { Authorization: `Bearer ${token}` }, onPct)
-          if (!up.ok) throw new Error('Story upload failed')
-          await apiJson(`${API}/api/media/confirm`, token, { key: presign.key, type: 'story', caption: caption.trim() })
-          window.dispatchEvent(new Event('harvest:approved'))
+        task: {
+          kind: 'story',
+          file: blob,
+          caption: caption.trim(),
         },
       }).catch(() => {})
       onDone()

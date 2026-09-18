@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
-import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
+import { startBackgroundUpload } from '../lib/backgroundUploads'
 
 type Props = { onDone: () => void }
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -13,21 +13,6 @@ const hints: Record<ContentType, string> = {
   video: 'Sermon clip, worship moment or testimony',
   music: 'Add a song to the church worship library',
   announcement: 'Official notice to the whole church',
-}
-
-// Runs as a background job: presign → upload (with progress) → confirm.
-async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track', meta: { caption?: string; title?: string; artist?: string }, onPct: (pct: number) => void) {
-  const token = localStorage.getItem('harvest_token') || ''
-  const presign = await apiJson(`${API}/api/media/presign`, token, { type, contentType: file.type, bytes: file.size, ext: (file.name.split('.').pop() || 'bin').toLowerCase() })
-  const form = new FormData()
-  Object.entries(presign.fields || {}).forEach(([key, value]) => form.append(key, String(value)))
-  form.append('file', file)
-  // Proxy fallback uploads hit our own API and need the bearer token
-  // (direct-to-R2 presigned posts would reject extra auth headers).
-  const isDirectR2 = /^https?:\/\//.test(presign.url)
-  const up = await xhrSend(isDirectR2 ? presign.url : `${API}${presign.url}`, 'POST', form, isDirectR2 ? undefined : { Authorization: `Bearer ${token}` }, onPct)
-  if (!up.ok) throw new Error('Upload failed — check your connection and file size')
-  await apiJson(`${API}/api/media/confirm`, token, { key: presign.key, type, caption: meta.caption, title: meta.title, artist: meta.artist })
 }
 
 export default function PostCreate({ onDone }: Props) {
@@ -82,11 +67,13 @@ export default function PostCreate({ onDone }: Props) {
         void startBackgroundUpload({
           label,
           successMsg: `${label} shared with the family ✓`,
-          run: onPct => uploadMedia(file, serverType as 'post' | 'story' | 'reel' | 'track', {
+          task: {
+            kind: serverType as 'post' | 'story' | 'reel' | 'track',
+            file,
             caption: caption.trim(),
             title: type === 'music' ? title.trim() : undefined,
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : undefined,
-          }, onPct),
+          },
         }).catch(() => {})
         onDone()
       } else {

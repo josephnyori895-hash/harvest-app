@@ -30,6 +30,7 @@ L.Icon.Default.mergeOptions({
 })
 
 import { initNotifications } from './lib/notifications'
+import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } from './lib/backgroundUploads'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -412,6 +413,10 @@ function Profile({ users, onOpenAdmin, onSignOut }) {
   const { isAdmin, role, username } = useAuth()
   const [me, setMe] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Upload activity: live transfers + last 20 finished (successes and failures).
+  const [uploads, setUploads] = useState(getUploads())
+  const [history, setHistory] = useState(getUploadHistory())
+  useEffect(() => subscribeUploads(() => { setUploads(getUploads()); setHistory(getUploadHistory()) }), [])
 
   const loadMe = () => {
     fetch(`${API}/api/me`, { headers: authHeaders() })
@@ -509,6 +514,42 @@ function Profile({ users, onOpenAdmin, onSignOut }) {
           ))}
           {Object.keys(groups).length === 0 && <p className="text-xs text-zinc-500 px-4">Loading groups…</p>}
         </div>
+      </div>
+
+      {/* Uploads: live transfers + recent history */}
+      <div className="mt-4 border-t border-zinc-800 pt-3">
+        <h3 className="text-sm font-bold px-4 text-white mb-2">My uploads</h3>
+        {uploads.length > 0 && (
+          <div className="space-y-2 px-4 mb-3">
+            {uploads.map(u => (
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-zinc-700 flex items-center justify-center text-[10px] font-bold text-white" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #27272a 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{u.label}</p>
+                  <p className="text-[10px] text-zinc-400">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {history.length === 0 && uploads.length === 0 && (
+          <p className="text-xs text-zinc-500 px-4">No uploads yet — share a story, post or video and it shows here.</p>
+        )}
+        {history.length > 0 && (
+          <div className="space-y-2 px-4">
+            {history.slice(0, 8).map(h => (
+              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+                <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? '✓' : '✕'}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{h.label}</p>
+                  <p className="text-[10px] text-zinc-400 truncate">{h.status === 'done' ? 'Published' : `Failed — ${h.detail || 'tap Share to try again'}`}</p>
+                </div>
+                <span className="text-[10px] text-zinc-500 shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            ))}
+            <button onClick={() => clearUploadHistory()} className="text-[10px] text-zinc-500 underline px-1">Clear history</button>
+          </div>
+        )}
       </div>
 
       <div className="px-4 mt-5">

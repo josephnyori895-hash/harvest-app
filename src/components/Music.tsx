@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IgIcon } from './Icons'
 import { showToast } from './Toast'
 import { fetchMusic, useApi } from '../lib/api'
-import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
+import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
 
 // Worship room: the church library (admin uploads) + online search with
@@ -67,19 +67,6 @@ export default function Music() {
   const authHdr = () => ({ Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` })
   const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-  // Upload one file (audio or cover image) → returns the storage key.
-  // xhrSend reports real upload progress to the background pill.
-  const uploadBlob = async (file: File, type: 'track' | 'post', onPct: (pct: number) => void) => {
-    const presign = await apiJson(`${API}/api/media/presign`, localStorage.getItem('harvest_token') || '', { type, contentType: file.type, bytes: file.size, ext: file.name.split('.').pop() })
-    const fd = new FormData()
-    Object.entries(presign.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
-    fd.append('file', file)
-    const direct = /^https?:\/\//.test(presign.url)
-    const up = await xhrSend(direct ? presign.url : `${API}${presign.url}`, 'POST', fd, direct ? undefined : authHdr(), onPct)
-    if (!up.ok) throw new Error('upload failed')
-    return presign.key as string
-  }
-
   const submitUpload = async () => {
     if (!upFile || upBusy) return
     if (!upTitle.trim()) { showToast('Give the track a title'); return }
@@ -94,17 +81,12 @@ export default function Music() {
       void startBackgroundUpload({
         label: `music: ${title}`,
         successMsg: `"${title}" added to the church library 🎵`,
-        run: async onPct => {
-          const audioKey = await uploadBlob(audio, 'track', p => onPct(Math.round(p * 0.9)))
-          let coverKey: string | undefined
-          if (cover) coverKey = await uploadBlob(cover, 'post', p => onPct(90 + Math.round(p * 0.05)))
-          await apiJson(`${API}/api/media/confirm`, localStorage.getItem('harvest_token') || '', { key: audioKey, type: 'track', title, artist, cover_key: coverKey })
-          onPct(100)
-          // Refresh the church library once published.
-          fetchMusic().then(r => {
-            const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
-            setServerTracks(mapped)
-          }).catch(() => {})
+        task: {
+          kind: 'track',
+          file: audio,
+          title,
+          artist: artist || 'Harvest Worship',
+          cover: cover || undefined,
         },
       }).catch(() => {})
       setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
@@ -158,6 +140,16 @@ export default function Music() {
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
   }, [useServer])
+
+  // A background track upload just published — refresh the library.
+  useEffect(() => {
+    const bump = () => { fetchMusic().then(r => {
+      const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
+      setServerTracks(mapped)
+    }).catch(() => {}) }
+    window.addEventListener('harvest:tracks-updated', bump)
+    return () => window.removeEventListener('harvest:tracks-updated', bump)
+  }, [])
 
   // Online search — every result is a FULL-LENGTH, legally downloadable song.
   // 1) Jamendo (best curation + covers) when a key is set at build time

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
-import { startBackgroundUpload, xhrSend, apiJson } from '../lib/backgroundUploads'
+import { startBackgroundUpload } from '../lib/backgroundUploads'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -182,22 +182,6 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
 
-  // Runs as a background job: presign → upload (with progress) → confirm.
-  const uploadServer = async (onPct: (pct: number) => void) => {
-    const token = localStorage.getItem('harvest_token') || ''
-    const blob = await (await fetch(fileUrl as string)).blob()
-    const ext = blob.type.split('/')[1]?.split('+')[0] || 'mp4'
-    const presign = await apiJson(`${API}/api/media/presign`, token, { type: 'reel', contentType: blob.type, bytes: blob.size, ext })
-    const form = new FormData()
-    Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
-    form.append('file', blob)
-    const isDirectR2 = /^https?:\/\//.test(presign.url)
-    const up = await xhrSend(isDirectR2 ? presign.url : `${API}${presign.url}`, 'POST', form, isDirectR2 ? undefined : { Authorization: `Bearer ${token}` }, onPct)
-    if (!up.ok) throw new Error('Video upload failed')
-    const result = await apiJson(`${API}/api/media/confirm`, token, { key: presign.key, type: 'reel', caption: caption.trim() })
-    return result.status as string
-  }
-
   const submit = async () => {
     if (busy) return
     if (!fileUrl && !caption.trim()) { setNotice('Add a video or a message first'); return }
@@ -205,10 +189,11 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     try {
       if (USE_API && fileUrl) {
         // Background hand-off: close now, progress pill + toast take over.
+        const blob = await (await fetch(fileUrl as string)).blob()
         void startBackgroundUpload({
           label: 'video',
           successMsg: 'Video shared with the Harvest family ✓',
-          run: async onPct => { await uploadServer(onPct) },
+          task: { kind: 'reel', file: blob, caption: caption.trim() },
         }).catch(() => {})
         onDone()
       } else {
