@@ -156,10 +156,17 @@ export default function Music() {
     return () => { cancelled = true }
   }, [useServer])
 
-  // Online search — Jamendo first (full-length, legally downloadable CC music),
-  // iTunes previews as a labeled fallback. Jamendo needs a free key:
-  // register at https://dev.jamendo.com → set VITE_JAMENDO_CLIENT_ID at build time.
+  // Online search — every result is a FULL-LENGTH, legally downloadable song.
+  // 1) Jamendo (best curation + covers) when a key is set at build time
+  //    (free at dev.jamendo.com → VITE_JAMENDO_CLIENT_ID).
+  // 2) Internet Archive / Free Music Archive — no key needed, CC-licensed,
+  //    complete MP3s served with range support. iTunes 30s previews removed.
   const JAMENDO_ID = (import.meta.env.VITE_JAMENDO_CLIENT_ID || '').trim()
+  const parseIaLength = (v: any): number => {
+    const s = String(v ?? '')
+    if (s.includes(':')) { const [m, sec] = s.split(':'); return (Number(m) || 0) * 60 + (Number(sec) || 0) }
+    return Math.round(Number(s) || 0)
+  }
   const searchOnline = async (term: string) => {
     const needle = term.trim()
     if (!needle) return
@@ -174,22 +181,34 @@ export default function Music() {
           artist: x.artist_name || 'Jamendo artist',
           artwork: x.image || undefined,
           url: x.audio || null,
+          seconds: Number(x.duration) || undefined,
           source: 'online' as const,
         }))
         if (tracks.length) { setOnline(tracks); return }
       }
-      // Fallback: iTunes — legally only 30s previews (Apple licensing, not fixable).
-      const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(needle)}&media=music&entity=song&limit=25`)
-      const data = await r.json()
-      setOnline((data.results || []).filter((x: any) => x.previewUrl).map((x: any) => ({
-        id: `it_${x.trackId}`,
-        title: x.trackName,
-        artist: x.artistName,
-        artwork: (x.artworkUrl100 || '').replace('100x100', '200x200'),
-        url: x.previewUrl,
-        preview: true,
-        source: 'online' as const,
-      })))
+      // Internet Archive / Free Music Archive: search items, then read each
+      // item's file list for a playable full-length MP3.
+      const q = `collection:(freemusicarchive) AND mediatype:audio AND (title:("${needle.replace(/"/g, '')}") OR creator:("${needle.replace(/"/g, '')}") OR subject:("${needle.replace(/"/g, '')}"))`
+      const sr = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=creator&rows=18&page=1&output=json&sort[]=downloads+desc`)
+      const sd = await sr.json()
+      const docs: any[] = sd?.response?.docs || []
+      const settled = await Promise.allSettled(docs.slice(0, 12).map(async (doc) => {
+        const mr = await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`)
+        const md = await mr.json()
+        const audio = (md?.files || []).find((f: any) => f.name?.toLowerCase().endsWith('.mp3'))
+          || (md?.files || []).find((f: any) => f.name?.toLowerCase().endsWith('.ogg'))
+        if (!audio) throw new Error('no audio')
+        return {
+          id: `ia_${doc.identifier}`,
+          title: String(doc.title || audio.name || 'Untitled').slice(0, 90),
+          artist: String(doc.creator || md?.metadata?.creator || 'Archive artist').replace(/^\[|\]$/g, '').slice(0, 70),
+          artwork: `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,
+          url: `https://archive.org/download/${encodeURIComponent(doc.identifier)}/${encodeURIComponent(audio.name)}`,
+          seconds: parseIaLength(audio.length),
+          source: 'online' as const,
+        } as Track
+      }))
+      setOnline(settled.filter(s => s.status === 'fulfilled').map(s => (s as PromiseFulfilledResult<Track>).value))
     } catch {
       setError('Online search failed — check your connection')
       setOnline([])
@@ -199,6 +218,7 @@ export default function Music() {
   // Single shared audio element; cleaned up on unmount.
   useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
 
+  const [nowPlaying, setNowPlaying] = useState<Track | null>(null)
   const togglePlay = (track: Track) => {
     setError('')
     if (!track.url) { showToast('This track has no audio source yet'); return }
@@ -208,7 +228,15 @@ export default function Music() {
     audio.onended = () => { setPlayingId(null); setProgress(p => ({ ...p, id: null, seconds: 0 })) }
     audio.ontimeupdate = () => setProgress({ id: track.id, seconds: audio.currentTime, duration: audio.duration || 0 })
     audio.onerror = () => { setPlayingId(null); setError(`Unable to play "${track.title}". Try another track.`) }
-    audio.play().then(() => { audioRef.current = audio; setPlayingId(track.id) }).catch(() => showToast('Tap again to allow audio playback'))
+    audio.play().then(() => { audioRef.current = audio; setPlayingId(track.id); setNowPlaying(track) }).catch(() => showToast('Tap again to allow audio playback'))
+  }
+  const seek = (fraction: number) => {
+    const a = audioRef.current
+    if (a && Number.isFinite(a.duration) && a.duration > 0) a.currentTime = Math.min(Math.max(fraction * a.duration, 0), a.duration)
+  }
+  const stopAndClosePlayer = () => {
+    audioRef.current?.pause()
+    setPlayingId(null); setNowPlaying(null); setProgress({ id: null, seconds: 0, duration: 0 })
   }
 
   const doDownload = async (track: Track) => {
@@ -285,10 +313,11 @@ export default function Music() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-bold text-neutral-900 truncate text-sm">{track.title}</p>
-          <p className="text-xs text-neutral-600 truncate">{track.artist}</p>
+          <p className="text-xs text-neutral-600 truncate">{track.artist}{track.seconds ? ` · ${fmt(track.seconds)}` : ''}</p>
           <div className="flex gap-1.5 mt-1 flex-wrap">
             {track.source === 'server' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">CHURCH LIBRARY</span>}
             {track.preview && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">30s PREVIEW</span>}
+            {track.source === 'online' && !track.preview && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">FULL SONG ✓</span>}
             {track.source === 'local' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">SAVED</span>}
           </div>
           {showBar && (
@@ -323,6 +352,13 @@ export default function Music() {
             <h1 className="text-xl font-extrabold truncate">Worship Room</h1>
           </div>
         </div>
+        {tab === 'online' && (
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-none">
+            {['Worship', 'Gospel', 'Hymns', 'Praise', 'Choir', 'Instrumental'].map(g => (
+              <button key={g} onClick={() => { setQ(g); void searchOnline(g) }} disabled={searching} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${q === g ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-200'}`}>{g}</button>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2 mb-3">
           <div className="flex-1 min-w-0 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
             <IgIcon name="search" active={false} size={20} />
@@ -336,6 +372,36 @@ export default function Music() {
             {q && <button onClick={() => { setQ(''); if (tab === 'online') { setOnline([]); setSearched(false) } }} className="text-neutral-400 text-sm">✕</button>}
           </div>
           {tab === 'online' && <button onClick={() => void searchOnline(q)} disabled={searching} className="px-4 rounded-xl bg-purple-600 text-white text-xs font-bold disabled:opacity-50">{searching ? '…' : 'Search'}</button>}
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+      {nowPlaying && (
+        <div className="sticky top-[calc(100vh-140px)] z-20 mx-4 mt-4 mb-1">
+          <div className="rounded-2xl bg-neutral-900 text-white shadow-2xl border border-neutral-700 px-3 py-2.5">
+            <div className="flex items-center gap-3">
+              {nowPlaying.artwork
+                ? <img src={nowPlaying.artwork} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                : <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center">🎵</div>}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold truncate">{nowPlaying.title}</p>
+                <p className="text-[10px] text-neutral-400 truncate">{nowPlaying.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
+              </div>
+              <button onClick={() => togglePlay(nowPlaying)} className="w-9 h-9 rounded-full bg-white text-neutral-900 flex items-center justify-center font-bold shrink-0" aria-label={playingId ? 'Pause' : 'Play'}>{playingId ? '⏸' : '▶'}</button>
+              <button onClick={stopAndClosePlayer} className="w-7 h-7 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-xs shrink-0" aria-label="Close player">✕</button>
+            </div>
+            <div
+              role="slider"
+              aria-label="Seek"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress.duration > 0 ? Math.round((progress.seconds / progress.duration) * 100) : 0}
+              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width) }}
+              className="mt-2 h-1.5 bg-neutral-700 rounded-full overflow-hidden cursor-pointer"
+            >
+              <div className="h-full bg-gradient-to-r from-amber-400 to-purple-500" style={{ width: progress.duration > 0 ? `${(progress.seconds / progress.duration) * 100}%` : '0%' }} />
+            </div>
+          </div>
+        </div>
+      )}
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {([
@@ -355,6 +421,7 @@ export default function Music() {
         </div>
       </div>
 
+      {/* Persistent mini-player — stays while browsing tabs, seekable, dismissible */}
       {isAdmin && showUpload && tab === 'library' && (
         <div className="mx-4 mt-4 p-4 rounded-2xl bg-white border-2 border-purple-200 shadow-lg space-y-3">
           <p className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">Add to church library</p>
@@ -396,7 +463,7 @@ export default function Music() {
         {tab === 'online' && (
           searching ? <p className="text-center text-sm text-neutral-500 py-10">Searching the web…</p>
             : online.length === 0 ? (
-              <div className="text-center py-12"><div className="text-6xl mb-4">🌍</div><p className="text-neutral-500 font-medium">{searched ? 'No results — try another search' : 'Search millions of songs'}</p><p className="text-sm text-neutral-400 mt-1">Try "Sinach", "Maverick City", "Hillsong"… then tap ▶ for a 30s preview, ⬇ to download</p></div>
+              <div className="text-center py-12"><div className="text-6xl mb-4">🌍</div>              <p className="text-neutral-500 font-medium">{searched ? 'No results — try another search' : 'Search free full-length songs'}</p><p className="text-sm text-neutral-400 mt-1">Every result plays in full and downloads complete — no 30-second previews. Try "Worship", "Gospel", "Hymns"…</p></div>
             ) : online.map(t => <TrackRow key={t.id} track={t} />)
         )}
 
