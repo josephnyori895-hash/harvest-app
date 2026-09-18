@@ -62,7 +62,7 @@ async function fetchSignedMediaUrl(messageId: string): Promise<string | null> {
 function ChatPhoto({ messageId }: { messageId: string }) {
   const [src, setSrc] = useState<string | null>(signedUrlCache[messageId] || null)
   useEffect(() => { let live = true; if (!src) void fetchSignedMediaUrl(messageId).then(u => { if (live && u) setSrc(u) }); return () => { live = false } }, [messageId, src])
-  if (!src) return <div className="w-56 h-40 rounded-xl bg-[#F5EEDF] animate-pulse" />
+  if (!src) return <div className="w-56 h-40 rounded-xl bg-zinc-800 animate-pulse" />
   return <img src={src} alt="photo" className="rounded-xl max-h-72 w-auto mb-1.5" loading="lazy" />
 }
 
@@ -79,6 +79,18 @@ function Ticks({ status, mine }: { status: string; mine: boolean }) {
   if (!mine) return null
   const seen = status === 'seen'
   return <span className={seen ? 'text-sky-300' : 'text-white/70'}>{seen || status === 'delivered' ? '✓✓' : '✓'}</span>
+}
+
+// Instagram-style compact list timestamps: h:mm / weekday / date.
+function chatListTime(iso: string) {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000)
+  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' })
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
 export default function Chat({ onBack, users }: { onBack: () => void; users: ChatUser[] }) {
@@ -98,6 +110,8 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   const [replyTo, setReplyTo] = useState<any | null>(null)
   const [reactingFor, setReactingFor] = useState<string | null>(null)
   const [attach, setAttach] = useState<File | null>(null)
+  // Instagram-style people search on the chats list.
+  const [peopleQuery, setPeopleQuery] = useState('')
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pressTimer = useRef<number | null>(null)
@@ -268,38 +282,49 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
 
   const usersForSection = useMemo(() => {
     const list = users.filter((u: any) => u.username && u.username !== currentUser)
+    const needle = peopleQuery.trim().toLowerCase()
+    const searched = needle
+      ? list.filter((u: any) => `${u.name || ''} ${u.username || ''}`.toLowerCase().includes(needle))
+      : list
     if (section === 'groups') {
       const mine = users.find((u: any) => u.username === currentUser)
-      return mine?.group ? list.filter((u: any) => u.group === mine.group) : list
+      const base = mine?.group ? searched.filter((u: any) => u.group === mine.group) : searched
+      return needle ? base : base.slice(0, 12)
     }
-    if (section === 'ministry') return list.filter((u: any) => u.ministry || u.verified || /worship|pastor|ministry/i.test(`${u.name || ''} ${u.username || ''}`)).slice(0, 12)
-    if (section === 'prayer') return list.filter((u: any) => u.verified).slice(0, 12)
-    return list.slice(0, 12)
-  }, [users, currentUser, section])
+    if (section === 'ministry') {
+      const base = searched.filter((u: any) => u.ministry || u.verified || /worship|pastor|ministry/i.test(`${u.name || ''} ${u.username || ''}`))
+      return needle ? base : base.slice(0, 12)
+    }
+    if (section === 'prayer') {
+      const base = searched.filter((u: any) => u.verified)
+      return needle ? base : base.slice(0, 12)
+    }
+    return searched
+  }, [users, currentUser, section, peopleQuery])
 
   if (active) {
     let lastDay = ''
     return (
-      <main className="h-[100dvh] bg-[#FFFBF0] text-[#29251F] flex flex-col">
-        <header className="h-16 shrink-0 border-b border-[#E8DEC9] bg-white/95 backdrop-blur flex items-center gap-3 px-3 z-20">
-          <button type="button" onClick={() => { setActive(null); setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Back">‹</button>
-          <div className="relative w-10 h-10 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center font-bold shrink-0">
+      <main className="h-[100dvh] bg-black text-white flex flex-col">
+        <header className="h-16 shrink-0 border-b border-zinc-800 bg-black/95 backdrop-blur flex items-center gap-3 px-3 z-20">
+          <button type="button" onClick={() => { setActive(null); setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
+          <div className="relative w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold shrink-0">
             {(active.username?.[0] || '?').toUpperCase()}
-            {presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-[#15803D] border-2 border-white" />}
+            {presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-bold truncate">{active.name || active.username}{active.verified && <span className="ml-1 text-[#7C3AED]">✓</span>}</p>
-            <p className="text-xs text-[#766E63]">{presence[active.username]?.online ? <span className="text-[#15803D] font-semibold">Active now</span> : 'Church family'}</p>
+            <p className="font-semibold truncate text-white">{active.name || active.username}{active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+            <p className="text-xs text-zinc-400">{presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
           </div>
-          {sending ? <span className="text-[10px] text-[#766E63]">···</span> : null}
+          {sending ? <span className="text-[10px] text-zinc-400">···</span> : null}
         </header>
 
         <div className="flex-1 overflow-y-auto px-3 py-4">
           {thread.length === 0 ? (
             <div className="text-center py-16">
-              <div className="w-16 h-16 mx-auto rounded-3xl bg-white border border-[#E8DEC9] flex items-center justify-center text-2xl">💬</div>
-              <h2 className="font-extrabold mt-4">Start the conversation</h2>
-              <p className="text-sm text-[#766E63] mt-1">Send an encouragement, prayer, or simple hello.</p>
+              <div className="w-16 h-16 mx-auto rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-2xl">💬</div>
+              <h2 className="font-extrabold mt-4 text-white">Start the conversation</h2>
+              <p className="text-sm text-zinc-400 mt-1">Send an encouragement, prayer, or simple hello.</p>
             </div>
           ) : thread.map((m: any) => {
             const mine = m.from === currentUser
@@ -308,18 +333,18 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
             const isReactionOpen = reactingFor === String(m.id)
             return (
               <div key={m.id}>
-                {showDay && <div className="text-center my-4"><span className="px-3 py-1 rounded-full bg-white border border-[#E8DEC9] text-[11px] font-bold text-[#766E63]">{day}</span></div>}
+                {showDay && <div className="text-center my-4"><span className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400">{day}</span></div>}
                 <div className={`flex mb-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="relative max-w-[80%]">
-                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-white border border-[#E8DEC9] shadow text-xs`}>{m.reaction}</button>}
+                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 shadow text-xs`}>{m.reaction}</button>}
                     <div
                       onContextMenu={e => { e.preventDefault(); setReactingFor(isReactionOpen ? null : String(m.id)) }}
                       onTouchStart={() => startPress(m)} onTouchEnd={cancelPress} onTouchMove={cancelPress}
                       onClick={() => setReactingFor(isReactionOpen ? null : String(m.id))}
-                      className={`px-3.5 py-2.5 rounded-2xl text-[15px] leading-snug shadow-sm cursor-pointer select-none ${mine ? 'bg-[#7C3AED] text-white rounded-br-md' : 'bg-white border border-[#E8DEC9] rounded-bl-md'}`}
+                      className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md' : 'bg-zinc-800 text-zinc-100 rounded-bl-md'}`}
                     >
                       {m.reply_preview && (
-                        <div className={`mb-1.5 pl-2 border-l-2 rounded px-2 py-1 text-xs ${mine ? 'border-white/60 bg-white/10 text-white/85' : 'border-[#7C3AED] bg-[#F3E8FF]/60 text-[#5B21B6]'}`}>
+                        <div className={`mb-1.5 pl-2 border-l-2 rounded px-2 py-1 text-xs ${mine ? 'border-white/60 bg-white/10 text-white/85' : 'border-blue-400 bg-zinc-700/60 text-zinc-200'}`}>
                           {m.reply_preview}
                         </div>
                       )}
@@ -328,17 +353,17 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
                       )}
                       {m.media_type === 'image' && !m.media_key && <div className="text-3xl mb-1">📷</div>}
                       {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                      <div className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${mine ? 'text-white/70' : 'text-[#8A8176]'}`}>
+                      <div className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${mine ? 'text-white/75' : 'text-zinc-400'}`}>
                         {m.at || new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         <Ticks status={m.status} mine={mine} />
                       </div>
                     </div>
                     {isReactionOpen && (
-                      <div className={`absolute -top-11 ${mine ? 'right-0' : 'left-0'} z-20 flex gap-1 bg-white border border-[#E8DEC9] shadow-lg rounded-full px-2 py-1.5`}>
+                      <div className={`absolute -top-11 ${mine ? 'right-0' : 'left-0'} z-20 flex gap-1 bg-zinc-800 border border-zinc-700 shadow-lg rounded-full px-2 py-1.5`}>
                         {REACTIONS.map(r => (
                           <button key={r} type="button" onClick={e => { e.stopPropagation(); react(m, r) }} className="text-xl hover:scale-125 transition-transform">{r}</button>
                         ))}
-                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null) }} className="text-xs font-bold px-1 text-[#7C3AED]" title="Reply">↩</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null) }} className="text-xs font-bold px-1 text-blue-400" title="Reply">↩</button>
                       </div>
                     )}
                   </div>
@@ -349,35 +374,35 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
           <div ref={bottomRef} />
         </div>
 
-        {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`}>{error || notice}</div>}
+        {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-950 text-red-300' : 'bg-zinc-900 text-amber-300'}`}>{error || notice}</div>}
 
-        <div className="border-t border-[#E8DEC9] bg-white px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0">
+        <div className="border-t border-zinc-800 bg-black px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0">
           {replyTo && (
-            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-[#7C3AED] bg-[#F3E8FF]/50 rounded-r-xl py-1.5 pr-2">
-              <div className="min-w-0 flex-1 text-xs text-[#5B21B6]">
+            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-zinc-900 rounded-r-xl py-1.5 pr-2">
+              <div className="min-w-0 flex-1 text-xs text-zinc-300">
                 <p className="font-bold">Replying to {replyTo.from === currentUser ? 'yourself' : replyTo.from}</p>
                 <p className="truncate">{replyTo.media_type && !replyTo.text ? '📷 Photo' : String(replyTo.text || '')}</p>
               </div>
-              <button type="button" onClick={() => setReplyTo(null)} className="w-7 h-7 rounded-full bg-white border border-[#E8DEC9] text-sm" aria-label="Cancel reply">✕</button>
+              <button type="button" onClick={() => setReplyTo(null)} className="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 text-sm" aria-label="Cancel reply">✕</button>
             </div>
           )}
           {attach && (
-            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 text-xs bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2">
+            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 text-xs bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2">
               <span>🖼 {attach.name.slice(0, 32)}</span>
-              <button type="button" onClick={() => setAttach(null)} className="ml-auto text-[#766E63]" aria-label="Remove attachment">✕</button>
+              <button type="button" onClick={() => setAttach(null)} className="ml-auto text-zinc-400" aria-label="Remove attachment">✕</button>
             </div>
           )}
           <div className="max-w-3xl mx-auto flex items-end gap-2">
-            <label className="w-11 h-11 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-xl cursor-pointer shrink-0" title="Send a photo">
+            <label className="w-11 h-11 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center text-xl cursor-pointer shrink-0" title="Send a photo">
               📷
               <input type="file" accept="image/*" className="hidden" onChange={e => setAttach(e.target.files?.[0] || null)} />
             </label>
             <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => setText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
               rows={1} placeholder="Message…"
-              className="flex-1 resize-none min-h-11 max-h-28 bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+              className="flex-1 resize-none min-h-11 max-h-28 bg-zinc-900 border border-zinc-700 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-zinc-500 placeholder:text-zinc-500" />
             <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
-              className="h-11 w-11 rounded-full bg-[#7C3AED] text-white text-lg font-bold disabled:opacity-40 shrink-0" aria-label="Send">
+              className="h-11 w-11 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 text-white text-lg font-bold disabled:opacity-40 shrink-0" aria-label="Send">
               {sending ? '…' : '➤'}
             </button>
           </div>
@@ -387,88 +412,121 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   }
 
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-[#FFFBF0] text-[#29251F]">
-      <header className="px-4 pt-5 pb-3 bg-white border-b border-[#E8DEC9] sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <button type="button" onClick={onBack} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Back">‹</button>
-          <div className="flex-1">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-[#766E63]">Harvest Family</p>
-            <h1 className="text-2xl font-extrabold">Chats</h1>
-          </div>
-        </div>
-        <div className="max-w-3xl mx-auto mt-3 flex rounded-full bg-[#F5EEDF] p-1 text-sm font-bold">
-          {(['inbox', 'people'] as const).map(t => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={`flex-1 py-2 rounded-full capitalize ${tab === t ? 'bg-white shadow text-[#7C3AED]' : 'text-[#766E63]'}`}>
-              {t === 'inbox' ? `Inbox${inbox.some(c => c.unread > 0) ? ' ●' : ''}` : 'People'}
-            </button>
-          ))}
+    <main className="min-h-[calc(100vh-72px)] bg-black text-white">
+      <header className="px-4 pt-5 pb-3 bg-black border-b border-zinc-800 sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <button type="button" onClick={onBack} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
+          <h1 className="text-xl font-extrabold text-white">Chats</h1>
+          <span className="w-10" />
         </div>
       </header>
 
       {tab === 'inbox' ? (
-        <section className="max-w-3xl mx-auto px-4 py-4">
-          {inbox.length === 0 ? (
-            <div className="text-center py-14 text-sm text-[#766E63]">No conversations yet — open <button type="button" className="font-bold text-[#7C3AED]" onClick={() => setTab('people')}>People</button> to say hello.</div>
-          ) : inbox.map(c => {
-            const online = Boolean(presence[c.peer]?.online)
-            return (
-              <button type="button" key={c.conversation_key} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }}
-                className="w-full flex items-center gap-3 p-3.5 text-left border-b last:border-0 border-[#F0E9DD] hover:bg-white transition">
-                <div className="relative w-13 h-13 p-[2px] rounded-2xl bg-gradient-to-br from-[#F59E0B] via-[#EC4899] to-[#7C3AED] shrink-0">
-                  <div className="w-full h-full rounded-[14px] bg-white flex items-center justify-center font-extrabold text-[#7C3AED]">{(c.peer?.[0] || '?').toUpperCase()}</div>
-                  {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-[#15803D] border-2 border-[#FFFBF0]" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-sm truncate">{c.peer_name}{c.peer_verified && <span className="ml-1 text-[#7C3AED]">✓</span>}</p>
-                  <p className={`text-xs truncate mt-0.5 ${c.unread > 0 ? 'font-semibold text-[#29251F]' : 'text-[#766E63]'}`}>
-                    {c.last_from === currentUser ? 'You: ' : ''}{c.last_text || 'Say hello'}
-                  </p>
-                </div>
-                <div className="text-right shrink-0 space-y-1">
-                  <p className="text-[10px] text-[#9A9186]">{c.last_at ? new Date(c.last_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                  {c.unread > 0 && <span className="inline-flex min-w-5 h-5 px-1.5 items-center justify-center rounded-full bg-[#7C3AED] text-white text-[11px] font-bold">{c.unread}</span>}
-                </div>
-              </button>
-            )
-          })}
-        </section>
-      ) : (
         <>
-          <section className="max-w-3xl mx-auto px-4 py-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {(Object.keys(sectionMeta) as Section[]).map(key => (
-                <button type="button" key={key} onClick={() => setSection(key)}
-                  className={`text-left p-3 rounded-2xl border transition ${section === key ? 'bg-[#F3E8FF] border-[#C4B5FD]' : 'bg-white border-[#E8DEC9]'}`}>
-                  <span className="text-xl">{sectionMeta[key].icon}</span>
-                  <p className="font-bold text-sm mt-1.5">{sectionMeta[key].label}</p>
+          {/* Instagram-style avatar rail */}
+          <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
+            <div className="flex gap-4 overflow-x-auto pb-3">
+              {inbox.slice(0, 12).map(c => (
+                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="shrink-0 w-[68px] text-center" aria-label={`Open chat with ${c.peer_name}`}>
+                  <div className="relative p-[2.5px] rounded-full" style={{ background: c.unread > 0 ? 'linear-gradient(45deg,#f59e0b,#ec4899,#7c3aed)' : 'transparent', border: c.unread > 0 ? 'none' : '2px solid #3f3f46' }}>
+                    <div className="w-[58px] h-[58px] rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center font-extrabold text-lg text-zinc-300">{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    {presence[c.peer]?.online && <span className="absolute right-0.5 bottom-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-1 truncate">{c.peer_name?.split(' ')[0] || c.peer}</p>
                 </button>
               ))}
             </div>
           </section>
-          <section className="max-w-3xl mx-auto px-4 pb-8">
-            <div className="bg-white rounded-3xl border border-[#E8DEC9] overflow-hidden shadow-sm">
-              {usersForSection.length === 0 ? (
-                <div className="p-10 text-center text-sm text-[#766E63]">No people in this section yet.</div>
-              ) : usersForSection.map((u: any) => {
-                const online = Boolean(presence[u.username]?.online)
-                const inInbox = inbox.find(c => c.peer === u.username)
-                return (
-                  <button type="button" key={u.username} onClick={() => { setError(''); setActive(u) }}
-                    className="w-full flex items-center gap-3 p-3.5 text-left border-b last:border-0 border-[#F0E9DD] hover:bg-[#FFFBF0] transition">
-                    <div className="relative w-12 h-12 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center font-extrabold shrink-0">
-                      {(u.username?.[0] || '?').toUpperCase()}
-                      {online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-[#15803D] border-2 border-white" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-sm">{u.name || u.username}{u.verified && <span className="ml-1 text-[#7C3AED]">✓</span>}</p>
-                      <p className="text-xs text-[#766E63] truncate mt-0.5">{inInbox?.last_text || 'Start a conversation'}</p>
-                    </div>
-                    {inInbox && inInbox.unread > 0 && <span className="min-w-5 h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-[#7C3AED] text-white text-[11px] font-bold">{inInbox.unread}</span>}
-                    <span className="text-[#7C3AED]" aria-hidden="true">›</span>
-                  </button>
-                )
-              })}
+          {/* Search + tab pill row */}
+          <section className="px-4 py-3 border-b border-zinc-800">
+            <div className="flex items-center gap-2 bg-zinc-900 rounded-xl px-3 py-2.5">
+              <span className="text-zinc-500">⌕</span>
+              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-zinc-500" />
             </div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{inbox.some(c => c.unread > 0) ? ` (${inbox.reduce((a, c) => a + (Number(c.unread) || 0), 0)})` : ''}</button>
+              <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-300 border border-zinc-700">Requests</button>
+              <span className="ml-auto text-xs text-zinc-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
+            </div>
+          </section>
+          <section className="pb-6">
+            {inbox.length === 0 ? (
+              <div className="text-center py-14 text-sm text-zinc-400">No conversations yet — open <button type="button" className="font-bold text-blue-400" onClick={() => setTab('people')}>Requests</button> to say hello.</div>
+            ) : inbox.map(c => {
+              const online = Boolean(presence[c.peer]?.online)
+              const preview = c.last_text || 'Say hello'
+              return (
+                <button type="button" key={c.conversation_key} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900/60 active:bg-zinc-900 transition">
+                  <div className="relative shrink-0">
+                    <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center font-extrabold text-zinc-300">{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-[15px] text-white truncate">{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+                    <p className={`text-[13px] truncate mt-0.5 ${c.unread > 0 ? 'text-white font-medium' : 'text-zinc-400'}`}>
+                      {c.last_from === currentUser ? 'You: ' : ''}{preview} · {c.last_at ? chatListTime(c.last_at) : ''}
+                    </p>
+                  </div>
+                  {c.unread > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" aria-label={`${c.unread} unread`} />}
+                </button>
+              )
+            })}
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="px-4 py-3 border-b border-zinc-800">
+            <div className="flex items-center gap-2 bg-zinc-900 rounded-xl px-3 py-2.5">
+              <span className="text-zinc-500">⌕</span>
+              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search people" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-zinc-500" />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-300 border border-zinc-700">Inbox</button>
+              <button type="button" className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">People</button>
+              <span className="ml-auto text-xs text-zinc-500 self-center">{usersForSection.length} member{usersForSection.length === 1 ? '' : 's'}</span>
+            </div>
+          </section>
+          {/* Notes-style presence row */}
+          <section className="px-4 py-4 border-b border-zinc-800">
+            <div className="flex gap-4 overflow-x-auto pb-1">
+              <div className="shrink-0 w-[68px] text-center">
+                <div className="p-[2.5px] rounded-full border-2 border-dashed border-zinc-600 w-fit mx-auto">
+                  <div className="w-[58px] h-[58px] rounded-full bg-zinc-800 flex items-center justify-center font-extrabold text-lg text-zinc-300">{(currentUser?.[0] || '?').toUpperCase()}</div>
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-1 truncate">Your note</p>
+              </div>
+              {usersForSection.filter((u: any) => presence[u.username]?.online).slice(0, 12).map((u: any) => (
+                <div key={`note_${u.username}`} className="shrink-0 w-[68px] text-center">
+                  <div className="p-[2.5px] rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
+                    <div className="w-[58px] h-[58px] rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center font-extrabold text-lg text-zinc-300">{(u.username?.[0] || '?').toUpperCase()}</div>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-1 truncate">{u.username}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+          <section className="pb-8">
+            {usersForSection.length === 0 ? (
+              <div className="p-10 text-center text-sm text-zinc-400">No people in this section yet.</div>
+            ) : usersForSection.map((u: any) => {
+              const online = Boolean(presence[u.username]?.online)
+              const inInbox = inbox.find(c => c.peer === u.username)
+              return (
+                <button type="button" key={u.username} onClick={() => { setError(''); setActive(u) }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900/60 active:bg-zinc-900 transition">
+                  <div className="relative shrink-0">
+                    <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center font-extrabold text-zinc-300">{(u.username?.[0] || '?').toUpperCase()}</div>
+                    {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-[15px] text-white">{u.name || u.username}{u.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+                    <p className="text-[13px] text-zinc-400 truncate mt-0.5">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
+                  </div>
+                  {inInbox && inInbox.unread > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" aria-label={`${inInbox.unread} unread`} />}
+                </button>
+              )
+            })}
           </section>
         </>
       )}
