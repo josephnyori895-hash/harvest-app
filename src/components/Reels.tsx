@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
+import Comments from './Comments'
 
-type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; responses?: number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
+type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
-
-function getResponses(): Record<string, string[]> { try { return JSON.parse(localStorage.getItem('harvest_reel_responses') || '{}') } catch { return {} } }
 
 const fmtViews = (v: any): string => {
   const n = Number(v)
@@ -22,7 +21,8 @@ export default function Reels() {
   const [idx, setIdx] = useState(0)
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
-  const [responses, setResponses] = useState<Record<string, string[]>>(getResponses)
+  // Real comments sheet on the current reel (server-backed post_comments).
+  const [showComments, setShowComments] = useState(false)
   const [notice, setNotice] = useState('')
   const [serverReels, setServerReels] = useState<Reel[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
@@ -69,7 +69,10 @@ export default function Reels() {
   const prev = () => setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
   const share = async () => { const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text }); else { await navigator.clipboard.writeText(text); flash('Video details copied to clipboard') } } catch {} }
-  const respond = () => { const text = window.prompt('Write an encouraging response')?.trim(); if (!text) return; const nextResponses = { ...responses, [key]: [...(responses[key] || []), text] }; setResponses(nextResponses); localStorage.setItem('harvest_reel_responses', JSON.stringify(nextResponses)); flash('Your encouragement was added') }
+  const respond = () => setShowComments(true)
+  const bumpComments = (delta: number) => {
+    setServerReels(rs => rs.map(r => (r.id === cur.id ? { ...r, comments: Math.max((Number(r.comments) || 0) + delta, 0) } : r)))
+  }
 
   // Honest empty state instead of a crash when no reels are approved yet.
   if (!cur) return (
@@ -94,6 +97,16 @@ export default function Reels() {
 
   return (
     <div className="min-h-[calc(100vh-49px)] bg-[#211d19] text-white overflow-x-hidden">
+      {showComments && cur.id != null && (
+        <Comments
+          scope="reel"
+          postId={String(cur.id)}
+          me={(() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()}
+          isAdmin={isAdmin}
+          onCountChange={bumpComments}
+          onClose={() => setShowComments(false)}
+        />
+      )}
       <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-5">
         <div className="flex items-start justify-between gap-3 mb-4 sm:mb-5">
           <div className="min-w-0">
@@ -126,7 +139,7 @@ export default function Reels() {
               {cur.music && <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-black/35 backdrop-blur px-2.5 py-2 border border-white/10"><img src={cur.music.cover} alt="" className="w-8 h-8 rounded-lg shrink-0" /><div className="min-w-0"><p className="text-xs font-semibold truncate">{cur.music.title}</p><p className="text-[10px] text-white/55 truncate">{cur.music.artist}</p></div></div>}
               <div className="mt-3 flex gap-4 text-xs text-white/60">
                 <span>👀 {fmtViews(cur.views)}</span>
-                <span>💬 {fmtViews((Number(cur.comments) || 0) + (responses[key]?.length || 0))} responses</span>
+                <span>💬 {fmtViews((Number(cur.comments) || 0))} comments</span>
               </div>
             </div>
             <div className="absolute right-2.5 sm:right-4 bottom-4 sm:bottom-6 flex flex-col gap-2.5 sm:gap-3 z-10">

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { getLikesTable, toggleLikeKey } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
 import StoryViewer from './Stories'
+import Comments from './Comments'
 import { showToast } from './Toast'
 
 function timeAgo(iso?: string) {
@@ -44,6 +45,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const containerRef = useRef<HTMLDivElement>(null)
   const [approvedTick, setApprovedTick] = useState(0)
   const [menuPost, setMenuPost] = useState<string | null>(null)
+  // Inline post comments (server-backed) — replaces the old "dump into chats" button.
+  const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
   // Server-backed community feed (only in API mode; offline mode stays localStorage-first).
   const api = useApi()
   const [livePosts, setLivePosts] = useState<any[]>([])
@@ -81,7 +84,14 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }, [refreshKey])
 
   // Map API rows onto the card shape this screen already renders.
-  const liveMoments = useMemo(() => liveStories.map((s: any) => ({ name: s.name || s.username || 'Harvest', id: s.id, label: 'Story', img: s.thumb_url || undefined, caption: s.caption, video: s.video_url })), [liveStories])
+  const liveMoments = useMemo(() => liveStories.map((s: any) => ({
+    name: s.name || s.username || 'Harvest',
+    id: s.id,
+    label: 'Story',
+    img: s.media_type === 'video' ? undefined : (s.thumb_url || undefined),
+    video: s.media_type === 'video' ? (s.video_url || undefined) : undefined,
+    caption: s.caption,
+  })), [liveStories])
   const liveUpdates = useMemo(() => livePosts.map((p: any) => ({
     key: `api_${p.kind}_${p.id}`,
     user: p.name || p.username || 'Harvest member',
@@ -101,6 +111,12 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const currentUser = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   const toggleLike = (key: string) => { toggleLikeKey(key); setLikesTick(x => x + 1); showToast('Added to your gratitude ❤️', 'success', 1000) }
+  const bumpCommentCount = (key: string, delta: number) => {
+    setLivePosts(ps => ps.map((p: any) => {
+      const k = `api_${p.kind}_${p.id}`
+      return k === key ? { ...p, comments: Math.max((Number(p.comments) || 0) + delta, 0) } : p
+    }))
+  }
   const clearCache = () => { localStorage.removeItem('harvest_pending'); localStorage.removeItem('harvest_approved_posts'); localStorage.removeItem('harvest_approved_stories'); localStorage.removeItem('harvest_scheduled'); localStorage.removeItem('harvest_cache'); window.dispatchEvent(new Event('harvest:cache-clear')); showToast('Local cache cleared', 'success') }
 
   const onTouchStart = (e: any) => { startYRef.current = e.touches[0].clientY }
@@ -112,6 +128,16 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} />}
+    {commentTarget && (
+      <Comments
+        scope={commentTarget.scope}
+        postId={commentTarget.id}
+        me={currentUser}
+        isAdmin={isAdmin}
+        onCountChange={d => bumpCommentCount(commentTarget.key, d)}
+        onClose={() => setCommentTarget(null)}
+      />
+    )}
 
     <header className="sticky top-0 z-20 bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#E8DEC9]">
       <div className="px-4 py-3 flex items-center justify-between">
@@ -123,7 +149,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     <main className="px-4 pb-8">
       <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">Karibu, family</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">Grow. Pray. Serve.</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">A home for the people, ministries and moments of Harvest Family Church Nyeri.</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={() => setTab('chat')} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
 
-      <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-2 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Prayer & care</p><p className="mt-1 text-[11px] text-[#766E63]">You don’t have to carry it alone.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
+      <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-2 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
 
       <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">{allMoments.map((m: any, i: number) => { const isMine = m.me || m.name === currentUser || String(m.id).startsWith(currentUser + '_'); const hasPhoto = Boolean(m.img); return <div key={m.name + i} className="min-w-[88px] text-center"><button onClick={() => m.me ? setTab('post') : setMomentIdx(i)} className="mx-auto block rounded-[28px] p-[3px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shadow-sm" aria-label={m.me ? 'Add your story' : `View ${m.name}'s story`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className={`absolute inset-0 flex items-center justify-center ${isMine ? 'bg-[#F4E8D0]' : 'bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]'}`}>{hasPhoto
   ? <img src={m.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
@@ -132,7 +158,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
       <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“Let us consider how we may spur one another on toward love and good deeds.”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">Hebrews 10:24 · Grow together</p></div></section>
 
-      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = !!likesTable[key]; const displayLikes = (Number(p.likes) || 0) + (liked ? 1 : 0); return <article key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div><div><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></div></div><button onClick={() => setMenuPost(menuPost === key ? null : key)} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button>{menuPost === key && isAdmin && <div className="absolute" />}</div>{p.video ? <video src={p.video} controls playsInline poster={p.img} className="w-full aspect-[4/3] object-cover bg-[#29251F]" /> : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setTab('chat')} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Join conversation</button></div>{p.comments > 0 && <p className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this</p>}</div></article> })}</div></section>
+      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = !!likesTable[key]; const displayLikes = (Number(p.likes) || 0) + (liked ? 1 : 0); return <article key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div><div><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></div></div><button onClick={() => setMenuPost(menuPost === key ? null : key)} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button>{menuPost === key && isAdmin && <div className="absolute" />}</div>{p.video ? <video src={p.video} controls playsInline poster={p.img} className="w-full aspect-[4/3] object-cover bg-[#29251F]" /> : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button></div>{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
 
       <section className="mt-7 grid grid-cols-2 gap-3">{quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}</section>
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>

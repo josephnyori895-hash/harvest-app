@@ -68,7 +68,7 @@ export async function handleFeed(request, env, ctx) {
     try {
       const s = await query(
         env,
-        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.created_at
+        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, COALESCE(s.media_type, 'image') AS media_type, s.created_at
            FROM stories s JOIN users u ON u.id = s.user_id
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
         [new Date().toISOString()],
@@ -83,7 +83,7 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/stories' && request.method === 'GET') {
     const { rows } = await query(
       env,
-      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at
+      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, COALESCE(s.media_type, 'image') AS media_type
          FROM stories s JOIN users u ON u.id = s.user_id
         WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 50`,
       [new Date().toISOString()],

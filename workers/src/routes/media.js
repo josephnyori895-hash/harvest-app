@@ -118,9 +118,13 @@ export async function handleMedia(request, env, ctx) {
     }
 
     if (type === 'story') {
+      // Photos and short video moments are both allowed; record which so the
+      // feed/viewer render it correctly (derived from the stored contentType).
+      const storedCt = String(obj.httpMetadata?.contentType || '')
+      const mediaType = storedCt.startsWith('video/') ? 'video' : 'image'
       const id = uuid()
-      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at) VALUES (?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString()])
-      await audit(env, fresh, 'direct_publish', 'story', id, { key, caption })
+      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type) VALUES (?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType])
+      await audit(env, fresh, 'direct_publish', 'story', id, { key, caption, mediaType })
       return jsonResponse({ id, status: 'published', key }, 201)
     }
 

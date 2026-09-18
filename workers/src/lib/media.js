@@ -8,11 +8,13 @@ export const BUCKET = 'harvest-media'
 const DEFAULT_TTL = 900
 
 // Sermon videos and worship tracks are larger than social clips: reels up to
-// 100 MB (~10 min at 720p) and tracks up to 20 MB. Photos 10 MB.
-const MAX_BYTES = { post: 10 * 1024 * 1024, story: 10 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024 }
+// 100 MB (~10 min at 720p) and tracks up to 20 MB. Stories allow short video
+// moments (the creator + viewer both support video) up to 30 MB (~2 min phone
+// clip); photos 10 MB.
+const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024 }
 const ALLOW_CT = {
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
-  story: ['image/jpeg', 'image/png', 'image/webp'],
+  story: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   reel: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   track: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/x-m4a-aot', 'audio/aac', 'audio/ogg'],
 }
@@ -33,7 +35,7 @@ export function validatePresign({ type, contentType, bytes }) {
   if (!['post', 'story', 'reel', 'track'].includes(type)) throw Object.assign(new Error('invalid type'), { status: 400 })
   const allowed = ALLOW_CT[type]
   if (!allowed.includes(contentType)) throw Object.assign(new Error(`contentType not allowed for ${type}: ${contentType}`), { status: 400 })
-  const max = type === 'reel' ? MAX_BYTES.video || MAX_BYTES.reel : type === 'track' ? MAX_BYTES.audio || MAX_BYTES.track : MAX_BYTES.image || MAX_BYTES.post
+  const max = type === 'reel' ? MAX_BYTES.video || MAX_BYTES.reel : type === 'track' ? MAX_BYTES.audio || MAX_BYTES.track : MAX_BYTES.image || MAX_BYTES[type] || MAX_BYTES.post
   if (bytes > max) throw Object.assign(new Error(`bytes ${bytes} > max ${max} for ${type}`), { status: 400 })
   return max
 }
