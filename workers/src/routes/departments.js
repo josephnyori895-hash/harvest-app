@@ -167,6 +167,22 @@ export async function handleDepartments(request, env, ctx) {
     return jsonResponse({ ok: true, removed: uname })
   }
 
+  // PATCH /api/departments/:slug (admin) — rename / re-describe a department.
+  // The slug stays stable so links and existing memberships keep working.
+  if (!sub && method === 'PATCH') {
+    const fresh = await requireAdmin(env, user)
+    const dep = await getDepartment(env, slug)
+    if (!dep) return errorResponse('department not found', 404)
+    const body = await readJson(request)
+    const name = body.name !== undefined ? String(body.name).trim().slice(0, 80) : dep.name
+    const description = body.description !== undefined ? (String(body.description).trim().slice(0, 300) || null) : dep.description
+    if (name.length < 2) return errorResponse('department name required', 400)
+    if (name === dep.name && description === dep.description) return jsonResponse({ ok: true, department: dep, unchanged: true })
+    await query(env, 'UPDATE departments SET name=?, description=? WHERE id=?', [name, description, dep.id])
+    await audit(env, fresh, 'department_updated', dep.id, { slug: dep.slug, before: { name: dep.name, description: dep.description }, after: { name, description } })
+    return jsonResponse({ ok: true, department: { ...dep, name, description } })
+  }
+
   // DELETE /api/departments/:slug (admin) — remove the department itself.
   if (!sub && method === 'DELETE') {
     const fresh = await requireAdmin(env, user)

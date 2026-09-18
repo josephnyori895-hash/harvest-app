@@ -42,6 +42,10 @@ android/capacitor-cordova-android-plugins
 *.keystore
 *.jks
 
+# EXCEPT the staged download APK — workers/deploy serves it at /harvest-family.apk.
+# A fresh clone without this file would deploy an empty download link.
+!workers/downloads/harvest-family.apk
+
 # Backups & uploads
 backups/
 uploads/

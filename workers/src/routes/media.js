@@ -45,7 +45,11 @@ export async function handleMedia(request, env, ctx) {
     const body = await readJson(request)
     const { type, contentType, bytes, ext } = body
     if (!type || !contentType) return errorResponse('type and contentType required', 400)
-    if (type !== 'story' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media')) return errorResponse('members can only upload stories — media publishing is granted by the admin', 403)
+    // Upload policy: stories are open to every signed-in member (they expire in 24h).
+    // All other media (posts, reels, tracks) requires a verified account or admin.
+    if (type !== 'story' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+      return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
+    }
     try {
       const uid = fresh.id
       const { rows } = await query(
@@ -90,7 +94,7 @@ export async function handleMedia(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
-    const { key, type, caption, title, artist } = await readJson(request)
+    const { key, type, caption, title, artist, cover_key: coverKeyRaw } = await readJson(request)
     if (!key || !type) return errorResponse('key and type required', 400)
     if (!KEY_RE.test(key) || !key.startsWith(`originals/${type}/`)) return errorResponse('invalid media key', 400)
 
@@ -107,10 +111,10 @@ export async function handleMedia(request, env, ctx) {
     const isAdmin = fresh.role === 'admin'
     const now = new Date().toISOString()
 
-    // Upload policy: stories are open to every member; posts, reels and
-    // music tracks require the admin-granted "post_media" power.
-    if (type !== 'story' && !isAdmin && !hasCap(fresh, 'post_media')) {
-      return errorResponse('members can only upload stories — media publishing is granted by the admin', 403)
+    // Upload policy: stories are open to every signed-in member (24h expiry).
+    // Posts, reels and music tracks require a verified account or admin.
+    if (type !== 'story' && !isAdmin && !fresh.verified && !hasCap(fresh, 'post_media')) {
+      return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
     }
 
     if (type === 'story') {
@@ -135,7 +139,16 @@ export async function handleMedia(request, env, ctx) {
           [id, userId, caption || '', key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'track') {
-        await query(env, `INSERT INTO tracks (id, user_id, title, artist, original_key, preview_key) VALUES (?,?,?,?,?,?)`, [id, userId, title || caption || 'Untitled', artist || '', key, key])
+        // Optional cover art: uploaded as an image (originals/post/…) and linked here.
+        let coverKey = null
+        const ck = String(coverKeyRaw || '')
+        if (ck) {
+          if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(ck)) return errorResponse('invalid cover key', 400)
+          const cobj = await env.MEDIA.head(ck)
+          if (!cobj) return errorResponse('cover not found in storage', 404)
+          coverKey = ck
+        }
+        await query(env, `INSERT INTO tracks (id, user_id, title, artist, original_key, preview_key, cover_thumb_key) VALUES (?,?,?,?,?,?,?)`, [id, userId, title || caption || 'Untitled', artist || '', key, key, coverKey])
       } else return errorResponse('unsupported media type', 400)
       await audit(env, fresh, 'direct_publish', type, id, { key, caption })
       return jsonResponse({ id, status: 'approved', key }, 201)
@@ -151,9 +164,10 @@ export async function handleMedia(request, env, ctx) {
   }
 
   // POST /api/admin/publish — text-only announcements (no media needed).
+  // Same policy as media: verified members or admin only.
   if (path === '/api/admin/publish' && method === 'POST') {
     const fresh = await requireMember(env, user)
-    if (fresh.role !== 'admin' && !hasCap(fresh, 'post_media')) return errorResponse('not permitted — needs post_media', 403)
+    if (fresh.role !== 'admin' && !fresh.verified && !hasCap(fresh, 'post_media')) return errorResponse('posting is for verified members — ask an admin to verify your account', 403)
     const body = await readJson(request)
     const caption = String(body.caption || '').trim().slice(0, 2000)
     if (!caption) return errorResponse('announcement text required', 400)
@@ -188,9 +202,9 @@ export async function handleMedia(request, env, ctx) {
       out.reels = await Promise.all(rows.map(async r => ({ ...r, is_pinned: !!r.is_pinned, preview_url: await mediaUrlOrNull(env, r.poster_key || r.hls_master_key, 1800) })))
     }
     if (include('tracks')) {
-      const { rows } = await query(env, `SELECT t.id, t.title, t.artist, t.original_key, t.created_at, u.username
+      const { rows } = await query(env, `SELECT t.id, t.title, t.artist, t.original_key, t.cover_thumb_key, t.created_at, u.username
         FROM tracks t JOIN users u ON u.id=t.user_id ORDER BY t.created_at DESC LIMIT 200`)
-      out.tracks = await Promise.all(rows.map(async r => ({ ...r, preview_url: await mediaUrlOrNull(env, r.original_key, 1800) })))
+      out.tracks = await Promise.all(rows.map(async r => ({ ...r, preview_url: await mediaUrlOrNull(env, r.original_key, 1800), cover_url: await mediaUrlOrNull(env, r.cover_thumb_key, 1800) })))
     }
     if (include('stories')) {
       const { rows } = await query(env, `SELECT s.id, s.original_key, s.expires_at, s.created_at, u.username
@@ -241,6 +255,15 @@ export async function handleMedia(request, env, ctx) {
     const sets = [], vals = []
     if (body.title !== undefined) { sets.push('title=?'); vals.push(String(body.title || '').slice(0, 120)) }
     if (body.artist !== undefined) { sets.push('artist=?'); vals.push(String(body.artist || '').slice(0, 120)) }
+    if (body.cover_key !== undefined) {
+      const ck = String(body.cover_key || '')
+      if (ck && !/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(ck)) return errorResponse('invalid cover key', 400)
+      if (ck) {
+        const cobj = await env.MEDIA.head(ck)
+        if (!cobj) return errorResponse('cover not found in storage', 404)
+      }
+      sets.push('cover_thumb_key=?'); vals.push(ck || null)
+    }
     if (!sets.length) return errorResponse('nothing to update', 400)
     vals.push(id)
     const r = await query(env, `UPDATE tracks SET ${sets.join(', ')} WHERE id=?`, vals)
@@ -256,7 +279,7 @@ export async function handleMedia(request, env, ctx) {
     const kind = kindRaw.toLowerCase()
     const table = { posts: 'posts', reels: 'reels', tracks: 'tracks', stories: 'stories' }[kind]
     if (!table) return errorResponse('unknown media kind', 400)
-    const keyCols = { posts: ['original_key', 'thumb_key'], reels: ['hls_master_key', 'poster_key', 'thumb_key'], tracks: ['original_key', 'preview_key'], stories: ['original_key', 'thumb_key'] }
+    const keyCols = { posts: ['original_key', 'thumb_key'], reels: ['hls_master_key', 'poster_key', 'thumb_key'], tracks: ['original_key', 'preview_key', 'cover_thumb_key'], stories: ['original_key', 'thumb_key'] }
     const row = await query(env, `SELECT * FROM ${table} WHERE id=?`, [id])
     if (!row.rows[0]) return errorResponse('not found', 404)
     // Delete R2 objects first (best-effort), then the DB row.

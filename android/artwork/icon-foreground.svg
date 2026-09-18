@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 432 432">
+  <!-- Wheat sheaf mark for Harvest Family Church. Centered in the 66% adaptive safe zone. -->
+  <g stroke-linecap="round">
+    <!-- stem -->
+    <path d="M216 348 C213 300 213 240 216 118" fill="none" stroke="#B45309" stroke-width="15"/>
+    <!-- grain pairs: teardrop leaves alternating along the stem -->
+    <g fill="#FBBF24" stroke="#B45309" stroke-width="7">
+      <path d="M216 128 C190 112 182 84 190 62 C214 72 224 100 216 128 Z"/>
+      <path d="M216 128 C242 112 250 84 242 62 C218 72 208 100 216 128 Z"/>
+      <path d="M216 176 C188 162 178 132 186 108 C212 120 224 148 216 176 Z"/>
+      <path d="M216 176 C244 162 254 132 246 108 C220 120 208 148 216 176 Z"/>
+      <path d="M216 224 C186 210 176 180 184 154 C212 166 224 196 216 224 Z"/>
+      <path d="M216 224 C246 210 256 180 248 154 C220 166 208 196 216 224 Z"/>
+      <path d="M216 272 C184 258 174 228 182 200 C212 212 224 244 216 272 Z"/>
+      <path d="M216 272 C248 258 258 228 250 200 C220 212 208 244 216 272 Z"/>
+    </g>
+    <!-- top grain -->
+    <path d="M216 118 C204 92 204 66 216 44 C228 66 228 92 216 118 Z" fill="#FCD34D" stroke="#B45309" stroke-width="7"/>
+  </g>
+  <!-- HF monogram -->
+  <text x="216" y="404" font-family="DejaVu Sans" font-weight="bold" font-size="58" fill="#FFFFFF" text-anchor="middle">HF</text>
+</svg>

@@ -35,6 +35,6 @@ directory = "./downloads"
 
 # ── Non-secret vars (APK WebView origin is https://localhost) ──
 [vars]
-CORS_ORIGINS = "https://localhost,https://harvestfamily.or.ke,capacitor://localhost,https://stirring-snickerdoodle-0568c2.netlify.app"
+CORS_ORIGINS = "https://localhost,https://harvestfamily.or.ke,capacitor://localhost"
 # Public base for absolute signed-media URLs served to the APK (relative URLs break in the WebView).
 PUBLIC_BASE_URL = "https://harvestfamily-api.harvestfamily.workers.dev"

@@ -10,6 +10,9 @@ const FUNDS = [
 ]
 const QUICK = [100, 200, 500, 1000, 2500, 5000]
 
+const PAYBILL_FALLBACK = { number: '4138895', name: 'Harvest Family Church' }
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
 export default function Give() {
   const [fund, setFund] = useState('tithe')
   const [amount, setAmount] = useState<number | ''>(500)
@@ -19,6 +22,9 @@ export default function Give() {
   const [tab, setTab] = useState<'give'|'admin'>('give')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [mpesaEnabled, setMpesaEnabled] = useState<boolean | null>(null)
+  const [paybill, setPaybill] = useState('')
+  const [pollingId, setPollingId] = useState<string | null>(null)
   const apiEnabled = useApi()
   const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
   const isAdmin = currentRole === 'admin'
@@ -27,9 +33,35 @@ export default function Give() {
 
   useEffect(() => {
     if (!apiEnabled) return
+    fetch(`${API}/api/giving/config`)
+      .then(r => r.json()).then(d => { setMpesaEnabled(!!d.mpesa_enabled); setPaybill(d.paybill || '') }).catch(() => setMpesaEnabled(false))
     fetchMyGiving().then(setTransactions).catch(() => {})
     if (isAdmin) fetchGivingAdmin().then(setAdminData).catch(() => {})
   }, [apiEnabled, isAdmin])
+
+  // After an STK push, poll the transaction status so "pending" flips to
+  // completed/failed on screen without the member reopening the page.
+  useEffect(() => {
+    if (!pollingId) return
+    const timer = window.setInterval(async () => {
+      try {
+        const list = await fetchMyGiving()
+        setTransactions(list)
+        const tx = (Array.isArray(list) ? list : []).find(t => t.id === pollingId)
+        if (tx && tx.status !== 'pending') {
+          setPollingId(null)
+          if (tx.status === 'completed') {
+            showToast(`Giving received — thank you! 🙏 Receipt ${tx.receipt_number || ''}`.trim(), 'success')
+            setMessage('✅ Your gift has been received. Asante sana!')
+          } else if (tx.status === 'failed') {
+            setMessage('The M-Pesa payment did not go through. You can try again below.')
+          }
+        }
+      } catch { /* keep polling silently */ }
+    }, 4000)
+    const stop = window.setTimeout(() => setPollingId(null), 120_000)
+    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
+  }, [pollingId])
 
   const pay = async () => {
     if (!apiEnabled) { showToast('Giving requires the server API in production', 'error'); return }
@@ -37,12 +69,20 @@ export default function Give() {
     setBusy(true); setMessage('')
     try {
       const result = await startGiving({ amount:Number(amount), phone:phone.trim(), purpose })
-      setMessage(result.message || 'Check your phone to complete the M-Pesa prompt.')
-      showToast('M-Pesa prompt sent', 'success')
+      setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
+      showToast('M-Pesa prompt sent — check your phone', 'success')
+      setPollingId(result.transactionId || null)
       const latest = await fetchMyGiving()
       setTransactions(latest)
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Giving request failed', 'error')
+      const msg = error instanceof Error ? error.message : 'Giving request failed'
+      if (/unavailable|503/i.test(msg)) {
+        setMpesaEnabled(false)
+        setMessage('')
+        showToast('Online push is being set up — use the Paybill option below for now', 'info')
+      } else {
+        showToast(msg, 'error')
+      }
     } finally { setBusy(false) }
   }
 
@@ -70,7 +110,20 @@ export default function Give() {
         <div className="flex gap-2 mb-4 flex-wrap">{QUICK.map(v => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
         <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder="Custom amount KES" className="input-premium mb-3" />
         <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07... or 254..." className="input-premium mb-4" />
+        {mpesaEnabled === false && (
+          <div className="mb-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] p-4 text-sm">
+            <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
+            <ol className="list-decimal ml-4 mt-2 space-y-1 text-[#78350F]">
+              <li>Open <b>M-Pesa</b> → <b>Lipa na M-Pesa</b> → <b>Pay Bill</b></li>
+              <li>Business Number: <b className="select-all">{paybill || PAYBILL_FALLBACK.number}</b> <button onClick={() => { navigator.clipboard?.writeText(paybill || PAYBILL_FALLBACK.number); showToast('Paybill number copied', 'success') }} className="ml-1 text-[#7C3AED] font-bold underline">copy</button></li>
+              <li>Account: <b>{purpose}</b> (or your name)</li>
+              <li>Amount: <b>KES {Number(amount || 0).toLocaleString()}</b> → enter your PIN</li>
+            </ol>
+            <p className="text-[11px] text-[#92400E] mt-2">Your gift is recorded by the church treasurer. Automatic receipts activate when online giving is switched on.</p>
+          </div>
+        )}
         <button disabled={busy} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{busy?'Sending M-Pesa prompt…':`Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
+        {pollingId && <div className="mb-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-4 text-sm text-[#1E40AF] flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-[#3B82F6] animate-pulse" />Waiting for you to enter your M-Pesa PIN…</div>}
         {message && <div className="mb-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] p-4 text-sm text-[#065F46]">{message}</div>}
 
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">

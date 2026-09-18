@@ -15,23 +15,32 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install backend dependencies
-        run: npm install --prefix server --no-audit --no-fund
       - run: npm run lint
+      - name: Typecheck (catches undefined-variable crashes before they ship)
+        run: npm run typecheck
       - run: npm run test:admin
       - run: npm run test:security
       - run: npm run build
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-  server-lint:
+  workers:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install backend dependencies
-        run: npm install --prefix server --no-audit --no-fund
-      - name: Syntax-check server and Netlify modules
-        run: find server/src server/netlify -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+          cache: npm
+          cache-dependency-path: workers/package-lock.json
+      - name: Install workers dependencies
+        run: npm ci --prefix workers
+      - name: Typecheck worker sources
+        run: node --check workers/src/index.js && find workers/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Validate wrangler config + dry-run build (no deploy)
+        run: npx --prefix workers wrangler deploy --dry-run --outdir dist-check
+        working-directory: workers
+      - name: Validate D1 migrations parse
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+          for f in workers/migrations/*.sql; do sqlite3 ":memory:" ".read $f" || exit 1; done

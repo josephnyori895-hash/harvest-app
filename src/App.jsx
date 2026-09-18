@@ -2,23 +2,23 @@ import { useState, useEffect } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
-import { AuthProvider, useAuth, getFollowsMap, toggleFollowMutual, isMutual } from './state/auth'
+import { AuthProvider, useAuth } from './state/auth'
 import Home from './components/Home'
 import Reels from './components/Reels'
 import Search from './components/Search'
 import Chat from './components/Chat'
 import ViewUser from './components/ViewUser'
-import HarvestMap, { groupCoords } from './components/HarvestMap'
+import HarvestMap from './components/HarvestMap'
 import Music from './components/Music'
 import Give from './components/Give'
 import PostCreate from './components/PostCreate'
-import AccountSwitcher from './components/AccountSwitcher'
-import { StoryCreate } from './components/Stories'
 import Groups from './components/Groups'
+import Departments from './components/Departments'
 import { RequireRole } from './components/Protected'
 import GroupDetails from './components/GroupDetails'
 import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
+import { showToast } from './components/Toast'
 
 // FIX L icon 404 — ensure default marker loads via CDN
 delete L.Icon.Default.prototype._getIconUrl
@@ -28,18 +28,35 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-const mockUsers = [
-  { username: 'allan', name: 'Allan', role: 'admin', verified: true, followers: 1200, location: 'Nyeri Town', group: 'Harvest Central', lat: -0.4197, lng: 36.9475, me: true, assignedGroupIds: ['Harvest Central'] },
-  { username: 'youth_harvest', name: 'Youth Harvest', role: 'leader', verified: true, followers: 2014, location: 'Skuta', group: 'Harvest Skuta', lat: -0.41, lng: 36.94, assignedGroupIds: ['Harvest Skuta'] },
-  { username: 'worship_team', name: 'Worship Team', role: 'leader', verified: true, followers: 430, location: 'Kamakwa', group: 'Harvest Kamakwa', lat: -0.415, lng: 36.955, assignedGroupIds: ['Harvest Kamakwa'] },
-  { username: 'pst.simon', name: 'Pst Simon', role: 'member', verified: false, followers: 890, location: 'Ruringu', group: 'Harvest Ruringu', lat: -0.432, lng: 36.95, assignedGroupIds: ['Harvest Ruringu'] },
-]
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-const mockMusics = [
-  { id: 1, title: 'Compelled Anthem', artist: 'Harvest Worship', type: 'worship', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&h=200&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-  { id: 2, title: 'Raise Me Up', artist: 'Grace & Team', type: 'praise', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
-  { id: 3, title: 'Released', artist: 'Youth Harvest', type: 'choir', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&h=200&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
-]
+function authHeaders() {
+  const t = localStorage.getItem('harvest_token') || ''
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+// Real member directory from the server (replaces the old mock user list).
+// Auto-refreshes when verification/admin actions fire 'harvest:verified'.
+function useDirectory(enabled) {
+  const [users, setUsers] = useState([])
+  const load = () => {
+    fetch(`${API}/api/users/map`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('directory unavailable'))))
+      .then(d => {
+        if (!Array.isArray(d.users)) return
+        const me = localStorage.getItem('harvest_username') || ''
+        setUsers(d.users.map(u => ({ ...u, group: u.group_name, me: u.username === me })))
+      })
+      .catch(() => {})
+  }
+  useEffect(() => {
+    if (!enabled) return
+    load()
+    window.addEventListener('harvest:verified', load)
+    return () => window.removeEventListener('harvest:verified', load)
+  }, [enabled])
+  return [users, setUsers]
+}
 
 function IgIcon({ name, active }) {
   const s = active ? 2.2 : 1.6
@@ -51,25 +68,14 @@ function IgIcon({ name, active }) {
   if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
   if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'opacity(0.9)'}} role="img" aria-label="give">🤲</span>
   if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
+  if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
   if (name === 'profile') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={s}><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
   return null
 }
 
 function InnerApp() {
   const { setUsername, setRole, setVerified, role } = useAuth()
-  const [first, setFirst] = useState('')
-  const [last, setLast] = useState('')
-  const [phone, setPhone] = useState('')
-  const [location, setLocation] = useState('')
-  // Onboarding is now the auth gate: register or sign in. A valid token means onboarded.
-  const [onboarded, setOnboarded] = useState(() => {
-    if (!localStorage.getItem('harvest_token')) return false
-    const u = localStorage.getItem('harvest_username') || ''
-    const parts = u.split('_')
-    if (parts[0]) setFirst(parts[0][0].toUpperCase() + parts[0].slice(1))
-    if (parts[1]) setLast(parts[1][0].toUpperCase() + parts[1].slice(1))
-    return true
-  })
+  const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
   const [homeRefresh, setHomeRefresh] = useState(0)
   const handleTab = (t) => {
@@ -78,195 +84,79 @@ function InnerApp() {
   }
   const [viewUser, setViewUser] = useState(null)
 
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem('harvest_users')
-    if(saved){ try{ const parsed=JSON.parse(saved); if(parsed.length>=4) return parsed; }catch{} }
-    return [...mockUsers]
-  })
+  const [users] = useDirectory(onboarded)
 
-  const [musics, setMusics] = useState(() => {
-    const s = localStorage.getItem('harvest_musics')
-    return s ? JSON.parse(s) : [...mockMusics]
-  })
-  const addMusic = (m) => {
-    // Idempotent: skip if the same title+artist is already saved (Music.tsx also guards this)
-    const dup = musics.some(x => String(x.title||'').toLowerCase() === String(m.title||'').toLowerCase() && String(x.artist||'').toLowerCase() === String(m.artist||'').toLowerCase())
-    if (dup) return
-    const updated = [{ id: Date.now(), ...m }, ...musics]
-    setMusics(updated)
-    localStorage.setItem('harvest_musics', JSON.stringify(updated))
-  }
-
-  const [pending, setPending] = useState(() => {
-    const s = localStorage.getItem('harvest_pending')
-    return s ? JSON.parse(s) : []
-  })
-  const [approvedPosts, setApprovedPosts] = useState(() => {
-    const s = localStorage.getItem('harvest_approved_posts')
-    return s ? JSON.parse(s) : []
-  })
-  const [approvedStories, setApprovedStories] = useState(() => {
-    const s = localStorage.getItem('harvest_approved_stories')
-    return s ? JSON.parse(s) : []
-  })
-  const [approvedReels, setApprovedReels] = useState(() => {
-    const s = localStorage.getItem('harvest_approved_reels')
-    return s ? JSON.parse(s) : []
-  })
   const [groupDetail, setGroupDetail] = useState(null)
   const [userList, setUserList] = useState(null)
-  // Camera/microphone access is requested only from an explicit call or capture
-  // action (CallScreen, file pickers) — never during application startup.
-  // migration harvest_nyeri → allan (keep app name)
-  useEffect(() => {
-    try {
-      const OLD='harvest_nyeri', NEW='allan'
-      let migrated=false
-      const raw=localStorage.getItem('harvest_users')
-      if(raw){
-        let arr=JSON.parse(raw)
-        let changed=false
-        arr=arr.map((u)=>{ if(u.username===OLD){ changed=true; return {...u, username:NEW, name: u.name==='Harvest Family Church'?'Allan':u.name, verified:true}} return u})
-        if(changed){ localStorage.setItem('harvest_users', JSON.stringify(arr)); setUsers(arr); migrated=true }
-      }
-      if(localStorage.getItem('harvest_username')===OLD){ localStorage.setItem('harvest_username', NEW); migrated=true }
-      ;['harvest_pending','harvest_approved_posts','harvest_approved_stories','harvest_approved_reels'].forEach(k=>{
-        try{ const v=localStorage.getItem(k); if(v){ let a=JSON.parse(v); let c=false; a=a.map((x)=>{ if(x.user===OLD||x.name===OLD){ c=true; return {...x, user: x.user===OLD?NEW:x.user, name: x.name===OLD?NEW:x.name}} return x}); if(c){ localStorage.setItem(k, JSON.stringify(a)); migrated=true } } }catch{}
-      })
-      if(migrated) window.dispatchEvent(new Event('harvest:verified'))
-    } catch {}
-  }, [])
-
-  // Cache clearing listener — forces state refresh when Home.tsx clears storage
-  useEffect(() => {
-    const handler = () => { window.dispatchEvent(new Event('harvest:verified')); setHomeRefresh(x=>x+1) }
-    window.addEventListener('harvest:cache-clear', handler)
-    return () => window.removeEventListener('harvest:cache-clear', handler)
-  }, [])
-
-  const submitPost = (type, data) => {
-    try {
-      const raw=localStorage.getItem('harvest_users')
-      const me = raw ? JSON.parse(raw)[0]?.username : localStorage.getItem('harvest_username')
-      const u = raw ? JSON.parse(raw).find((x)=>x.username===me) : null
-      if(!u?.verified){ alert('Only verified accounts can post — ask Allan (admin) to verify you'); return }
-    } catch {}
-    const item = { id: Date.now(), type, ...data, status: 'pending', at: new Date().toISOString() }
-    const upd = [item, ...pending]
-    setPending(upd)
-    localStorage.setItem('harvest_pending', JSON.stringify(upd))
-  }
-
-  const approve = (id) => {
-    const item = pending.find(x => x.id === id)
-    if (!item) return
-    const rest = pending.filter(x => x.id !== id)
-    setPending(rest)
-    localStorage.setItem('harvest_pending', JSON.stringify(rest))
-    if (item.type === 'post') {
-      const upd = [{ user: item.user, verified: false, loc: 'Nyeri', time: 'now', likes: 0, img: item.img || 'https://picsum.photos/400/400?random=' + id, caption: item.caption, comments: 0 }, ...approvedPosts]
-      setApprovedPosts(upd)
-      localStorage.setItem('harvest_approved_posts', JSON.stringify(upd))
-    } else if (item.type === 'story') {
-      const upd = [{ name: item.user, id: `${item.user}_${id}`, caption: item.caption, img: item.img }, ...approvedStories]
-      setApprovedStories(upd)
-      localStorage.setItem('harvest_approved_stories', JSON.stringify(upd))
-    } else if (item.type === 'reel') {
-      const upd = [{ user: item.user, cap: item.caption, views: '0', img: item.img || 'https://picsum.photos/400/700?random=' + id, video: item.video }, ...approvedReels]
-      setApprovedReels(upd)
-      localStorage.setItem('harvest_approved_reels', JSON.stringify(upd))
-    }
-    window.dispatchEvent(new Event('harvest:approved'))
-  }
-  const deleteStory = (id) => {
-    const upd = approvedStories.filter((s)=> s.id !== id)
-    setApprovedStories(upd)
-    localStorage.setItem('harvest_approved_stories', JSON.stringify(upd))
-    window.dispatchEvent(new Event('harvest:approved'))
-  }
-  const reject = (id) => {
-    const rest = pending.filter(x => x.id !== id)
-    setPending(rest)
-    localStorage.setItem('harvest_pending', JSON.stringify(rest))
-  }
-
-  const [chosenGroup, setChosenGroup] = useState('Harvest Central')
-  const [showSwitcher,setShowSwitcher]=useState(false)
-  const switchAccount=(username)=>{
-    try{
-      const prev = localStorage.getItem('harvest_username')||''
-      const curTok = localStorage.getItem('harvest_token')||''
-      if(prev && curTok) localStorage.setItem(`harvest_token_${prev}`, curTok)
-      let arr=JSON.parse(localStorage.getItem('harvest_users')||'[]')
-      if(!arr.length) arr=[...mockUsers]
-      const idx=arr.findIndex((u)=>u.username===username)
-      if(idx<0) return
-      const picked=arr[idx]
-      const rest=arr.filter((_,i)=>i!==idx)
-      const reordered=[{...picked,me:true},...rest.map((u)=>({...u,me:false}))]
-      localStorage.setItem('harvest_users',JSON.stringify(reordered))
-      localStorage.setItem('harvest_username',username)
-      // swap token per-account — no leakage. Keep the current token when the
-      // target account has none (e.g. offline/demo accounts) so an admin does
-      // not silently lose their authenticated session on switch.
-      const nextTok = localStorage.getItem(`harvest_token_${username}`)||''
-      if(nextTok) localStorage.setItem('harvest_token', nextTok)
-      else if(username!==prev && !curTok) localStorage.removeItem('harvest_token')
-      setUsers(reordered)
-      setUsername(username)
-      if(username==='allan'){ setRole('admin'); localStorage.setItem('harvest_role','admin'); localStorage.setItem('harvest_pin','7777') } else { setRole('member'); localStorage.setItem('harvest_role','member') }
-      // force socket reconnect with new token
-      try{ if(window.__harvest_reconnect){ window.__harvest_reconnect()} }catch{}
-      window.dispatchEvent(new Event('harvest:verified'))
-      window.dispatchEvent(new Event('harvest:switched'))
-    }catch{}
-  }
 
   const handleAuthSuccess = (data) => {
     localStorage.setItem('harvest_token', data.token)
-    localStorage.setItem(`harvest_token_${data.username}`, data.token)
     localStorage.setItem('harvest_username', data.username)
-    localStorage.setItem('harvest_onboarded', '1')
     localStorage.setItem('harvest_role', data.role)
+    localStorage.setItem('harvest_verified', data.verified ? '1' : '0')
     setUsername(data.username)
     setRole(data.role)
     setVerified(Boolean(data.verified))
-    const parts = String(data.username || '').split('_')
-    setFirst(parts[0] ? parts[0][0].toUpperCase() + parts[0].slice(1) : '')
-    setLast(parts[1] ? parts[1][0].toUpperCase() + parts[1].slice(1) : '')
     setOnboarded(true)
-    try { if (window.__harvest_reconnect) window.__harvest_reconnect() } catch {}
-    window.dispatchEvent(new Event('harvest:verified'))
   }
+
+  const signOut = () => {
+    localStorage.removeItem('harvest_token')
+    localStorage.removeItem('harvest_username')
+    localStorage.removeItem('harvest_role')
+    localStorage.removeItem('harvest_verified')
+    setOnboarded(false)
+    setTab('home')
+  }
+
+  // Android hardware back: pop overlays/tabs; exit only from Home.
+  useEffect(() => {
+    if (!onboarded) return
+    let sub = null
+    let disposed = false
+    import('@capacitor/app').then(({ App: CapApp }) => {
+      if (disposed) return
+      CapApp.addListener('backButton', () => {
+        if (groupDetail) return setGroupDetail(null)
+        if (userList) return setUserList(null)
+        if (viewUser) { setViewUser(null); return setTab('search') }
+        if (tab !== 'home') return setTab('home')
+        // departments has no back stack of its own — treat like other tabs
+        CapApp.exitApp()
+      }).then(s => { sub = s })
+    }).catch(() => { /* web build: no hardware back */ })
+    return () => { disposed = true; try { sub?.remove?.() } catch {} }
+  }, [onboarded, tab, groupDetail, userList, viewUser])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
     <div className="min-h-screen bg-black flex justify-center">
-      <div className="w-full max-w-[390px] bg-black min-h-screen flex flex-col">
-        <div className="flex-1 overflow-auto">
-          {tab === 'home' && <Home setTab={handleTab} users={users} onDeleteStory={deleteStory} refreshKey={homeRefresh} onSwitchAccount={()=>setShowSwitcher(true)} />}
+      {/* Fluid width: fills the phone screen (no more 390px demo column) */}
+      <div className="w-full bg-black min-h-screen flex flex-col">
+        <div className="flex-1 overflow-auto pb-[64px]">
+          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} />}
           {tab === 'search' && <Search users={users} onView={u => { setViewUser(u); setTab('viewuser') }} />}
           {tab === 'reels' && <Reels />}
-          {tab === 'post' && <PostCreate onDone={() => setTab('home')} onSubmit={submitPost} />}
+          {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
-           {tab === 'profile' && <Profile first={first} last={last} pending={pending} onApprove={approve} onReject={reject} users={users} onSwitch={()=>setShowSwitcher(true)} onStatClick={(type,uid)=>setUserList({type,userId:uid})} onGroupClick={(gid)=>setGroupDetail(gid)} setUsers={setUsers} onOpenAdmin={()=>setTab('admin')} />}
-           {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
-           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
-           {tab === 'music' && <Music musics={musics} onAdd={addMusic} />}
-           {tab === 'give' && <Give />}
-           {tab === 'map' && <HarvestMap users={users} setUsers={setUsers} />}
-           {tab === 'groups' && <Groups users={users} onSelectGroup={(g) => setGroupDetail(g)} />}
-           {tab === 'admin' && (
-             <RequireRole role="admin">
-               <Admin onBack={() => setTab('profile')} users={users} setUsers={setUsers} />
-             </RequireRole>
-           )}
-         </div>
-         {showSwitcher && <AccountSwitcher users={users} onSwitch={switchAccount} onClose={()=>setShowSwitcher(false)} />}
-         {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} onSwitch={()=>setGroupDetail(null)} />}
-         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
-         <Nav tab={tab} setTab={handleTab} onProfileLongPress={()=>setShowSwitcher(true)} />
+          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} />}
+          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
+          {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
+          {tab === 'music' && <Music />}
+          {tab === 'give' && <Give />}
+          {tab === 'map' && <HarvestMap users={users} />}
+          {tab === 'groups' && <Groups />}
+          {tab === 'departments' && <Departments />}
+          {tab === 'admin' && (
+            <RequireRole role="admin">
+              <Admin onBack={() => setTab('profile')} users={users} setUsers={()=>{}} />
+            </RequireRole>
+          )}
+        </div>
+        {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} />}
+        {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
+        <Nav tab={tab} setTab={handleTab} />
       </div>
     </div>
   )
@@ -287,16 +177,30 @@ function Onboarding({ onAuthSuccess }) {
   const [loginPass, setLoginPass] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+  // Ask the device for GPS (best effort — permission may be denied).
+  const getPosition = () => new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null)
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 },
+    )
+  })
 
   const submitRegister = async () => {
     if (busy) return
     setBusy(true); setError('')
     try {
-      const response = await fetch(`${API}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const pos = await getPosition()
+      const payload = { ...form, ...(pos || {}) }
+      const response = await fetch(`${API}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.token) throw new Error(data.error || 'Registration failed')
       onAuthSuccess?.(data)
+      if (data.assigned_by === 'location' && data.group_name) {
+        showToast(`Karibu! You've been placed in your nearest group: ${data.group_name}`, 'success', 4000)
+      }
     } catch (e) { setError(e?.message || 'Registration failed') } finally { setBusy(false) }
   }
 
@@ -314,111 +218,254 @@ function Onboarding({ onAuthSuccess }) {
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
-    <div className="min-h-screen bg-white flex justify-center">
-      <div className="w-full max-w-[390px] bg-white min-h-screen flex flex-col">
-        <div className="h-[44px] flex items-center justify-between px-4">
-          <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg bg-[#7C3AED] text-white flex items-center justify-center text-[11px] font-bold">HF</div><span className="text-[13px] font-semibold text-zinc-900">Harvest Family Church</span><span className="text-[11px] text-zinc-500 -ml-1 hidden sm:inline"> Nyeri</span></div>
-          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="text-[13px] font-semibold px-3 py-1 rounded-full border border-zinc-200 text-zinc-700">
+    <div className="min-h-[100dvh] bg-white flex justify-center">
+      {/* Safe-area padding keeps the app name + toggle clear of Android status-bar icons */}
+      <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 shrink-0 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center text-[12px] font-extrabold shadow-sm">HF</div>
+            <div className="min-w-0 leading-tight">
+              <p className="text-[15px] font-extrabold text-zinc-900 truncate">Harvest Family Church</p>
+              <p className="text-[11px] font-bold tracking-wide text-[#7C3AED]">NYERI</p>
+            </div>
+          </div>
+          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="shrink-0 text-[13px] font-bold px-4 py-2.5 rounded-full border border-zinc-300 bg-zinc-50 text-[#5B21B6] active:bg-zinc-100">
             {mode === 'register' ? 'Sign in' : 'New here?'}
           </button>
         </div>
 
-        <div className="rounded-[20px] mx-4 mt-4 p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE]">
-          <span className="inline-flex text-[11px] font-bold tracking-wide bg-[#F59E0B] text-white px-3 py-1 rounded-full">Karibu</span>
-          <h1 className="text-[22px] font-extrabold leading-tight tracking-tight text-[#5B21B6] mt-3">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
-          <p className="text-[12px] font-semibold tracking-widest text-[#7C3AED] mt-2">COMPEL · RAISE · RELEASE</p>
+        <div className="rounded-[22px] mx-5 mt-3 p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE] shadow-sm">
+          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-[#F59E0B] text-white px-3 py-1.5 rounded-full">Karibu</span>
+          <h1 className="mt-3.5 text-[30px] font-extrabold leading-[1.12] tracking-tight text-[#4C1D95]">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
+          <div className="mt-3 h-px bg-[#DDD6FE]" />
+          <p className="mt-2.5 text-[12px] font-extrabold tracking-[0.22em] text-[#7C3AED]">COMPEL · RAISE · RELEASE</p>
         </div>
 
         {mode === 'register' ? (
-          <div className="px-6 mt-4 flex-1 space-y-3 overflow-auto">
-            <h2 className="text-[15px] font-bold text-zinc-900">Create your account</h2>
-            <p className="text-[13px] text-zinc-500">Use your phone number and a password you'll remember.</p>
-            <input value={form.username} onChange={set('username')} placeholder="Username (e.g. joy_wambui)" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-            <input value={form.name} onChange={set('name')} placeholder="Full name" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-            <input value={form.phone} onChange={set('phone')} placeholder="Phone number (07xx / 01xx)" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-            <input value={form.password} onChange={set('password')} placeholder="Password (min 8 characters)" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
+          <div className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
             <div>
-              <p className="text-xs font-bold text-zinc-700 mb-1">Choose Harvest Group *</p>
-              <select value={form.group_name} onChange={set('group_name')} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#7C3AED]">
-                {['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'].map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-              <p className="text-[11px] text-zinc-500 mt-1">You'll be grouped with members near you</p>
+              <h2 className="text-[17px] font-extrabold text-zinc-900">Create your account</h2>
+              <p className="text-[13px] text-zinc-600 mt-1">Use your phone number and a password you'll remember.</p>
             </div>
-            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+            <div>
+              <label htmlFor="reg-username" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username</label>
+              <input id="reg-username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            <div>
+              <label htmlFor="reg-name" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Full name</label>
+              <input id="reg-name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            <div>
+              <label htmlFor="reg-phone" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Phone number</label>
+              <input id="reg-phone" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            <div>
+              <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
+              <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
+              <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
+              <div className="relative">
+                <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100">
+                  {['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'].map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-base">▾</span>
+              </div>
+              <p className="text-[11px] font-medium text-zinc-600 mt-2.5">You'll be grouped with members near you.</p>
+            </div>
+            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
           </div>
         ) : (
-          <div className="px-6 mt-4 flex-1 space-y-3 overflow-auto">
-            <h2 className="text-[15px] font-bold text-zinc-900">Sign in</h2>
-            <p className="text-[13px] text-zinc-500">Username or phone number + your password.</p>
-            <input value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="Username or phone" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-            <input value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Password or PIN" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] outline-none focus:bg-white focus:border-[#7C3AED]" />
-            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+          <div className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
+            <div>
+              <h2 className="text-[17px] font-extrabold text-zinc-900">Welcome back</h2>
+              <p className="text-[13px] text-zinc-600 mt-1">Sign in with your username or phone number.</p>
+            </div>
+            <div>
+              <label htmlFor="login-id" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username or phone</label>
+              <input id="login-id" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            <div>
+              <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
+              <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+            </div>
+            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
           </div>
         )}
 
-        <div className="p-4">
+        <div className="px-5 pt-4 pb-5">
           <button
             onClick={() => void (mode === 'register' ? submitRegister() : submitLogin())}
             disabled={busy}
-            className={`w-full py-4 rounded-full font-semibold text-[15px] flex items-center justify-center gap-2 ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'}`}
+            className={`w-full py-4 rounded-full font-extrabold text-[16px] flex items-center justify-center gap-2 shadow-sm ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white active:bg-[#6D28D9]'}`}
           >
             {busy ? 'Please wait…' : mode === 'register' ? 'Create my account →' : 'Sign in →'}
           </button>
-          {mode === 'register' && <p className="text-[11px] text-zinc-500 text-center mt-2">Admin approval is not needed to join — welcome to the family.</p>}
+          <p className="text-center text-[11px] font-semibold text-zinc-500 mt-3">
+            {mode === 'register' ? 'Already a member? Tap “Sign in” at the top right.' : 'New to Harvest? Tap “New here?” at the top right.'}
+          </p>
         </div>
       </div>
     </div>
   )
 }
 
+// Real activity from the server: new members + follows involving you.
 function Activity() {
-  return <div className="bg-black text-white min-h-[70vh] p-4"><h1 className="font-bold">Activity</h1><div className="mt-4 space-y-4">{[{ u: 'pst.simon', t: 'liked your photo.' }, { u: 'allan', t: 'followed you.' }].map(x => <div key={x.u} className="flex gap-3 items-center"><div className="w-10 h-10 rounded-full bg-zinc-800" /><p className="text-[13px] flex-1"><b>{x.u}</b> {x.t}</p><div className="w-10 h-10 bg-zinc-800 rounded" /></div>)}</div></div>
-}
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${API}/api/activity`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load activity'))))
+      .then(d => { if (!cancelled) setData(d) })
+      .catch(e => { if (!cancelled) setError(e.message) })
+    return () => { cancelled = true }
+  }, [])
 
-function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, onStatClick, onGroupClick, setUsers, onOpenAdmin }) {
-  const username = ((first || 'harvest').toLowerCase().replace(/\s+/g, '') + '_' + (last || 'family').toLowerCase().replace(/\s+/g, ''))
-  const me = users.find(u => u.username === username) || users[0]
-  const { isAdmin, role } = useAuth()
-
-  // Build groups from user data
-  const groups = {}
-  users.forEach(u => { const g = u.group || 'Harvest Nyeri'; if(!groups[g]) groups[g]=[]; groups[g].push(u.username) })
-
-  // Pending approvals only visible to admin
-  const myPending = pending.filter(p => p.user === username || (isAdmin && true))
+  const Avatar = ({ name }) => (
+    <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px] shrink-0">
+      <div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold text-white">
+        {String(name || '?').split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
+      </div>
+    </div>
+  )
+  const Row = ({ children, keyi }) => (
+    <div key={keyi} className="flex gap-3 items-center bg-zinc-900 border border-zinc-800 rounded-2xl p-3">{children}</div>
+  )
+  const timeAgo = iso => {
+    if (!iso) return ''
+    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+    if (m < 1) return 'now'
+    if (m < 60) return `${m}m`
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h`
+    const d = Math.floor(h / 24); if (d < 7) return `${d}d`
+    return new Date(iso).toLocaleDateString()
+  }
 
   return (
-    <div className="bg-black text-white">
-      <div className="px-4 pt-2 flex justify-between items-center">
-        <button onClick={()=>onSwitch&&onSwitch()} className="font-bold flex items-center gap-1">{(first || 'harvest') + (last ? '_' + last : '_family')} ⌄</button>
-        <div className="flex gap-2 items-center">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role==='admin' ? 'bg-[#7C3AED] text-white' : role==='leader' ? 'bg-blue-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>
-            {role === 'admin' ? '★ Admin' : role === 'leader' ? '★ Leader' : 'Member'}
-          </span>
-          {isAdmin && <span className="text-[10px] bg-amber-500 text-black px-2 py-0.5 rounded-full">{pending.length} pending</span>}
+    <div className="bg-black text-white min-h-[70vh]">
+      <div className="px-4 pt-5 pb-3 border-b border-zinc-800">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
+        <h1 className="text-2xl font-extrabold">Activity</h1>
+      </div>
+      <div className="p-4 space-y-6">
+        {error && <div role="alert" className="p-3 rounded-xl bg-rose-950 border border-rose-900 text-sm text-rose-300">{error}</div>}
+        {!data && !error && <p className="text-zinc-500 text-sm">Loading…</p>}
+        {data && (
+          <>
+            <section>
+              <h2 className="text-sm font-bold text-amber-400 mb-2">New members</h2>
+              <div className="space-y-2">
+                {(data.new_members || []).length === 0 && <p className="text-xs text-zinc-500">No new members yet.</p>}
+                {(data.new_members || []).map((u, i) => (
+                  <Row keyi={`nm_${u.username}_${i}`}>
+                    <Avatar name={u.name || u.username} />
+                    <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> joined {u.group_name || 'the family'}</p>
+                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                  </Row>
+                ))}
+              </div>
+            </section>
+            <section>
+              <h2 className="text-sm font-bold text-blue-400 mb-2">Following you</h2>
+              <div className="space-y-2">
+                {(data.follows_in || []).length === 0 && <p className="text-xs text-zinc-500">No followers yet — connect with others on the Map.</p>}
+                {(data.follows_in || []).map((u, i) => (
+                  <Row keyi={`fi_${u.username}_${i}`}>
+                    <Avatar name={u.name || u.username} />
+                    <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> started following you</p>
+                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                  </Row>
+                ))}
+              </div>
+            </section>
+            <section>
+              <h2 className="text-sm font-bold text-zinc-400 mb-2">You follow</h2>
+              <div className="space-y-2">
+                {(data.follows_out || []).length === 0 && <p className="text-xs text-zinc-500">Tap a member on the Map to follow them.</p>}
+                {(data.follows_out || []).map((u, i) => (
+                  <Row keyi={`fo_${u.username}_${i}`}>
+                    <Avatar name={u.name || u.username} />
+                    <p className="text-[13px] flex-1">You follow <b>{u.name || u.username}</b></p>
+                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                  </Row>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Real profile: everything comes from /api/me + the member directory.
+function Profile({ users, onOpenAdmin, onSignOut }) {
+  const { isAdmin, role, username } = useAuth()
+  const [me, setMe] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const loadMe = () => {
+    fetch(`${API}/api/me`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+      .then(d => setMe(d.user))
+      .catch(() => {})
+  }
+  useEffect(loadMe, [])
+
+  const groups = {}
+  users.forEach(u => { const g = u.group_name || u.group || 'Harvest Nyeri'; if (!groups[g]) groups[g] = []; groups[g].push(u) })
+
+  const toggleVerified = async (u) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const r = await fetch(`${API}/api/admin/verify/${encodeURIComponent(u.username)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ verified: !u.verified }),
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'failed')
+      loadMe()
+    } catch (e) {
+      alert(e?.message || 'Could not update verification')
+    } finally { setBusy(false) }
+  }
+
+  const displayName = me?.name || username || 'Member'
+
+  return (
+    <div className="bg-black text-white pb-8">
+      <div className="px-4 pt-5 pb-3 border-b border-zinc-800 flex justify-between items-center">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
+          <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-[#7C3AED] text-white' : 'bg-zinc-700 text-zinc-300'}`}>
+          {role === 'admin' ? '★ Admin' : me?.verified ? '✓ Verified' : 'Member'}
+        </span>
       </div>
 
-      {/* Stats — clickable */}
       <div className="px-4 mt-4 flex gap-4 items-center">
-        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black">{(first[0] || 'H') + (last[0] || 'F')}</div></div>
-        <div className="flex gap-6 flex-1 justify-around text-center">
-          <button onClick={() => onStatClick?.('posts', username)} className="hover:opacity-70"><p className="font-bold">12</p><p className="text-xs text-zinc-400">posts</p></button>
-          <button onClick={() => onStatClick?.('followers', username)} className="hover:opacity-70"><p className="font-bold">1.2k</p><p className="text-xs text-zinc-400">followers</p></button>
-          <button onClick={() => onStatClick?.('following', username)} className="hover:opacity-70"><p className="font-bold">48</p><p className="text-xs text-zinc-400">following</p></button>
+        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
+          <div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black text-xl">
+            {displayName.split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
+          </div>
+        </div>
+        <div className="text-sm space-y-1">
+          <p className="font-semibold">@{me?.username || username}</p>
+          <p className="text-zinc-400 text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
         </div>
       </div>
 
-      <div className="px-4 mt-3"><p className="text-[13px] font-semibold">{first} {last}</p><p className="text-[13px]">Harvest Family Church Nyeri ✦</p>
+      <div className="px-4 mt-3">
         <div className="mt-2 flex flex-wrap gap-2">
           <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
-          <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group || 'Harvest Nyeri'}</span>
-           {!isAdmin && import.meta.env.DEV && <span className="text-[11px] text-zinc-500 self-center">Member • PIN 7777 for admin (dev only)</span>}
-        </div></div>
-      <button onClick={()=>onSwitch&&onSwitch()} className="mx-4 mt-3 w-[calc(100%-2rem)] py-2 rounded-full bg-zinc-800 text-white text-xs font-semibold">🔄 Switch account — 4 active (IG style)</button>
-      <p className="text-[11px] text-zinc-500 text-center mt-1">Allan ✓ • Youth Harvest ✓ • Worship Team ✓ • Pst Simon</p>
+          <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group_name || 'Harvest Nyeri'}</span>
+          {me?.phone && <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📱 {me.phone}</span>}
+        </div>
+      </div>
 
-      {/* Admin-only: server-backed moderation queue */}
       {isAdmin && (
         <div className="mt-4 border-t border-zinc-800 pt-3 px-4">
           <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold">🛡 Open moderation queue</button>
@@ -426,77 +473,59 @@ function Profile({ first, last, pending, onApprove, onReject, users, onSwitch, o
         </div>
       )}
 
-      {/* Admin-only: Pending Approvals */}
-      {isAdmin && myPending.length > 0 && (
-        <div className="mt-4 border-t border-zinc-800 pt-3">
-          <h3 className="text-sm font-bold px-4 text-amber-400 mb-2">⏳ Pending ({myPending.length})</h3>
-          <div className="space-y-2 px-4">
-            {myPending.map(item => (
-              <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex justify-between items-center">
-                <div><p className="text-xs font-semibold">{item.user}</p><p className="text-[11px] text-zinc-400">{item.type} • {item.caption?.slice(0,30)}</p></div>
-                <div className="flex gap-2">
-                  <button onClick={() => onApprove(item.id)} className="px-3 py-1 rounded-full bg-green-600 text-white text-[10px] font-bold">✓</button>
-                  <button onClick={() => onReject(item.id)} className="px-3 py-1 rounded-full bg-zinc-700 text-white text-[10px] font-bold">✕</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Admin-only: Verified Accounts */}
       {isAdmin && (
         <div className="mt-4 border-t border-zinc-800 pt-3">
           <h3 className="text-sm font-bold px-4 text-blue-400 mb-2">✓ Verified Accounts</h3>
           <div className="space-y-2 px-4">
-            {users.filter(u=>u.verified).map(u => (
+            {users.filter(u => u.verified).map(u => (
               <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-zinc-900 border border-zinc-800">
-                <div className="flex gap-2 items-center"><div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{u.username[0].toUpperCase()}</div><div><p className="text-xs font-semibold">{u.username} <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /></p></div></div>
-                <button onClick={() => {
-                  const updated = users.map(x => x.username === u.username ? {...x, verified: !x.verified} : x)
-                  setUsers(updated)
-                  localStorage.setItem('harvest_users', JSON.stringify(updated))
-                  window.dispatchEvent(new Event('harvest:verified'))
-                }} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
+                <div className="flex gap-2 items-center">
+                  <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
+                  <p className="text-xs font-semibold">{u.name || u.username}</p>
+                </div>
+                <button disabled={busy} onClick={() => void toggleVerified(u)} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
               </div>
             ))}
+            {users.filter(u => u.verified).length === 0 && <p className="text-xs text-zinc-500">No verified accounts yet.</p>}
           </div>
         </div>
       )}
 
-      {/* Groups — clickable cards */}
       <div className="mt-4 border-t border-zinc-800 pt-3">
         <h3 className="text-sm font-bold px-4 text-white mb-2">Harvest Groups by Location</h3>
         <div className="space-y-2 px-4">
           {Object.entries(groups).map(([g, members]) => (
-            <button key={g} onClick={() => onGroupClick?.(g)} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-left hover:bg-zinc-800">
+            <div key={g} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800">
               <div><p className="text-sm font-semibold text-white">{g}</p><p className="text-xs text-zinc-400">{members.length} members</p></div>
               <span className="text-xs bg-white text-black px-3 py-1 rounded-full">{members.length} 👥</span>
-            </button>
+            </div>
           ))}
+          {Object.keys(groups).length === 0 && <p className="text-xs text-zinc-500 px-4">Loading groups…</p>}
         </div>
       </div>
 
-      <Groups users={users} onSelectGroup={(g) => onGroupClick?.(g)} />
-      <div className="grid grid-cols-3 gap-[1px] bg-zinc-800 mt-4">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="aspect-square bg-zinc-900"><img src={`https://picsum.photos/300/300?random=${i + 50}`} alt="" className="w-full h-full object-cover" /></div>)}</div>
+      <div className="px-4 mt-5">
+        <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-zinc-700 text-zinc-300 text-xs font-semibold">Sign out</button>
+      </div>
     </div>
   )
 }
 
-function Nav({ tab, setTab, onProfileLongPress }) {
+function Nav({ tab, setTab }) {
   const items = [
     ['home', 'home'],
     ['search', 'search'],
     ['reels', 'reels'],
-    ['map', 'map'],
-    ['give', 'give'],
-    ['music', 'music'],
+    ['post', 'post'],
+    ['activity', 'activity'],
+    ['departments', 'departments'],
     ['profile', 'profile'],
   ]
   return (
-    <div className="flex justify-around items-center h-[49px] border-t border-zinc-800 bg-black sticky bottom-0">
+    // Fixed to the viewport so it can never be scrolled away or mis-tapped.
+    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center h-[56px] border-t border-zinc-800 bg-black/95 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {items.map(([id]) => (
-        <button key={id} onClick={() => setTab(id)} onTouchStart={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onTouchEnd={()=>clearTimeout(window.__pressTimer)} onMouseDown={()=>{ if(id==='profile'){ window.__pressTimer=setTimeout(()=>onProfileLongPress&&onProfileLongPress(),600)} }} onMouseUp={()=>clearTimeout(window.__pressTimer)} className="p-2">
+        <button key={id} type="button" onClick={() => setTab(id)} className="p-3 active:opacity-60">
           <IgIcon name={id} active={tab === id} />
         </button>
       ))}

@@ -3,7 +3,7 @@ import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
 import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin } from '../lib/auth.js'
-import { nearestCommunity } from '../lib/geo.js'
+import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
 const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
 const REG_GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'])
@@ -46,7 +46,13 @@ export async function handleAuth(request, env, ctx) {
       if (pass.length < 8) return errorResponse('password must be at least 8 characters', 400)
       // Location-based auto-assignment: if the device shares GPS at signup,
       // the member joins the nearest congregation group automatically.
-      const near = nearestCommunity(Number(lat), Number(lng))
+      // Priority: admin-set group locations (D1) → built-in centroids → member's choice.
+      let near = null
+      try {
+        const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
+        near = nearestFromRows(located.rows, Number(lat), Number(lng))
+      } catch { /* groups table may be empty — fall through */ }
+      if (!near) near = nearestCommunity(Number(lat), Number(lng))
       const group = near || (REG_GROUPS.has(groupName) ? groupName : 'Harvest Central')
 
       const dup = await query(env, 'SELECT username, phone_normalized FROM users WHERE username=? OR phone_normalized=? LIMIT 2', [uname, normPhone])

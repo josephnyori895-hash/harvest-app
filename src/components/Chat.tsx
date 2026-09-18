@@ -263,7 +263,7 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
             <p className="font-bold truncate">{active.name || active.username}{active.verified && <span className="ml-1 text-[#7C3AED]">✓</span>}</p>
             <p className="text-xs text-[#766E63]">{presence[active.username]?.online ? <span className="text-[#15803D] font-semibold">Active now</span> : 'Church family'}</p>
           </div>
-          {syncing || sending ? <span className="text-[10px] text-[#766E63]">···</span> : null}
+          {sending ? <span className="text-[10px] text-[#766E63]">···</span> : null}
         </header>
 
         <div className="flex-1 overflow-y-auto px-3 py-4">

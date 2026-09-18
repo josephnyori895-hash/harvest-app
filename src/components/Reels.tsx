@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchReels, useApi } from '../lib/api'
+import { useAuth } from '../state/auth'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; responses?: number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -16,6 +17,8 @@ const fmtViews = (v: any): string => {
 }
 
 export default function Reels() {
+  const { isAdmin, isVerified } = useAuth()
+  const [showCreate, setShowCreate] = useState(false)
   const [idx, setIdx] = useState(0)
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
@@ -55,16 +58,39 @@ export default function Reels() {
   }, [useServer])
 
   const allVideos = useMemo(() => [...serverReels], [serverReels])
-  const cur = allVideos[idx] ?? serverReels[0]
-  const key = `${cur.user}-${cur.id ?? idx}`
+  // Empty feed guard: allVideos[idx] is undefined before any reels are approved,
+  // which previously crashed this screen with "Cannot read properties of undefined".
+  const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
+  const key = cur ? `${cur.user}-${cur.id ?? idx}` : ''
 
-  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => (i - 1 + allVideos.length) % allVideos.length) } if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => (i + 1) % allVideos.length) } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }, [allVideos.length])
+  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (allVideos.length === 0) return; if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => (i - 1 + allVideos.length) % allVideos.length) } if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => (i + 1) % allVideos.length) } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }, [allVideos.length])
   useEffect(() => { if (idx >= allVideos.length) setIdx(0) }, [idx, allVideos.length])
   const next = () => setIdx(i => (i + 1) % allVideos.length)
   const prev = () => setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
   const share = async () => { const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text }); else { await navigator.clipboard.writeText(text); flash('Video details copied to clipboard') } } catch {} }
   const respond = () => { const text = window.prompt('Write an encouraging response')?.trim(); if (!text) return; const nextResponses = { ...responses, [key]: [...(responses[key] || []), text] }; setResponses(nextResponses); localStorage.setItem('harvest_reel_responses', JSON.stringify(nextResponses)); flash('Your encouragement was added') }
+
+  // Honest empty state instead of a crash when no reels are approved yet.
+  if (!cur) return (
+    <div className="min-h-[calc(100vh-49px)] bg-[#211d19] text-white overflow-x-hidden">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-5">
+        <div className="flex items-start justify-between gap-3 mb-4 sm:mb-5">
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-amber-300 font-bold">Harvest Family Church</p>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mt-1">Community Videos</h1>
+            <p className="text-xs sm:text-sm text-white/60 mt-1 max-w-xl">Worship, testimonies, encouragement and moments from our family.</p>
+          </div>
+          <button onClick={() => setMuted(m => !m)} className="shrink-0 min-w-11 min-h-11 rounded-full bg-white/10 border border-white/10" aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? '🔇' : '🔊'}</button>
+        </div>
+        <div className="rounded-[24px] bg-white/5 border border-white/10 px-4 py-16 text-center">
+          <div className="text-5xl mb-3">🎥</div>
+          <p className="text-base font-semibold">No videos yet</p>
+          <p className="text-xs text-white/55 mt-1">Approved community videos will appear here. Be the first to share one!</p>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-[calc(100vh-49px)] bg-[#211d19] text-white overflow-x-hidden">

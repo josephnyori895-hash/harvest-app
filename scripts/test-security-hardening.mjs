@@ -1,26 +1,39 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const app = await readFile(new URL('../server/src/app.js', import.meta.url), 'utf8')
-const auth = await readFile(new URL('../server/src/middleware/auth.js', import.meta.url), 'utf8')
-const realtime = await readFile(new URL('../server/src/realtime/io.js', import.meta.url), 'utf8')
+// Port of the Phase-1 hardening contract tests to the Cloudflare Workers backend.
+// The old assertions targeted server/src (Fastify); equivalents live in workers/src.
 
-assert.match(app, /const JWT_SECRET = process\.env\.JWT_SECRET\s*$/m)
-assert.doesNotMatch(app, /JWT_SECRET\s*\|\|\s*['\"]dev-jwt-secret-change-in-prod/)
-assert.match(app, /credentials:\s*false/)
-assert.match(app, /CORS_ORIGINS/)
-assert.match(app, /X-Content-Type-Options/)
-assert.match(app, /X-Frame-Options/)
-assert.match(app, /Strict-Transport-Security/)
-assert.match(app, /user\.active === false/)
+const http = await readFile(new URL('../workers/src/lib/http.js', import.meta.url), 'utf8')
+const auth = await readFile(new URL('../workers/src/lib/auth.js', import.meta.url), 'utf8')
+const routesAuth = await readFile(new URL('../workers/src/routes/auth.js', import.meta.url), 'utf8')
+const index = await readFile(new URL('../workers/src/index.js', import.meta.url), 'utf8')
 
-assert.doesNotMatch(auth, /jwtSecret\s*\|\|\s*['\"]dev-jwt-secret-change-in-prod/)
-assert.match(auth, /current\.active === false/)
-assert.match(auth, /algorithms:\s*\[['\"]HS256['\"]\]/)
+// No insecure JWT fallback anywhere in the worker.
+for (const [name, src] of Object.entries({ http, auth, routesAuth, index })) {
+  assert.doesNotMatch(src, /JWT_SECRET\s*\|\|\s*['"]dev-jwt-secret/, `${name}: insecure JWT_SECRET fallback`)
+}
 
-assert.doesNotMatch(realtime, /process\.env\.JWT_SECRET\s*\|\|\s*['\"]dev-jwt-secret-change-in-prod/)
-assert.match(realtime, /credentials:\s*false/)
-assert.match(realtime, /recipient_id=\$2/)
-assert.match(realtime, /requireFreshUser\(socket, ack\)/)
+// Security headers ship on every response via corsFor().
+assert.match(http, /X-Content-Type-Options/)
+assert.match(http, /X-Frame-Options/)
+assert.match(http, /Referrer-Policy/)
 
-console.log('Phase 1 security hardening contract tests passed.')
+// CORS allowlist is env-driven, not hardcoded.
+assert.match(http, /CORS_ORIGINS/)
+
+// Deactivated accounts are rejected on both JWT auth and fresh-role re-check.
+assert.match(auth, /!\s*current\.active/)
+assert.match(auth, /requireRole/)
+
+// JWT algorithm pinned to HS256.
+assert.match(await readFile(new URL('../workers/src/lib/crypto.js', import.meta.url), 'utf8'), /HS256/)
+
+// PBKDF2 (not plaintext) password verification on login.
+assert.match(auth, /pbkdf2Verify/)
+
+// Admin PIN bootstrap stays bcrypt-hashed — never plaintext comparison.
+assert.match(auth, /bcrypt\.compare/)
+assert.doesNotMatch(auth, /pin\s*===\s*env\.ADMIN_PIN/)
+
+console.log('Security hardening contract tests passed (Cloudflare Workers backend).')

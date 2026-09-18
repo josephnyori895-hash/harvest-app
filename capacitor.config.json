@@ -1,5 +1,8 @@
 {
   "appId": "com.harvestfamily.nyeri",
   "appName": "Harvest Family Church",
-  "webDir": "dist"
+  "webDir": "dist",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
 }

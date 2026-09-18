@@ -2,48 +2,143 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IgIcon } from './Icons'
 import { showToast } from './Toast'
 import { fetchMusic, useApi } from '../lib/api'
+import { useAuth } from '../state/auth'
 
-const HARVEST_SONGS = [
-  { id: 'h1', title: 'Compelled Anthem', artist: 'Harvest Worship', type: 'worship', duration: '3:45', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-  { id: 'h2', title: 'Raise Me Up', artist: 'Grace & Team', type: 'praise', duration: '4:12', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
-  { id: 'h3', title: 'Released', artist: 'Youth Harvest', type: 'choir', duration: '3:28', cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
-  { id: 'h4', title: 'Great Is Thy Faithfulness', artist: 'Hillsong', type: 'worship', duration: '5:04', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3' },
-  { id: 'h5', title: 'Way Maker', artist: 'Sinach', type: 'worship', duration: '4:33', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop', url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3' },
-]
+// Worship room: the church library (admin uploads) + online search with
+// 30-second previews (Apple iTunes Search API — no key required, free).
+// Members can play, download and save tracks; only admins upload to the library.
 
 type Track = {
   id: string
   title: string
   artist: string
-  type?: string
-  duration?: string
-  cover?: string
+  artwork?: string
   url?: string | null
-  source: 'demo' | 'server' | 'local'
+  preview?: boolean
+  source: 'server' | 'online' | 'local'
   seconds?: number
 }
 
-const FALLBACK_COVER = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop'
+const fmt = (s: number) => (!Number.isFinite(s) || s < 0) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
-function fmt(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
+async function downloadFile(url: string, filename: string) {
+  const r = await fetch(url)
+  if (!r.ok) throw new Error('download failed')
+  const blob = await r.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename.replace(/[^\w\s.-]/g, '').trim() || 'harvest-track'
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000)
 }
 
-export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any) => void }) {
+export default function Music() {
   const [q, setQ] = useState('')
-  const [tab, setTab] = useState<'trending' | 'local'>('trending')
-  const [playingId, setPlayingId] = useState<string | null>(null)
-  const [progress, setProgress] = useState({ id: null as string | null, seconds: 0, duration: 0 })
+  const [tab, setTab] = useState<'library' | 'online' | 'saved'>('library')
   const [serverTracks, setServerTracks] = useState<Track[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
+  const [online, setOnline] = useState<Track[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
+  const [saved, setSaved] = useState<Track[]>([])
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [progress, setProgress] = useState({ id: null as string | null, seconds: 0, duration: 0 })
+  const [downloading, setDownloading] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const useServer = useApi()
+  const { isAdmin } = useAuth()
 
-  // Server library (tracks uploaded via /api/media/confirm type=track) — merged with demo list
+  // ── Admin upload console state ──
+  const [showUpload, setShowUpload] = useState(false)
+  const [upFile, setUpFile] = useState<File | null>(null)
+  const [upCover, setUpCover] = useState<File | null>(null)
+  const [upTitle, setUpTitle] = useState('')
+  const [upArtist, setUpArtist] = useState('')
+  const [upBusy, setUpBusy] = useState(false)
+  const [upPct, setUpPct] = useState(0)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editArtist, setEditArtist] = useState('')
+  const audioInputRef = useRef<HTMLInputElement | null>(null)
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
+
+  const authHdr = () => ({ Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` })
+  const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+  // Upload one file (audio or cover image) → returns the storage key.
+  const uploadBlob = async (file: File, type: 'track' | 'post') => {
+    const pr = await fetch(`${API}/api/media/presign`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() },
+      body: JSON.stringify({ type, contentType: file.type, bytes: file.size, ext: file.name.split('.').pop() }),
+    })
+    const presign = await pr.json().catch(() => ({}))
+    if (!pr.ok) throw new Error(presign.error || 'presign failed')
+    const fd = new FormData()
+    Object.entries(presign.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
+    fd.append('file', file)
+    const direct = /^https?:\/\//.test(presign.url)
+    const up = await fetch(direct ? presign.url : `${API}${presign.url}`, { method: 'POST', body: fd, headers: direct ? undefined : authHdr() })
+    if (!up.ok) throw new Error('upload failed')
+    return presign.key as string
+  }
+
+  const submitUpload = async () => {
+    if (!upFile || upBusy) return
+    if (!upTitle.trim()) { showToast('Give the track a title'); return }
+    setUpBusy(true); setUpPct(5)
+    try {
+      const audioKey = await uploadBlob(upFile, 'track')
+      setUpPct(55)
+      let coverKey: string | undefined
+      if (upCover) coverKey = await uploadBlob(upCover, 'post')
+      const cf = await fetch(`${API}/api/media/confirm`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() },
+        body: JSON.stringify({ key: audioKey, type: 'track', title: upTitle.trim(), artist: upArtist.trim(), cover_key: coverKey }),
+      })
+      const d = await cf.json().catch(() => ({}))
+      if (!cf.ok) throw new Error(d.error || 'publish failed')
+      showToast(`"${upTitle.trim()}" added to the church library 🎵`)
+      setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
+      // Reload the church library
+      fetchMusic().then(r => {
+        const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
+        setServerTracks(mapped)
+      }).catch(() => {})
+    } catch (e: any) { showToast(e?.message || 'Upload failed') } finally { setUpBusy(false); setUpPct(0) }
+  }
+
+  const saveEdit = async (serverId: string) => {
+    try {
+      const r = await fetch(`${API}/api/admin/media/tracks/${serverId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHdr() },
+        body: JSON.stringify({ title: editTitle.trim(), artist: editArtist.trim() }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'save failed')
+      setServerTracks(ts => ts.map(t => t.id === `srv_${serverId}` ? { ...t, title: editTitle.trim() || t.title, artist: editArtist.trim() || t.artist } : t))
+      showToast('Track updated')
+      setEditingId(null)
+    } catch (e: any) { showToast(e?.message || 'Could not save') }
+  }
+
+  const deleteTrack = async (serverId: string, title: string) => {
+    if (!window.confirm(`Delete "${title}" permanently? This also removes the audio file.`)) return
+    try {
+      const r = await fetch(`${API}/api/admin/media/tracks/${serverId}`, { method: 'DELETE', headers: authHdr() })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'delete failed')
+      setServerTracks(ts => ts.filter(t => t.id !== `srv_${serverId}`))
+      showToast(`"${title}" deleted`)
+    } catch (e: any) { showToast(e?.message || 'Could not delete') }
+  }
+
+  // Personal library persisted on-device.
+  useEffect(() => {
+    try { setSaved(JSON.parse(localStorage.getItem('harvest_saved_tracks') || '[]')) } catch {}
+  }, [])
+
+  // Church library (admin uploads).
   useEffect(() => {
     if (!useServer) return
     let cancelled = false
@@ -51,236 +146,265 @@ export default function Music({ musics, onAdd }: { musics: any[]; onAdd: (m: any
     fetchMusic()
       .then(r => {
         if (cancelled) return
-        const mapped: Track[] = (r.tracks || [])
-          .filter(t => t.url)
-          .map(t => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, type: 'worship', url: t.url, source: 'server' as const }))
+        const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({
+          id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const,
+        }))
         setServerTracks(mapped)
       })
-      .catch(() => { /* offline — demo list still works */ })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
   }, [useServer])
 
-  const localTracks: Track[] = useMemo(() => {
+  // Online search — Jamendo first (full-length, legally downloadable CC music),
+  // iTunes previews as a labeled fallback. Jamendo needs a free key:
+  // register at https://dev.jamendo.com → set VITE_JAMENDO_CLIENT_ID at build time.
+  const JAMENDO_ID = (import.meta.env.VITE_JAMENDO_CLIENT_ID || '').trim()
+  const searchOnline = async (term: string) => {
+    const needle = term.trim()
+    if (!needle) return
+    setSearching(true); setError(''); setSearched(true)
     try {
-      const raw = JSON.parse(localStorage.getItem('harvest_musics') || '[]')
-      return (Array.isArray(raw) ? raw : []).map((m: any) => ({
-        id: m.id || `loc_${m.title}`,
-        title: m.title || 'Untitled',
-        artist: m.artist || 'Harvest member',
-        url: typeof m.url === 'string' && m.url ? m.url : undefined,
-        cover: m.cover,
-        source: 'local' as const,
-      }))
-    } catch { return [] }
-  }, [musics])
+      if (JAMENDO_ID) {
+        const r = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=${encodeURIComponent(JAMENDO_ID)}&format=json&limit=25&search=${encodeURIComponent(needle)}&audioformat=mp32&include=musicinfo`)
+        const data = await r.json()
+        const tracks: Track[] = (data.results || []).map((x: any) => ({
+          id: `jam_${x.id}`,
+          title: x.name,
+          artist: x.artist_name || 'Jamendo artist',
+          artwork: x.image || undefined,
+          url: x.audio || null,
+          source: 'online' as const,
+        }))
+        if (tracks.length) { setOnline(tracks); return }
+      }
+      // Fallback: iTunes — legally only 30s previews (Apple licensing, not fixable).
+      const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(needle)}&media=music&entity=song&limit=25`)
+      const data = await r.json()
+      setOnline((data.results || []).filter((x: any) => x.previewUrl).map((x: any) => ({
+        id: `it_${x.trackId}`,
+        title: x.trackName,
+        artist: x.artistName,
+        artwork: (x.artworkUrl100 || '').replace('100x100', '200x200'),
+        url: x.previewUrl,
+        preview: true,
+        source: 'online' as const,
+      })))
+    } catch {
+      setError('Online search failed — check your connection')
+      setOnline([])
+    } finally { setSearching(false) }
+  }
 
-  const tracks: Track[] = useMemo(() => {
-    const base = tab === 'local' ? localTracks : [...serverTracks, ...HARVEST_SONGS]
-    const seen = new Set<string>()
-    return base.filter(t => {
-      const k = `${t.title.toLowerCase()}|${t.artist.toLowerCase()}`
-      if (seen.has(k)) return false
-      seen.add(k)
-      return true
-    })
-  }, [tab, localTracks, serverTracks])
-
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return tracks
-    return tracks.filter(t => `${t.title} ${t.artist}`.toLowerCase().includes(needle))
-  }, [tracks, q])
-
-  // Single shared audio element — never more than one playing, cleaned up on unmount
+  // Single shared audio element; cleaned up on unmount.
   useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
 
   const togglePlay = (track: Track) => {
     setError('')
     if (!track.url) { showToast('This track has no audio source yet'); return }
-    if (playingId === track.id) {
-      audioRef.current?.pause()
-      setPlayingId(null)
-      return
-    }
+    if (playingId === track.id) { audioRef.current?.pause(); setPlayingId(null); return }
     audioRef.current?.pause()
     const audio = new Audio(track.url)
     audio.onended = () => { setPlayingId(null); setProgress(p => ({ ...p, id: null, seconds: 0 })) }
     audio.ontimeupdate = () => setProgress({ id: track.id, seconds: audio.currentTime, duration: audio.duration || 0 })
     audio.onerror = () => { setPlayingId(null); setError(`Unable to play "${track.title}". Try another track.`) }
-    audio.play().then(() => {
-      audioRef.current = audio
-      setPlayingId(track.id)
-    }).catch(() => { showToast('Tap again to allow audio playback') })
+    audio.play().then(() => { audioRef.current = audio; setPlayingId(track.id) }).catch(() => showToast('Tap again to allow audio playback'))
   }
 
-  const seek = (track: Track, e: React.MouseEvent<HTMLDivElement>) => {
-    if (playingId !== track.id || !audioRef.current || !audioRef.current.duration) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    audioRef.current.currentTime = ratio * audioRef.current.duration
-  }
-
-  const addToLibrary = (track: Track) => {
+  const doDownload = async (track: Track) => {
+    if (!track.url) { showToast('No audio source for this track'); return }
+    setDownloading(track.id)
     try {
-      const lib = JSON.parse(localStorage.getItem('harvest_musics') || '[]')
-      const exists = lib.some((m: any) => (m.title || '').toLowerCase() === track.title.toLowerCase() && (m.artist || '').toLowerCase() === track.artist.toLowerCase())
-      if (exists) { showToast('Already in your Harvest library'); return }
-      const next = [{ id: `loc_${Date.now()}`, title: track.title, artist: track.artist, url: track.url || undefined, cover: track.cover }, ...lib]
-      localStorage.setItem('harvest_musics', JSON.stringify(next))
-      showToast(`"${track.title}" added to your library`)
-    } catch { showToast('Could not add to library') }
+      await downloadFile(track.url, `${track.title} - ${track.artist}.mp3`)
+      showToast('Downloaded ✓ Check your Downloads folder')
+    } catch {
+      // Some CDNs block cross-origin downloads — open in the browser instead.
+      try { window.open(track.url, '_blank') ; showToast('Opened in browser — use the player\'s download there') }
+      catch { showToast('Download failed — try again') }
+    } finally { setDownloading('') }
+  }
+
+  const saveTrack = (track: Track) => {
+    if (saved.some(t => t.id === track.id)) { showToast('Already in your saved list'); return }
+    const next = [track, ...saved].slice(0, 100)
+    setSaved(next)
+    localStorage.setItem('harvest_saved_tracks', JSON.stringify(next))
+    showToast(`"${track.title}" saved`)
+  }
+
+  const unsave = (id: string) => {
+    const next = saved.filter(t => t.id !== id)
+    setSaved(next)
+    localStorage.setItem('harvest_saved_tracks', JSON.stringify(next))
+  }
+
+  const allLibrary = useMemo(() => {
+    const seen = new Set<string>()
+    return [...serverTracks, ...saved.filter(t => t.source !== 'server')].filter(t => {
+      const k = `${t.title.toLowerCase()}|${t.artist.toLowerCase()}`
+      if (seen.has(k)) return false
+      seen.add(k); return true
+    })
+  }, [serverTracks, saved])
+
+  const listFor = (t: Track[]): Track[] => t
+  const filtered = (tracks: Track[]) => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return tracks
+    return tracks.filter(t => `${t.title} ${t.artist}`.toLowerCase().includes(needle))
+  }
+
+  const TrackRow = ({ track }: { track: Track }) => {
+    const isPlaying = playingId === track.id
+    const showBar = progress.id === track.id && isPlaying
+    const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
+    const serverId = track.id.startsWith('srv_') ? track.id.slice(4) : null
+    const isEditing = editingId === serverId
+    if (isEditing) {
+      return (
+        <div className="p-4 rounded-2xl bg-white border-2 border-purple-300 shadow-sm space-y-2">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700">Editing track</p>
+          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Title" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
+          <input value={editArtist} onChange={e => setEditArtist(e.target.value)} placeholder="Artist" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
+          <div className="flex gap-2">
+            <button onClick={() => serverId && void saveEdit(serverId)} className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-extrabold">Save</button>
+            <button onClick={() => setEditingId(null)} className="px-4 py-2.5 rounded-xl bg-neutral-100 text-neutral-600 text-xs font-bold">Cancel</button>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex gap-3 p-4 items-center rounded-2xl bg-white border border-neutral-200 shadow-sm">
+        <div className="relative shrink-0">
+          {track.artwork
+            ? <img src={track.artwork} alt="" className="w-14 h-14 rounded-xl object-cover shadow-md" />
+            : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white text-xl">🎵</div>}
+          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-black/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
+            <span className="text-white text-xl">{isPlaying ? '⏸' : '▶'}</span>
+          </button>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-neutral-900 truncate text-sm">{track.title}</p>
+          <p className="text-xs text-neutral-600 truncate">{track.artist}</p>
+          <div className="flex gap-1.5 mt-1 flex-wrap">
+            {track.source === 'server' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">CHURCH LIBRARY</span>}
+            {track.preview && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">30s PREVIEW</span>}
+            {track.source === 'local' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">SAVED</span>}
+          </div>
+          {showBar && (
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="flex-1 h-1 bg-neutral-200 rounded-full overflow-hidden"><div className="h-full bg-purple-600" style={{ width: `${pct}%` }} /></div>
+              <span className="text-[10px] text-neutral-500 font-mono">{fmt(progress.seconds)}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <button onClick={() => void doDownload(track)} disabled={downloading === track.id} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm disabled:opacity-50" aria-label={`Download ${track.title}`}>{downloading === track.id ? '…' : '⬇'}</button>
+          {tab === 'saved'
+            ? <button onClick={() => unsave(track.id)} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm" aria-label={`Remove ${track.title} from saved`}>✕</button>
+            : <button onClick={() => saveTrack(track)} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm" aria-label={`Save ${track.title}`}>＋</button>}
+          {isAdmin && serverId && (
+            <>
+              <button onClick={() => { setEditingId(serverId); setEditTitle(track.title); setEditArtist(track.artist) }} className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center text-sm" aria-label={`Edit ${track.title}`}>✏️</button>
+              <button onClick={() => void deleteTrack(serverId, track.title)} className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-sm" aria-label={`Delete ${track.title}`}>🗑</button>
+            </>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-[calc(100vh-49px)] bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center justify-between mb-3 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold">🎵</div>
-            <h1 className="text-xl font-extrabold truncate">Harvest Music</h1>
+            <h1 className="text-xl font-extrabold truncate">Worship Room</h1>
           </div>
-          <span className="shrink-0 text-xs font-bold px-3 py-1 rounded-full bg-purple-100 text-purple-700">WORSHIP</span>
         </div>
-
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-3">
           <div className="flex-1 min-w-0 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
-            <IgIcon name="search" size={20} />
+            <IgIcon name="search" active={false} size={20} />
             <input
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={tab === 'local' ? 'Search your library...' : 'Search songs, artists...'}
+              onChange={e => setQ(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && tab === 'online') void searchOnline(q) }}
+              placeholder={tab === 'online' ? 'Search songs worldwide… (press enter)' : 'Search songs, artists…'}
               className="min-w-0 flex-1 bg-transparent outline-none text-sm"
             />
+            {q && <button onClick={() => { setQ(''); if (tab === 'online') { setOnline([]); setSearched(false) } }} className="text-neutral-400 text-sm">✕</button>}
           </div>
-          {q && <button onClick={() => setQ('')} className="touch-target w-10 h-10 shrink-0 rounded-full bg-neutral-200 flex items-center justify-center" aria-label="Clear search">✕</button>}
+          {tab === 'online' && <button onClick={() => void searchOnline(q)} disabled={searching} className="px-4 rounded-xl bg-purple-600 text-white text-xs font-bold disabled:opacity-50">{searching ? '…' : 'Search'}</button>}
         </div>
-
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {[
-            ['trending', '🔥 Trending Worship'],
-            ['local', `🎧 Local Music${localTracks.length ? ` (${localTracks.length})` : ''}`],
-          ].map(([t, label]) => (
-            <button
-              key={t}
-              onClick={() => setTab(t as any)}
-              className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                tab === t
-                  ? 'bg-gradient-to-r from-amber-400 to-purple-600 text-white shadow-lg'
-                  : 'bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-300'
-              }`}
-            >
+          {([
+            ['library', `⛪ Church library${serverTracks.length ? ` (${serverTracks.length})` : ''}`],
+            ['online', '🌍 Search online'],
+            ['saved', `🎧 Saved${saved.length ? ` (${saved.length})` : ''}`],
+          ] as const).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t as any)} className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${tab === t ? 'bg-gradient-to-r from-amber-400 to-purple-600 text-white shadow-lg' : 'bg-white text-neutral-700 border border-neutral-200'}`}>
               {label}
             </button>
           ))}
+          {isAdmin && tab === 'library' && (
+            <button onClick={() => setShowUpload(s => !s)} className={`shrink-0 px-4 py-2 rounded-full text-sm font-extrabold transition-all ${showUpload ? 'bg-neutral-900 text-white' : 'bg-purple-600 text-white shadow-lg'}`}>
+              {showUpload ? '✕ Close' : '＋ Add music'}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-4 py-6 space-y-4">
+      {isAdmin && showUpload && tab === 'library' && (
+        <div className="mx-4 mt-4 p-4 rounded-2xl bg-white border-2 border-purple-200 shadow-lg space-y-3">
+          <p className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">Add to church library</p>
+          <div className="flex gap-3 items-start">
+            <button onClick={() => coverInputRef.current?.click()} className="shrink-0 w-20 h-20 rounded-xl bg-gradient-to-br from-amber-100 to-purple-100 border-2 border-dashed border-purple-300 flex items-center justify-center overflow-hidden" aria-label="Choose cover art">
+              {upCover
+                ? <img src={URL.createObjectURL(upCover)} alt="" className="w-full h-full object-cover" />
+                : <span className="text-2xl">🖼️</span>}
+            </button>
+            <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setUpCover(e.target.files?.[0] || null)} className="hidden" />
+            <div className="flex-1 space-y-2">
+              <input value={upTitle} onChange={e => setUpTitle(e.target.value)} placeholder="Track title *" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
+              <input value={upArtist} onChange={e => setUpArtist(e.target.value)} placeholder="Artist / ministry (optional)" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
+            </div>
+          </div>
+          <button onClick={() => audioInputRef.current?.click()} className={`w-full py-3 rounded-xl border-2 border-dashed text-sm font-semibold ${upFile ? 'border-green-400 bg-green-50 text-green-700' : 'border-neutral-300 text-neutral-500'}`}>
+            {upFile ? `🎵 ${upFile.name} (${(upFile.size / 1024 / 1024).toFixed(1)} MB) — tap to change` : '🎵 Choose audio file (MP3, M4A, WAV — up to 20 MB)'}
+          </button>
+          <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/mp3,audio/m4a,audio/x-m4a,audio/mp4,audio/wav,audio/aac,audio/ogg" onChange={e => setUpFile(e.target.files?.[0] || null)} className="hidden" />
+          {upBusy && (
+            <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className="h-full bg-purple-600 transition-all" style={{ width: `${upPct}%` }} /></div>
+          )}
+          <button onClick={() => void submitUpload()} disabled={upBusy || !upFile || !upTitle.trim()} className="w-full py-3 rounded-full bg-purple-600 text-white text-sm font-extrabold disabled:opacity-40">
+            {upBusy ? `Uploading… ${upPct}%` : 'Add to library'}
+          </button>
+        </div>
+      )}
+
+      <div className="px-4 py-5 space-y-3">
         {error && <div role="status" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-        {tab === 'local' && localTracks.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🎧</div>
-            <p className="text-neutral-500 font-medium">Your library is empty</p>
-            <p className="text-sm text-neutral-400 mt-1">Add ➕ tracks from Trending Worship to build your Harvest library</p>
-          </div>
-        ) : filtered.length === 0 && q ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🎵</div>
-            <p className="text-neutral-500 font-medium">No songs found</p>
-            <p className="text-sm text-neutral-400">Try searching "Worship" or artist names</p>
-          </div>
-        ) : (
-          filtered.map((track) => {
-            const isPlaying = playingId === track.id
-            const showBar = progress.id === track.id && isPlaying
-            const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
-            return (
-              <div
-                key={track.id}
-                className="card-spiritual hover:shadow-xl transition-all duration-300 overflow-hidden group"
-              >
-                <div className="flex gap-3 sm:gap-4 p-4 items-center">
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={track.cover || FALLBACK_COVER}
-                      alt={track.title}
-                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shadow-md group-hover:scale-105 transition-transform"
-                    />
-                    <button
-                      onClick={() => togglePlay(track)}
-                      className={`absolute inset-0 flex items-center justify-center rounded-xl transition-all ${
-                        isPlaying ? 'bg-purple-600/90' : 'bg-black/40 group-hover:bg-purple-600/80'
-                      }`}
-                      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
-                    >
-                      <span className="text-white text-2xl">{isPlaying ? '⏸' : '▶'}</span>
-                    </button>
-                  </div>
 
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-neutral-900 truncate">{track.title}</h3>
-                    <p className="text-sm text-neutral-600 truncate">{track.artist}</p>
-
-                    {showBar && (
-                      <div
-                        className="mt-2 flex items-center gap-2 cursor-pointer"
-                        onClick={(e) => seek(track, e)}
-                        role="slider"
-                        aria-label={`Seek ${track.title}`}
-                        aria-valuenow={Math.floor(progress.seconds)}
-                        aria-valuemin={0}
-                        aria-valuemax={Math.floor(progress.duration || 0)}
-                      >
-                        <div className="flex-1 h-1 bg-neutral-300 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-amber-400 to-purple-600"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-neutral-500 font-mono">
-                          {fmt(progress.seconds)} / {fmt(progress.duration || track.seconds || 0)}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 mt-2 flex-wrap">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                        track.type === 'worship'
-                          ? 'badge-admin'
-                          : track.type === 'praise'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'badge-member'
-                      }`}>
-                        {track.source === 'server' ? 'Church upload' : (track.type || 'Local').charAt(0).toUpperCase() + (track.type || 'Local').slice(1)}
-                      </span>
-                      {track.source === 'local' && <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Saved</span>}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <button
-                      onClick={() => togglePlay(track)}
-                      className="btn-primary py-2 px-3 text-sm min-w-[48px]"
-                      aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
-                    >
-                      {isPlaying ? '⏸' : '▶'}
-                    </button>
-                    <button
-                      onClick={() => { addToLibrary(track); onAdd?.(track) }}
-                      className="btn-secondary py-2 px-3 text-sm min-w-[48px]"
-                      title={track.source === 'local' ? 'Use in a story or post' : 'Save to Local Music + use in a story/post'}
-                      aria-label={`Add ${track.title} to library and story`}
-                    >
-                      ➕
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          })
+        {tab === 'library' && (
+          loadingServer ? <p className="text-center text-sm text-neutral-500 py-10">Loading the church library…</p>
+            : filtered(listFor(allLibrary)).length === 0 ? (
+              <div className="text-center py-12"><div className="text-6xl mb-4">🎶</div><p className="text-neutral-500 font-medium">{q ? 'No matches in the church library' : 'The church library is empty'}</p><p className="text-sm text-neutral-400 mt-1">Worship tracks uploaded by your leaders appear here</p></div>
+            ) : filtered(listFor(allLibrary)).map(t => <TrackRow key={t.id} track={t} />)
         )}
-        {tab === 'trending' && loadingServer && <p className="text-center text-xs text-neutral-400">Loading church uploads…</p>}
+
+        {tab === 'online' && (
+          searching ? <p className="text-center text-sm text-neutral-500 py-10">Searching the web…</p>
+            : online.length === 0 ? (
+              <div className="text-center py-12"><div className="text-6xl mb-4">🌍</div><p className="text-neutral-500 font-medium">{searched ? 'No results — try another search' : 'Search millions of songs'}</p><p className="text-sm text-neutral-400 mt-1">Try "Sinach", "Maverick City", "Hillsong"… then tap ▶ for a 30s preview, ⬇ to download</p></div>
+            ) : online.map(t => <TrackRow key={t.id} track={t} />)
+        )}
+
+        {tab === 'saved' && (
+          saved.length === 0 ? (
+            <div className="text-center py-12"><div className="text-6xl mb-4">🎧</div><p className="text-neutral-500 font-medium">Nothing saved yet</p><p className="text-sm text-neutral-400 mt-1">Tap ＋ on any track to keep it here</p></div>
+          ) : saved.map(t => <TrackRow key={t.id} track={t} />)
+        )}
       </div>
     </div>
   )

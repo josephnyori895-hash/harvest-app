@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
+import AdminMedia from './AdminMedia'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const USE_API = import.meta.env.VITE_USE_API === 'true'
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+// The installed app always uses the API. The old VITE_USE_API gate silently
+// disabled this whole screen in production builds.
+const USE_API = true
 
 const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
-type Tab = 'moderation' | 'accounts' | 'audit'
+type Tab = 'moderation' | 'media' | 'accounts' | 'audit'
 
 type Props = {
   onBack: () => void
@@ -208,11 +211,11 @@ export default function Admin({ onBack, users, setUsers }: Props) {
           <h1 className="font-extrabold">Harvest Admin</h1>
           <p className="text-xs text-[#766E63]">Moderation · Accounts · Audit</p>
         </div>
-        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">{tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : 'Audit'}</span>
+        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">{tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : 'Audit'}</span>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['moderation', 'accounts', 'audit'] as const).map(value => (
+        {(['moderation', 'media', 'accounts', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
             {value[0].toUpperCase() + value.slice(1)}
           </button>
@@ -222,6 +225,9 @@ export default function Admin({ onBack, users, setUsers }: Props) {
       {error && <div role="alert" className="mb-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
       {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
       {!USE_API && <div className="mb-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm">Admin tools require the server API. Enable VITE_USE_API=true in production.</div>}
+
+      {/* ── Media studio tab ── */}
+      {tab === 'media' && <AdminMedia onBack={() => setTab('moderation')} />}
 
       {/* ── Moderation tab ── */}
       {tab === 'moderation' && (
@@ -293,7 +299,28 @@ export default function Admin({ onBack, users, setUsers }: Props) {
                       <option value="admin">Admin role</option>
                     </select>
                   </div>
+                  {u.role !== 'admin' && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#766E63] mb-1">Leader powers (grants)</p>
+                      <div className="flex gap-1.5 flex-wrap">
+                      {([
+                        ['post_media', 'Post media'],
+                        ['create_groups', 'Create groups'],
+                        ['manage_groups', 'Manage groups'],
+                        ['manage_communities', 'Manage communities'],
+                        ['delete_media', 'Delete media'],
+                      ] as const).map(([cap, label]) => {
+                        const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
+                        return (
+                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'bg-white text-[#766E63] border-[#E8DEC9]'}`}>{label}</button>
+                        )
+                      })}
+                      </div>
+                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Posting media, creating groups, managing groups/communities, deleting media.</p>
+                    </div>
+                  )}
                   <div className="flex gap-2 flex-wrap">
+                    <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F5EEDF] text-[#5C554C] disabled:opacity-50">Reset PIN</button>
                     <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { verified: !u.verified })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F3E8FF] text-[#5B21B6] disabled:opacity-50">{u.verified ? 'Remove ✓' : 'Verify ✓'}</button>
                     <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F5EEDF] text-[#5C554C] disabled:opacity-50">{u.active === false ? 'Reactivate' : 'Deactivate'}</button>
                     <button disabled={busy === u.username} onClick={() => void removeUser(u.username)} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">Delete</button>

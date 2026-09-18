@@ -18,7 +18,7 @@ const Ctx = createContext<AuthCtx | null>(null)
 export function useAuth(): AuthCtx { const v = useContext(Ctx); if (!v) throw new Error('useAuth must be inside AuthProvider'); return v }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [role, setRoleState] = useState<Role>(() => { const s = localStorage.getItem(LS_ROLE) as Role | null; return s === 'leader' ? 'member' : (s ?? 'guest') })
+  const [role, setRoleState] = useState<Role>(() => { const s = localStorage.getItem(LS_ROLE) as string | null; return s === 'leader' ? 'member' : ((s as Role) ?? 'guest') })
   const [username, setUsernameState] = useState(() => localStorage.getItem(LS_USERNAME) ?? '')
   const [verified, setVerifiedState] = useState(() => localStorage.getItem(LS_VERIFIED) === 'true')
   // PINs are never persisted. The backend/JWT is the production authority.

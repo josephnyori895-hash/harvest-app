@@ -73,7 +73,7 @@ export async function handleFeed(request, env, ctx) {
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
         [new Date().toISOString()],
       )
-      stories = await Promise.all(s.rows.map(async x => ({ ...x, thumb_url: await mediaUrlOrNull(env, x.thumb_key || x.original_key, 600) })))
+      stories = await Promise.all(s.rows.map(async x => ({ ...x, thumb_url: await mediaUrlOrNull(env, x.thumb_key || x.original_key, 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
     const nextOffset = offset + limit
     return jsonResponse({ posts: enriched, stories, nextOffset, hasMore: enriched.length === limit })
@@ -116,7 +116,7 @@ export async function handleFeed(request, env, ctx) {
     try {
       const { rows } = await query(
         env,
-        `SELECT t.id, t.user_id, u.username AS uploaded_by, u.verified, t.title, t.artist, t.original_key, t.created_at
+        `SELECT t.id, t.user_id, u.username AS uploaded_by, u.verified, t.title, t.artist, t.original_key, t.cover_thumb_key, t.created_at
            FROM tracks t JOIN users u ON u.id = t.user_id
           ORDER BY t.created_at DESC LIMIT ?`,
         [limit],
@@ -129,6 +129,7 @@ export async function handleFeed(request, env, ctx) {
         verified: !!r.verified,
         type: 'worship',
         url: await mediaUrlOrNull(env, r.original_key, 3600),
+        cover_url: await mediaUrlOrNull(env, r.cover_thumb_key, 3600),
         created_at: r.created_at,
       })))
       return jsonResponse({ tracks: out })

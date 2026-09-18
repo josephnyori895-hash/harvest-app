@@ -31,7 +31,7 @@ export function ToastContainer() {
       }
     }
     toastSubscribers.add(unsubscribe)
-    return () => toastSubscribers.delete(unsubscribe)
+    return () => { toastSubscribers.delete(unsubscribe) }
   }, [])
 
   const bgColors = {

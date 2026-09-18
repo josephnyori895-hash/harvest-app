@@ -1,28 +1,40 @@
 import { useState } from 'react'
 import { useAuth } from '../state/auth'
 
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
 export default function UserListModal({ type, userId, users, onBack }: { type: string; userId: string; users: any[]; onBack: () => void }) {
-  const { isAdmin } = useAuth()
-  const [, setRefresh] = useState(0)
+  const { isAdmin, username: viewerName } = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
   const filteredUsers = users.filter(u => u.username !== userId)
 
-  const handleToggleVerify = (username: string) => {
-    if (!isAdmin) return
-    const updated = users.map((u: any) => u.username === username ? { ...u, verified: !u.verified } : u)
-    localStorage.setItem('harvest_users', JSON.stringify(updated))
-    setRefresh(x => x + 1)
-    window.dispatchEvent(new Event('harvest:verified'))
+  const call = async (fn: string, method: string, body?: any) => {
+    if (busy) return
+    setBusy(true); setMsg('')
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const r = await fetch(`${API}${fn}`, {
+        method, headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Update failed')
+      window.dispatchEvent(new Event('harvest:verified'))
+    } catch (e: any) {
+      setMsg(e?.message || 'Update failed')
+    } finally { setBusy(false) }
   }
 
-  const handleToggleAdmin = (username: string) => {
+  const handleToggleVerify = (u: any) => {
     if (!isAdmin) return
-    const target = users.find((u: any) => u.username === username)
-    if (!target || target.username === localStorage.getItem('harvest_username')) return
-    const nextRole = target.role === 'admin' ? 'member' : 'admin'
-    const updated = users.map((u: any) => u.username === username ? { ...u, role: nextRole } : u)
-    localStorage.setItem('harvest_users', JSON.stringify(updated))
-    setRefresh(x => x + 1)
-    window.dispatchEvent(new Event('harvest:verified'))
+    void call(`/api/admin/verify/${encodeURIComponent(u.username)}`, 'POST', { verified: !u.verified })
+  }
+
+  const handleToggleAdmin = (u: any) => {
+    if (!isAdmin) return
+    if (u.username === viewerName) return
+    void call(`/api/admin/users/${encodeURIComponent(u.username)}`, 'PATCH', { role: u.role === 'admin' ? 'member' : 'admin' })
   }
 
   return (
@@ -33,20 +45,22 @@ export default function UserListModal({ type, userId, users, onBack }: { type: s
         <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-2 py-1 rounded-full font-bold">{filteredUsers.length}</span>
       </div>
 
+      {msg && <div role="alert" className="mx-4 mt-2 p-2 rounded-lg bg-rose-100 border border-rose-200 text-xs text-rose-700">{msg}</div>}
+
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {filteredUsers.map((u: any) => (
           <div key={u.username} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-[#E8DEC9]">
             <div className="flex gap-3 items-center min-w-0">
-              <div className="w-10 h-10 rounded-full bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-sm font-bold">{u.username?.[0]?.toUpperCase() || 'H'}</div>
+              <div className="w-10 h-10 rounded-full bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-sm font-bold">{String(u.username)?.[0]?.toUpperCase() || 'H'}</div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold truncate">{u.username} {u.verified && <span className="text-[#0F766E]" aria-label="Verified">✓</span>}</p>
-                <p className="text-[11px] text-[#766E63]">{u.role === 'admin' ? 'Admin' : u.verified ? 'Verified member' : 'Member'} · {u.location || 'Nyeri'}</p>
+                <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-[#0F766E]" aria-label="Verified">✓</span>}</p>
+                <p className="text-[11px] text-[#766E63]">@{u.username} · {u.role === 'admin' ? 'Admin' : u.verified ? 'Verified member' : 'Member'}</p>
               </div>
             </div>
-            {isAdmin && (
+            {isAdmin && u.username !== viewerName && (
               <div className="flex gap-2 shrink-0">
-                <button onClick={() => handleToggleVerify(u.username)} className="px-2.5 py-1.5 rounded-full bg-[#E6FFFA] text-[#0F766E] text-[10px] font-bold">{u.verified ? 'Unverify' : 'Verify'}</button>
-                <button onClick={() => handleToggleAdmin(u.username)} className="px-2.5 py-1.5 rounded-full bg-[#F3E8FF] text-[#5B21B6] text-[10px] font-bold">{u.role === 'admin' ? 'Member' : 'Admin'}</button>
+                <button disabled={busy} onClick={() => handleToggleVerify(u)} className="px-2.5 py-1.5 rounded-full bg-[#E6FFFA] text-[#0F766E] text-[10px] font-bold disabled:opacity-50">{u.verified ? 'Unverify' : 'Verify'}</button>
+                <button disabled={busy} onClick={() => handleToggleAdmin(u)} className="px-2.5 py-1.5 rounded-full bg-[#F3E8FF] text-[#5B21B6] text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Member' : 'Admin'}</button>
               </div>
             )}
           </div>

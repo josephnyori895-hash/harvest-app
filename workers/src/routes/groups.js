@@ -53,13 +53,13 @@ export async function handleGroups(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const { rows } = await query(
       env,
-      `SELECT g.id, g.slug, g.name, g.description, g.community, COUNT(gm.user_id) AS member_count
+      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
          FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
         GROUP BY g.id ORDER BY g.community ASC, g.name ASC`,
     )
     const mine = await query(env, 'SELECT group_id, role FROM group_members WHERE user_id=?', [fresh.id])
     const mineMap = new Map(mine.rows.map(r => [r.group_id, r.role]))
-    const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin' }))
+    const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin', add_only: !!r.invite_only }))
     const communities = await communityGroupCounts(env)
     return jsonResponse({ groups: out, communities })
   }
@@ -165,6 +165,11 @@ export async function handleGroups(request, env, ctx) {
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
     if (await myGroupRole(env, g.id, fresh.id)) return errorResponse('already a member', 409)
+    // Add-only groups: members cannot self-join at all. The admin adds them
+    // directly (POST /api/groups/:slug/members) or from Group Settings.
+    if (g.invite_only && fresh.role !== 'admin') {
+      return errorResponse('this group is add-only — ask the admin to add you', 403)
+    }
     // Reuse the pending-requests table: an approved request = membership.
     const existing = await query(env, `SELECT id, status FROM group_invites WHERE group_id=? AND invited_user_id=? ORDER BY created_at DESC LIMIT 1`, [g.id, fresh.id])
     if (existing.rows[0]?.status === 'pending') return jsonResponse({ status: 'pending', invite_id: existing.rows[0].id })
@@ -271,6 +276,45 @@ export async function handleGroups(request, env, ctx) {
     await query(env, 'DELETE FROM group_members WHERE group_id=? AND user_id=(SELECT id FROM users WHERE username=?)', [g.id, uname])
     await audit(env, fresh, 'group_member_removed', g.id, { username: uname })
     return jsonResponse({ ok: true, removed: uname })
+  }
+
+  // PATCH /api/groups/:slug — group settings (WhatsApp-style), system admin only:
+  // name, description, community, invite-only ("add-only") toggle, and the
+  // location link used for automatic member assignment at registration.
+  if (sub === 'settings' && method === 'PATCH') {
+    const fresh = await requireMember(env, user)
+    const g = await getGroup(env, slug)
+    if (!g) return errorResponse('group not found', 404)
+    if (fresh.role !== 'admin') return errorResponse('only the system admin can change group settings', 403)
+    const body = await readJson(request)
+    const sets = [], vals = []
+    if (body.name !== undefined) {
+      const name = String(body.name).trim().slice(0, 80)
+      if (name.length < 2) return errorResponse('group name required', 400)
+      sets.push('name=?'); vals.push(name)
+    }
+    if (body.description !== undefined) { sets.push('description=?'); vals.push(String(body.description).trim().slice(0, 300)) }
+    if (body.community !== undefined) { sets.push('community=?'); vals.push(String(body.community).trim().slice(0, 80)) }
+    if (body.invite_only !== undefined) { sets.push('invite_only=?'); vals.push(body.invite_only ? 1 : 0) }
+    if (body.location !== undefined) {
+      // null clears the location; valid coordinates set it.
+      if (body.location === null) {
+        sets.push('lat = NULL', 'lng = NULL', "location_label = ''")
+      } else {
+        const la = Number(body.location.lat), ln = Number(body.location.lng)
+        if (Number.isFinite(la) && Number.isFinite(ln) && la >= -90 && la <= 90 && ln >= -180 && ln <= 180) {
+          sets.push('lat=?', 'lng=?', 'location_label=?'); vals.push(la, ln, String(body.location.label || '').trim().slice(0, 120))
+        } else {
+          return errorResponse('location must be { lat: -90..90, lng: -180..180, label } or null', 400)
+        }
+      }
+    }
+    if (!sets.length) return errorResponse('nothing to update', 400)
+    vals.push(g.id)
+    await query(env, `UPDATE groups SET ${sets.join(', ')} WHERE id=?`, vals)
+    await audit(env, fresh, 'group_settings_updated', g.id, { slug: g.slug, changes: Object.keys(body) })
+    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, lat, lng, location_label FROM groups WHERE id=?', [g.id])
+    return jsonResponse({ ok: true, group: updated.rows[0] })
   }
 
   // DELETE /api/groups/:slug — system admin, or "manage_communities" leader.

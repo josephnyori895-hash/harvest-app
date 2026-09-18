@@ -18,25 +18,20 @@ function timeAgo(iso?: string) {
   return new Date(iso).toLocaleDateString()
 }
 
+// Community moments strip: only the viewer's own 'Share' tile plus live stories
+// from the server (see liveMoments below). Demo personas removed.
 const momentsBase = [
   { name: 'Your moment', me: true, label: 'Share' },
-  { name: 'Pastor David', id: 'pd', label: 'Word' },
-  { name: 'Grace', id: 'gr', label: 'Testimony' },
-  { name: 'Youth', id: 'yh', label: 'Youth' },
-  { name: 'Worship', id: 'wp', label: 'Worship' },
-  { name: 'Missions', id: 'ms', label: 'Missions' },
-  { name: 'Events', id: 'ev', label: 'Events' },
 ]
 
-const updatesBase = [
-  { user: 'Harvest Family Church', verified: true, loc: 'Main Sanctuary · Nyeri', time: 'Today', likes: 1243, img: 'https://images.unsplash.com/photo-1507692049790-de582271b65a?w=1000&h=700&fit=crop&q=85', caption: 'What a beautiful morning in God’s presence. Come as you are, worship with us, and bring someone along. 🙏', comments: 42, kind: 'Worship' },
-  { user: 'Prayer Ministry', verified: true, loc: 'Chapel', time: '5h', likes: 892, img: 'https://images.unsplash.com/photo-1519491050282-af549c18a3f1?w=1000&h=700&fit=crop&q=85', caption: 'Midweek prayer meeting is a place to pause, listen and pray together. You are welcome. 🕊️', comments: 18, kind: 'Prayer' },
-  { user: 'Youth Ministry', verified: true, loc: 'Youth Hall', time: 'Yesterday', likes: 2014, img: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1000&h=700&fit=crop&q=85', video: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', caption: 'Youth conference memories, new friendships and a faith that keeps growing. 🔥', comments: 125, kind: 'Youth' },
-]
+// No demo posts: the community feed renders only real posts from the API.
+// When there are no posts yet, an honest empty state is shown.
+const updatesBase: any[] = []
 
 const quickLinks = [
   { tab: 'chat', icon: '🙏', title: 'Prayer', text: 'Pray with someone' },
   { tab: 'groups', icon: '👥', title: 'Groups', text: 'Find your community' },
+  { tab: 'departments', icon: '🤝', title: 'Departments', text: 'Serve with your gifts' },
   { tab: 'give', icon: '🤲', title: 'Give', text: 'Support the ministry' },
   { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
 ]
@@ -55,8 +50,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const [liveStories, setLiveStories] = useState<any[]>([])
   const [feedTick, setFeedTick] = useState(0)
 
-  const approvedMoments: any[] = useMemo(() => { try { return JSON.parse(localStorage.getItem('harvest_approved_stories') || '[]') } catch { return [] } }, [likesTick, approvedTick])
-  const approvedPosts: any[] = useMemo(() => { try { return JSON.parse(localStorage.getItem('harvest_approved_posts') || '[]') } catch { return [] } }, [likesTick, approvedTick])
+  const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
+  const approvedPosts: any[] = []
 
   useEffect(() => {
     if (!api) return undefined
@@ -86,7 +81,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }, [refreshKey])
 
   // Map API rows onto the card shape this screen already renders.
-  const liveMoments = useMemo(() => liveStories.map((s: any) => ({ name: s.name || s.username || 'Harvest', id: s.id, label: 'Story', img: s.thumb_url || undefined })), [liveStories])
+  const liveMoments = useMemo(() => liveStories.map((s: any) => ({ name: s.name || s.username || 'Harvest', id: s.id, label: 'Story', img: s.thumb_url || undefined, caption: s.caption, video: s.video_url })), [liveStories])
   const liveUpdates = useMemo(() => livePosts.map((p: any) => ({
     key: `api_${p.kind}_${p.id}`,
     user: p.name || p.username || 'Harvest member',
@@ -100,12 +95,11 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     kind: p.is_pinned ? 'Pinned' : p.kind === 'reel' ? 'Video' : 'Community',
   })), [livePosts])
 
-  const allMoments = useMemo(() => [...liveMoments, ...momentsBase, ...approvedMoments.map((s: any) => ({ name: s.name, id: s.id, label: 'Story' }))], [liveMoments, approvedMoments])
-  // Live posts first; demo seed content remains the fallback so the screen is never empty.
-  const allUpdates = useMemo(() => (liveUpdates.length ? [...liveUpdates, ...approvedPosts] : [...approvedPosts, ...updatesBase]), [liveUpdates, approvedPosts])
+  const allMoments = useMemo(() => [...liveMoments, ...momentsBase], [liveMoments])
+  const allUpdates = useMemo(() => (liveUpdates.length ? liveUpdates : []), [liveUpdates])
   const likesTable = getLikesTable()
-  const currentUser = (() => { try { return JSON.parse(localStorage.getItem('harvest_users') || '[]')[0]?.username || localStorage.getItem('harvest_username') || '' } catch { return '' } })()
-  const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' || currentUser === 'allan' } catch { return false } })()
+  const currentUser = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
+  const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   const toggleLike = (key: string) => { toggleLikeKey(key); setLikesTick(x => x + 1); showToast('Added to your gratitude ❤️', 'success', 1000) }
   const clearCache = () => { localStorage.removeItem('harvest_pending'); localStorage.removeItem('harvest_approved_posts'); localStorage.removeItem('harvest_approved_stories'); localStorage.removeItem('harvest_scheduled'); localStorage.removeItem('harvest_cache'); window.dispatchEvent(new Event('harvest:cache-clear')); showToast('Local cache cleared', 'success') }
 
@@ -131,7 +125,10 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
       <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-2 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Prayer & care</p><p className="mt-1 text-[11px] text-[#766E63]">You don’t have to carry it alone.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
 
-      <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Community moments</p><h2 className="text-lg font-extrabold">From our people</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Share</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">{allMoments.map((m: any, i: number) => { const isMine = m.me || m.name === currentUser || String(m.id).startsWith(currentUser + '_'); return <div key={m.name + i} className="min-w-[88px] text-center"><button onClick={() => m.me ? setTab('post') : setMomentIdx(i)} className="w-[82px] h-[82px] rounded-[24px] bg-white border border-[#E8DEC9] shadow-sm flex items-center justify-center mx-auto relative overflow-hidden"><span className={`absolute inset-1 rounded-[20px] ${isMine ? 'bg-[#F4E8D0]' : 'bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]'}`} /><span className="relative text-sm font-extrabold text-[#5B21B6]">{m.me ? '+' : m.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span></button><p className="mt-1.5 text-[11px] font-bold truncate">{m.name}</p><p className="text-[10px] text-[#8B8175]">{m.label}</p>{onDeleteStory && isMine && !m.me && <button onClick={() => onDeleteStory(m.id)} className="text-[10px] text-red-600 font-bold">Remove</button>}</div> })}</div></section>
+      <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">{allMoments.map((m: any, i: number) => { const isMine = m.me || m.name === currentUser || String(m.id).startsWith(currentUser + '_'); const hasPhoto = Boolean(m.img); return <div key={m.name + i} className="min-w-[88px] text-center"><button onClick={() => m.me ? setTab('post') : setMomentIdx(i)} className="mx-auto block rounded-[28px] p-[3px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shadow-sm" aria-label={m.me ? 'Add your story' : `View ${m.name}'s story`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className={`absolute inset-0 flex items-center justify-center ${isMine ? 'bg-[#F4E8D0]' : 'bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]'}`}>{hasPhoto
+  ? <img src={m.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+  : <span className="relative text-sm font-extrabold text-[#5B21B6]">{m.me ? '+' : m.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span>}
+  </span></span></button><p className="mt-1.5 text-[11px] font-bold truncate max-w-[88px]">{m.me ? 'Your story' : m.name}</p><p className="text-[10px] text-[#8B8175]">{m.me ? 'Tap to share' : (m.label || 'Story')}</p>{onDeleteStory && isMine && !m.me && <button onClick={() => onDeleteStory(m.id)} className="text-[10px] text-red-600 font-bold">Remove</button>}</div> })}{allMoments.length === 0 && <p className="text-sm text-[#8B8175] py-6">No stories yet — be the first to share a moment.</p>}</div></section>
 
       <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“Let us consider how we may spur one another on toward love and good deeds.”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">Hebrews 10:24 · Grow together</p></div></section>
 

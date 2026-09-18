@@ -9,13 +9,10 @@ export type HarvestUser = {
 }
 
 /**
- * Three real user types:
- * - member: normal Harvest member
- * - verified member: trusted member; never an admin
- * - admin: church/platform authority
- *
- * `verified` is intentionally separate from `role` so a verified account
- * cannot accidentally inherit admin privileges.
+ * Upload policy (enforced identically by the server):
+ * - stories: EVERY signed-in member — they expire after 24 hours.
+ * - posts, reels/videos, music, announcements: verified members + admin only.
+ * Unverified members are pointed to stories (or admin verification).
  */
 export function userType(user: HarvestUser): 'member' | 'verified' | 'admin' | 'guest' {
   if (user.role === 'admin') return 'admin'
@@ -27,37 +24,26 @@ export function userType(user: HarvestUser): 'member' | 'verified' | 'admin' | '
 export function canCreateContent(user: HarvestUser, type: ContentType): boolean {
   const kind = userType(user)
   if (kind === 'admin') return true
-  if (kind === 'verified') return type !== 'announcement'
-  if (kind === 'member') return type === 'post' || type === 'story' || type === 'video'
-  return false
+  if (type === 'story') return kind === 'member' || kind === 'verified'
+  return kind === 'verified'
 }
 
-export function canPublishDirectly(user: HarvestUser, type: ContentType, destination: Destination): boolean {
+export function canPublishDirectly(user: HarvestUser, type: ContentType): boolean {
   const kind = userType(user)
   if (kind === 'admin') return true
-  if (kind === 'verified') return destination !== 'official' && type !== 'announcement'
-  return false
+  // Stories publish instantly for everyone; other types publish instantly
+  // only for verified members (server auto-approves verified uploads).
+  if (type === 'story') return kind === 'member' || kind === 'verified'
+  return kind === 'verified'
 }
 
-export function canSubmitForApproval(user: HarvestUser, type: ContentType, destination: Destination): boolean {
-  if (userType(user) === 'guest') return false
-  if (userType(user) === 'admin') return true
-  if (type === 'announcement' || destination === 'official') return false
+export function canSubmitForApproval(user: HarvestUser, type: ContentType): boolean {
   return canCreateContent(user, type)
 }
 
 export function allowedDestinations(user: HarvestUser, type: ContentType): Destination[] {
-  const kind = userType(user)
-  if (kind === 'admin') return ['community', 'group', 'ministry', 'worship', 'official']
-  if (kind === 'verified') {
-    if (type === 'music') return ['community', 'worship']
-    return ['community', 'group', 'ministry']
-  }
-  if (kind === 'member') {
-    if (type === 'music' || type === 'announcement') return []
-    return ['community', 'group']
-  }
-  return []
+  if (userType(user) === 'admin') return ['community', 'group', 'ministry', 'worship', 'official']
+  return type === 'story' ? ['community'] : []
 }
 
 export function canManageContent(user: HarvestUser): boolean {
