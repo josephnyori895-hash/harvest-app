@@ -7,7 +7,7 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = true
 
 const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
-type Tab = 'moderation' | 'media' | 'accounts' | 'audit'
+type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit'
 
 type Props = {
   onBack: () => void
@@ -41,6 +41,12 @@ export default function Admin({ onBack, users, setUsers }: Props) {
   // ── Audit state ──
   const [audit, setAudit] = useState<any[]>([])
   const [loadingAudit, setLoadingAudit] = useState(false)
+
+  // ── Announce state ──
+  const [annText, setAnnText] = useState('')
+  const [annGroup, setAnnGroup] = useState<string>('')
+  const [annBusy, setAnnBusy] = useState(false)
+  const [annCount, setAnnCount] = useState<number | null>(null)
 
   const loadPending = useCallback(async () => {
     if (!USE_API) { setPending([]); return }
@@ -182,6 +188,30 @@ export default function Admin({ onBack, users, setUsers }: Props) {
     } finally { setBusy(null) }
   }
 
+  const sendAnnounce = async () => {
+    const text = annText.trim()
+    if (annBusy) return
+    if (text.length < 2) { setError('Write the announcement first (at least 2 characters)'); return }
+    const scope = annGroup || 'ALL members'
+    if (!window.confirm(`Send this announcement to ${scope}?\n\n${text.slice(0, 160)}${text.length > 160 ? '…' : ''}`)) return
+    setAnnBusy(true); setError('')
+    try {
+      const response = await fetch(`${API}/api/admin/announce`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: text, ...(annGroup ? { target_group: annGroup } : {}) }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Announce failed')
+      setAnnCount(data.recipients || 0)
+      setAnnText('')
+      setAnnGroup('')
+      flash(`📣 Delivered to ${data.recipients} member${data.recipients === 1 ? '' : 's'}`)
+    } catch (e: any) {
+      setError(e?.message || 'Announce failed')
+    } finally { setAnnBusy(false) }
+  }
+
   const removeUser = async (username: string) => {
     if (busy) return
     if (!window.confirm(`Permanently delete ${username}? This cannot be undone.`)) return
@@ -211,13 +241,13 @@ export default function Admin({ onBack, users, setUsers }: Props) {
           <h1 className="font-extrabold">Harvest Admin</h1>
           <p className="text-xs text-[#766E63]">Moderation · Accounts · Audit</p>
         </div>
-        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">{tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : 'Audit'}</span>
+        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">{tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : 'Audit'}</span>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['moderation', 'media', 'accounts', 'audit'] as const).map(value => (
+        {(['moderation', 'media', 'accounts', 'announce', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
-            {value[0].toUpperCase() + value.slice(1)}
+            {value === 'announce' ? '📣 Announce' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
@@ -228,6 +258,51 @@ export default function Admin({ onBack, users, setUsers }: Props) {
 
       {/* ── Media studio tab ── */}
       {tab === 'media' && <AdminMedia onBack={() => setTab('moderation')} />}
+
+      {/* ── Announce tab ── */}
+      {tab === 'announce' && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+            <div>
+              <h2 className="font-extrabold text-sm">📣 Announce to members</h2>
+              <p className="text-xs text-[#766E63] mt-0.5">Lands as a direct message in every member's chat — with an unread badge. Members can reply straight back to you.</p>
+            </div>
+            <div>
+              <label htmlFor="ann-body" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Announcement</label>
+              <textarea
+                id="ann-body"
+                value={annText}
+                onChange={e => setAnnText(e.target.value.slice(0, 2000))}
+                rows={5}
+                placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend! 🙏"
+                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-3 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171] resize-y"
+              />
+              <p className="text-[10px] text-[#766E63] text-right mt-1">{annText.length}/2000</p>
+            </div>
+            <div>
+              <label htmlFor="ann-group" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Send to</label>
+              <select
+                id="ann-group"
+                value={annGroup}
+                onChange={e => setAnnGroup(e.target.value)}
+                className="w-full rounded-xl border border-[#E8DEC9] bg-white px-3 py-3 text-sm font-medium outline-none focus:border-[#7C3AED]"
+              >
+                <option value="">All members (every congregation)</option>
+                {GROUPS.map(g => <option key={g} value={g}>{g} only</option>)}
+              </select>
+            </div>
+            <button
+              onClick={sendAnnounce}
+              disabled={annBusy || annText.trim().length < 2}
+              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+            >
+              {annBusy ? 'Sending…' : annGroup ? `📣 Send to ${annGroup}` : '📣 Send to all members'}
+            </button>
+            {annCount !== null && <p className="text-xs text-emerald-700 font-bold text-center">✓ Last announcement delivered to {annCount} members</p>}
+            <p className="text-[10px] text-[#766E63]">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Moderation tab ── */}
       {tab === 'moderation' && (

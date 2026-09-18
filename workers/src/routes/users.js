@@ -1,5 +1,5 @@
 // Port of server/src/routes/users.js (pg → D1).
-import { query, uuid, bool } from '../lib/db.js'
+import { query, uuid, bool, stmt, batch } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
 import { pbkdf2Hash } from '../lib/crypto.js'
@@ -288,6 +288,48 @@ export async function handleUsers(request, env, ctx, params) {
       [limit],
     )
     return jsonResponse({ audit: rows })
+  }
+
+  // POST /api/admin/announce — fan out a DM from the admin to every active member's
+  // chat inbox (unread badge + reply-capable). Optional target_group narrows to one
+  // congregation. Members can reply; replies land in the admin's normal DM inbox.
+  if (path === '/api/admin/announce' && method === 'POST') {
+    const fresh = await requireAdmin(env, user)
+    const body = await readJson(request)
+    const text = String(body.body ?? body.text ?? '').trim().slice(0, 2000)
+    if (text.length < 2) return errorResponse('announcement body required (2–2000 characters)', 400)
+    const targetGroup = cleanString(body.target_group, 80) || null
+
+    // Resolve recipients: all active members, optionally one group. Excludes the sender.
+    const { rows: recipients } = targetGroup
+      ? await query(env, `SELECT username FROM users WHERE active=1 AND id<>? AND group_name=?`, [fresh.id, targetGroup])
+      : await query(env, `SELECT username FROM users WHERE active=1 AND id<>?`, [fresh.id])
+    if (!recipients.length) return errorResponse('no members to announce to', 400)
+
+    // D1 caps bound parameters per statement; insert in chunks of 50.
+    const now = new Date().toISOString()
+    const CHUNK = 50
+    let inserted = 0
+    for (let i = 0; i < recipients.length; i += CHUNK) {
+      const slice = recipients.slice(i, i + CHUNK)
+      const statements = slice.map(r => {
+        const key = `harvest:chat:${[fresh.username, r.username].sort().join(':')}`
+        return stmt(env,
+          `INSERT INTO messages (id, kind, conversation_key, sender_id, sender_username, recipient_id, recipient_username, body, status, created_at)
+           VALUES (?, 'dm', ?, ?, ?, NULL, ?, ?, 'sent', ?)`,
+          [uuid(), key, fresh.id, fresh.username, r.username, `📣 ${text}`, now],
+        )
+      })
+      await batch(env, statements)
+      inserted += slice.length
+    }
+
+    await audit(env, fresh, 'announcement_sent', fresh.id, {
+      recipients: inserted,
+      target_group: targetGroup,
+      preview: text.slice(0, 80),
+    })
+    return jsonResponse({ ok: true, recipients: inserted, target_group: targetGroup })
   }
 
   // GET /api/activity — new members + follows involving the viewer
