@@ -91,6 +91,27 @@ check('view record on missing story (ok/ignored)', r.status === 200 || r.status 
 r = await j('GET', '/api/stories/no-such-story/views', tokA)
 check('views list on missing story → 404', r.status === 404, r.status)
 
+console.log('─ Department chat (departments act like groups) ─')
+// A joins the media department, then the team chat works like a group chat.
+r = await j('POST', '/api/departments/media/join', tokA)
+check('A joins media department', r.status === 200, r.status)
+r = await j('POST', '/api/departments/media/join', tokB)
+check('B joins media department', r.status === 200, r.status)
+r = await j('POST', '/api/chat/messages', tokA, { department: 'media', body: 'Team, soundcheck at 8am' })
+check('member posts in department chat', r.status === 201 && r.data?.message?.conversation_key === 'department:media', r.status)
+r = await j('GET', '/api/chat/history?department=media', tokB)
+check('teammate reads department history', r.status === 200 && r.data?.messages?.some(m => m.text === 'Team, soundcheck at 8am'), r.status)
+r = await j('POST', '/api/chat/seen', tokB, { department: 'media' })
+check('teammate marks dept chat seen', r.status === 200, r.status)
+// Outsider (D never joined) must be locked out.
+const tokD = await register({ username: `tst.d${stamp}`, phone: `0718${stamp.slice(-6)}`, password: 'Passw0rd!x' })
+r = await j('GET', '/api/chat/history?department=media', tokD)
+check('outsider blocked from dept chat (403)', r.status === 403, r.status)
+r = await j('POST', '/api/chat/messages', tokD, { department: 'media', body: 'sneak' })
+check('outsider cannot post in dept chat (403)', r.status === 403, r.status)
+r = await j('GET', '/api/chat/history?department=no-such-dept', tokA)
+check('unknown department → 404', r.status === 404, r.status)
+
 console.log('─ Cleanup ─')
 // Tokens are role=member; deletion is admin-only. Report so the test DB can be swept.
 if (tokA && tokB && tokC) {

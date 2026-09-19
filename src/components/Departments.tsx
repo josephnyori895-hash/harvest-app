@@ -11,7 +11,7 @@ function authHeaders() {
 
 // Departments (ministry teams): praise & worship, ushering, media, etc.
 // Members join/leave themselves; admins create departments and manage members.
-export default function Departments() {
+export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug: string, name: string) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
   const [departments, setDepartments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -199,6 +199,9 @@ export default function Departments() {
             ) : (
               <>
                 {detail.department.description && <p className="text-xs text-zinc-400 pb-1">{detail.department.description}</p>}
+                {(detail.department.joined || isAdmin) && onOpenDeptChat && (
+                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open team chat</button>
+                )}
                 {isAdmin && (
                   <button onClick={startEdit} className="text-[11px] font-bold text-amber-400">✏️ Edit name & description</button>
                 )}

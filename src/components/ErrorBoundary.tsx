@@ -39,7 +39,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             <button onClick={this.handleReset} className="flex-1 py-3 rounded-full bg-[#7C3AED] text-white font-semibold">Reload</button>
             <button onClick={this.handleClearCache} className="flex-1 py-3 rounded-full bg-zinc-100 text-zinc-700 font-semibold border border-zinc-200">Clear cache & reload</button>
           </div>
-          <p className="text-xs text-zinc-400 mt-3">If this repeats, update the app or contact Allan (admin).</p>
+          <p className="text-xs text-zinc-400 mt-3">If this repeats, update the app or contact the admin.</p>
         </div>
       </div>
     )

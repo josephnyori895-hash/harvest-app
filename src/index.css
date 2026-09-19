@@ -71,3 +71,12 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   input,textarea,select { font-size: 16px; max-width: 100%; }
   img,video,iframe { max-width: 100%; }
 }
+
+/* Reels double-tap encourage: heart pops at the tap point, scales up and fades. */
+@keyframes heartpop {
+  0% { transform: scale(0.2); opacity: 0; }
+  25% { transform: scale(1.15); opacity: 1; }
+  45% { transform: scale(0.95); }
+  70% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1.25) translateY(-30px); opacity: 0; }
+}

@@ -9,7 +9,7 @@ function authHeaders() {
   return t ? { Authorization: `Bearer ${t}` } : {}
 }
 
-export default function ViewUser({ user, onBack }: { user: any; onBack: () => void }) {
+export default function ViewUser({ user, onBack, onEditProfile }: { user: any; onBack: () => void; onEditProfile?: () => void }) {
   const safeUser = user || { username: '', name: '', role: 'member', verified: false, location: '', group_name: 'Harvest Central' }
   const { isAdmin, username: viewerName } = useAuth()
 
@@ -24,6 +24,16 @@ export default function ViewUser({ user, onBack }: { user: any; onBack: () => vo
   const [postIdx, setPostIdx] = useState<number | null>(null)
 
   const isSelf = Boolean(viewerName) && viewerName === safeUser.username
+
+  // Viewing your own profile: /api/me is fresher than the directory snapshot
+  // (name/phone/avatar edits show up immediately after saving).
+  useEffect(() => {
+    if (!isSelf) return
+    fetch(`${API}/api/me`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('me unavailable'))))
+      .then(d => { if (d.user) setProfile((p: any) => ({ ...p, ...d.user })) })
+      .catch(() => {})
+  }, [isSelf])
 
   useEffect(() => {
     if (!safeUser.username) return
@@ -53,7 +63,7 @@ export default function ViewUser({ user, onBack }: { user: any; onBack: () => vo
     return () => { cancelled = true }
   }, [safeUser.username])
 
-  const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, id: s.id, img: s.thumb_url, caption: '' })), [stories])
+  const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, username: s.username, id: s.id, img: s.thumb_url, caption: '' })), [stories])
 
   if (!user) return null
 
@@ -105,9 +115,18 @@ export default function ViewUser({ user, onBack }: { user: any; onBack: () => vo
       </div>
       <div className="px-4 py-6 bg-white/50">
         <div className="flex gap-4 items-start">
-          <div className={`flex-shrink-0 w-24 h-24 rounded-full p-1 ${stories.length ? 'bg-gradient-to-br from-amber-400 to-purple-600' : 'bg-neutral-200'}`}>
-            <div className="w-full h-full rounded-full bg-gradient-to-br from-neutral-300 to-neutral-400 flex items-center justify-center text-4xl font-bold text-white">{displayName.charAt(0).toUpperCase()}</div>
-          </div>
+          <button
+            onClick={() => { if (stories.length) setStoryIdx(0) }}
+            disabled={!stories.length}
+            aria-label={stories.length ? `View ${displayName}'s status` : 'No status'}
+            className={`flex-shrink-0 w-24 h-24 rounded-full p-1 ${stories.length ? 'bg-gradient-to-br from-amber-400 to-purple-600 cursor-pointer active:scale-95 transition-transform' : 'bg-neutral-200'}`}
+          >
+            {profile.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+            ) : (
+              <div className="w-full h-full rounded-full bg-gradient-to-br from-neutral-300 to-neutral-400 flex items-center justify-center text-4xl font-bold text-white">{displayName.charAt(0).toUpperCase()}</div>
+            )}
+          </button>
           <div className="flex-1 pt-2">
             <h2 className="text-xl font-bold mb-1 truncate">{displayName}</h2>
             <p className="text-sm text-neutral-600 mb-4">@{profile.username}</p>
@@ -128,7 +147,10 @@ export default function ViewUser({ user, onBack }: { user: any; onBack: () => vo
             {followState.mutual ? '✓ Friends' : followState.following ? 'Following' : '+ Follow'}
           </button>
         )}
-        {isSelf && <p className="w-full mt-4 py-2.5 rounded-lg bg-white border border-neutral-200 text-center text-sm text-neutral-500 font-semibold">This is you</p>}
+        {isSelf && onEditProfile && (
+          <button onClick={() => onEditProfile()} className="w-full mt-4 py-2.5 rounded-lg btn-primary font-semibold">✏️ Edit profile</button>
+        )}
+        {isSelf && !onEditProfile && <p className="w-full mt-4 py-2.5 rounded-lg bg-white border border-neutral-200 text-center text-sm text-neutral-500 font-semibold">This is you</p>}
       </div>
       {isAdmin && !isSelf && (
         <div className="mx-4 mt-4 p-4 spiritual-container">

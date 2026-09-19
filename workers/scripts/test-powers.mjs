@@ -17,7 +17,7 @@ async function j(method, path, token, body) {
 }
 
 const main = async () => {
-  const admin = await j('POST', '/api/auth/login', null, { username: 'allan', password: 'Kipsii@2026#' })
+  const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
   const AT = admin.data.token
   check('admin login', !!AT)
 

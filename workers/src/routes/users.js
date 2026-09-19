@@ -5,6 +5,7 @@ import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '
 import { pbkdf2Hash } from '../lib/crypto.js'
 import { ALL_CAPS, parseGrants } from '../lib/capabilities.js'
 import { nearestCommunity } from '../lib/geo.js'
+import { mediaUrlOrNull } from '../lib/media.js'
 
 const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'])
 const ROLES = new Set(['member', 'admin'])
@@ -13,6 +14,13 @@ const PROFILE_FIELDS = new Set(['name', 'phone', 'location', 'constituency', 'fa
 function cleanString(value, max = 120) {
   if (value === null) return null
   return String(value ?? '').trim().slice(0, max)
+}
+
+// Kenyan mobile normalization (same rule as auth.js): 07xx/01xx/+2547xx → +2547xxxxxxxx.
+function normalizeKenyanPhone(raw) {
+  const digits = String(raw || '').replace(/[^\d+]/g, '')
+  const m = digits.match(/^(?:\+?254|0)?([17]\d{8})$/)
+  return m ? `+254${m[1]}` : null
 }
 
 async function countAdmins(env, excludeId = null) {
@@ -43,13 +51,14 @@ export async function handleUsers(request, env, ctx, params) {
     if (!q || q.length < 2) return jsonResponse({ users: [] })
     const { rows } = await query(
       env,
-      `SELECT id, username, name, group_name, constituency, verified, role, active FROM users
+      `SELECT id, username, name, group_name, constituency, verified, role, active, avatar_key FROM users
         WHERE active=1 AND (lower(username) LIKE ? OR lower(name) LIKE ?)
         ORDER BY verified DESC, username ASC LIMIT 20`,
       [`%${q}%`, `%${q}%`],
     )
     rows.forEach(r => bool(r, 'verified', 'active'))
-    return jsonResponse({ users: rows })
+    const users = await Promise.all(rows.map(async r => ({ ...r, avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600) })))
+    return jsonResponse({ users })
   }
 
   // GET /api/users/map
@@ -64,20 +73,21 @@ export async function handleUsers(request, env, ctx, params) {
     // Phone numbers are admin-only: members never receive other people's numbers.
     const { rows } = await query(
       env,
-      `SELECT id, username, name, group_name, location, verified, role, lat, lng${isAdmin ? ', phone, phone_normalized, grants' : ''} FROM users WHERE active=1 ORDER BY group_name, username LIMIT 500`,
+      `SELECT id, username, name, group_name, location, verified, role, lat, lng, avatar_key${isAdmin ? ', phone, phone_normalized, grants' : ''} FROM users WHERE active=1 ORDER BY group_name, username LIMIT 500`,
     )
     const { rows: follows } = await query(env, `SELECT followee_id FROM follows WHERE follower_id=?`, [fresh.id])
     const followsSet = new Set(follows.map(r => r.followee_id))
     const { rows: followers } = await query(env, `SELECT follower_id FROM follows WHERE followee_id=?`, [fresh.id])
     const followersSet = new Set(followers.map(r => r.follower_id))
-    const out = rows.map(u => {
+    const out = await Promise.all(rows.map(async u => {
       bool(u, 'verified')
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === fresh.id
-      if (mutual) return { ...u, ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), hidden: false }
+      const avatar_url = await mediaUrlOrNull(env, u.avatar_key, 3600)
+      if (mutual) return { ...u, ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475]
       const [al, ag] = [gc[0] + (Math.random() - 0.5) * 0.008, gc[1] + (Math.random() - 0.5) * 0.008]
-      return { id: u.id, username: u.username, name: u.name, group_name: u.group_name, location: null, verified: u.verified, role: undefined, lat: al, lng: ag, hidden: true, approx: true }
-    })
+      return { id: u.id, username: u.username, name: u.name, group_name: u.group_name, location: null, verified: u.verified, role: undefined, lat: al, lng: ag, hidden: true, approx: true, avatar_url }
+    }))
     return jsonResponse({ users: out, viewer: fresh.username, isAdmin })
   }
 
@@ -353,34 +363,78 @@ export async function handleUsers(request, env, ctx, params) {
     return jsonResponse({ new_members: members, follows_in: fIn, follows_out: fOut })
   }
 
-  // PATCH /api/me — self-service updates: group choice + sharing device location.
-  // Location powers the map and nearest-group assignment; admins may also set it.
+  // PATCH /api/me — self-service profile editing.
+  // Editable fields: name, phone, location, faith, constituency (all cleaned +
+  // length-capped), plus group choice, sharing device location, and attaching a
+  // previously-uploaded avatar (originals/avatar/… via /api/media/presign).
   if (path === '/api/me' && method === 'PATCH') {
     const fresh = await requireMember(env, user)
     const body = await readJson(request)
+    const updates = {}
+    for (const field of PROFILE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(body, field)) updates[field] = cleanString(body[field], field === 'name' ? 120 : 160)
+    }
+    // name is NOT NULL in the schema — an explicit null just leaves it unchanged.
+    if (updates.name === null) delete updates.name
+    if (updates.name === '') return errorResponse('name cannot be empty', 400)
+    if (updates.phone !== undefined && updates.phone !== null && updates.phone !== '') {
+      const normalized = normalizeKenyanPhone(updates.phone)
+      if (!normalized) return errorResponse('phone must be a Kenyan number like 07… or +2547…', 400)
+      const dup = await query(env, 'SELECT username FROM users WHERE phone_normalized=? AND id<>?', [normalized, fresh.id])
+      if (dup.rows[0]) return errorResponse('that phone number belongs to another account', 409)
+      updates.phone = normalized
+      updates.phone_normalized = normalized
+    } else if (updates.phone !== undefined) {
+      // Empty string clears the phone.
+      updates.phone = null
+      updates.phone_normalized = null
+    }
     if (body.group_name !== undefined) {
       if (!GROUPS.has(body.group_name)) return errorResponse('invalid group', 400)
-      await query(env, 'UPDATE users SET group_name=? WHERE id=?', [body.group_name, fresh.id])
-      await audit(env, fresh, 'group_self_join', fresh.id, { group_name: body.group_name })
+      updates.group_name = body.group_name
     }
     if (body.lat !== undefined && body.lng !== undefined) {
       const lat = Number(body.lat), lng = Number(body.lng)
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
         return errorResponse('invalid coordinates', 400)
       }
-      await query(env, 'UPDATE users SET lat=?, lng=? WHERE id=?', [lat, lng, fresh.id])
+      updates.lat = lat
+      updates.lng = lng
     }
-    const { rows } = await query(env, 'SELECT id, username, name, group_name, verified, role FROM users WHERE id=?', [fresh.id])
-    return jsonResponse({ user: bool(rows[0], 'verified') })
+    // Avatar: must reference an avatar upload owned by this account.
+    if (body.avatar_key !== undefined) {
+      const key = String(body.avatar_key || '').trim()
+      if (!key) {
+        updates.avatar_key = null
+      } else {
+        if (!/^originals\/avatar\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i.test(key)) return errorResponse('invalid avatar key', 400)
+        const obj = await env.MEDIA.head(key)
+        if (!obj) return errorResponse('avatar not found in storage', 404)
+        if (String(obj.customMetadata?.ownerId || '') !== String(fresh.id)) return errorResponse('avatar does not belong to this account', 403)
+        updates.avatar_key = key
+      }
+    }
+    const fields = Object.keys(updates)
+    if (fields.length) {
+      const sets = fields.map(f => `${f}=?`).join(', ')
+      await query(env, `UPDATE users SET ${sets} WHERE id=?`, [...fields.map(f => updates[f]), fresh.id])
+      if (updates.group_name) await audit(env, fresh, 'group_self_join', fresh.id, { group_name: updates.group_name })
+      if (fields.some(f => f !== 'group_name' && f !== 'lat' && f !== 'lng')) {
+        await audit(env, fresh, 'profile_self_update', fresh.id, { fields: fields.filter(f => f !== 'lat' && f !== 'lng') })
+      }
+    }
+    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, avatar_key FROM users WHERE id=?', [fresh.id])
+    const me = bool(rows[0], 'verified')
+    return jsonResponse({ user: { ...me, avatar_url: await mediaUrlOrNull(env, me?.avatar_key, 86_400) } })
   }
 
   // GET /api/me
   if (path === '/api/me' && method === 'GET') {
     if (!user || user.id === '00000000-0000-0000-0000-000000000000') return jsonResponse({ user: null, role: 'guest' })
-    const { rows } = await query(env, 'SELECT id, username, name, group_name, constituency, faith, verified, role, active, last_seen FROM users WHERE id=?', [user.id])
+    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, active, last_seen, avatar_key FROM users WHERE id=?', [user.id])
     const u = bool(rows[0], 'verified', 'active')
     if (!u || !u.active) return jsonResponse({ user: null, role: 'guest' })
-    return jsonResponse({ user: u, role: u.role })
+    return jsonResponse({ user: { ...u, avatar_url: await mediaUrlOrNull(env, u.avatar_key, 86_400) }, role: u.role })
   }
 
   return null

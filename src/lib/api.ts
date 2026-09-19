@@ -86,3 +86,19 @@ export async function fetchMyGiving() {
 export async function fetchGivingAdmin() {
   return apiJson('/api/giving/admin') as Promise<{transactions:any[],totals:{completed_kes:string,pending_count:number}}>
 }
+
+export async function fetchMe() {
+  return apiJson('/api/me') as Promise<{ user: any; role?: string }>
+}
+
+export async function updateProfile(body: {
+  name?: string
+  phone?: string
+  location?: string
+  faith?: string
+  constituency?: string
+  group_name?: string
+  avatar_key?: string | null
+}) {
+  return apiJson('/api/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) as Promise<{ user: any }>
+}

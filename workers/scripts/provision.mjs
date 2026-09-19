@@ -53,7 +53,7 @@ try {
 // 3) Next steps
 console.log(`
 Next steps:
-  1. npx wrangler d1 migrations apply DB --remote          # schema + seed (creates admin 'allan')
+  1. npx wrangler d1 migrations apply DB --remote          # schema + seed (creates members 'allan' + admin 'harvest')
   2. npx wrangler secret put JWT_SECRET                     # openssl rand -base64 48
   3. Optional secrets (presigned direct-to-R2 uploads):
        npx wrangler secret put CLOUDFLARE_ACCOUNT_ID

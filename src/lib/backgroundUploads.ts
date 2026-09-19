@@ -13,7 +13,7 @@ import { showToast } from '../components/Toast'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const tok = () => localStorage.getItem('harvest_token') || ''
 
-export type UploadKind = 'story' | 'post' | 'reel' | 'track'
+export type UploadKind = 'avatar' | 'story' | 'post' | 'reel' | 'track'
 
 export type UploadTask = {
   kind: UploadKind
@@ -179,17 +179,23 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
   if (task.kind === 'track' && task.cover) {
     coverKey = await uploadOne(task.cover, 'post', (task.cover as File)?.name, onPct, 88, 95)
   }
-  await apiJson(`${API}/api/media/confirm`, tok(), {
-    key: audioKey,
-    type: task.kind,
-    caption: task.caption,
-    title: task.title,
-    artist: task.artist,
-    cover_key: coverKey,
-  })
+  if (task.kind === 'avatar') {
+    // Avatars are attached to the profile with a follow-up PATCH /api/me.
+    await apiJson(`${API}/api/me`, tok(), { avatar_key: audioKey }, 'PATCH')
+  } else {
+    await apiJson(`${API}/api/media/confirm`, tok(), {
+      key: audioKey,
+      type: task.kind,
+      caption: task.caption,
+      title: task.title,
+      artist: task.artist,
+      cover_key: coverKey,
+    })
+  }
   onPct(100)
   if (task.kind === 'story') window.dispatchEvent(new Event('harvest:approved'))
   if (task.kind === 'track') window.dispatchEvent(new Event('harvest:tracks-updated'))
+  if (task.kind === 'avatar') window.dispatchEvent(new Event('harvest:profile-updated'))
 }
 
 function isRetryable(e: any): boolean {

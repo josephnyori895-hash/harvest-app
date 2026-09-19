@@ -93,7 +93,7 @@ function chatListTime(iso: string) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
-export default function Chat({ onBack, users }: { onBack: () => void; users: ChatUser[] }) {
+export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack: () => void; users: ChatUser[]; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
   const [section, setSection] = useState<Section>('personal')
@@ -108,6 +108,11 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   })
   const [presence, setPresence] = useState<Record<string, Presence>>({})
   const [replyTo, setReplyTo] = useState<any | null>(null)
+  // Department team chat: departments work like groups (server-enforced membership).
+  const [dept, setDept] = useState<{ slug: string; name: string } | null>(null)
+  useEffect(() => {
+    if (deptChat) { setActive(null); setDept(deptChat) } else setDept(null)
+  }, [deptChat])
   const [reactingFor, setReactingFor] = useState<string | null>(null)
   const [attach, setAttach] = useState<File | null>(null)
   // Instagram-style people search on the chats list.
@@ -122,7 +127,7 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   const activeRef = useRef<ChatUser | null>(null)
   useEffect(() => { activeRef.current = active }, [active])
 
-  const conversationKey = active ? keyFor(currentUser, active.username) : ''
+  const conversationKey = dept ? `department:${dept.slug}` : active ? keyFor(currentUser, active.username) : ''
   const thread = conversationKey ? (msgs[conversationKey] || []) : []
 
   const saveMessages = useCallback((updater: Record<string, any[]> | ((c: Record<string, any[]>) => Record<string, any[]>)) => {
@@ -174,11 +179,26 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
   }, [refreshInbox, syncPresence])
 
   const markSeen = useCallback(async () => {
+    if (dept) { try { await api('/api/chat/seen', { method: 'POST', body: JSON.stringify({ department: dept.slug }) }) } catch { /* non-fatal */ } return }
     if (!active) return
     try { await api('/api/chat/seen', { method: 'POST', body: JSON.stringify({ peer: active.username }) }) } catch { /* non-fatal */ }
-  }, [active])
+  }, [active, dept])
 
   const loadConversation = useCallback(async () => {
+    if (dept) {
+      setError('')
+      try {
+        const result = await api<{ messages: any[]; conversation_key: string }>(`/api/chat/history?department=${encodeURIComponent(dept.slug)}`)
+        const k = result.conversation_key || `department:${dept.slug}`
+        saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
+        const existing = mergeMessages(msgs[k] || [], result.messages || [])
+        cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Unable to load team chat')
+      }
+      void markSeen(); void refreshInbox()
+      return
+    }
     if (!active || !currentUser) return
     setError('')
     try {
@@ -191,13 +211,14 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
       setError(e instanceof Error ? e.message : 'Unable to load conversation')
     }
     void markSeen(); void refreshInbox()
-  }, [active, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
+  }, [active, dept, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
 
   const refreshUpdates = useCallback(async () => {
-    if (!active || !conversationKey || !localStorage.getItem('harvest_token')) return
+    if (!active && !dept) return
+    if (!conversationKey || !localStorage.getItem('harvest_token')) return
     const after = cursorRef.current[conversationKey] || new Date(Date.now() - 5000).toISOString()
     try {
-      const q = new URLSearchParams({ peer: active.username, after, limit: '50' })
+      const q = new URLSearchParams(dept ? { department: dept.slug, after, limit: '50' } : { peer: String(active?.username || ''), after, limit: '50' })
       const result = await api<{ messages: any[]; conversation_key: string; server_time: string }>(`/api/chat/updates?${q.toString()}`)
       const k = result.conversation_key || conversationKey
       if ((result.messages || []).length) {
@@ -206,26 +227,26 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
       }
       cursorRef.current[k] = result.server_time || cursorRef.current[k]
     } catch { /* polling failures stay silent */ }
-  }, [active, conversationKey, saveMessages, markSeen])
+  }, [active, dept, conversationKey, saveMessages, markSeen])
 
   useEffect(() => {
-    if (!active) return
+    if (!active && !dept) return
     void loadConversation()
     const t = window.setInterval(() => void refreshUpdates(), 2500)
     return () => window.clearInterval(t)
-  }, [active?.username, loadConversation, refreshUpdates])
+  }, [active?.username, dept?.slug, loadConversation, refreshUpdates])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
 
   const send = async () => {
     const body = text.trim()
-    if (!active || !currentUser || sending || (!body && !attach)) return
+    if ((!active && !dept) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
     if (!localStorage.getItem('harvest_token')) { setError('Your session has expired. Please sign in again.'); return }
 
     const tempId = `tmp_${Date.now()}`
     const optimistic: any = {
-      id: tempId, from: currentUser, to: active.username,
+      id: tempId, from: currentUser, to: dept ? null : active.username,
       text: attach && !body ? '📷' : body, status: 'sent',
       created_at: new Date().toISOString(),
       at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -254,7 +275,9 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
       }
       const result = await api<{ message: any }>('/api/chat/messages', {
         method: 'POST',
-        body: JSON.stringify({ peer: active.username, body, media_key, media_type: media_key ? 'image' : undefined, reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined }),
+        body: JSON.stringify(dept
+          ? { department: dept.slug, body, media_key, media_type: media_key ? 'image' : undefined, reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined }
+          : { peer: active.username, body, media_key, media_type: media_key ? 'image' : undefined, reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined }),
       })
       saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [result.message]) }))
       cursorRef.current[conversationKey] = result.message.created_at || cursorRef.current[conversationKey]
@@ -302,19 +325,20 @@ export default function Chat({ onBack, users }: { onBack: () => void; users: Cha
     return searched
   }, [users, currentUser, section, peopleQuery])
 
-  if (active) {
+  if (active || dept) {
     let lastDay = ''
+    const isDept = Boolean(dept)
     return (
       <main className="h-[100dvh] bg-black text-white flex flex-col">
         <header className="h-16 shrink-0 border-b border-zinc-800 bg-black/95 backdrop-blur flex items-center gap-3 px-3 z-20">
-          <button type="button" onClick={() => { setActive(null); setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
+          <button type="button" onClick={() => { if (isDept) { setDept(null); onCloseDept?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
           <div className="relative w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold shrink-0">
-            {(active.username?.[0] || '?').toUpperCase()}
-            {presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
+            {isDept ? '🤝' : (active.username?.[0] || '?').toUpperCase()}
+            {!isDept && presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold truncate text-white">{active.name || active.username}{active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
-            <p className="text-xs text-zinc-400">{presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
+            <p className="font-semibold truncate text-white">{isDept ? dept!.name : active.name || active.username}{!isDept && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+            <p className="text-xs text-zinc-400">{isDept ? 'Department team chat' : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
           </div>
           {sending ? <span className="text-[10px] text-zinc-400">···</span> : null}
         </header>

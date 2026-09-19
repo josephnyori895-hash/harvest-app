@@ -22,8 +22,8 @@ async function j(method, path, token, body) {
 
 const main = async () => {
   // ── Setup: tokens ──
-  const admin = await j('POST', '/api/auth/login', null, { username: 'allan', password: 'Kipsii@2026#' })
-  check('admin login (allan)', admin.status === 200 && !!admin.data.token, admin.data.error || '')
+  const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
+  check('admin login (harvest)', admin.status === 200 && !!admin.data.token, admin.data.error || '')
   const AT = admin.data.token
 
   const stamp = Date.now().toString().slice(-6)
@@ -63,7 +63,7 @@ const main = async () => {
   const ap = await j('POST', `/api/groups/${slug}/requests/${rid}/approve`, MT, { approve: true })
   check('group admin approves request', ap.status === 200 && ap.data.status === 'approved', ap.data.error || '')
   const det = await j('GET', `/api/groups/${slug}`, AT)
-  check('approver + requester both now members', det.data.members?.some(m => m.username === 'allan') && det.data.members?.some(m => m.username === `gtest${stamp}`))
+  check('approver + requester both now members', det.data.members?.some(m => m.username === 'harvest') && det.data.members?.some(m => m.username === `gtest${stamp}`))
 
   // ── Participation variants: stay as member ──
   const created2 = await j('POST', '/api/groups', AT, {
@@ -74,9 +74,9 @@ const main = async () => {
   check('creator stayed as plain member', mine1.data.groups?.some(g => g.slug === created2.data.group?.slug && g.my_role === 'member'))
 
   // ── Role management ──
-  const promo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'allan', role: 'admin' })
+  const promo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'harvest', role: 'admin' })
   check('group admin promotes member to admin', promo.status === 200 && promo.data.role === 'admin', promo.data.error || '')
-  const demo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'allan', role: 'member' })
+  const demo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'harvest', role: 'member' })
   check('group admin demotes back to member', demo.status === 200 && demo.data.role === 'member', demo.data.error || '')
 
   // ── Leave rules ──

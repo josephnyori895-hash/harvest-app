@@ -14,7 +14,7 @@ function cleanUsername(value) {
   return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32)
 }
 
-async function getConversation(env, me, peer, group) {
+async function getConversation(env, me, peer, group, department) {
   if (group) {
     const slug = String(group).trim().slice(0, 80)
     const g = await query(env, 'SELECT id, slug FROM groups WHERE slug=?', [slug])
@@ -22,6 +22,19 @@ async function getConversation(env, me, peer, group) {
     const membership = await query(env, 'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?', [g.rows[0].id, me.id])
     if (!membership.rows[0] && me.role !== 'admin') return { error: 'group membership required', code: 403 }
     return { kind: 'group', key: `group:${g.rows[0].slug}`, groupId: g.rows[0].id, groupSlug: g.rows[0].slug }
+  }
+
+  // Department team chat — departments work like groups (client's request):
+  // every member of the department can read and write; others get 403.
+  // NOTE: no groupId here — messages.group_id has a FK to groups(id), and
+  // department ids would violate it. The conversation_key scopes everything.
+  if (department) {
+    const slug = String(department).trim().slice(0, 80)
+    const d = await query(env, 'SELECT id, slug FROM departments WHERE slug=?', [slug])
+    if (!d.rows[0]) return { error: 'department not found', code: 404 }
+    const membership = await query(env, 'SELECT 1 FROM department_members WHERE department_id=? AND user_id=?', [d.rows[0].id, me.id])
+    if (!membership.rows[0] && me.role !== 'admin') return { error: 'department membership required', code: 403 }
+    return { kind: 'group', key: `department:${d.rows[0].slug}`, groupSlug: d.rows[0].slug }
   }
 
   const other = cleanUsername(peer)
@@ -54,9 +67,9 @@ export async function handleChat(request, env, ctx) {
   // GET /api/chat/history
   if (path === '/api/chat/history' && method === 'GET') {
     const fresh = await requireMember(env, user)
-    const { peer, group, limit = '50', before } = qp
+    const { peer, group, department, limit = '50', before } = qp
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100)
-    const conv = await getConversation(env, fresh, peer, group)
+    const conv = await getConversation(env, fresh, peer, group, department)
     if (conv.error) return errorResponse(conv.error, conv.code)
     if (before && Number.isNaN(new Date(String(before)).getTime())) return errorResponse('invalid before timestamp', 400)
     const sql = `${messageSelect()} WHERE conversation_key=? ${before ? 'AND created_at < ?' : ''} ORDER BY created_at DESC LIMIT ?`
@@ -68,10 +81,10 @@ export async function handleChat(request, env, ctx) {
   // GET /api/chat/updates — incremental polling (`after` timestamp).
   if (path === '/api/chat/updates' && method === 'GET') {
     const fresh = await requireMember(env, user)
-    const { peer, group, after, limit = '50' } = qp
+    const { peer, group, department, after, limit = '50' } = qp
     const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100)
     if (!after || Number.isNaN(new Date(String(after)).getTime())) return errorResponse('valid after timestamp required', 400)
-    const conv = await getConversation(env, fresh, peer, group)
+    const conv = await getConversation(env, fresh, peer, group, department)
     if (conv.error) return errorResponse(conv.error, conv.code)
     const { rows } = await query(
       env,
@@ -90,7 +103,7 @@ export async function handleChat(request, env, ctx) {
     const mediaType = mediaKey ? (String(body.media_type || 'image').trim().slice(0, 20)) : null
     if (!text && !mediaKey) return errorResponse('message body or media required', 400)
     if (String(body.body || '').length > MAX_MESSAGE_LENGTH) return errorResponse('message too long', 400)
-    const conv = await getConversation(env, fresh, body.peer, body.group)
+    const conv = await getConversation(env, fresh, body.peer, body.group, body.department)
     if (conv.error) return errorResponse(conv.error, conv.code)
     // Reply support: verify the referenced message belongs to this conversation.
     let replyToId = null, replyPreview = null
@@ -165,7 +178,7 @@ export async function handleChat(request, env, ctx) {
   if (path === '/api/chat/seen' && method === 'POST') {
     const fresh = await requireMember(env, user)
     const body = await readJson(request)
-    const conv = await getConversation(env, fresh, body.peer, body.group)
+    const conv = await getConversation(env, fresh, body.peer, body.group, body.department)
     if (conv.error) return errorResponse(conv.error, conv.code)
     await query(env, `UPDATE messages SET status='seen' WHERE conversation_key=? AND sender_username != ? AND status != 'seen'`, [conv.key, fresh.username])
     return jsonResponse({ ok: true })

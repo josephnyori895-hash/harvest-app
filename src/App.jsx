@@ -8,6 +8,7 @@ import Reels from './components/Reels'
 import Search from './components/Search'
 import Chat from './components/Chat'
 import ViewUser from './components/ViewUser'
+import EditProfile from './components/EditProfile'
 import HarvestMap from './components/HarvestMap'
 import Music from './components/Music'
 import Give from './components/Give'
@@ -20,6 +21,12 @@ import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
 import { showToast } from './components/Toast'
 import UploadPill from './components/UploadPill'
+import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
+
+// Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
+// session-expired event so the app can return to login with a clear message,
+// instead of Departments/Groups/Activity/comments failing silently.
+installSessionGuard()
 
 // FIX L icon 404 — ensure default marker loads via CDN
 delete L.Icon.Default.prototype._getIconUrl
@@ -57,7 +64,8 @@ function useDirectory(enabled) {
     if (!enabled) return
     load()
     window.addEventListener('harvest:verified', load)
-    return () => window.removeEventListener('harvest:verified', load)
+    window.addEventListener('harvest:profile-updated', load)
+    return () => { window.removeEventListener('harvest:verified', load); window.removeEventListener('harvest:profile-updated', load) }
   }, [enabled])
   return [users, setUsers]
 }
@@ -87,6 +95,14 @@ function InnerApp() {
     setTab(t)
   }
   const [viewUser, setViewUser] = useState(null)
+  const [backTarget, setBackTarget] = useState('search')
+  // Open someone's profile from wherever we are (feed, reels, stories) and
+  // remember the origin tab so Back returns there — not always Search.
+  const openProfile = (u) => { setBackTarget(tab); setViewUser(u); setTab('viewuser') }
+  const [editProfileKey, setEditProfileKey] = useState(0)
+  const [deptChat, setDeptChat] = useState(null)
+  const [showRegPass, setShowRegPass] = useState(false)
+  const [showLoginPass, setShowLoginPass] = useState(false)
 
   const [users] = useDirectory(onboarded)
 
@@ -116,6 +132,29 @@ function InnerApp() {
     setTab('home')
   }
 
+  // Expired session: log out + tell the user why (members' tokens last 24h).
+  useEffect(() => {
+    const onExpired = () => {
+      localStorage.removeItem('harvest_token')
+      localStorage.removeItem('harvest_username')
+      localStorage.removeItem('harvest_role')
+      localStorage.removeItem('harvest_verified')
+      setOnboarded(false)
+      setTab('home')
+      showToast('Session expired — please sign in again', 'warning', 4000)
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired)
+  }, [])
+
+  // Boot check: a stored-but-invalid token logs out immediately (via the guard).
+  useEffect(() => {
+    if (!onboarded) return
+    const t = localStorage.getItem('harvest_token') || ''
+    if (!t) { setOnboarded(false); return }
+    fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } }).catch(() => {})
+  }, [])
+
   // Android hardware back: pop overlays/tabs; exit only from Home.
   useEffect(() => {
     if (!onboarded) return
@@ -126,35 +165,37 @@ function InnerApp() {
       CapApp.addListener('backButton', () => {
         if (groupDetail) return setGroupDetail(null)
         if (userList) return setUserList(null)
-        if (viewUser) { setViewUser(null); return setTab('search') }
+        if (viewUser) { setViewUser(null); return setTab(backTarget) }
+        if (tab === 'editprofile') return setTab('profile')
         if (tab !== 'home') return setTab('home')
         // departments has no back stack of its own — treat like other tabs
         CapApp.exitApp()
       }).then(s => { sub = s })
     }).catch(() => { /* web build: no hardware back */ })
     return () => { disposed = true; try { sub?.remove?.() } catch {} }
-  }, [onboarded, tab, groupDetail, userList, viewUser])
+  }, [onboarded, tab, groupDetail, userList, viewUser, backTarget])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
     <div className="min-h-screen bg-black flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="w-full bg-black min-h-screen flex flex-col">
+      <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="flex-1 overflow-auto pb-[64px]">
-          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} />}
-          {tab === 'search' && <Search users={users} onView={u => { setViewUser(u); setTab('viewuser') }} />}
-          {tab === 'reels' && <Reels />}
+          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} />}
+          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} />}
+          {tab === 'reels' && <Reels onOpenUser={openProfile} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
-          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} />}
-          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} />}
-          {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab('search')} />}
+          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
+          {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
+          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} deptChat={deptChat} onCloseDept={() => setDeptChat(null)} />}
+          {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
           {tab === 'give' && <Give />}
           {tab === 'map' && <HarvestMap users={users} />}
           {tab === 'groups' && <Groups />}
-          {tab === 'departments' && <Departments />}
+          {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => { setDeptChat({ slug, name }); setTab('chat') }} />}
           {tab === 'admin' && (
             <RequireRole role="admin">
               <Admin onBack={() => setTab('profile')} users={users} setUsers={()=>{}} />
@@ -231,7 +272,7 @@ function Onboarding({ onAuthSuccess }) {
       <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 shrink-0 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center text-[12px] font-extrabold shadow-sm">HF</div>
+            <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-[#FFCD00] shadow-sm" />
             <div className="min-w-0 leading-tight">
               <p className="text-[15px] font-extrabold text-zinc-900 truncate">Harvest Family Church</p>
               <p className="text-[11px] font-bold tracking-wide text-[#7C3AED]">NYERI</p>
@@ -269,7 +310,11 @@ function Onboarding({ onAuthSuccess }) {
             </div>
             <div>
               <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
-              <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <div className="relative">
+                <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showRegPass ? '🙈' : '👁'}</button>
+              </div>
+              <p className="text-[11px] text-zinc-500 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap 👁 to check what you typed.'}</p>
             </div>
             <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
@@ -295,7 +340,10 @@ function Onboarding({ onAuthSuccess }) {
             </div>
             <div>
               <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
-              <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type="password" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <div className="relative">
+                <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showLoginPass ? '🙈' : '👁'}</button>
+              </div>
             </div>
             {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
           </div>
@@ -409,7 +457,7 @@ function Activity() {
 }
 
 // Real profile: everything comes from /api/me + the member directory.
-function Profile({ users, onOpenAdmin, onSignOut }) {
+function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   const { isAdmin, role, username } = useAuth()
   const [me, setMe] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -425,6 +473,11 @@ function Profile({ users, onOpenAdmin, onSignOut }) {
       .catch(() => {})
   }
   useEffect(loadMe, [])
+  // Re-fetch after profile edits (name/photo/group changed in EditProfile).
+  useEffect(() => {
+    window.addEventListener('harvest:profile-updated', loadMe)
+    return () => window.removeEventListener('harvest:profile-updated', loadMe)
+  }, [])
 
   const groups = {}
   users.forEach(u => { const g = u.group_name || u.group || 'Harvest Nyeri'; if (!groups[g]) groups[g] = []; groups[g].push(u) })
@@ -460,13 +513,18 @@ function Profile({ users, onOpenAdmin, onSignOut }) {
 
       <div className="px-4 mt-4 flex gap-4 items-center">
         <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
-          <div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black text-xl">
-            {displayName.split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
-          </div>
+          {me?.avatar_url ? (
+            <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-black" />
+          ) : (
+            <div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black text-xl">
+              {displayName.split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
+            </div>
+          )}
         </div>
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
           <p className="text-zinc-400 text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
+          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-bold text-white active:opacity-70">✏️ Edit profile</button>
         </div>
       </div>
 

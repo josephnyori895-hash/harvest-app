@@ -4,7 +4,7 @@ import { startBackgroundUpload } from '../lib/backgroundUploads'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
-export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[] }) {
+export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpenUser }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[]; onOpenUser?: (u: any) => void }) {
   const s = allStories[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
@@ -102,7 +102,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
     <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={handleTap}>
       <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden relative"><div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} /></div>)}</div>
       <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div></div><div><p className="text-sm font-semibold text-white">{s.name}</p>{users.find((u: any) => u.username === s.name)?.role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{users.find((u: any) => u.username === s.name)?.role || 'member'}</span>}</div></div>
+        <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div></div><div><p className="text-sm font-semibold text-white">{s.name}</p>{users.find((u: any) => u.username === s.name)?.role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{users.find((u: any) => u.username === s.name)?.role || 'member'}</span>}</div></button>
         <div className="flex items-center gap-2">{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="text-xl px-2 text-white">⏸</button>}<button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="text-xl px-2 text-white">✕</button></div>
       </div>
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
@@ -118,7 +118,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [] }: { i
               onEnded={goNext}
               onTimeUpdate={e => { const el = e.currentTarget; if (el.duration > 0) setProgress((el.currentTime / el.duration) * 100) }}
               onError={() => setVideoState('error')}
-              className="w-full h-full object-cover"
+              className={`w-full h-full object-cover ${videoState === 'playing' || videoState === 'blocked' ? '' : 'opacity-0'}`}
             />
             {videoState === 'loading' && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="w-12 h-12 rounded-full border-2 border-white/30 border-t-white animate-spin" /></div>}
             {videoState === 'blocked' && (

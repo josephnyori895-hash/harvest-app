@@ -6,7 +6,7 @@ import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUr
 import { hasCap } from '../lib/capabilities.js'
 const CAP_DELETE = 'delete_media'
 
-const KEY_RE = /^originals\/(post|story|reel|track)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+const KEY_RE = /^originals\/(avatar|post|story|reel|track)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
 
 async function audit(env, actor, action, targetType, targetId, meta = {}) {
   await query(
@@ -45,9 +45,10 @@ export async function handleMedia(request, env, ctx) {
     const body = await readJson(request)
     const { type, contentType, bytes, ext } = body
     if (!type || !contentType) return errorResponse('type and contentType required', 400)
-    // Upload policy: stories are open to every signed-in member (they expire in 24h).
-    // All other media (posts, reels, tracks) requires a verified account or admin.
-    if (type !== 'story' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+    // Upload policy: stories and profile avatars are open to every signed-in
+    // member. All other media (posts, reels, tracks) requires a verified
+    // account or admin.
+    if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
       return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
     }
     try {
@@ -96,6 +97,7 @@ export async function handleMedia(request, env, ctx) {
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
     const { key, type, caption, title, artist, cover_key: coverKeyRaw } = await readJson(request)
     if (!key || !type) return errorResponse('key and type required', 400)
+    if (type === 'avatar') return errorResponse('avatars are attached with PATCH /api/me, not media/confirm', 400)
     if (!KEY_RE.test(key) || !key.startsWith(`originals/${type}/`)) return errorResponse('invalid media key', 400)
 
     const obj = await env.MEDIA.head(key)

@@ -36,6 +36,8 @@ export default function Comments({
   onClose: () => void
 }) {
   const [comments, setComments] = useState<Comment[]>([])
+  const [loadError, setLoadError] = useState('')
+  const [sendError, setSendError] = useState('')
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -49,9 +51,12 @@ export default function Comments({
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
       const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || `Could not load comments (${res.status})`)
       setComments(Array.isArray(data?.comments) ? data.comments : [])
-    } catch {
+      setLoadError('')
+    } catch (e: any) {
       setComments([])
+      setLoadError(e?.message || 'Could not load comments — check your connection')
     } finally {
       setLoading(false)
     }
@@ -80,9 +85,13 @@ export default function Comments({
         setComments(c => [...c, data.comment])
         setText('')
         onCountChange?.(1)
+      } else {
+        setSendError(data?.error || (res.status === 401 ? 'Session expired — sign in again to comment' : `Could not post (${res.status})`))
+        window.dispatchEvent(new CustomEvent('harvest:comment-error', { detail: res.status }))
       }
     } catch {
-      /* network error — keep the draft so nothing is lost */
+      setSendError('Network problem — your draft is kept, try again')
+      /* keep the draft so nothing is lost */
     } finally {
       setSending(false)
     }
@@ -119,6 +128,7 @@ export default function Comments({
               <p className="text-xs text-[#8B8175] mt-1">Be the first to encourage someone.</p>
             </div>
           )}
+          {!loading && loadError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">{loadError}</div>}
           {comments.map(c => (
             <div key={c.id} className="flex gap-2.5">
               <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-[10px] font-extrabold text-[#5B21B6]">
@@ -138,10 +148,11 @@ export default function Comments({
             </div>
           ))}
         </div>
+        {sendError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{sendError}</div>}
         <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]">
           <input
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => { setText(e.target.value); setSendError('') }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
             placeholder="Add a comment…"
             maxLength={1000}
