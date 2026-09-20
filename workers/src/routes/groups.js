@@ -251,10 +251,11 @@ export async function handleGroups(request, env, ctx) {
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
     const actorRole = await myGroupRole(env, g.id, fresh.id)
-    if (fresh.role !== 'admin' && actorRole !== 'admin' && !hasCap(fresh, 'manage_groups')) return errorResponse('group admin required', 403)
+    const canManage = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
+    if (!canManage) return errorResponse('group admin required', 403)
     const body = await readJson(request)
     const uname = String(body.username || '').trim().toLowerCase()
-    const nextRole = canManage && body.role === 'admin' ? 'admin' : 'member'
+    const nextRole = body.role === 'admin' ? 'admin' : 'member'
     if (!uname) return errorResponse('username required', 400)
     const t = await query(env, 'SELECT id, username FROM users WHERE username=? AND active=1', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
