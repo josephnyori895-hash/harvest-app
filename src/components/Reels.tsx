@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
@@ -20,8 +20,7 @@ const fmtViews = (v: any): string => {
 }
 
 export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }: { onOpenUser?: (u: any) => void; sharedReelId?: string; onSharedReelHandled?: () => void }) {
-  const { isAdmin, isVerified } = useAuth()
-  const [showCreate, setShowCreate] = useState(false)
+  const { isAdmin } = useAuth()
   const [idx, setIdx] = useState(0)
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
@@ -81,8 +80,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }, [useServer, reelsLoadKey])
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
+  const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
 
-  const loadMoreReels = async (advanceAfterLoad = false) => {
+  const loadMoreReels = useCallback(async (advanceAfterLoad = false) => {
     if (!useServer || loadingServer || loadingMoreReels || !hasMoreReels) return
     setLoadingMoreReels(true)
     try {
@@ -109,7 +109,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     } finally {
       setLoadingMoreReels(false)
     }
-  }
+  }, [useServer, loadingServer, loadingMoreReels, hasMoreReels, reelsNextOffset, flash])
 
   const allVideos = useMemo(() => [...serverReels], [serverReels])
   useEffect(() => {
@@ -160,7 +160,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [allVideos.length, hasMoreReels, loadingMoreReels, loadingServer])
+  }, [allVideos.length, next, prev])
   useEffect(() => { if (idx >= allVideos.length) setIdx(0) }, [idx, allVideos.length])
   // Generate a first-frame poster when an uploaded reel has no server thumbnail.
   useEffect(() => {
@@ -177,15 +177,15 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     return () => { active = false }
   }, [cur?.video, cur?.img])
 
-  const next = () => {
+  const next = useCallback(() => {
     setIdx(i => {
       const nextIdx = i + 1
       if (nextIdx < allVideos.length) return nextIdx
       if (hasMoreReels) void loadMoreReels(true)
       return allVideos.length > 0 ? i : 0
     })
-  }
-  const prev = () => setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
+  }, [allVideos.length, hasMoreReels, loadMoreReels])
+  const prev = useCallback(() => setIdx(i => (i - 1 + allVideos.length) % allVideos.length), [allVideos.length])
   // Mobile: swipe up/down to move between reels (IG-style).
   const touchY = useRef<number | null>(null)
   const onTouchStart = (e: React.TouchEvent) => { touchY.current = e.touches[0]?.clientY ?? null }
@@ -197,7 +197,6 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
-  const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
   const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const url = cur.id != null ? `${window.location.origin}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : window.location.href; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
   const shareWa = () => { if (!cur) return; sharePostToWhatsApp({ author: cur.user, caption: cur.cap, id: cur.id != null ? String(cur.id) : undefined, kind: 'reel' }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
