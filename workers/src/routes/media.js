@@ -232,8 +232,8 @@ export async function handleMedia(request, env, ctx) {
     const id = uuid()
     await query(
       env,
-      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, music_track_id, status) VALUES (?,?,?,?,?,?,'pending')`,
-      [id, type, userId, caption || '', key, musicTrackId || null],
+      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, poster_key, music_track_id, status) VALUES (?,?,?,?,?,?,?,'pending')`,
+      [id, type, userId, caption || '', key, type === 'reel' ? (coverKeyRaw || null) : null, musicTrackId || null],
     )
     return jsonResponse({ id, status: 'pending', at: now }, 202)
   }
