@@ -5,6 +5,7 @@ import StoryViewer from './Stories'
 import Comments from './Comments'
 import { showToast } from './Toast'
 import { sharePostToWhatsApp, shareStoryToWhatsApp } from '../lib/whatsappShare'
+import SocialEditor from './SocialEditor'
 
 function timeAgo(iso?: string) {
   if (!iso) return 'Just now'
@@ -39,6 +40,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const startYRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [approvedTick, setApprovedTick] = useState(0)
+  const [editPost, setEditPost] = useState<any | null>(null)
   const [menuPost, setMenuPost] = useState<{ key: string; kind: 'post' | 'reel'; id: string; user: string; caption: string; mine: boolean } | null>(null)
   // Admin-editable home content (hero banner + weekly verse). Falls back to
   // the shipped defaults when the fetch fails or values are not set.
@@ -136,6 +138,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     video: p.kind === 'reel' ? (p.hls_url || undefined) : undefined,
     caption: p.caption || '',
     kind: p.is_pinned ? 'Pinned' : p.kind === 'reel' ? 'Video' : 'Community',
+    music: p.music || null,
   })), [livePosts])
 
   // Viewer list: live stories ONLY. The 'Your moment' composer placeholder must
@@ -233,7 +236,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   ? (p.img
       ? <div className="relative"><img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /><span className="absolute inset-0 flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span></div>
       : <video src={p.video} controls playsInline preload="metadata" className="w-full aspect-[4/3] object-cover bg-[#1a1714] shadow-inner" />)
-  : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button><button onClick={() => sharePostToWhatsApp({ author: p.user, caption: p.caption })} className="px-3 py-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/40 text-xs font-extrabold text-[#128C4A]" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗ Share on WhatsApp</button></div>{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
+  : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button><button onClick={() => sharePostToWhatsApp({ author: p.user, caption: p.caption })} className="px-3 py-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/40 text-xs font-extrabold text-[#128C4A]" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗ Share on WhatsApp</button></div>{p.music && <div className="mt-3 flex items-center gap-2 rounded-xl bg-purple-50 p-2"><span>🎵</span><span className="text-[11px] font-bold truncate">{p.music.title} · {p.music.artist}</span></div>}{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
 
       <section className="mt-7 grid grid-cols-2 gap-3">{quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}</section>
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
@@ -242,12 +245,12 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
         <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
           <div className="w-10 h-1 rounded-full bg-[#E8DEC9] mx-auto my-2" />
-          {menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="w-full py-3.5 text-center text-red-600 font-bold border-b border-[#F4E8D0] active:bg-red-50">🗑 Delete</button> : null}
+          {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="w-full py-3.5 text-center font-bold border-b border-[#F4E8D0] active:bg-[#FAF6EC]">✎ Edit</button> : null}{menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="w-full py-3.5 text-center text-red-600 font-bold border-b border-[#F4E8D0] active:bg-red-50">🗑 Delete</button> : null}
           <button onClick={() => { const m = menuPost; setMenuPost(null); sharePostToWhatsApp({ author: m.user, caption: m.caption }) }} className="w-full py-3.5 text-center text-[#128C4A] font-bold border-b border-[#F4E8D0] active:bg-green-50">↗ Share to WhatsApp</button>
           <button onClick={() => setMenuPost(null)} className="w-full py-3.5 text-center font-bold text-[#766E63] active:bg-[#FAF6EC]">Cancel</button>
         </div>
       </div>
     )}
-    {refreshing && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#29251F] text-white text-xs font-bold shadow-xl">Refreshing community…</div>}
+    {editPost && <SocialEditor kind={editPost.kind} id={editPost.id} caption={editPost.caption || ''} onDone={() => { setEditPost(null); setFeedTick(x => x + 1) }} />} {refreshing && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#29251F] text-white text-xs font-bold shadow-xl">Refreshing community…</div>}
   </div>
 }
