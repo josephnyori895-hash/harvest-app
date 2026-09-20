@@ -40,21 +40,31 @@ async function apiJson(path: string, init: RequestInit = {}) {
 }
 
 export async function presign(params: { type: 'post'|'story'|'reel'|'track', contentType: string, bytes: number, ext?: string }) {
-  return apiJson('/api/media/presign', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{url:string,fields:Record<string,string>,key:string,expiresAt:string}>
+  return apiJson('/api/media/presign', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{url:string,fields:Record<string,string>,key:string,expiresAt:string,method?:'PUT'|'POST'}>
 }
 
 export async function uploadToMinio(url:string, fields:Record<string,string>, file:File) {
+  const absolute = /^https?:\/\//.test(url)
+  const target = absolute ? url : `${BASE}${url}`
+  if (absolute) {
+    // Direct R2 uploads use a presigned PUT. Every signed header must be sent
+    // exactly as returned by the API; do not attach the Harvest bearer token.
+    const r = await fetch(target, {
+      method: 'PUT',
+      body: file,
+      headers: { ...fields, 'Content-Length': String(file.size) },
+    })
+    if (!r.ok) throw new Error(`Media upload failed (${r.status})`)
+    return
+  }
+  // Proxy fallback is authenticated and uses multipart/form-data.
   const fd = new FormData()
   Object.entries(fields).forEach(([k,v]) => fd.append(k, v))
   fd.append('file', file)
-  // Presigned targets are absolute (R2); the proxy fallback returns an API-relative path.
-  // The proxy route requires the bearer token; direct R2 posts must stay header-free.
-  const absolute = /^https?:\/\//.test(url)
-  const target = absolute ? url : `${BASE}${url}`
   const r = await fetch(target, {
     method: 'POST',
     body: fd,
-    headers: absolute ? undefined : { ...authHeader() },
+    headers: { ...authHeader() },
   })
   if (!r.ok) throw new Error(`Media upload failed (${r.status})`)
 }
