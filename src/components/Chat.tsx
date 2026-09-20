@@ -193,9 +193,19 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
   useEffect(() => {
     void ensureNotificationChannel()
-    void refreshInbox(); void syncPresence()
-    const t = window.setInterval(() => { void refreshInbox(); void syncPresence() }, 30000)
-    return () => window.clearInterval(t)
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshInbox()
+        void syncPresence()
+      }
+    }
+    refreshVisible()
+    const t = window.setInterval(refreshVisible, 30000)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
   }, [refreshInbox, syncPresence])
 
   const markSeen = useCallback(async () => {
@@ -253,9 +263,16 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
   useEffect(() => {
     if (!active && !team) return
-    void loadConversation()
-    const t = window.setInterval(() => void refreshUpdates(), 2500)
-    return () => window.clearInterval(t)
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') void refreshUpdates()
+    }
+    if (document.visibilityState === 'visible') void loadConversation()
+    const t = window.setInterval(refreshVisible, 2500)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
   }, [active?.username, team?.kind, team?.slug, loadConversation, refreshUpdates])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
@@ -743,9 +760,17 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
       } catch { /* offline */ }
       if (live) setTeams(out)
     }
-    void refresh()
-    const timer = window.setInterval(refresh, 3000)
-    return () => { live = false; window.clearInterval(timer) }
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    refreshVisible()
+    const timer = window.setInterval(refreshVisible, 3000)
+    document.addEventListener('visibilitychange', refreshVisible)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshVisible)
+    }
   }, [])
   if (teams.length === 0) return null
   return (
