@@ -671,7 +671,8 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
               <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
               {Number(t.unread) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-black shadow-sm">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
             </div>
-            <p className="text-[11px] text-zinc-400 mt-1 truncate">{t.name}</p>
+            <p className="text-[11px] text-zinc-200 mt-1 truncate">{t.name}</p>
+            <p className="text-[9px] uppercase tracking-wide text-zinc-600">{t.kind === 'department' ? 'Department' : 'Group'}</p>
           </button>
         ))}
       </div>
