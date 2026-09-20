@@ -194,9 +194,9 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   }
 
   const GroupRow = ({ g }: { g: any }) => (
-    <button onClick={() => openDetail(g.slug)} className="w-full text-left p-4 rounded-2xl bg-zinc-900 border border-zinc-800 active:opacity-70">
+    <div className="w-full p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+        <button type="button" onClick={() => openDetail(g.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
           <p className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
             {g.name}
             {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">ADMIN</span>}
@@ -204,14 +204,21 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           </p>
           {g.description && <p className="text-[11px] text-zinc-400 mt-0.5">{g.description}</p>}
           <p className="text-[10px] text-zinc-500 mt-1">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
+        </button>
+        <div className="shrink-0 flex items-center gap-2">
+          {g.joined && onOpenChat && (
+            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+              💬 Chat
+            </button>
+          )}
+          {g.joined
+            ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-zinc-700 bg-zinc-800 text-zinc-300 ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
+            : g.my_request === 'pending'
+              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-amber-400/20 text-amber-400 border border-amber-400/40">⏳ Requested</span>
+              : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
         </div>
-        {g.joined
-          ? <span onClick={e => { e.stopPropagation(); void leave(g.slug) }} role="button" className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-zinc-700 bg-zinc-800 text-zinc-300 ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</span>
-          : g.my_request === 'pending'
-            ? <span onClick={e => e.stopPropagation()} role="button" className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-amber-400/20 text-amber-400 border border-amber-400/40">⏳ Requested</span>
-            : <span onClick={e => { e.stopPropagation(); void join(g.slug) }} role="button" className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</span>}
       </div>
-    </button>
+    </div>
   )
 
   if (openSlug) {
