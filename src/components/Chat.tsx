@@ -657,6 +657,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                     </div>
                   </button>
                   <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-zinc-500 hover:text-amber-300 hover:bg-zinc-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
+                </div>
               )
             })}
           </section>
