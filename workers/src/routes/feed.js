@@ -50,7 +50,13 @@ export async function handleFeed(request, env, ctx) {
          FROM reels r JOIN users u ON u.id = r.user_id
         WHERE r.approved_at IS NOT NULL`,
     )
-    const items = [...posts.rows, ...reels.rows].map(r => bool(r, 'verified', 'is_pinned'))
+    const items = await Promise.all([...posts.rows, ...reels.rows].map(async r => {
+      const normalized = bool(r, 'verified', 'is_pinned')
+      const liked = user?.id
+        ? Boolean((await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [user.id, r.kind, r.id])).rows[0])
+        : false
+      return { ...normalized, liked }
+    }))
     const maxEngRaw = Math.max(...items.map(i => Math.log(1 + (i.likes || 0) + (i.comments || 0) * 3)), 0)
     const ranked = items
       .map(i => ({ ...i, rank_score: scoreOne(i, viewer, maxEngRaw) }))
