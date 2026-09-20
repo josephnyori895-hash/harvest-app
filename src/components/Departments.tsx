@@ -224,6 +224,8 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   )
 
   if (openSlug) {
+    const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
+    const canManage = isAdmin || isDepartmentLeader
     return (
       <div className="bg-black text-white min-h-[70vh] pb-8">
         <div className="flex items-center gap-3 h-14 border-b border-zinc-800 px-3 sticky top-0 bg-black z-10">
@@ -233,7 +235,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
         </div>
         {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
-            {editing && isAdmin ? (
+            {editing && canManage ?
               <div className="p-3 rounded-xl bg-zinc-900 border border-amber-500/40 mb-3">
                 <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — EDIT DEPARTMENT</p>
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
@@ -261,7 +263,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                 )}
               </>
             )}
-            {isAdmin && (
+            {canManage && (
               <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 mb-3">
                 <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — ADD MEMBER</p>
                 <div className="flex gap-2">
@@ -278,7 +280,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                   <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
                   <p className="text-[11px] text-zinc-500 truncate">@{u.username} · {u.group_name || 'Harvest'}</p>
                 </div>
-                {isAdmin && u.username !== viewerName && (
+                {canManage && u.username !== viewerName && (
                   <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="shrink-0 px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold">Remove</button>
                 )}
               </div>
