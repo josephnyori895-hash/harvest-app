@@ -128,11 +128,16 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     const target = allVideos.findIndex((r: Reel) => String(r.id) === String(sharedReelId))
     if (target >= 0) {
       setIdx(target)
-    } else {
+      onSharedReelHandled?.()
+    } else if (hasMoreReels && !loadingMoreReels) {
+      // A shared reel can be beyond the first page. Keep the navigation intent
+      // alive while paging until the target is found.
+      void loadMoreReels(false)
+    } else if (!hasMoreReels && !loadingMoreReels) {
       setNotice('That shared reel is no longer available.')
+      onSharedReelHandled?.()
     }
-    onSharedReelHandled?.()
-  }, [sharedReelId, loadingServer, reelsLoadFailed, allVideos, onSharedReelHandled])
+  }, [sharedReelId, loadingServer, reelsLoadFailed, allVideos, hasMoreReels, loadingMoreReels, loadMoreReels, onSharedReelHandled])
   // Empty feed guard: allVideos[idx] is undefined before any reels are approved,
   // which previously crashed this screen with "Cannot read properties of undefined".
   const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
