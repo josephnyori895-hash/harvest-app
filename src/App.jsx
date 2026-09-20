@@ -276,6 +276,7 @@ function InnerApp() {
                 setUsers={()=>{}}
                 onOpenGroups={() => setTab('groups')}
                 onOpenDepartments={() => setTab('departments')}
+                onOpenSermons={() => setTab('sermons')}
               />
             </RequireRole>
           )}
