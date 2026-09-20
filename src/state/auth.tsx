@@ -28,8 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setVerified = useCallback((v: boolean) => { setVerifiedState(v); localStorage.setItem(LS_VERIFIED, String(v)) }, [])
 
   const setUsername = useCallback((u: string) => {
-    const prev = localStorage.getItem(LS_USERNAME) || ''
-    const curTok = localStorage.getItem('harvest_token') || ''
     if (prev && curTok) localStorage.setItem(`harvest_token_${prev}`, curTok)
     setUsernameState(u)
     if (!u) { localStorage.removeItem(LS_USERNAME); return }
@@ -58,6 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole('guest')
     localStorage.removeItem('harvest_token')
     localStorage.removeItem(LS_USERNAME)
+    localStorage.removeItem('harvest_msgs')
+    localStorage.removeItem('harvest_pinned_chats')
     localStorage.setItem(LS_ROLE, 'guest')
   }, [setRole, setVerified])
 
