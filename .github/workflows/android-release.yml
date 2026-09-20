@@ -165,6 +165,24 @@ jobs:
         run: |
           set -euo pipefail
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
+          HEADER_FILE="$(mktemp)"
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$HEADER_FILE" "$BODY_FILE"' EXIT
+
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 \
+            -D "$HEADER_FILE" -o "$BODY_FILE" "$PERMANENT_URL"
+
+          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r')"
+          REDIRECT_LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^Location:/ {sub(/^Location:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
+          CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
+
+          echo "PERMANENT STATUS:   $STATUS_LINE"
+          echo "PERMANENT LOCATION: $REDIRECT_LOCATION"
+          echo "PERMANENT CACHE:    $CACHE_CONTROL"
+          test "$STATUS_LINE" = "HTTP/2 302" || test "$STATUS_LINE" = "HTTP/1.1 302 Found"
+          test "$REDIRECT_LOCATION" = "$APK_BASE_URL/$APK_FILENAME"
+          test "$CACHE_CONTROL" = "no-store, max-age=0"
+
           LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
           echo "LOCAL SHA256:          $LOCAL_SHA"
           echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
