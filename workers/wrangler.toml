@@ -25,12 +25,6 @@ bindings = [{ name = "REALTIME", class_name = "Realtime" }]
 tag = "v1"
 new_sqlite_classes = ["Realtime"]
 
-# Explicit production migrations are run with: npm run db:migrate
-# Keep production deployment from silently targeting a developer workers.dev hostname.
-[env.production]
-name = "harvestfamily-api"
-workers_dev = false
-
 # Stories expiry + orphan cleanup + attempt-table GC (Netlify cleanup.js equivalent)
 [triggers]
 crons = ["*/10 * * * *"]
