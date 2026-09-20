@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
@@ -32,6 +32,10 @@ export default function PostCreate({ onDone }: Props) {
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [scripture, setScripture] = useState('')
+  const [musicTrack, setMusicTrack] = useState<any | null>(null)
+  const [musicResults, setMusicResults] = useState<any[]>([])
+  const [musicQuery, setMusicQuery] = useState('')
+  const [musicOpen, setMusicOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -39,6 +43,7 @@ export default function PostCreate({ onDone }: Props) {
   const [adjusting, setAdjusting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
+  useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
 
   const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,audio/mpeg,.mp4,video/mp4' : 'image/*,video/*'
   const needsFile = type !== 'announcement'
@@ -105,6 +110,7 @@ export default function PostCreate({ onDone }: Props) {
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
             speaker: type === 'sermon' ? artist.trim() || undefined : undefined,
             scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
+            music_track_id: ['post','video','story'].includes(type) ? musicTrack?.id : undefined,
             description: type === 'sermon' ? caption.trim() : undefined,
           },
         }).catch(() => {})
@@ -131,7 +137,7 @@ export default function PostCreate({ onDone }: Props) {
             <p className="text-xs font-bold text-[#766E63] mb-3">WHAT ARE YOU SHARING?</p>
             <div className="grid grid-cols-2 gap-2">
               {available.map(item => (
-                <button key={item} onClick={() => { setType(item); setFile(null); setPreviewUrl(null); setNotice('') }} className={`text-left p-3 rounded-2xl border ${type === item ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>
+                <button key={item} onClick={() => { setType(item); setFile(null); setPreviewUrl(null); setMusicTrack(null); setNotice('') }} className={`text-left p-3 rounded-2xl border ${type === item ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>
                   <span className="block text-sm font-bold">{labels[item]}</span>
                   <span className="block text-[11px] text-[#766E63] mt-1">{hints[item]}</span>
                 </button>
@@ -185,6 +191,11 @@ export default function PostCreate({ onDone }: Props) {
           )}
           {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
           {type === 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Short description (optional) — what is this teaching about?" className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
+          {['post','video','story'].includes(type) && <div className="mt-4 pt-4 border-t border-[#E8DEC9]">
+            <div className="flex items-center justify-between"><label className="text-xs font-bold text-[#766E63]">ADD MUSIC (OPTIONAL)</label><button onClick={() => setMusicOpen(v => !v)} className="text-xs font-bold text-[#7C3AED]">{musicOpen ? 'Close' : 'Choose'}</button></div>
+            {musicTrack && <div className="mt-2 flex items-center gap-3 p-2 rounded-2xl bg-[#F3E8FF]"><div className="w-10 h-10 rounded-xl bg-[#EDE9FE] flex items-center justify-center">🎵</div><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{musicTrack.title}</p><p className="text-[11px] text-[#766E63] truncate">{musicTrack.artist}</p></div><button onClick={() => setMusicTrack(null)} className="text-xs font-bold">×</button></div>}
+            {musicOpen && <div className="mt-2"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} placeholder="Search worship music..." className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm" /> <div className="mt-2 max-h-40 overflow-auto space-y-1">{musicResults.map((m:any) => <button key={m.id} onClick={() => { setMusicTrack(m); setMusicOpen(false) }} className="w-full text-left p-3 rounded-xl bg-[#FFFBF0] border border-[#E8DEC9]"><p className="text-xs font-bold">{m.title}</p><p className="text-[11px] text-[#766E63]">{m.artist}</p></button>)}</div></div>}
+          </div>}
           {!isAdmin && !isVerified && <p className="text-[11px] text-[#766E63] mt-2">Members can share stories. Verification unlocks posts, videos, music and sermons.</p>}
           {!isAdmin && isVerified && <p className="text-[11px] text-[#766E63] mt-2">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
         </div>
