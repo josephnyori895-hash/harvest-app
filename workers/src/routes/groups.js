@@ -12,7 +12,7 @@ function slugify(name) {
 }
 
 async function getGroup(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, lat, lng, location_label, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
 
@@ -53,7 +53,7 @@ export async function handleGroups(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const { rows } = await query(
       env,
-      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
+      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.invite_token, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
          FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
         GROUP BY g.id ORDER BY g.community ASC, g.name ASC`,
     )
@@ -227,7 +227,8 @@ export async function handleGroups(request, env, ctx) {
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
     const actorRole = await myGroupRole(env, g.id, fresh.id)
-    if (fresh.role !== 'admin' && actorRole !== 'admin' && !hasCap(fresh, 'manage_groups')) return errorResponse('group admin required', 403)
+    const canManage = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
+    if (!canManage && !g.allow_member_add) return errorResponse('only group admins can add members', 403)
     const body = await readJson(request)
     const uname = String(body.username || '').trim().toLowerCase()
     const role = body.role === 'admin' ? 'admin' : 'member'
@@ -253,7 +254,7 @@ export async function handleGroups(request, env, ctx) {
     if (fresh.role !== 'admin' && actorRole !== 'admin' && !hasCap(fresh, 'manage_groups')) return errorResponse('group admin required', 403)
     const body = await readJson(request)
     const uname = String(body.username || '').trim().toLowerCase()
-    const nextRole = body.role === 'admin' ? 'admin' : 'member'
+    const nextRole = canManage && body.role === 'admin' ? 'admin' : 'member'
     if (!uname) return errorResponse('username required', 400)
     const t = await query(env, 'SELECT id, username FROM users WHERE username=? AND active=1', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
@@ -291,16 +292,15 @@ export async function handleGroups(request, env, ctx) {
     return jsonResponse({ ok: true, removed: uname })
   }
 
-  // PATCH /api/groups/:slug — group settings (WhatsApp-style), system admin only:
-  // name, description, community, invite-only ("add-only") toggle, and the
-  // location link used for automatic member assignment at registration.
+  // PATCH /api/groups/:slug/settings — WhatsApp-style group settings.
   if (sub === 'settings' && method === 'PATCH') {
     const fresh = await requireMember(env, user)
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
     const actorRole = await myGroupRole(env, g.id, fresh.id)
-    const canManageSettings = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
-    if (!canManageSettings) return errorResponse('group admin required', 403)
+    const isAdmin = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
+    if (!isAdmin) return errorResponse('group admin required', 403)
+
     const body = await readJson(request)
     const sets = [], vals = []
     if (body.name !== undefined) {
@@ -308,28 +308,71 @@ export async function handleGroups(request, env, ctx) {
       if (name.length < 2) return errorResponse('group name required', 400)
       sets.push('name=?'); vals.push(name)
     }
-    if (body.description !== undefined) { sets.push('description=?'); vals.push(String(body.description).trim().slice(0, 300)) }
-    if (body.community !== undefined) { sets.push('community=?'); vals.push(String(body.community).trim().slice(0, 80)) }
-    if (body.invite_only !== undefined) { sets.push('invite_only=?'); vals.push(body.invite_only ? 1 : 0) }
-    if (body.location !== undefined) {
-      // null clears the location; valid coordinates set it.
-      if (body.location === null) {
-        sets.push('lat = NULL', 'lng = NULL', "location_label = ''")
-      } else {
-        const la = Number(body.location.lat), ln = Number(body.location.lng)
-        if (Number.isFinite(la) && Number.isFinite(ln) && la >= -90 && la <= 90 && ln >= -180 && ln <= 180) {
-          sets.push('lat=?', 'lng=?', 'location_label=?'); vals.push(la, ln, String(body.location.label || '').trim().slice(0, 120))
-        } else {
-          return errorResponse('location must be { lat: -90..90, lng: -180..180, label } or null', 400)
-        }
+    if (body.description !== undefined) {
+      sets.push('description=?'); vals.push(String(body.description).trim().slice(0, 300))
+    }
+    if (body.community !== undefined) {
+      sets.push('community=?'); vals.push(String(body.community).trim().slice(0, 80))
+    }
+    if (body.invite_only !== undefined) {
+      sets.push('invite_only=?'); vals.push(body.invite_only ? 1 : 0)
+    }
+    const boolFields = [
+      ['allow_member_edit_info', 'allow_member_edit_info'],
+      ['allow_member_send', 'allow_member_send'],
+      ['allow_member_add', 'allow_member_add'],
+      ['allow_member_invite', 'allow_member_invite'],
+      ['approve_new_members', 'approve_new_members'],
+      ['send_message_history', 'send_message_history'],
+    ]
+    for (const [input, column] of boolFields) {
+      if (body[input] !== undefined) {
+        sets.push(column + '=?')
+        vals.push(body[input] ? 1 : 0)
       }
     }
     if (!sets.length) return errorResponse('nothing to update', 400)
     vals.push(g.id)
     await query(env, `UPDATE groups SET ${sets.join(', ')} WHERE id=?`, vals)
     await audit(env, fresh, 'group_settings_updated', g.id, { slug: g.slug, changes: Object.keys(body) })
-    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, lat, lng, location_label FROM groups WHERE id=?', [g.id])
+    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label FROM groups WHERE id=?', [g.id])
     return jsonResponse({ ok: true, group: updated.rows[0] })
+  }
+
+  // POST /api/groups/:slug/invite-link — create/reset a group invite token.
+  if (sub === 'invite-link' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const g = await getGroup(env, slug)
+    if (!g) return errorResponse('group not found', 404)
+    const actorRole = await myGroupRole(env, g.id, fresh.id)
+    const canManage = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
+    if (!canManage && !g.allow_member_invite) return errorResponse('only group admins can create invite links', 403)
+    const token = crypto.randomUUID().replace(/-/g, '')
+    await query(env, 'UPDATE groups SET invite_token=? WHERE id=?', [token, g.id])
+    return jsonResponse({ ok: true, token, invite_path: `/groups/invite/${token}`, reset: true })
+  }
+
+  // GET /api/groups/invite/:token — resolve an invite token.
+  if (path.match(/^\/api\/groups\/invite\/[^/]+$/) && method === 'GET') {
+    const token = decodeURIComponent(path.split('/').pop() || '')
+    const r = await query(env, 'SELECT id, slug, name, description, community, member_count FROM (SELECT g.id, g.slug, g.name, g.description, g.community, COUNT(gm.user_id) AS member_count FROM groups g LEFT JOIN group_members gm ON gm.group_id=g.id WHERE g.invite_token=? GROUP BY g.id)', [token])
+    if (!r.rows[0]) return errorResponse('invite link is invalid or expired', 404)
+    return jsonResponse({ group: r.rows[0] })
+  }
+
+  // POST /api/groups/invite/:token/join — join through an invite link.
+  if (path.match(/^\/api\/groups\/invite\/[^/]+\/join$/) && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const token = decodeURIComponent(path.split('/')[4] || '')
+    const r = await query(env, 'SELECT id, invite_only, approve_new_members FROM groups WHERE invite_token=?', [token])
+    if (!r.rows[0]) return errorResponse('invite link is invalid or expired', 404)
+    if (r.rows[0].invite_only) return errorResponse('this group requires an admin to add members', 403)
+    if (r.rows[0].approve_new_members) {
+      await query(env, 'INSERT INTO group_invites (id, group_id, invited_username, invited_user_id, inviter_id, status, created_at) VALUES (?,?,?,?,?,\'pending\',?)', [uuid(), r.rows[0].id, fresh.username, fresh.id, fresh.id, new Date().toISOString()])
+      return jsonResponse({ ok: true, status: 'pending' }, 201)
+    }
+    await query(env, 'INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'member') ON CONFLICT DO NOTHING', [r.rows[0].id, fresh.id])
+    return jsonResponse({ ok: true, status: 'joined' }, 201)
   }
 
   // DELETE /api/groups/:slug — system admin, or "manage_communities" leader.
