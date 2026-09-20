@@ -43,7 +43,7 @@ function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string;
     {!ready && !failed && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-[#F4E8D0] via-[#EDE9FE] to-[#F4E8D0]" aria-label="Loading video preview" />}
     {poster && !failed && <img src={poster} alt={alt} decoding="async" fetchPriority="high" className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`} />}
     {failed && <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
-    <video src={src} poster={poster || undefined} controls playsInline preload="auto" className={`absolute inset-0 w-full h-full object-cover bg-[#1a1714] shadow-inner transition-opacity duration-200 ${ready || !poster ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-label="Video" />
+    <video src={src} poster={poster || undefined} controls playsInline preload={poster ? "metadata" : "auto"} className={`absolute inset-0 w-full h-full object-cover bg-[#1a1714] shadow-inner transition-opacity duration-200 ${ready || !poster ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-label="Video" />
     {poster && ready && <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>}
   </div>
 }
