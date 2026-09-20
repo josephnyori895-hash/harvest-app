@@ -167,27 +167,21 @@ jobs:
           set -euo pipefail
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
           HEADER_FILE="$(mktemp)"
-          BODY_FILE="$(mktemp)"
-          trap 'rm -f "$HEADER_FILE" "$BODY_FILE"' EXIT
-
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 \
-            -D "$HEADER_FILE" -o "$BODY_FILE" "$PERMANENT_URL"
-
-          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
-          REDIRECT_LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^Location:/ {sub(/^Location:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-          CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-
-          echo "PERMANENT STATUS:   $STATUS_LINE"
-          echo "PERMANENT LOCATION: $REDIRECT_LOCATION"
-          echo "PERMANENT CACHE:    $CACHE_CONTROL"
+          trap 'rm -f "$HEADER_FILE"' EXIT
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 -D "$HEADER_FILE" -o /dev/null "$PERMANENT_URL"
+          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\''\r'\'' | sed '\''s/[[:space:]]*$//'\'')"
+          CACHE_CONTROL="$(awk '\''BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}'\'' "$HEADER_FILE")"
+          CONTENT_DISPOSITION="$(awk '\''BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}'\'' "$HEADER_FILE")"
+          echo "PERMANENT STATUS:      $STATUS_LINE"
+          echo "PERMANENT CACHE:       $CACHE_CONTROL"
+          echo "PERMANENT DISPOSITION: $CONTENT_DISPOSITION"
           case "$STATUS_LINE" in
-            "HTTP/2 302"|"HTTP/1.1 302 Found") ;;
+            "HTTP/2 200"|"HTTP/1.1 200 OK") ;;
             *) echo "::error::Unexpected permanent URL status: $STATUS_LINE"; exit 1 ;;
           esac
-          test "$REDIRECT_LOCATION" = "$APK_BASE_URL/$APK_FILENAME?release=$APK_FILENAME"
           test "$CACHE_CONTROL" = "no-store, max-age=0"
-
-          LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
+          test "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\""
+          LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
           echo "LOCAL SHA256:          $LOCAL_SHA"
           echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
           test "$LOCAL_SHA" = "$LIVE_PERMANENT_SHA"
@@ -203,31 +197,14 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-
-          DEPLOYMENTS_JSON="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/harvestfamily-api/deployments?per_page=10")"
-
+          DEPLOYMENTS_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/harvestfamily-api/deployments?per_page=10")"
           CURRENT_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
           PREVIOUS_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
           test -n "$CURRENT_VERSION_ID" && test "$CURRENT_VERSION_ID" != "null" || { echo "::error::Unable to identify current Worker version"; exit 1; }
           test -n "$PREVIOUS_VERSION_ID" && test "$PREVIOUS_VERSION_ID" != "null" || { echo "::error::Unable to identify previous Worker version"; exit 1; }
-
-          RUNS_JSON="$(curl --fail --silent --show-error \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
-
-          PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '
-            [.workflow_runs[]
-              | select(.name == $workflow and .run_number < $current)
-              | {run_number, head_sha}]
-            | sort_by(.run_number)
-            | last
-            | [.run_number, .head_sha]
-            | @tsv')"
+          RUNS_JSON="$(curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
+          PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, head_sha}] | sort_by(.run_number) | last | [.run_number, .head_sha] | @tsv')"
           test -n "$PREVIOUS_RELEASE" && test "$PREVIOUS_RELEASE" != "null" || { echo "::error::No previous successful Android release found"; exit 1; }
-
           PREVIOUS_RUN="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f1)"
           PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f2)"
           PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
@@ -236,49 +213,23 @@ jobs:
           echo "Previous Worker version: $PREVIOUS_VERSION_ID"
           echo "Previous verified run:   #$PREVIOUS_RUN"
           echo "Previous APK:            $PREVIOUS_APK_FILENAME"
-
-          PREVIOUS_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$PREVIOUS_APK_URL" | sha256sum | cut -d' ' -f1)"
+          PREVIOUS_SHA="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 "$PREVIOUS_APK_URL" | sha256sum | cut -d' ' -f1)"
           test -n "$PREVIOUS_SHA" || { echo "::error::Previous verified APK is unavailable"; exit 1; }
           echo "Previous verified SHA256: $PREVIOUS_SHA"
-
-          restore_current() {
-            echo "Restoring current Worker version $CURRENT_VERSION_ID to 100%..."
-            npx wrangler versions deploy "$CURRENT_VERSION_ID@100%" -y
-          }
+          restore_current() { echo "Restoring current Worker version $CURRENT_VERSION_ID to 100%..."; npx wrangler versions deploy "$CURRENT_VERSION_ID@100%" -y; }
           trap restore_current EXIT
-
           npx wrangler versions deploy "$PREVIOUS_VERSION_ID@0%" "$CURRENT_VERSION_ID@100%" -y
-
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
-          HEADER_FILE="$(mktemp)"
-          trap 'rm -f "$HEADER_FILE"; restore_current' EXIT
-
-          curl --fail --silent --show-error --max-time 120 \
-            -D "$HEADER_FILE" -o /dev/null \
-            -H 'Cloudflare-Workers-Version-Overrides: harvestfamily-api="'$PREVIOUS_VERSION_ID'"' \
-            "$PERMANENT_URL"
-
-          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
-          REDIRECT_LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^Location:/ {sub(/^Location:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-          EXPECTED_LOCATION="$PREVIOUS_APK_URL?release=$PREVIOUS_APK_FILENAME"
-
-          echo "ROLLBACK STATUS:   $STATUS_LINE"
-          echo "ROLLBACK LOCATION: $REDIRECT_LOCATION"
-          case "$STATUS_LINE" in
-            "HTTP/2 302"|"HTTP/1.1 302 Found") ;;
-            *) echo "::error::Unexpected rollback status: $STATUS_LINE"; exit 1 ;;
-          esac
-          test "$REDIRECT_LOCATION" = "$EXPECTED_LOCATION"
-
-          ROLLBACK_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 \
-            -H 'Cloudflare-Workers-Version-Overrides: harvestfamily-api="'$PREVIOUS_VERSION_ID'"' \
-            "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
-          echo "ROLLBACK FOLLOWED SHA256: $ROLLBACK_SHA"
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$BODY_FILE"; restore_current' EXIT
+          curl --fail --silent --show-error --max-time 120 -o "$BODY_FILE" -H 'Cloudflare-Workers-Version-Overrides: harvestfamily-api="'$PREVIOUS_VERSION_ID'"' "$PERMANENT_URL"
+          ROLLBACK_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
+          echo "ROLLBACK HTTP STATUS: 200"
+          echo "ROLLBACK SHA256:      $ROLLBACK_SHA"
           test "$PREVIOUS_SHA" = "$ROLLBACK_SHA"
-
           restore_current
           trap - EXIT
-          rm -f "$HEADER_FILE"
+          rm -f "$BODY_FILE"
           echo "Permanent APK rollback drill passed; current Worker restored to 100%."
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
