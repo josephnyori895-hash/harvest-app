@@ -311,6 +311,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                     ))}
                   </div>
                 </div>
+                {isAdmin && (
                 <button
                   disabled={busy === `del_${detail.group.slug}`}
                   onClick={() => void deleteGroup(detail.group.slug, detail.group.name)}
@@ -318,6 +319,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                 >
                   {busy === `del_${detail.group.slug}` ? 'Deleting…' : '🗑 Delete this group'}
                 </button>
+                )}
               </div>
             ) : (
               <>
