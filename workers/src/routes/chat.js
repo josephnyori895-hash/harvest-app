@@ -245,11 +245,7 @@ export async function handleChat(request, env, ctx) {
     const msgId = path.split('/')[4]
     const m = await query(env, 'SELECT conversation_key, sender_username, media_key FROM messages WHERE id=? AND media_key IS NOT NULL', [msgId])
     if (!m.rows[0]) return errorResponse('not found', 404)
-    const isParticipant = m.rows[0].sender_username === fresh.username
-      || m.rows[0].conversation_key.split(':').includes(fresh.username)
-      || m.rows[0].conversation_key.startsWith('group:')
-      || m.rows[0].conversation_key.startsWith('department:')
-    if (!isParticipant) return errorResponse('forbidden', 403)
+    if (!(await canAccessConversation(env, fresh, m.rows[0].conversation_key))) return errorResponse('forbidden', 403)
     const url = await mediaUrlOrNull(env, m.rows[0].media_key, 3600)
     if (!url) return errorResponse('media storage unavailable', 503)
     return jsonResponse({ url })
