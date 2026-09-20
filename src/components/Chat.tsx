@@ -106,6 +106,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
 }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
+  const [chatView, setChatView] = useState<'chats' | 'community'>('chats')
   const [section, setSection] = useState<Section>('personal')
   const [active, setActive] = useState<ChatUser | null>(null)
   const [text, setText] = useState('')
@@ -623,15 +624,36 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
 
   return (
     <main className="min-h-[calc(100vh-72px)] bg-black text-white">
-      <header className="px-4 pt-5 pb-3 bg-black border-b border-zinc-800 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <button type="button" onClick={onBack} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
-          <h1 className="text-xl font-extrabold text-white">Chats</h1>
-          <span className="w-10" />
+      <header className="px-4 pt-4 pb-3 bg-black/95 backdrop-blur-xl border-b border-zinc-800/80 sticky top-0 z-20">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button type="button" onClick={onBack} className="w-10 h-10 shrink-0 rounded-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-xl text-white" aria-label="Back">‹</button>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-extrabold">Harvest Family</p>
+                <h1 className="text-xl font-extrabold text-white truncate">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
+              </div>
+            </div>
+            <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 text-lg" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>{tab === 'people' ? '←' : '＋'}</button>
+          </div>
+          {tab === 'inbox' && (
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
+              <button type="button" onClick={() => setChatView('chats')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'chats' ? 'bg-white text-black shadow-sm' : 'bg-zinc-900 text-zinc-400 border border-zinc-800'}`}>Chats{totalUnread > 0 ? ` · ${totalUnread > 99 ? '99+' : totalUnread}` : ''}</button>
+              <button type="button" onClick={() => onOpenGroups?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-zinc-900 text-zinc-300 border border-zinc-800">Groups</button>
+              <button type="button" onClick={() => onOpenDepartments?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-zinc-900 text-zinc-300 border border-zinc-800">Departments</button>
+              <button type="button" onClick={() => setChatView('community')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'community' ? 'bg-amber-400 text-black' : 'bg-zinc-900 text-zinc-300 border border-zinc-800'}`}>Community</button>
+            </div>
+          )}
         </div>
       </header>
 
-      {tab === 'inbox' ? (
+      {tab === 'inbox' && chatView === 'community' ? (
+        <CommunityHub
+          onOpenTeam={(t) => { setError(''); setTeam(t); setChatView('chats') }}
+          onOpenGroups={onOpenGroups}
+          onOpenDepartments={onOpenDepartments}
+        />
+      ) : tab === 'inbox' ? (
         <>
           {/* Team chats: your departments + groups, always at the top of the inbox. */}
           <TeamChatsRail
@@ -760,6 +782,96 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
         </>
       )}
     </main>
+  )
+}
+
+function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
+  onOpenTeam: (t: TeamChat) => void
+  onOpenGroups?: () => void
+  onOpenDepartments?: () => void
+}) {
+  const [teams, setTeams] = useState<TeamChat[]>([])
+  useEffect(() => {
+    let live = true
+    const load = async () => {
+      const token = localStorage.getItem('harvest_token') || ''
+      if (!token) return
+      const headers = { Authorization: `Bearer ${token}` }
+      const out: TeamChat[] = []
+      try {
+        const r = await fetch(`${API}/api/departments`, { headers })
+        if (r.ok) {
+          const d = await r.json()
+          ;(d.departments || []).filter((x: any) => x.joined || x.leader).forEach((x: any) => out.push({ kind: 'department', slug: x.slug, name: x.name }))
+        }
+      } catch {}
+      try {
+        const r = await fetch(`${API}/api/groups/mine`, { headers })
+        if (r.ok) {
+          const d = await r.json()
+          ;(d.groups || []).forEach((x: any) => out.push({ kind: 'group', slug: x.slug, name: x.name }))
+        }
+      } catch {}
+      if (live) setTeams(out)
+    }
+    void load()
+    return () => { live = false }
+  }, [])
+
+  return (
+    <section className="px-4 pt-5 pb-10 bg-gradient-to-b from-zinc-950 via-black to-black min-h-[calc(100vh-150px)]">
+      <div className="max-w-3xl mx-auto">
+        <div className="rounded-[28px] p-5 border border-amber-400/20 bg-gradient-to-br from-amber-400/15 via-purple-500/10 to-fuchsia-500/10 shadow-xl shadow-purple-950/20">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-300 to-orange-500 flex items-center justify-center text-2xl shadow-lg">⛪</div>
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300 font-extrabold">Harvest Family Community</p>
+              <h2 className="mt-1 text-2xl font-extrabold text-white">One church. One family.</h2>
+              <p className="mt-2 text-sm leading-5 text-zinc-300">Stay connected through announcements, departments, groups, prayer and everyday conversations.</p>
+            </div>
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <button type="button" onClick={onOpenGroups} className="rounded-2xl bg-white text-black py-3 text-xs font-extrabold">👥 Explore groups</button>
+            <button type="button" onClick={onOpenDepartments} className="rounded-2xl bg-zinc-900/80 border border-zinc-700 text-white py-3 text-xs font-extrabold">🏛 Departments</button>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold">Your spaces</p>
+              <h3 className="text-lg font-extrabold text-white">Groups & departments</h3>
+            </div>
+            <span className="text-xs text-zinc-500">{teams.length} spaces</span>
+          </div>
+          {teams.length === 0 ? (
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-center text-sm text-zinc-500">Your joined groups and departments will appear here.</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {teams.map(t => (
+                <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpenTeam(t)} className="text-left rounded-2xl border border-zinc-800 bg-zinc-950 p-4 hover:bg-zinc-900 active:scale-[.99] transition">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl ${t.kind === 'department' ? 'bg-amber-400/15' : 'bg-purple-500/15'}`}>{t.kind === 'department' ? '🏛️' : '👥'}</div>
+                  <p className="mt-3 text-sm font-extrabold text-white truncate">{t.name}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-wide text-zinc-500">{t.kind}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold">Community feed</p>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-400/15 flex items-center justify-center">📢</div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-white">Church announcements</p>
+              <p className="text-xs text-zinc-500 truncate">Important updates from Harvest Family will appear here.</p>
+            </div>
+            <span className="text-zinc-600">›</span>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
