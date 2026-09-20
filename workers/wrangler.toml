@@ -7,6 +7,11 @@ main = "src/index.js"
 compatibility_date = "2026-08-01"
 workers_dev = true
 
+# The gateway must execute on every request so the permanent APK redirect can
+# never be served from a stale Worker response cache.
+[cache]
+enabled = false
+
 # ── Bindings ──
 # DB ids are filled in by `npm run cf:provision` (wrangler d1 create / r2 create).
 [[d1_databases]]
