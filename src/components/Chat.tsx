@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { TouchEvent } from 'react'
 import { useAuth } from '../state/auth'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 
@@ -324,7 +325,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     } catch { setNotice('Could not save reaction'); window.setTimeout(() => setNotice(''), 2000) }
   }
 
-  const startSwipe = (e: React.TouchEvent) => { swipeStartX.current = e.touches[0]?.clientX ?? null; setSwipeOffset(0) }
+  const startSwipe = (e: TouchEvent) => { swipeStartX.current = e.touches[0]?.clientX ?? null; setSwipeOffset(0) }
   const moveSwipe = (e: React.TouchEvent, mine: boolean) => {
     const start = swipeStartX.current
     if (start == null || mine) return
