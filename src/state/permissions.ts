@@ -26,6 +26,7 @@ export function canCreateContent(user: HarvestUser, type: ContentType): boolean 
   const kind = userType(user)
   if (kind === 'admin') return true
   if (type === 'story') return kind === 'member' || kind === 'verified'
+  if (type === 'announcement') return false
   return kind === 'verified'
 }
 
