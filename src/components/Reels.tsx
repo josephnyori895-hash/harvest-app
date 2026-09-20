@@ -81,8 +81,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   useEffect(() => {
     if (!sharedReelId || loadingServer) return
     if (reelsLoadFailed) {
+      // Keep the shared ID until a retry succeeds so "Try again" can still
+      // open the original shared reel after a transient feed failure.
       setNotice('Unable to open that shared reel right now. Please try again.')
-      onSharedReelHandled?.()
       return
     }
     const target = allVideos.findIndex((r: Reel) => String(r.id) === String(sharedReelId))
