@@ -237,6 +237,11 @@ export async function handleGroups(request, env, ctx) {
     if (!uname) return errorResponse('username required', 400)
     const t = await query(env, 'SELECT id, username FROM users WHERE username=? AND active=1', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
+    const existing = await query(env, 'SELECT role FROM group_members WHERE group_id=? AND user_id=?', [g.id, t.rows[0].id])
+    if (role === 'member' && existing.rows[0]?.role === 'admin' && fresh.role !== 'admin') {
+      const { rows } = await query(env, `SELECT COUNT(*) AS n FROM group_members WHERE group_id=? AND role='admin'`, [g.id])
+      if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot demote the only group admin', 400)
+    }
     await query(env, `INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,?) ON CONFLICT (group_id, user_id) DO UPDATE SET role=excluded.role`, [g.id, t.rows[0].id, role])
     await audit(env, fresh, 'group_member_added', g.id, { username: uname, role })
     return jsonResponse({ ok: true, username: uname, role })
