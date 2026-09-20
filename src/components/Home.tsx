@@ -105,7 +105,23 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
       .then((d: any) => {
         if (cancelled) return
         setLivePosts(Array.isArray(d?.posts) ? d.posts : [])
-        setLiveStories(Array.isArray(d?.stories) ? d.stories : [])
+        const nextStories = Array.isArray(d?.stories) ? d.stories : []
+        setLiveStories(nextStories)
+        // Rehydrate viewed state from the server while preserving stories already
+        // viewed during this session. This keeps badges correct after reloads and
+        // when the same account opens Harvest on another device.
+        const serverViewed = new Set(
+          nextStories
+            .filter((s: any) => Boolean(s?.viewed))
+            .map((s: any) => String(s.id))
+        )
+        if (serverViewed.size) {
+          setViewedStoryIds(prev => {
+            const next = new Set(prev)
+            serverViewed.forEach(id => next.add(id))
+            return next
+          })
+        }
         setFeedLoaded(true)
       })
       .catch((e: any) => {
