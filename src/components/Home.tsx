@@ -110,7 +110,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
         // Rehydrate viewed state from the server while preserving stories already
         // viewed during this session. This keeps badges correct after reloads and
         // when the same account opens Harvest on another device.
-        const serverViewed = new Set(
+        const serverViewed = new Set<string>(
           nextStories
             .filter((s: any) => Boolean(s?.viewed))
             .map((s: any) => String(s.id))
