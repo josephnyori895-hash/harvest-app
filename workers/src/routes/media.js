@@ -60,7 +60,7 @@ export async function handleMedia(request, env, ctx) {
       )
       if (Number(rows[0]?.count || 0) >= 10) return errorResponse('presign rate limit 10/min', 429)
       await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [uid, new Date().toISOString()])
-      return jsonResponse(await presignedPost(env, { type, contentType, bytes: Number(bytes) || 0, ext }))
+      return jsonResponse(await presignedPost(env, { type, contentType, bytes: Number(bytes) || 0, ext, ownerId: fresh.id }))
     } catch (e) {
       return errorResponse(e.message, e.status || 400)
     }
