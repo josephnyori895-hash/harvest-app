@@ -43,4 +43,9 @@ jobs:
       - name: Validate D1 migrations parse
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
-          for f in workers/migrations/*.sql; do sqlite3 ":memory:" ".read $f" || exit 1; done
+          db="$(mktemp)"
+          trap 'rm -f "$db"' EXIT
+          for f in workers/migrations/*.sql; do
+            echo "Applying $f"
+            sqlite3 "$db" ".read $f" || exit 1
+          done
