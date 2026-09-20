@@ -19,14 +19,6 @@ export async function handleAuth(request, env, ctx) {
   const path = new URL(request.url).pathname
   const method = request.method
 
-  // GET /health
-  if (path === '/health' && method === 'GET') {
-    let db = 'ok'
-    try { await query(env, 'SELECT 1') } catch (e) { db = e.message }
-    if (db !== 'ok') return jsonResponse({ status: 'degraded', db }, 503)
-    return jsonResponse({ status: 'ok', db, storage: 'cloudflare-r2', database: 'cloudflare-d1' })
-  }
-
   // POST /api/auth/register
   if (path === '/api/auth/register' && method === 'POST') {
     let identity = null
