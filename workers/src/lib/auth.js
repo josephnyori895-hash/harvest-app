@@ -6,13 +6,19 @@ import { httpError } from './http.js'
 
 const GUEST_ID = '00000000-0000-0000-0000-000000000000'
 
+function requireJwtSecret(env) {
+  const secret = String(env.JWT_SECRET || '')
+  if (secret.length < 32) throw httpError(500, 'authentication service is not configured')
+  return secret
+}
+
 export async function authenticate(env, request) {
   const h = request.headers.get('authorization') || ''
   if (!h.startsWith('Bearer ')) return null
   const token = h.slice(7).trim()
   if (!token) return null
   try {
-    const payload = await jwtVerify(token, env.JWT_SECRET)
+    const payload = await jwtVerify(token, requireJwtSecret(env))
     if (!payload?.id || !payload?.username || !payload?.role) throw new Error('bad payload shape')
     if (!['admin', 'member', 'guest'].includes(payload.role)) throw new Error('bad role')
     return payload
