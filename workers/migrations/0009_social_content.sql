@@ -1,4 +1,5 @@
 -- Social content extensions: editable captions, attached worship tracks, story replies.
+ALTER TABLE pending_queue ADD COLUMN music_track_id TEXT;
 ALTER TABLE posts ADD COLUMN music_track_id TEXT;
 ALTER TABLE reels ADD COLUMN music_track_id TEXT;
 ALTER TABLE stories ADD COLUMN caption TEXT;
