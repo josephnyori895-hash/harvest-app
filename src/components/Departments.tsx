@@ -157,9 +157,9 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   const mine = departments.filter(d => d.joined)
 
   const DeptCard = ({ d }: { d: any }) => (
-    <button onClick={() => openDetail(d.slug)} className="w-full text-left p-4 rounded-2xl bg-zinc-900 border border-zinc-800 active:opacity-70">
+    <div className="w-full p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <button onClick={() => openDetail(d.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
           <p className="text-sm font-bold text-white flex items-center gap-2">
             {d.name}
             {d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">LEADER</span>}
@@ -167,17 +167,24 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           </p>
           {d.description && <p className="text-[11px] text-zinc-400 mt-0.5">{d.description}</p>}
           <p className="text-[10px] text-zinc-500 mt-1">{d.member_count} serving</p>
-        </div><span
-          role="button"
-          aria-label={d.joined ? `Leave ${d.name}` : `Join ${d.name}`}
-          onClick={e => { e.stopPropagation(); d.joined ? void leave(d.slug) : void join(d.slug) }}
-          className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-zinc-700 text-zinc-300' : d.joined ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' : 'bg-[#7C3AED] text-white'}`}
-        >
-          {d.joined ? 'Leave' : 'Join'}
-        </span>
+        </button>
+        <div className="shrink-0 flex flex-col items-end gap-2">
+          {(d.joined || isAdmin) && onOpenDeptChat && (
+            <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+              💬 Chat
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={d.joined ? `Leave ${d.name}` : `Join ${d.name}`}
+            onClick={() => d.joined ? void leave(d.slug) : void join(d.slug)}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-zinc-700 text-zinc-300' : d.joined ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' : 'bg-[#7C3AED] text-white'}`}
+          >
+            {d.joined ? 'Leave' : 'Join'}
+          </button>
+        </div>
       </div>
-    </button
->
+    </div>
   )
 
   if (openSlug) {
