@@ -37,6 +37,8 @@ jobs:
         run: npm ci --prefix workers
       - name: Typecheck worker sources
         run: node --check workers/src/index.js && find workers/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Test media presigned upload contract
+        run: npm run test:media --prefix workers
       - name: Validate wrangler config + dry-run build (no deploy)
         run: npx --prefix workers wrangler deploy --dry-run --outdir dist-check
         working-directory: workers
