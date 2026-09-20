@@ -15,6 +15,9 @@
 * { font-family: 'Outfit', 'Inter', system-ui, sans-serif; box-sizing: border-box; }
 html, body, #root { min-height: 100%; width: 100%; }
 html, body { overflow-x: hidden; }
+/* Android edge-to-edge safety: keep normal app content clear of display cutouts.
+   Full-bleed media can still use their own viewport when explicitly positioned. */
+#root { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 body { margin: 0; background: #FFFBF0; color: #29251F; }
 
 @layer base {
