@@ -392,7 +392,19 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     }
   }
 
-  return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-11 h-11 rounded-full bg-[#FFFBF0] border border-[#E8DEC9]" aria-label="Close">✕</button></div><div className="p-5 space-y-4"><label className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden cursor-pointer">{fileUrl ? <video ref={setVideoEl} src={fileUrl} controls className="w-full h-full object-cover" /> : <div className="h-full flex flex-col items-center justify-center text-white p-4 text-center"><span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p></div>}<input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" /></label>{fileUrl && (
+  return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-11 h-11 rounded-full bg-[#FFFBF0] border border-[#E8DEC9]" aria-label="Close">✕</button></div><div className="p-5 space-y-4"><div className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden relative">
+              {fileUrl ? (
+                <>
+                  <video ref={setVideoEl} src={fileUrl} controls className="w-full h-full object-cover" />
+                  <label htmlFor="reel-video-input" className="absolute top-3 right-3 px-3 py-2 rounded-full bg-black/60 text-white text-xs font-bold cursor-pointer">Change video</label>
+                </>
+              ) : (
+                <label htmlFor="reel-video-input" className="h-full flex flex-col items-center justify-center text-white p-4 text-center cursor-pointer">
+                  <span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p>
+                </label>
+              )}
+              <input id="reel-video-input" ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" />
+            </div>{fileUrl && (
               <div className="flex items-center gap-3 p-3 rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0]">
                 {coverPreview ? <img src={coverPreview} alt="Cover" className="w-20 h-12 rounded-lg object-cover border border-[#E8DEC9]" /> : <div className="w-20 h-12 rounded-lg bg-[#F4E8D0] flex items-center justify-center text-lg">🖼</div>}
                 <div className="min-w-0 flex-1">
