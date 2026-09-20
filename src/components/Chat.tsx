@@ -121,6 +121,16 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
   const [attach, setAttach] = useState<File | null>(null)
   // Instagram-style people search on the chats list.
   const [peopleQuery, setPeopleQuery] = useState('')
+  const [pinnedChats, setPinnedChats] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('harvest_pinned_chats') || '[]') } catch { return [] }
+  })
+  const togglePinned = (key: string) => {
+    setPinnedChats(current => {
+      const next = current.includes(key) ? current.filter(k => k !== key) : [key, ...current]
+      localStorage.setItem('harvest_pinned_chats', JSON.stringify(next))
+      return next
+    })
+  }
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pressTimer = useRef<number | null>(null)
@@ -514,7 +524,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                 <p className="mt-2 text-sm leading-6 text-zinc-500">Private chats with your Harvest church family will appear here.</p>
                 <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2 text-xs font-extrabold text-black">Find someone</button>
               </div>
-            ) : inbox.map(c => {
+            ) : [...inbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
@@ -531,6 +541,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                     <div className="flex items-center gap-2">
                       <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-zinc-200'}`}>{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
                       <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-zinc-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
+                      <button type="button" onClick={e => { e.stopPropagation(); togglePinned(c.conversation_key) }} className="shrink-0 text-xs text-zinc-500 hover:text-amber-300" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
                       <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-zinc-100 font-semibold' : 'text-zinc-400'}`}>
