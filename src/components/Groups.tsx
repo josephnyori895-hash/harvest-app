@@ -25,7 +25,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '' })
   // ── WhatsApp-style group settings (system admin) ──
   const [showSettings, setShowSettings] = useState(false)
-  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false })
+  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false, allowMemberEditInfo: false, allowMemberSend: true, allowMemberAdd: false, allowMemberInvite: false, approveNewMembers: true, sendMessageHistory: false })
   const [addUname, setAddUname] = useState('')
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
@@ -95,7 +95,6 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           name: form.name.trim(), description: form.description.trim() || undefined,
           admin_username: form.admin_username.trim().toLowerCase() || undefined,
           community: form.community.trim() || undefined,
-          creator_participation: form.participation,
         }),
       })
       const d = await r.json().catch(() => ({}))
@@ -172,6 +171,12 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       description: detail.group.description || '',
       community: detail.group.community || '',
       addOnly: Boolean(detail.group.invite_only),
+      allowMemberEditInfo: Boolean(detail.group.allow_member_edit_info),
+      allowMemberSend: detail.group.allow_member_send !== 0,
+      allowMemberAdd: Boolean(detail.group.allow_member_add),
+      allowMemberInvite: Boolean(detail.group.allow_member_invite),
+      approveNewMembers: detail.group.approve_new_members !== 0,
+      sendMessageHistory: Boolean(detail.group.send_message_history),
     })
     setShowSettings(true)
   }
@@ -184,7 +189,15 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     try {
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(detail.group.slug)}/settings`, {
         method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ name, description: stForm.description.trim(), community: stForm.community.trim(), invite_only: stForm.addOnly }),
+        body: JSON.stringify({
+          name, description: stForm.description.trim(), community: stForm.community.trim(), invite_only: stForm.addOnly,
+          allow_member_edit_info: stForm.allowMemberEditInfo,
+          allow_member_send: stForm.allowMemberSend,
+          allow_member_add: stForm.allowMemberAdd,
+          allow_member_invite: stForm.allowMemberInvite,
+          approve_new_members: stForm.approveNewMembers,
+          send_message_history: stForm.sendMessageHistory,
+        }),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not save')
@@ -281,19 +294,48 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                     <label htmlFor="gst-com" className="block text-[10px] font-bold text-zinc-400 mb-1">COMMUNITY (congregation)</label>
                     <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
                   </div>
-                  <button
-                    onClick={() => setStForm(f => ({ ...f, addOnly: !f.addOnly }))}
-                    className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
-                    role="switch" aria-checked={stForm.addOnly}
-                  >
-                    <span>
-                      <span className="block text-sm font-bold text-white">Add-only group</span>
-                      <span className="block text-[11px] text-zinc-400 mt-0.5">{stForm.addOnly ? 'ON — only you can add members (like a WhatsApp admin-only add)' : 'OFF — people can send join requests'}</span>
-                    </span>
-                    <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-amber-400' : 'bg-zinc-700'}`}>
-                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
-                    </span>
-                  </button>
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-zinc-500 tracking-widest">GROUP PERMISSIONS</p>
+                    {([
+                      ['allowMemberEditInfo', 'Edit group settings', 'Members can change the group name and description.', stForm.allowMemberEditInfo],
+                      ['allowMemberSend', 'Send new messages', 'Turn off for an announcements-only group.', stForm.allowMemberSend],
+                      ['allowMemberAdd', 'Add other members', 'Allow ordinary members to add people directly.', stForm.allowMemberAdd],
+                      ['allowMemberInvite', 'Invite via link', 'Allow ordinary members to create/share group invite links.', stForm.allowMemberInvite],
+                      ['approveNewMembers', 'Approve new members', 'Join requests must be approved by a group admin.', stForm.approveNewMembers],
+                      ['sendMessageHistory', 'Send message history', 'Allow message history to be shared with new members.', stForm.sendMessageHistory],
+                    ] as const).map(([key, title, description, enabled]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setStForm(f => ({ ...f, [key]: !f[key] }))}
+                        className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
+                        role="switch"
+                        aria-checked={enabled}
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-bold text-white">{title}</span>
+                          <span className="block text-[11px] text-zinc-400 mt-0.5">{description}</span>
+                        </span>
+                        <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${enabled ? 'bg-amber-400' : 'bg-zinc-700'}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                        </span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setStForm(f => ({ ...f, addOnly: !f.addOnly }))}
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
+                      role="switch" aria-checked={stForm.addOnly}
+                    >
+                      <span>
+                        <span className="block text-sm font-bold text-white">Admin-only membership</span>
+                        <span className="block text-[11px] text-zinc-400 mt-0.5">{stForm.addOnly ? 'ON — members cannot request to join; admins add them.' : 'OFF — members can request to join.'}</span>
+                      </span>
+                      <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-amber-400' : 'bg-zinc-700'}`}>
+                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
+                      </span>
+                    </button>
+                  </div>
                   <div className="flex gap-2">
                     <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
                     <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold">Cancel</button>
@@ -339,6 +381,18 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                     <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-zinc-700 text-zinc-300 text-[10px] font-bold disabled:opacity-50">Reject</button>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {canManage && (
+              <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+                <p className="text-[10px] font-bold text-zinc-500 tracking-widest mb-2">GROUP PERMISSIONS</p>
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <span className="text-zinc-300">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
+                  <span className="text-zinc-300">{detail.group.allow_member_add ? '✓ Members can add people' : '✓ Admins add people'}</span>
+                  <span className="text-zinc-300">{detail.group.approve_new_members ? '✓ Join requests approved' : '✓ Open joining'}</span>
+                  <span className="text-zinc-300">{detail.group.allow_member_edit_info ? '✓ Members can edit info' : '✓ Admins edit info'}</span>
+                </div>
               </div>
             )}
 
