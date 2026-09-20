@@ -90,7 +90,7 @@ function InnerApp() {
   const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
-  const [sharedContent, setSharedContent] = useState<{ kind: 'post' | 'reel' | 'story'; id: string } | null>(() => {
+  const [sharedContent, setSharedContent] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search)
       const kind = params.get('shared')
