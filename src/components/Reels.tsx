@@ -376,7 +376,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
               {cur.music && <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-black/35 backdrop-blur px-2.5 py-2 border border-white/10"><img src={cur.music.cover} alt="" className="w-8 h-8 rounded-lg shrink-0" /><div className="min-w-0"><p className="text-xs font-semibold truncate">{cur.music.title}</p><p className="text-[10px] text-white/55 truncate">{cur.music.artist}</p></div></div>}
               <div className="mt-3 flex gap-4 text-xs text-white/60">
                 <span>👀 {fmtViews(cur.views)}</span>
-                <span>💬 {fmtViews((Number(cur.comments) || 0))} comments</span>
+                <span>💬 {fmtViews((Number(cur.comments) || 0))} comments</span><span>♥ {fmtViews(Number(cur.likes) || 0)}</span>
               </div>
             </div>
             <div className="absolute right-2.5 sm:right-4 bottom-[68px] sm:bottom-[76px] lg:bottom-6 flex flex-col gap-2.5 sm:gap-3 z-10">
