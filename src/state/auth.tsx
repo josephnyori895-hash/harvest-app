@@ -28,12 +28,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setVerified = useCallback((v: boolean) => { setVerifiedState(v); localStorage.setItem(LS_VERIFIED, String(v)) }, [])
 
   const setUsername = useCallback((u: string) => {
-    if (prev && curTok) localStorage.setItem(`harvest_token_${prev}`, curTok)
     setUsernameState(u)
     if (!u) { localStorage.removeItem(LS_USERNAME); return }
     localStorage.setItem(LS_USERNAME, u)
-    const nextTok = localStorage.getItem(`harvest_token_${u}`) || ''
-    if (nextTok) localStorage.setItem('harvest_token', nextTok); else localStorage.removeItem('harvest_token')
     try {
       const users = JSON.parse(localStorage.getItem('harvest_users') || '[]')
       const account = users.find((x: any) => x.username === u)
