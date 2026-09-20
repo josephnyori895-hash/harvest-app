@@ -7,6 +7,13 @@ const LS_ROLE = 'harvest_role'
 const LS_USERNAME = 'harvest_username'
 const LS_VERIFIED = 'harvest_verified'
 
+function clearLegacyTokenCache() {
+  for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+    const key = localStorage.key(i)
+    if (key?.startsWith('harvest_token_')) localStorage.removeItem(key)
+  }
+}
+
 interface AuthCtx {
   role: Role; pin: string; username: string; verified: boolean
   isAdmin: boolean; isVerified: boolean; isMember: boolean
@@ -28,6 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setVerified = useCallback((v: boolean) => { setVerifiedState(v); localStorage.setItem(LS_VERIFIED, String(v)) }, [])
 
   const setUsername = useCallback((u: string) => {
+    clearLegacyTokenCache()
     setUsernameState(u)
     if (!u) { localStorage.removeItem(LS_USERNAME); return }
     localStorage.setItem(LS_USERNAME, u)
@@ -52,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setVerified(false)
     setRole('guest')
     localStorage.removeItem('harvest_token')
+    clearLegacyTokenCache()
     localStorage.removeItem(LS_USERNAME)
     localStorage.removeItem('harvest_msgs')
     localStorage.removeItem('harvest_pinned_chats')
