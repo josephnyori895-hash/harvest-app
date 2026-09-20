@@ -53,6 +53,9 @@ if (smokeUsername || smokePin) {
     await check('authenticated feed', '/api/feed', { headers: auth }, r => r.status === 200)
     await check('authenticated presence', '/api/presence', { headers: auth }, r => r.status === 200)
     await check('authenticated chat history', '/api/chat/history', { headers: auth }, r => r.status === 200)
+    await check('authenticated chat conversations', '/api/chat/conversations', { headers: auth }, (r, b) => r.status === 200 && Array.isArray(b?.conversations))
+    await check('authenticated groups', '/api/groups', { headers: auth }, (r, b) => r.status === 200 && Array.isArray(b?.groups))
+    await check('authenticated departments', '/api/departments', { headers: auth }, (r, b) => r.status === 200 && Array.isArray(b?.departments))
   }
 } else {
   console.log('Authenticated checks skipped: set SMOKE_USERNAME and SMOKE_PIN to enable them.')
