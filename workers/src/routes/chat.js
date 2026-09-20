@@ -221,7 +221,7 @@ export async function handleChat(request, env, ctx) {
          LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
         GROUP BY a.conversation_key, a.kind, a.slug, a.name
         ORDER BY last_at DESC`,
-      [fresh.id, fresh.role, fresh.id, fresh.role, fresh.id, fresh.username],
+      [fresh.id, fresh.role, fresh.id, fresh.role, fresh.username, fresh.id],
     )
     const team_conversations = teamResult.rows.map(r => ({
       conversation_key: r.conversation_key,
