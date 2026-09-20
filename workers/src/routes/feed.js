@@ -328,8 +328,9 @@ export async function handleFeed(request, env, ctx) {
         ORDER BY v.viewed_at DESC LIMIT 200`,
       [sid],
     )
+    const total = await query(env, 'SELECT COUNT(*) AS count FROM story_views WHERE story_id=?', [sid])
     rows.forEach(r => { r.verified = !!r.verified })
-    return jsonResponse({ views: rows, count: rows.length })
+    return jsonResponse({ views: rows, count: Number(total.rows[0]?.count) || 0 })
   }
 
   return null
