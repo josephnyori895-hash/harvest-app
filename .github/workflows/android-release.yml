@@ -29,6 +29,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Configure production API URL
+        run: echo "VITE_API_URL=https://harvestfamily-api.harvestfamily.workers.dev" >> "$GITHUB_ENV"
+
       - name: Frontend release checks
         run: |
           npm run lint
