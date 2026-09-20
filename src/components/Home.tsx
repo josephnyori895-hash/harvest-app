@@ -241,6 +241,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
           ? { ...p, liked: wasLiked, likes: Number(post.likes) || 0 }
           : p))
         showToast(e?.message || 'Could not update appreciation', 'error', 2000)
+      } finally {
+        pendingLikesRef.current.delete(key)
       }
       return
     }
