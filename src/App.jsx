@@ -165,7 +165,16 @@ function InnerApp() {
     if (!onboarded) return
     const t = localStorage.getItem('harvest_token') || ''
     if (!t) { setOnboarded(false); return }
-    fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } }).catch(() => {})
+    fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('session invalid')))
+      .then(d => {
+        const u = d?.user
+        if (!u) return
+        setUsername(u.username || '')
+        setRole(u.role === 'admin' ? 'admin' : 'member')
+        setVerified(Boolean(u.verified))
+      })
+      .catch(() => {})
   }, [])
 
   // Android hardware back: pop overlays/tabs; exit only from Home.
