@@ -208,7 +208,6 @@ export class Realtime {
         )
         const payload = { id, tempId: data.tempId, kind: 'dm', conversation_key: conv, from: me.username, to: targetUsername, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
         await this.fanoutConversation(conv, { event: 'chat:message', data: payload })
-        this.sendToUser(targetUsername, { event: 'chat:message', data: payload })
         return ack({ ok: true, id, serverId: id, at: payload.at, status: 'sent' })
       }
 
