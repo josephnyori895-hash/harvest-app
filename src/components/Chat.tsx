@@ -99,7 +99,6 @@ export type TeamChat = { kind: 'department' | 'group'; slug: string; name: strin
 export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack: () => void; users: ChatUser[]; teamChat?: TeamChat | null; onCloseTeam?: () => void; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
-  const totalUnread = useMemo(() => inbox.reduce((sum, c) => sum + (Number(c.unread) || 0), 0), [inbox])
   const [section, setSection] = useState<Section>('personal')
   const [active, setActive] = useState<ChatUser | null>(null)
   const [text, setText] = useState('')
@@ -107,6 +106,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [inbox, setInbox] = useState<any[]>([])
+  const totalUnread = useMemo(() => inbox.reduce((sum, c) => sum + (Number(c.unread) || 0), 0), [inbox])
   const [msgs, setMsgs] = useState<Record<string, any[]>>(() => {
     try { return JSON.parse(localStorage.getItem('harvest_msgs') || '{}') } catch { return {} }
   })
