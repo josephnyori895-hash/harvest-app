@@ -336,12 +336,14 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
   if (active || team) {
     let lastDay = ''
+    let unreadDividerShown = false
+    const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
     const isTeam = Boolean(team)
     return (
       <main className="h-[100dvh] bg-black text-white flex flex-col">
-        <header className="h-16 shrink-0 border-b border-zinc-800 bg-black/95 backdrop-blur flex items-center gap-3 px-3 z-20">
+        <header className="h-[72px] shrink-0 border-b border-zinc-800/80 bg-black/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-black/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
-          <div className="relative w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold shrink-0">
+          <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-600/90 to-fuchsia-600/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
             {isTeam ? '🤝' : (active.username?.[0] || '?').toUpperCase()}
             {!isTeam && presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
           </div>
@@ -354,19 +356,26 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
         <div className="flex-1 overflow-y-auto px-3 py-4">
           {thread.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="w-16 h-16 mx-auto rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-2xl">💬</div>
-              <h2 className="font-extrabold mt-4 text-white">Start the conversation</h2>
-              <p className="text-sm text-zinc-400 mt-1">Send an encouragement, prayer, or simple hello.</p>
+            <div className="min-h-full flex items-center justify-center py-12">
+              <div className="w-full max-w-sm text-center px-6">
+                <div className="mx-auto w-20 h-20 rounded-[28px] bg-gradient-to-br from-purple-600/20 to-fuchsia-600/20 border border-white/10 flex items-center justify-center text-3xl shadow-xl">💬</div>
+                <h2 className="font-extrabold mt-5 text-lg text-white">{isTeam ? 'Start the team conversation' : 'Start a conversation'}</h2>
+                <p className="text-sm leading-6 text-zinc-400 mt-2">Share an encouragement, prayer, or simple hello. Your conversation will appear here.</p>
+              </div>
             </div>
-          ) : thread.map((m: any) => {
+          ) : thread.map((m: any, index: number) => {
             const mine = m.from === currentUser
             const day = dayLabel(m.created_at || m.at)
             const showDay = day !== lastDay; lastDay = day
             const isReactionOpen = reactingFor === String(m.id)
             return (
               <div key={m.id}>
-                {showDay && <div className="text-center my-4"><span className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400">{day}</span></div>}
+                {showDay && <div className="flex items-center gap-3 my-5"><div className="h-px flex-1 bg-zinc-800" /><span className="px-3 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 text-[10px] uppercase tracking-wider font-bold text-zinc-500">{day}</span><div className="h-px flex-1 bg-zinc-800" /></div>}
+                {firstUnreadIndex === index && !unreadDividerShown && !mine && (unreadDividerShown = true) && (
+                  <div className="flex items-center gap-3 my-4" aria-label="Unread messages">
+                    <div className="h-px flex-1 bg-blue-500/40" /><span className="px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-[10px] uppercase tracking-wider font-extrabold text-blue-400">New messages</span><div className="h-px flex-1 bg-blue-500/40" />
+                  </div>
+                )}
                 {isTeam && !mine && <p className="text-[11px] font-bold text-zinc-400 mb-1 ml-1">{m.from}</p>}
                 <div className={`flex mb-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="relative max-w-[80%]">
@@ -375,7 +384,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                       onContextMenu={e => { e.preventDefault(); setReactingFor(isReactionOpen ? null : String(m.id)) }}
                       onTouchStart={() => startPress(m)} onTouchEnd={cancelPress} onTouchMove={cancelPress}
                       onClick={() => setReactingFor(isReactionOpen ? null : String(m.id))}
-                      className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md' : 'bg-zinc-800 text-zinc-100 rounded-bl-md'}`}
+                      className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md shadow-purple-950/30' : 'bg-zinc-800/95 text-zinc-100 rounded-bl-md border border-zinc-700/50'}`}
                     >
                       {m.reply_preview && (
                         <div className={`mb-1.5 pl-2 border-l-2 rounded px-2 py-1 text-xs ${mine ? 'border-white/60 bg-white/10 text-white/85' : 'border-blue-400 bg-zinc-700/60 text-zinc-200'}`}>
@@ -387,8 +396,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                       )}
                       {m.media_type === 'image' && !m.media_key && <div className="text-3xl mb-1">📷</div>}
                       {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                      <div className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${mine ? 'text-white/75' : 'text-zinc-400'}`}>
-                        {m.at || new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className={`text-[10px] mt-1.5 flex items-center justify-end gap-1 ${mine ? 'text-white/65' : 'text-zinc-500'}`}>
+                        <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
                         <Ticks status={m.status} mine={mine} />
                       </div>
                     </div>
@@ -410,7 +419,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
         {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-950 text-red-300' : 'bg-zinc-900 text-amber-300'}`}>{error || notice}</div>}
 
-        <div className="border-t border-zinc-800 bg-black px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shrink-0">
+        <div className="border-t border-zinc-800/80 bg-black/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
           {replyTo && (
             <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-zinc-900 rounded-r-xl py-1.5 pr-2">
               <div className="min-w-0 flex-1 text-xs text-zinc-300">
@@ -434,7 +443,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
             <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => setText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
               rows={1} placeholder="Message…"
-              className="flex-1 resize-none min-h-11 max-h-28 bg-zinc-900 border border-zinc-700 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-zinc-500 placeholder:text-zinc-500" />
+              className="flex-1 resize-none min-h-11 max-h-28 bg-zinc-900/90 border border-zinc-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-zinc-500 transition" />
             <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
               className="h-11 w-11 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 text-white text-lg font-bold disabled:opacity-40 shrink-0" aria-label="Send">
               {sending ? '…' : '➤'}
