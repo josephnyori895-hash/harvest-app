@@ -1,3 +1,4 @@
+import MediaThumbnail from './MediaThumbnail'
 import { useState, useEffect, useRef } from 'react'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { shareStoryToWhatsApp } from '../lib/whatsappShare'
