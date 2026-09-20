@@ -184,12 +184,12 @@ export async function handleChat(request, env, ctx) {
          SELECT 'department:' || d.slug AS conversation_key, 'department' AS kind, d.slug AS slug, d.name AS name
            FROM departments d
            JOIN department_members dm ON dm.department_id = d.id
-          WHERE dm.user_id = ?
+          WHERE dm.user_id = ? OR ? = 'admin'
          UNION
          SELECT 'group:' || g.slug AS conversation_key, 'group' AS kind, g.slug AS slug, g.name AS name
            FROM groups g
            JOIN group_members gm ON gm.group_id = g.id
-          WHERE gm.user_id = ?
+          WHERE gm.user_id = ? OR ? = 'admin'
        )
        SELECT a.conversation_key, a.kind, a.slug, a.name,
               MAX(m.created_at) AS last_at,
@@ -201,7 +201,7 @@ export async function handleChat(request, env, ctx) {
          LEFT JOIN messages m ON m.conversation_key = a.conversation_key
         GROUP BY a.conversation_key, a.kind, a.slug, a.name
         ORDER BY last_at DESC`,
-      [fresh.id, fresh.id, fresh.username],
+      [fresh.id, fresh.role, fresh.id, fresh.role, fresh.username],
     )
     const team_conversations = teamResult.rows.map(r => ({
       conversation_key: r.conversation_key,
