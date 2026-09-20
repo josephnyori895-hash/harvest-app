@@ -192,7 +192,7 @@ function InnerApp() {
     <div className="min-h-screen bg-black flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="flex-1 overflow-auto pb-[64px]">
+        <div className="flex-1 overflow-auto pb-[calc(64px+env(safe-area-inset-bottom))]">
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} />}
@@ -643,7 +643,7 @@ function Nav({ tab, setTab }) {
   ]
   return (
     // Fixed to the viewport so it can never be scrolled away or mis-tapped.
-    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center h-[56px] border-t border-zinc-800 bg-black/95 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center min-h-[56px] border-t border-zinc-800 bg-black/95 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {items.map(([id]) => (
         <button key={id} type="button" onClick={() => setTab(id)} className="p-3 active:opacity-60">
           <IgIcon name={id} active={tab === id} />
