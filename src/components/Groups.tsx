@@ -29,6 +29,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const [addUname, setAddUname] = useState('')
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
+  const [unreadByGroup, setUnreadByGroup] = useState<Record<string, number>>({})
 
   const load = useCallback(() => {
     setLoading(true)
@@ -40,6 +41,24 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   }, [])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    let live = true
+    const refreshUnread = async () => {
+      if (!localStorage.getItem('harvest_token')) return
+      try {
+        const r = await fetch(`${API}/api/chat/conversations`, { headers: authHeaders() })
+        if (!r.ok) return
+        const d = await r.json()
+        const next: Record<string, number> = {}
+        ;(d.team_conversations || []).filter((x: any) => x.kind === 'group').forEach((x: any) => { next[String(x.slug)] = Number(x.unread) || 0 })
+        if (live) setUnreadByGroup(next)
+      } catch { /* keep last known counts */ }
+    }
+    void refreshUnread()
+    const timer = window.setInterval(refreshUnread, 3000)
+    return () => { live = false; window.clearInterval(timer) }
+  }, [])
 
   const openDetail = async (slug: string) => {
     setOpenSlug(slug)
@@ -207,8 +226,9 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
         </button>
         <div className="shrink-0 flex items-center gap-2">
           {g.joined && onOpenChat && (
-            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
               💬 Chat
+              {Number(unreadByGroup[g.slug]) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-zinc-950 shadow-sm">{Number(unreadByGroup[g.slug]) > 99 ? '99+' : unreadByGroup[g.slug]}</span>}
             </button>
           )}
           {g.joined
@@ -294,7 +314,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
             {detail.group.description && <p className="text-xs text-zinc-400 pb-1">{detail.group.description}</p>}
 
             {me && onOpenChat && (
-              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open group chat</button>
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open group chat{Number(unreadByGroup[detail.group.slug]) > 0 ? ` · ${Number(unreadByGroup[detail.group.slug]) > 99 ? '99+' : unreadByGroup[detail.group.slug]} new` : ''}</button>
             )}
 
             {canManage && requests.length > 0 && (
