@@ -316,8 +316,8 @@ export async function handleFeed(request, env, ctx) {
     const sid = path.split('/')[3]
     const s = await query(env, 'SELECT user_id FROM stories WHERE id=?', [sid])
     if (!s.rows[0]) return errorResponse('not found', 404)
-    const owner = await query(env, 'SELECT username, role FROM users WHERE id=?', [s.rows[0].user_id])
-    if (owner.rows[0]?.username !== fresh.username && fresh.role !== 'admin') return errorResponse('forbidden', 403)
+    const owner = await query(env, 'SELECT id, username, role FROM users WHERE id=?', [s.rows[0].user_id])
+    if (owner.rows[0]?.id !== fresh.id && fresh.role !== 'admin') return errorResponse('forbidden', 403)
     const { rows } = await query(
       env,
       `SELECT COALESCE(u.username, v.viewer_username) AS username,
