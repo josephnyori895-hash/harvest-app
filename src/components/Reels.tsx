@@ -80,7 +80,10 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }, [useServer, reelsLoadKey])
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
-  const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
+  const flash = useCallback((text: string) => {
+    setNotice(text)
+    window.setTimeout(() => setNotice(''), 1800)
+  }, [])
 
   const loadMoreReels = useCallback(async (advanceAfterLoad = false) => {
     if (!useServer || loadingServer || loadingMoreReels || !hasMoreReels) return
@@ -152,15 +155,6 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     return undefined
   }, [idx, muted, cur?.video])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (allVideos.length === 0) return
-      if (e.key === 'ArrowUp') { e.preventDefault(); prev() }
-      if (e.key === 'ArrowDown') { e.preventDefault(); next() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [allVideos.length, next, prev])
   useEffect(() => { if (idx >= allVideos.length) setIdx(0) }, [idx, allVideos.length])
   // Generate a first-frame poster when an uploaded reel has no server thumbnail.
   useEffect(() => {
@@ -186,6 +180,15 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     })
   }, [allVideos.length, hasMoreReels, loadMoreReels])
   const prev = useCallback(() => setIdx(i => (i - 1 + allVideos.length) % allVideos.length), [allVideos.length])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (allVideos.length === 0) return
+      if (e.key === 'ArrowUp') { e.preventDefault(); prev() }
+      if (e.key === 'ArrowDown') { e.preventDefault(); next() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [allVideos.length, next, prev])
   // Mobile: swipe up/down to move between reels (IG-style).
   const touchY = useRef<number | null>(null)
   const onTouchStart = (e: React.TouchEvent) => { touchY.current = e.touches[0]?.clientY ?? null }
