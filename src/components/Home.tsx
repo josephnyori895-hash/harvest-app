@@ -84,23 +84,6 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
   // Inline post comments (server-backed) — replaces the old "dump into chats" button.
   const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
-  useEffect(() => {
-    if (!sharedContent || sharedContent.kind === 'reel') return
-    if (sharedContent.kind === 'story') {
-      const index = allMoments.findIndex((s: any) => String(s.id) === sharedContent.id)
-      if (index >= 0) {
-        setMomentIdx(index)
-        onSharedContentHandled?.()
-      }
-      return
-    }
-    const postIndex = feed.findIndex((p: any) => String(p.id) === sharedContent.id)
-    if (postIndex >= 0) {
-      const el = document.querySelector(`[data-post-id="${CSS.escape(sharedContent.id)}"]`)
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      onSharedContentHandled?.()
-    }
-  }, [sharedContent, feed, allMoments, onSharedContentHandled])
   // Server-backed community feed (only in API mode; offline mode stays localStorage-first).
   const api = useApi()
   const [livePosts, setLivePosts] = useState<any[]>([])
@@ -191,6 +174,23 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   // Declared BEFORE first use (story grouping below reads it).
   const currentUser = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
+  useEffect(() => {
+    if (!sharedContent || sharedContent.kind === 'reel') return
+    if (sharedContent.kind === 'story') {
+      const index = allMoments.findIndex((s: any) => String(s.id) === sharedContent.id)
+      if (index >= 0) {
+        setMomentIdx(index)
+        onSharedContentHandled?.()
+      }
+      return
+    }
+    const postIndex = livePosts.findIndex((p: any) => String(p.id) === sharedContent.id)
+    if (postIndex >= 0) {
+      const el = document.querySelector(`[data-post-id="${CSS.escape(sharedContent.id)}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      onSharedContentHandled?.()
+    }
+  }, [sharedContent, livePosts, allMoments, onSharedContentHandled])
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const toggleLike = (key: string) => { toggleLikeKey(key); setLikesTick(x => x + 1); showToast('Added to your gratitude ❤️', 'success', 1000) }
   const bumpCommentCount = (key: string, delta: number) => {
