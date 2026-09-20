@@ -269,12 +269,13 @@ export async function handleFeed(request, env, ctx) {
     const sid = path.split('/')[3]
     const exists = await query(env, 'SELECT 1 FROM stories WHERE id=?', [sid])
     if (!exists.rows[0]) return errorResponse('story not found', 404)
-    await query(env, `INSERT INTO story_views (story_id, viewer_username, viewer_user_id)
-                     VALUES (?,?,?)
-                     ON CONFLICT(story_id, viewer_username) DO UPDATE SET
-                       viewer_user_id=excluded.viewer_user_id,
-                       viewed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`, [sid, fresh.username, fresh.id])
-    return jsonResponse({ ok: true, storyId: sid, viewed: true })
+    const viewedAt = new Date().toISOString()
+    await query(env, `INSERT INTO story_views (story_id, viewer_username, viewer_user_id, viewed_at)
+                     VALUES (?,?,?,?)
+                     ON CONFLICT(viewer_user_id, story_id) DO UPDATE SET
+                       viewer_username=excluded.viewer_username,
+                       viewed_at=excluded.viewed_at`, [sid, fresh.username, fresh.id, viewedAt])
+    return jsonResponse({ ok: true, storyId: sid, viewed: true, viewedAt })
   }
 
   // ── Self-delete (Instagram-style) ─────────────────────────
