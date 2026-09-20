@@ -171,7 +171,7 @@ export async function handleChat(request, env, ctx) {
               MAX(m.created_at) AS last_at,
               (SELECT body FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
               (SELECT sender_username FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' AND mr.message_id IS NULL THEN 1 ELSE 0 END) AS unread,
+              SUM(CASE WHEN m.sender_username != ? AND mr.message_id IS NULL THEN 1 ELSE 0 END) AS unread,
               COUNT(*) AS total
          FROM messages m
         LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
@@ -208,7 +208,7 @@ export async function handleChat(request, env, ctx) {
               MAX(m.created_at) AS last_at,
               (SELECT body FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
               (SELECT sender_username FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              COALESCE(SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' AND mr.message_id IS NULL THEN 1 ELSE 0 END), 0) AS unread,
+              COALESCE(SUM(CASE WHEN m.sender_username != ? AND mr.message_id IS NULL THEN 1 ELSE 0 END), 0) AS unread,
               COUNT(m.id) AS total
          FROM authorized a
          LEFT JOIN messages m ON m.conversation_key = a.conversation_key
