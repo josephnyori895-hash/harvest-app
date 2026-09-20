@@ -37,6 +37,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [loadingServer, setLoadingServer] = useState(false)
   const [reelsLoadFailed, setReelsLoadFailed] = useState(false)
   const [reelsLoadKey, setReelsLoadKey] = useState(0)
+  const [reelsNextOffset, setReelsNextOffset] = useState(0)
+  const [hasMoreReels, setHasMoreReels] = useState(false)
+  const [loadingMoreReels, setLoadingMoreReels] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const useServer = useApi()
   // Double-tap to encourage: IG-style big heart pulse at the tap point.
@@ -67,6 +70,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             music: r.music || null,
           }))
         setServerReels(mapped)
+        setReelsNextOffset(Number(r.nextOffset) || mapped.length)
+        setHasMoreReels(mapped.length >= 20)
       })
       .catch(() => {
         if (!cancelled) setReelsLoadFailed(true)
@@ -76,6 +81,34 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }, [useServer, reelsLoadKey])
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
+
+  const loadMoreReels = async () => {
+    if (!useServer || loadingServer || loadingMoreReels || !hasMoreReels) return
+    setLoadingMoreReels(true)
+    try {
+      const r = await fetchReels(reelsNextOffset, 20)
+      const mapped: Reel[] = (r.reels || [])
+        .filter((item: any) => Boolean(item.username || item.user))
+        .map((item: any) => ({
+          id: item.id,
+          user: item.username || item.user,
+          verified: Boolean(item.verified),
+          cap: item.caption || item.cap || '',
+          views: item.views || 0,
+          comments: item.comments || 0,
+          img: item.poster_url || item.img || undefined,
+          video: item.hls_url || item.video || undefined,
+          music: item.music || null,
+        }))
+      setServerReels(prev => [...prev, ...mapped])
+      setReelsNextOffset(Number(r.nextOffset) || reelsNextOffset + mapped.length)
+      setHasMoreReels(mapped.length >= 20)
+    } catch {
+      flash('Could not load more videos. Try again.')
+    } finally {
+      setLoadingMoreReels(false)
+    }
+  }
 
   const allVideos = useMemo(() => [...serverReels], [serverReels])
   useEffect(() => {
