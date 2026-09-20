@@ -122,7 +122,10 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       const [p,u,g,d,feed,ch,a] = await Promise.all([read(pendingR),read(usersR),read(groupsR),read(departmentsR),read(contentR),read(chatsR),read(auditR)])
       setDashboard({
         pending: (p.pending || []).length,
-        members: (u.users || []).length,
+        members: (u.users || []).filter((member: any) => {
+          const created = member.created_at ? new Date(member.created_at).getTime() : 0
+          return created > Date.now() - 7 * 24 * 60 * 60 * 1000
+        }).length,
         groups: (g.groups || []).length,
         departments: (d.departments || []).length,
         content: (feed.posts || feed.items || feed.reels || []).slice(0, 8),
@@ -394,7 +397,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             <div className="grid grid-cols-2 gap-2">
               {[
                 ['Pending approvals', dashboard.pending, 'moderation', '🛡️'],
-                ['New members', dashboard.members, 'accounts', '👥'],
+                ['New members (7d)', dashboard.members, 'accounts', '👥'],
                 ['Active groups', dashboard.groups, 'groups', '🟣'],
                 ['Departments', dashboard.departments, 'departments', '🏢'],
               ].map(([label,count,target,icon]) => <button key={String(label)} onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="text-left bg-white border border-[#E8DEC9] rounded-2xl p-4"><span className="text-lg">{icon}</span><p className="text-2xl font-extrabold mt-1">{count}</p><p className="text-[11px] text-[#766E63]">{label}</p></button>)}
