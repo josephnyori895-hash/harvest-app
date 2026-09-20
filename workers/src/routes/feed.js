@@ -113,7 +113,10 @@ export async function handleFeed(request, env, ctx) {
     )
     const out = await Promise.all(rows.map(async r => ({
       ...bool(r, 'verified', 'is_pinned'),
-      hls_url: await mediaUrlOrNull(env, r.hls_master_key || r.poster_key, 900),
+      // Never expose the poster image as a video URL. If transcoding has
+      // not produced an HLS key yet, the client should show the poster/fallback
+      // instead of trying to decode an image as video.
+      hls_url: r.hls_master_key ? await mediaUrlOrNull(env, r.hls_master_key, 900) : null,
       poster_url: await mediaUrlOrNull(env, r.poster_key, 900),
     })))
     return jsonResponse({ reels: out, nextOffset: offset + limit })
