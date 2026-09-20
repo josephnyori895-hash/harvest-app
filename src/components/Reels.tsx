@@ -118,8 +118,8 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
     touchY.current = null
   }
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
-  const share = async () => { const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text }); else { await navigator.clipboard.writeText(text); flash('Video details copied to clipboard') } } catch {} }
-  const shareWa = () => { sharePostToWhatsApp({ author: cur.user, caption: cur.cap }); flash('Opening WhatsApp — pick a group ✓') }
+  const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const url = cur.id != null ? `${window.location.origin}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : window.location.href; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
+  const shareWa = () => { if (!cur) return; sharePostToWhatsApp({ author: cur.user, caption: cur.cap, id: cur.id != null ? String(cur.id) : undefined, kind: 'reel' }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
   const toggleEncourage = () => setEncouraged(p => ({ ...p, [key]: !p[key] }))
   // Instagram-style self-delete: authors remove their own reels; admin can remove any.
@@ -217,7 +217,7 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
             {cur.video ? <>
               {!videoReady && !videoError && <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />}
               {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p></div></div>}
-              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onError={() => setVideoError(true)} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
+              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} onError={() => setPosterFailed(true)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onCanPlay={() => setVideoReady(true)} onWaiting={() => setVideoReady(false)} onPlaying={() => setVideoReady(true)} onError={() => { setVideoReady(false); setVideoError(true) }} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
             </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}
             {heart && (
               <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
