@@ -11,7 +11,8 @@
     "test:admin": "node --test scripts/test-admin-controls.mjs",
     "test:security": "node --test scripts/test-security-hardening.mjs",
     "smoke": "node scripts/smoke-test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
