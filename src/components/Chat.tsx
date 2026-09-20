@@ -358,6 +358,33 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
       setActionFor(null)
     }
   }
+  const shareMedia = async (m: any) => {
+    if (!m?.media_key || !m?.id) return
+    try {
+      setNotice('Preparing photo…')
+      const url = await fetchSignedMediaUrl(String(m.id))
+      if (!url) throw new Error('Could not load the photo')
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Could not download the photo')
+      const blob = await response.blob()
+      const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg'
+      const file = new File([blob], `harvest-photo-${String(m.id).slice(0, 8)}.${ext}`, { type: blob.type || 'image/jpeg' })
+      const text = m.text && m.text !== '📷' ? String(m.text) : 'Shared from Harvest'
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ files: [file], text })
+      } else if (navigator.share) {
+        await navigator.share({ text: `${text}\n${url}` })
+      } else {
+        window.open(`https://wa.me/?text=${encodeURIComponent(`${text}\n${url}`)}`, '_blank', 'noopener,noreferrer')
+      }
+      setNotice('Share sheet opened')
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') setError(e?.message || 'Unable to share photo')
+    } finally {
+      window.setTimeout(() => setNotice(''), 1800)
+    }
+  }
+
   const copyMessage = async (m: any) => {
     const value = String(m.text || '')
     if (!value) return
@@ -475,6 +502,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                         <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 active:bg-zinc-700 text-sm flex items-center gap-3">↩ Reply</button>
                         <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">😊 React</button>
                         <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">⧉ Copy</button>
+                        {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 active:bg-zinc-700 text-sm flex items-center gap-3">↗ Share photo</button>}
                       </div>
                     )}
                   </div>
