@@ -354,7 +354,7 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
 
   const submit = async () => {
     if (busy) return
-    if (!fileUrl && !caption.trim()) { setNotice('Add a video or a message first'); return }
+    if (!fileUrl) { setNotice('Add a video first'); return }
     setBusy(true); setNotice('')
     try {
       if (USE_API && fileUrl) {
