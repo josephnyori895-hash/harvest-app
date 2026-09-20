@@ -173,7 +173,7 @@ export async function handleChat(request, env, ctx) {
 
   // DELETE /api/chat/messages/:id — admin/delegated moderation soft-deletes a message.
   // Keep the row for audit/history integrity; clients receive a neutral tombstone.
-  if (/^\/api\/chat\/messages\/[^/]+$/.test(path) && method === 'DELETE') {
+  if (path.startsWith('/api/chat/messages/') && path.split('/').length === 5 && method === 'DELETE') {
     const fresh = await requireMember(env, user)
     const msgId = path.split('/')[4]
     const m = await query(env, 'SELECT id, conversation_key, sender_username, deleted_at FROM messages WHERE id=?', [msgId])
