@@ -16,11 +16,6 @@ jobs:
   build-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      HARVEST_VERSION_CODE: ${{ 1000 + github.run_number }}
-      HARVEST_VERSION_NAME: 1.0.${{ github.run_number }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +41,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+
+      - name: Set Android version
+        run: |
+          echo "HARVEST_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "HARVEST_VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -95,7 +95,13 @@ jobs:
 
       - name: Deploy Worker and APK
         working-directory: workers
-        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          npx wrangler deploy
 
       - name: Verify live APK
         env:
