@@ -366,12 +366,11 @@ export async function handleGroups(request, env, ctx) {
     const token = decodeURIComponent(path.split('/')[4] || '')
     const r = await query(env, 'SELECT id, invite_only, approve_new_members FROM groups WHERE invite_token=?', [token])
     if (!r.rows[0]) return errorResponse('invite link is invalid or expired', 404)
-    if (r.rows[0].invite_only) return errorResponse('this group requires an admin to add members', 403)
     if (r.rows[0].approve_new_members) {
       await query(env, 'INSERT INTO group_invites (id, group_id, invited_username, invited_user_id, inviter_id, status, created_at) VALUES (?,?,?,?,?,\'pending\',?)', [uuid(), r.rows[0].id, fresh.username, fresh.id, fresh.id, new Date().toISOString()])
       return jsonResponse({ ok: true, status: 'pending' }, 201)
     }
-    await query(env, 'INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'member') ON CONFLICT DO NOTHING', [r.rows[0].id, fresh.id])
+    await query(env, "INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'member') ON CONFLICT DO NOTHING", [r.rows[0].id, fresh.id])
     return jsonResponse({ ok: true, status: 'joined' }, 201)
   }
 
