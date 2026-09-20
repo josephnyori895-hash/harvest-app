@@ -172,6 +172,12 @@ export async function handleDepartments(request, env, ctx) {
     const uname = String(decodeURIComponent(mm[1])).trim().toLowerCase()
     const t = await query(env, 'SELECT id FROM users WHERE username=?', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
+    const target = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, t.rows[0].id])
+    if (!target.rows[0]) return errorResponse('member not found', 404)
+    if (target.rows[0].role === 'leader') {
+      const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
+      if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot remove the only department leader — appoint another leader first', 400)
+    }
     await query(env, 'DELETE FROM department_members WHERE department_id=? AND user_id=?', [dep.id, t.rows[0].id])
     await audit(env, fresh, 'department_member_removed', dep.id, { username: uname })
     return jsonResponse({ ok: true, removed: uname })
