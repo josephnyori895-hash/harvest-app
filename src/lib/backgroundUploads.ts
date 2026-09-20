@@ -200,7 +200,7 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
       description: task.description || task.caption,
       music_track_id: task.music_track_id,
       cover_key: coverKey,
-      poster_key: task.cover_key,
+      cover_key: task.cover_key,
     })
   }
   onPct(100)
