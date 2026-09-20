@@ -61,9 +61,13 @@ export default function Search({ users, onView, onOpenUser }: { users: any[]; on
                 {recent.map((p, i) => (
                   <button key={p.id || i} onClick={() => openPost(p)} className="aspect-square bg-zinc-900 overflow-hidden relative group">
                     {p.kind === 'reel'
-                      ? <video src={p.hls_url || p.thumb_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      // Poster only: a bare <video> in a grid shows Android's huge
+                      // play-glyph poster. No poster → dark tile + ▶ badge (IG style).
+                      ? p.thumb_url
+                        ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center text-2xl">🎥</div>
                       : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🙏</div>}
-                    {(p.kind === 'reel' || p.hls_url) && <span className="absolute top-1 right-1 text-xs">▶</span>}
+                    {p.kind === 'reel' && <span className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-[10px]">▶</span>}
                   </button>
                 ))}
               </div>

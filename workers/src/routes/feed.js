@@ -59,7 +59,12 @@ export async function handleFeed(request, env, ctx) {
 
     const enriched = await Promise.all(ranked.map(async r => ({
       ...r,
-      thumb_url: await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
+      // Reels: thumb_url must be a POSTER image, never the video itself —
+      // falling back to original_key gave clients a video URL as "thumbnail",
+      // which rendered broken <img> tiles or WebView's giant play glyph.
+      thumb_url: r.kind === 'reel'
+        ? await mediaUrlOrNull(env, r.thumb_key, 900)
+        : await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
       hls_url: r.kind === 'reel' ? await mediaUrlOrNull(env, r.original_key, 900) : null,
     })))
 
