@@ -8,7 +8,7 @@ import SocialEditor from './SocialEditor'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
-export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpenUser, onDeleted }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[]; onOpenUser?: (u: any) => void; onDeleted?: (id: string) => void }) {
+export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpenUser, onDeleted, onViewed }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[]; onOpenUser?: (u: any) => void; onDeleted?: (id: string) => void; onViewed?: (id: string) => void }) {
   const s = allStories[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
@@ -144,6 +144,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   // story ID + member, so revisiting a story is idempotent.
   useEffect(() => {
     if (!s?.id) return
+    onViewed?.(String(s.id))
     const token = localStorage.getItem('harvest_token') || ''
     const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
     if (!token || !API) return
@@ -151,7 +152,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token },
     }).catch(() => {})
-  }, [s?.id])
+  }, [s?.id, onViewed])
 
   useEffect(() => { if (s?.id) { setReplies([]); setReply(''); void loadReplies() } }, [s?.id])
   if (!s) return null
