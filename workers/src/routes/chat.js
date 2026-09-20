@@ -49,6 +49,22 @@ async function getConversation(env, me, peer, group, department) {
   }
 }
 
+async function canAccessConversation(env, me, conversationKey) {
+  const key = String(conversationKey || '')
+  if (key.startsWith('harvest:chat:')) return key.split(':').includes(me.username)
+  if (key.startsWith('group:')) {
+    const slug = key.slice('group:'.length)
+    const r = await query(env, `SELECT 1 FROM groups g JOIN group_members gm ON gm.group_id=g.id WHERE g.slug=? AND gm.user_id=?`, [slug, me.id])
+    return me.role === 'admin' || !!r.rows[0]
+  }
+  if (key.startsWith('department:')) {
+    const slug = key.slice('department:'.length)
+    const r = await query(env, `SELECT 1 FROM departments d JOIN department_members dm ON dm.department_id=d.id WHERE d.slug=? AND dm.user_id=?`, [slug, me.id])
+    return me.role === 'admin' || !!r.rows[0]
+  }
+  return false
+}
+
 function messageSelect() {
   return `SELECT id, kind, conversation_key, sender_username AS "from", recipient_username AS "to",
                  body AS text, status, created_at,
@@ -141,11 +157,7 @@ export async function handleChat(request, env, ctx) {
     // DM keys are harvest:chat:<userA>:<userB> (sorted); the reactor must be one of them.
     // Team keys (group:<slug> / department:<slug>) were membership-checked at
     // history load — the client can only reach this route with a valid token.
-    const isParticipant = m.rows[0].sender_username === fresh.username
-      || m.rows[0].conversation_key.split(':').includes(fresh.username)
-      || m.rows[0].conversation_key.startsWith('group:')
-      || m.rows[0].conversation_key.startsWith('department:')
-    if (!isParticipant) return errorResponse('forbidden', 403)
+    if (!(await canAccessConversation(env, fresh, m.rows[0].conversation_key))) return errorResponse('forbidden', 403)
     await query(env, 'UPDATE messages SET reaction=? WHERE id=?', [rx || null, msgId])
     return jsonResponse({ ok: true, reaction: rx || null })
   }
