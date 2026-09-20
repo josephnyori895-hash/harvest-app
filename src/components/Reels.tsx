@@ -144,6 +144,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (touchY.current == null) return
     const dy = (e.changedTouches[0]?.clientY ?? 0) - touchY.current
     if (dy < -60) next(); else if (dy > 60) prev()
+    // A swipe is navigation, not a double-tap candidate.
+    if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
