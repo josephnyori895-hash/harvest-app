@@ -54,7 +54,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       .then(r => {
         if (cancelled) return
         const mapped: Reel[] = (r.reels || [])
-          .filter((r: any) => (r.username || r.user) && (r.caption || r.cap))
+          .filter((r: any) => Boolean(r.username || r.user))
           .map((r: any) => ({
             id: r.id,
             user: r.username || r.user,
