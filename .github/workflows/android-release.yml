@@ -169,9 +169,9 @@ jobs:
           HEADER_FILE="$(mktemp)"
           trap 'rm -f "$HEADER_FILE"' EXIT
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 -D "$HEADER_FILE" -o /dev/null "$PERMANENT_URL"
-          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\''\r'\'' | sed '\''s/[[:space:]]*$//'\'')"
-          CACHE_CONTROL="$(awk '\''BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}'\'' "$HEADER_FILE")"
-          CONTENT_DISPOSITION="$(awk '\''BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}'\'' "$HEADER_FILE")"
+          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+          CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
+          CONTENT_DISPOSITION="$(awk 'BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
           echo "PERMANENT STATUS:      $STATUS_LINE"
           echo "PERMANENT CACHE:       $CACHE_CONTROL"
           echo "PERMANENT DISPOSITION: $CONTENT_DISPOSITION"
