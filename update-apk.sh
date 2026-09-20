@@ -14,6 +14,9 @@ BUILD_TYPE="debug"
 [[ "${1:-}" == "--release" ]] && BUILD_TYPE="release"
 
 JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
+HARVEST_VERSION_CODE="${HARVEST_VERSION_CODE:-$((1000 + $(git rev-list --count HEAD)))}"
+HARVEST_VERSION_NAME="${HARVEST_VERSION_NAME:-1.0.${HARVEST_VERSION_CODE}}"
+export HARVEST_VERSION_CODE HARVEST_VERSION_NAME
 
 echo "▸ 1/5 Building web app (Vite)…"
 npm run build --silent
@@ -42,15 +45,16 @@ cd ..
 
 echo "▸ 5/5 Verifying live download…"
 sleep 3
-LIVE_MD5=$(curl -s -m 60 https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | md5sum | cut -d' ' -f1)
-LOCAL_MD5=$(md5sum "$STAGED" | cut -d' ' -f1)
-if [[ "$LIVE_MD5" == "$LOCAL_MD5" ]]; then
-  echo "✅ LIVE APK verified — checksums match ($LIVE_MD5)"
+LIVE_SHA256=$(curl -fsSL --retry 5 --retry-delay 3 -m 120 https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | sha256sum | cut -d' ' -f1)
+LOCAL_SHA256=$(sha256sum "$STAGED" | cut -d' ' -f1)
+if [[ "$LIVE_SHA256" == "$LOCAL_SHA256" ]]; then
+  echo "✅ LIVE APK verified — SHA-256 checksums match ($LIVE_SHA256)"
+  echo "   versionCode: $HARVEST_VERSION_CODE"
+  echo "   versionName: $HARVEST_VERSION_NAME"
   echo "   https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk"
 else
-  echo "⚠️  Checksum mismatch (edge cache may be stale):"
-  echo "   local: $LOCAL_MD5"
-  echo "   live:  $LIVE_MD5"
-  echo "   Wait ~30s and re-run: curl -s https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | md5sum"
+  echo "⚠️  SHA-256 mismatch:"
+  echo "   local: $LOCAL_SHA256"
+  echo "   live:  $LIVE_SHA256"
   exit 1
 fi
