@@ -121,6 +121,12 @@ export async function handleChat(request, env, ctx) {
     if (String(body.body || '').length > MAX_MESSAGE_LENGTH) return errorResponse('message too long', 400)
     const conv = await getConversation(env, fresh, body.peer, body.group, body.department)
     if (conv.error) return errorResponse(conv.error, conv.code)
+    if (conv.groupId) {
+      const permission = await query(env, `SELECT g.allow_member_send, gm.role FROM groups g JOIN group_members gm ON gm.group_id=g.id WHERE g.id=? AND gm.user_id=?`, [conv.groupId, fresh.id])
+      const row = permission.rows[0]
+      if (!row) return errorResponse('group membership required', 403)
+      if (fresh.role !== 'admin' && row.role !== 'admin' && !row.allow_member_send) return errorResponse('only group admins can send messages in this group', 403)
+    }
     // Reply support: verify the referenced message belongs to this conversation.
     let replyToId = null, replyPreview = null
     if (body.reply_to_id) {
