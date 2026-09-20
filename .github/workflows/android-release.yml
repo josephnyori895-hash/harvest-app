@@ -120,6 +120,11 @@ jobs:
           test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required"; exit 1; }
           npx wrangler deploy
 
+      - name: Production Worker anonymous smoke test
+        env:
+          SMOKE_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+        run: npm run smoke
+
       - name: Verify live APK
         env:
           APK_URL: https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk
