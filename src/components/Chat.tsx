@@ -99,6 +99,7 @@ export type TeamChat = { kind: 'department' | 'group'; slug: string; name: strin
 export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack: () => void; users: ChatUser[]; teamChat?: TeamChat | null; onCloseTeam?: () => void; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
+  const totalUnread = useMemo(() => inbox.reduce((sum, c) => sum + (Number(c.unread) || 0), 0), [inbox])
   const [section, setSection] = useState<Section>('personal')
   const [active, setActive] = useState<ChatUser | null>(null)
   const [text, setText] = useState('')
@@ -599,7 +600,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
               <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-zinc-500" />
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{inbox.some(c => c.unread > 0) ? ` (${inbox.reduce((a, c) => a + (Number(c.unread) || 0), 0)})` : ''}</button>
+              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}</button>
               <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-zinc-900 text-zinc-300 border border-zinc-700">Requests</button>
               <span className="ml-auto text-xs text-zinc-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
             </div>
@@ -754,7 +755,7 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
       <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">Your teams</p>
       <div className="flex gap-4 overflow-x-auto pb-3">
         {teams.map(t => (
-          <button type="button" key={`\${t.kind}_\${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open \${t.name} chat`}>
+          <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
             <div className="relative w-[62px] h-[62px] mx-auto">
               <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
               {Number(t.unread) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-black shadow-sm">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
