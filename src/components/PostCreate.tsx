@@ -31,6 +31,7 @@ export default function PostCreate({ onDone }: Props) {
   const [caption, setCaption] = useState('')
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
+  const [scripture, setScripture] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -103,7 +104,8 @@ export default function PostCreate({ onDone }: Props) {
             title: (type === 'music' || type === 'sermon') ? title.trim() : undefined,
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
             speaker: type === 'sermon' ? artist.trim() || undefined : undefined,
-            scripture: undefined,
+            scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
+            description: type === 'sermon' ? caption.trim() : undefined,
           },
         }).catch(() => {})
         onDone()
@@ -177,6 +179,7 @@ export default function PostCreate({ onDone }: Props) {
             <div className="mt-2 space-y-2">
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Sermon title (e.g. The Power of Persistence)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
               <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Speaker / preacher (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+              <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
               <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 80 MB audio / 500 MB video. Members will be able to stream it and download the original file.</p>
             </div>
           )}
