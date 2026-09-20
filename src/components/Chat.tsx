@@ -494,26 +494,39 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
               <span className="ml-auto text-xs text-zinc-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
             </div>
           </section>
-          <section className="pb-6">
+          <section className="px-3 pb-7">
             {inbox.length === 0 ? (
-              <div className="text-center py-14 text-sm text-zinc-400">No conversations yet — open <button type="button" className="font-bold text-blue-400" onClick={() => setTab('people')}>Requests</button> to say hello.</div>
+              <div className="mx-3 mt-6 rounded-3xl border border-zinc-800 bg-zinc-950 px-6 py-14 text-center">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600/20 to-fuchsia-600/20 flex items-center justify-center text-2xl">💬</div>
+                <h2 className="mt-4 text-base font-extrabold text-white">Your conversations</h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">Private chats with your Harvest church family will appear here.</p>
+                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2 text-xs font-extrabold text-black">Find someone</button>
+              </div>
             ) : inbox.map(c => {
               const online = Boolean(presence[c.peer]?.online)
+              const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
               return (
                 <button type="button" key={c.conversation_key} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900/60 active:bg-zinc-900 transition">
+                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-1 text-left transition active:scale-[0.99] ${unread > 0 ? 'bg-zinc-900/80' : 'hover:bg-zinc-900/50'}`}>
                   <div className="relative shrink-0">
-                    <div className="w-14 h-14 rounded-full bg-zinc-800 flex items-center justify-center font-extrabold text-zinc-300">{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    <div className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-zinc-300 ${unread > 0 ? 'bg-gradient-to-br from-purple-600 to-fuchsia-600 p-[2px]' : 'bg-zinc-800'}`}>
+                      <div className={`w-full h-full rounded-full flex items-center justify-center ${unread > 0 ? 'bg-zinc-900' : 'bg-zinc-800'}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    </div>
                     {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[15px] text-white truncate">{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
-                    <p className={`text-[13px] truncate mt-0.5 ${c.unread > 0 ? 'text-white font-medium' : 'text-zinc-400'}`}>
-                      {c.last_from === currentUser ? 'You: ' : ''}{preview} · {c.last_at ? chatListTime(c.last_at) : ''}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-zinc-200'}`}>{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+                      <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-zinc-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-zinc-100 font-semibold' : 'text-zinc-400'}`}>
+                        {c.last_from === currentUser ? 'You: ' : ''}{preview}
+                      </p>
+                      {unread > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-[#ff3040] text-white text-[9px] font-extrabold flex items-center justify-center shadow-sm" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>}
+                    </div>
                   </div>
-                  {c.unread > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" aria-label={`${c.unread} unread`} />}
                 </button>
               )
             })}
