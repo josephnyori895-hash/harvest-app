@@ -209,12 +209,25 @@ export async function handleMediaRead(request, env, ctx) {
   const signed = await verifyMediaSignature(env, key, url.searchParams.get('expires'), url.searchParams.get('signature'))
   if (!signed) return errorResponse('signed media URL required', 401)
 
-  const obj = await env.MEDIA.get(key)
+  const obj = await env.MEDIA.get(key, { range: request.headers })
   if (!obj) return errorResponse('not found', 404)
   const headers = new Headers()
   headers.set('Content-Type', contentTypeForKey(key, obj.httpMetadata?.contentType))
   headers.set('Cache-Control', 'private, max-age=300')
   headers.set('ETag', obj.httpEtag)
+  headers.set('Accept-Ranges', 'bytes')
+  headers.set('Access-Control-Allow-Origin', '*')
+  headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+  headers.set('Access-Control-Allow-Headers', 'Range, Content-Type')
+  headers.set('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Length, Content-Range, ETag')
+  if (obj.range && typeof obj.range.offset === 'number' && typeof obj.range.length === 'number') {
+    const start = obj.range.offset
+    const end = Math.min(start + obj.range.length - 1, obj.size - 1)
+    headers.set('Content-Range', 'bytes ' + start + '-' + end + '/' + obj.size)
+    headers.set('Content-Length', String(end - start + 1))
+  } else {
+    headers.set('Content-Length', String(obj.size))
+  }
   // ?dl=<filename> turns the read into a download (sermons): the WebView/browser
   // saves the file under that name instead of streaming it.
   const dl = url.searchParams.get('dl')
@@ -223,5 +236,6 @@ export async function handleMediaRead(request, env, ctx) {
     headers.set('Content-Length', String(obj.size))
   }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
-  return new Response(obj.body, { headers })
+  const status = obj.range && typeof obj.range.offset === 'number' && typeof obj.range.length === 'number' ? 206 : 200
+  return new Response(obj.body, { status, headers })
 }
