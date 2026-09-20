@@ -18,6 +18,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [keyboardInset, setKeyboardInset] = useState(0)
+  const historyPushedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const duration = 4000
@@ -29,6 +31,32 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const canEdit = canDelete
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json(); if(r.ok)setReplies(d.replies||[]) } catch {} }
   const sendReply = async () => { if(!reply.trim()||replyBusy)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReplies(x=>[...x,d.reply]); setReply(''); setShowReplies(true) } catch(e:any){window.alert(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
+
+  // Keep the Story viewer above the Android keyboard and make system Back close it.
+  useEffect(() => {
+    const vv = window.visualViewport
+    const updateKeyboardInset = () => {
+      if (!vv) return
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      setKeyboardInset(Math.min(inset, 360))
+    }
+    updateKeyboardInset()
+    vv?.addEventListener('resize', updateKeyboardInset)
+    vv?.addEventListener('scroll', updateKeyboardInset)
+    if (!historyPushedRef.current) {
+      window.history.pushState({ harvestStoryViewer: true }, '')
+      historyPushedRef.current = true
+    }
+    const onPopState = () => setIdx(null)
+    window.addEventListener('popstate', onPopState)
+    return () => {
+      vv?.removeEventListener('resize', updateKeyboardInset)
+      vv?.removeEventListener('scroll', updateKeyboardInset)
+      window.removeEventListener('popstate', onPopState)
+      if (historyPushedRef.current && window.history.state?.harvestStoryViewer) window.history.back()
+      historyPushedRef.current = false
+    }
+  }, [setIdx])
 
   // Advance helper shared by photo timer and video 'ended'.
   const goNext = () => {
@@ -137,11 +165,11 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col" onClick={handleTap}>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : "env(safe-area-inset-bottom)" }} onClick={handleTap}>
       <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-zinc-800 rounded overflow-hidden relative"><div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} /></div>)}</div>
       <div className="flex items-center justify-between px-4 py-3">
         <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div></div><div><p className="text-sm font-semibold text-white">{s.name}</p>{users.find((u: any) => u.username === s.name)?.role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300'}`}>{users.find((u: any) => u.username === s.name)?.role || 'member'}</span>}</div></button>
-        <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="text-base px-2 text-white disabled:opacity-50" aria-label="Delete story" title="Delete story">{deleting ? '…' : '🗑'}</button>}{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="text-xl px-2 text-white">⏸</button>}<button onClick={(e) => { e.stopPropagation(); shareStoryToWhatsApp({ author: s.name, caption: s.caption }) }} className="text-lg px-2 text-[#25D366]" aria-label="Share story to WhatsApp" title="Share to WhatsApp">↗ WhatsApp</button><button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="text-xl px-2 text-white">✕</button></div>
+        <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50 flex items-center justify-center" aria-label="Delete story" title="Delete story">{deleting ? '…' : '🗑'}</button>}{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">⏸</button>}<button onClick={(e) => { e.stopPropagation(); shareStoryToWhatsApp({ author: s.name, caption: s.caption }) }} className="min-w-11 min-h-11 px-2 text-[#25D366] flex items-center justify-center" aria-label="Share story to WhatsApp" title="Share to WhatsApp">↗ WhatsApp</button><button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">✕</button></div>
       </div>
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
         {/* object-contain: the whole photo/video stays visible and centered
@@ -180,12 +208,12 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 p-6"><p className="font-bold text-white text-lg">{s.name}</p><p className="text-sm text-zinc-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>{s.music && <div className="flex gap-2 items-center mt-2 p-2 bg-black/60 rounded-lg"><img src={s.music.cover} className="w-8 h-8 rounded" /><div className="flex-1"><p className="text-xs font-semibold">🎵 {s.music.title}</p><p className="text-[11px] text-zinc-400">{s.music.artist}</p></div><a href={s.music.url} target="_blank" rel="noreferrer" className="text-xs bg-white text-black px-2 py-1 rounded-full">▶</a></div>}</div>
-        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
-        {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
+        {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
+        {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
       </div>
-      {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute bottom-14 left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/70 p-3 text-white"><div className="flex justify-between mb-2"><b className="text-xs">Replies</b><button onClick={()=>setShowReplies(false)}>×</button></div>{replies.length ? replies.map((r:any)=><p key={r.id} className="text-xs py-1"><b>{r.name||r.username}</b> {r.body}</p>) : <p className="text-xs text-zinc-400">No replies yet.</p>}</div>}
-      <div onClick={e=>e.stopPropagation()} className="absolute bottom-12 left-3 right-3 flex gap-2"><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 rounded-full bg-white/90 text-black px-4 py-2 text-sm outline-none" /><button onClick={()=>void sendReply()} disabled={replyBusy} className="rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':'Send'}</button><button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button></div>
-      {canEdit && <button onClick={e=>{e.stopPropagation();setEditing(true)}} className="absolute top-14 right-16 text-white text-xs bg-black/50 px-3 py-2 rounded-full">✎ Edit</button>}
+      {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 64}px` : "calc(env(safe-area-inset-bottom) + 6rem)" }}><div className="flex justify-between mb-2"><b className="text-xs">Replies</b><button onClick={()=>setShowReplies(false)}>×</button></div>{replies.length ? replies.map((r:any)=><p key={r.id} className="text-xs py-1"><b>{r.name||r.username}</b> {r.body}</p>) : <p className="text-xs text-zinc-400">No replies yet.</p>}</div>}
+      <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : "calc(env(safe-area-inset-bottom) + 3rem)" }}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full bg-white/95 text-black px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400" /><button onClick={()=>void sendReply()} disabled={replyBusy} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':'Send'}</button><button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button></div>
+      {canEdit && <button onClick={e=>{e.stopPropagation();setEditing(true)}} className="absolute top-14 right-16 min-h-11 text-white text-xs bg-black/50 px-3 py-2 rounded-full">✎ Edit</button>}
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-500">{isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Tap to forward'}</div>
     </div>
