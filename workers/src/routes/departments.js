@@ -121,9 +121,11 @@ export async function handleDepartments(request, env, ctx) {
   // existing department (admin overrides the one-department rule).
   const am = sub === 'members' && method === 'POST'
   if (am) {
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
     const dep = await getDepartment(env, slug)
     if (!dep) return errorResponse('department not found', 404)
+    const actor = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
+    if (fresh.role !== 'admin' && actor.rows[0]?.role !== 'leader') return errorResponse('department leader required', 403)
     const body = await readJson(request)
     const uname = String(body.username || '').trim().toLowerCase()
     const role = body.role === 'leader' ? 'leader' : 'member'
@@ -156,9 +158,11 @@ export async function handleDepartments(request, env, ctx) {
   // DELETE /api/departments/:slug/members/:username (admin) — remove a member.
   const mm = sub && sub.match(/^members\/([^/]+)$/)
   if (mm && method === 'DELETE') {
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
     const dep = await getDepartment(env, slug)
     if (!dep) return errorResponse('department not found', 404)
+    const actor = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
+    if (fresh.role !== 'admin' && actor.rows[0]?.role !== 'leader') return errorResponse('department leader required', 403)
     const uname = String(decodeURIComponent(mm[1])).trim().toLowerCase()
     const t = await query(env, 'SELECT id FROM users WHERE username=?', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
@@ -170,9 +174,11 @@ export async function handleDepartments(request, env, ctx) {
   // PATCH /api/departments/:slug (admin) — rename / re-describe a department.
   // The slug stays stable so links and existing memberships keep working.
   if (!sub && method === 'PATCH') {
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
     const dep = await getDepartment(env, slug)
     if (!dep) return errorResponse('department not found', 404)
+    const actor = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
+    if (fresh.role !== 'admin' && actor.rows[0]?.role !== 'leader') return errorResponse('department leader required', 403)
     const body = await readJson(request)
     const name = body.name !== undefined ? String(body.name).trim().slice(0, 80) : dep.name
     const description = body.description !== undefined ? (String(body.description).trim().slice(0, 300) || null) : dep.description
