@@ -216,7 +216,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       : r))
     try {
       const token = localStorage.getItem('harvest_token') || ''
-      const API = (import.meta.env.VITE_API_URL || '').replace(/\\/$/, '')
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
       const res = await fetch(API + '/api/likes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
