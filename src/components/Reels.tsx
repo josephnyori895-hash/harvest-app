@@ -35,6 +35,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [serverReels, setServerReels] = useState<Reel[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
   const [reelsLoadFailed, setReelsLoadFailed] = useState(false)
+  const [reelsLoadKey, setReelsLoadKey] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const useServer = useApi()
   // Double-tap to encourage: IG-style big heart pulse at the tap point.
@@ -71,7 +72,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       })
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
-  }, [useServer])
+  }, [useServer, reelsLoadKey])
+
+  const retryReels = () => setReelsLoadKey(x => x + 1)
 
   const allVideos = useMemo(() => [...serverReels], [serverReels])
   useEffect(() => {
@@ -183,7 +186,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     setServerReels(rs => rs.map(r => (r.id === cur.id ? { ...r, comments: Math.max((Number(r.comments) || 0) + delta, 0) } : r)))
   }
 
-  // Honest empty state instead of a crash when no reels are approved yet.
+  // Empty/loading/error guard: do not show "No videos yet" while the server
+  // is still loading or when a failed request left the feed empty.
   if (!cur) return (
     <div className="min-h-[calc(100vh-49px)] bg-[#211d19] text-white overflow-x-hidden">
       <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-5">
@@ -196,9 +200,24 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           <button onClick={() => setMuted(m => !m)} className="shrink-0 min-w-11 min-h-11 rounded-full bg-white/10 border border-white/10" aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? '🔇' : '🔊'}</button>
         </div>
         <div className="rounded-[24px] bg-white/5 border border-white/10 px-4 py-16 text-center">
-          <div className="text-5xl mb-3">🎥</div>
-          <p className="text-base font-semibold">No videos yet</p>
-          <p className="text-xs text-white/55 mt-1">Approved community videos will appear here. Be the first to share one!</p>
+          <div className="text-5xl mb-3">{loadingServer ? '⏳' : reelsLoadFailed ? '⚠️' : '🎥'}</div>
+          {loadingServer ? (
+            <>
+              <p className="text-base font-semibold">Loading videos…</p>
+              <p className="text-xs text-white/55 mt-1">Checking the church video feed.</p>
+            </>
+          ) : reelsLoadFailed ? (
+            <>
+              <p className="text-base font-semibold">Couldn’t load videos</p>
+              <p className="text-xs text-white/55 mt-1">Check your connection and try again.</p>
+              <button type="button" onClick={retryReels} className="mt-4 min-h-11 px-5 rounded-xl bg-white/10 border border-white/15 text-sm font-semibold">Try again</button>
+            </>
+          ) : (
+            <>
+              <p className="text-base font-semibold">No videos yet</p>
+              <p className="text-xs text-white/55 mt-1">Approved community videos will appear here. Be the first to share one!</p>
+            </>
+          )}
         </div>
       </div>
     </div>
