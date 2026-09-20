@@ -231,7 +231,7 @@ function InnerApp() {
       }).then(s => { sub = s })
     }).catch(() => { /* web build: no hardware back */ })
     return () => { disposed = true; try { sub?.remove?.() } catch {} }
-  }, [onboarded, tab, groupDetail, userList, viewUser, backTarget])
+  }, [onboarded, tab, groupDetail, userList, viewUser, backTarget, chatReturnTab])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
