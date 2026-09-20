@@ -152,7 +152,15 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     return undefined
   }, [idx, muted, cur?.video])
 
-  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (allVideos.length === 0) return; if (e.key === 'ArrowUp') { e.preventDefault(); setIdx(i => (i - 1 + allVideos.length) % allVideos.length) } if (e.key === 'ArrowDown') { e.preventDefault(); setIdx(i => (i + 1) % allVideos.length) } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }, [allVideos.length])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (allVideos.length === 0) return
+      if (e.key === 'ArrowUp') { e.preventDefault(); prev() }
+      if (e.key === 'ArrowDown') { e.preventDefault(); next() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [allVideos.length, hasMoreReels, loadingMoreReels, loadingServer])
   useEffect(() => { if (idx >= allVideos.length) setIdx(0) }, [idx, allVideos.length])
   // Generate a first-frame poster when an uploaded reel has no server thumbnail.
   useEffect(() => {
