@@ -300,9 +300,17 @@ export async function handleGroups(request, env, ctx) {
     if (!g) return errorResponse('group not found', 404)
     const actorRole = await myGroupRole(env, g.id, fresh.id)
     const isAdmin = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
-    if (!isAdmin) return errorResponse('group admin required', 403)
+    const canEditInfo = !!g.allow_member_edit_info
+    if (!isAdmin && !canEditInfo) return errorResponse('group admin required', 403)
 
     const body = await readJson(request)
+    // A member who has been granted "edit group info" may change only the
+    // public name/description. Membership, invites, moderation and permissions
+    // remain administrator-controlled.
+    if (!isAdmin) {
+      const allowed = new Set(['name', 'description'])
+      if (Object.keys(body).some(key => !allowed.has(key))) return errorResponse('members can edit only the group name and description', 403)
+    }
     const sets = [], vals = []
     if (body.name !== undefined) {
       const name = String(body.name).trim().slice(0, 80)
