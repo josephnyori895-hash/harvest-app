@@ -97,18 +97,18 @@ jobs:
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
-          APK_FILENAME="harvest-family-\${GITHUB_RUN_NUMBER}-\${GITHUB_SHA::7}.apk"
-          APK_PATH="workers/downloads/\$APK_FILENAME"
-          cp "\$APK" "\$APK_PATH"
-          test -s "\$APK_PATH"
-          LOCAL_SHA="\$(sha256sum "\$APK_PATH" | cut -d' ' -f1)"
-          APK_SIZE="\$(stat -c '%s' "\$APK_PATH")"
-          echo "APK_FILENAME=\$APK_FILENAME" >> "\$GITHUB_ENV"
-          echo "LOCAL_SHA=\$LOCAL_SHA" >> "\$GITHUB_ENV"
-          echo "APK_SIZE=\$APK_SIZE" >> "\$GITHUB_ENV"
-          echo "Versioned APK: \$APK_FILENAME"
-          echo "LOCAL SHA256: \$LOCAL_SHA"
-          echo "APK size: \$APK_SIZE bytes"
+          APK_FILENAME="harvest-family-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
+          APK_PATH="workers/downloads/$APK_FILENAME"
+          cp "$APK" "$APK_PATH"
+          test -s "$APK_PATH"
+          LOCAL_SHA="$(sha256sum "$APK_PATH" | cut -d' ' -f1)"
+          APK_SIZE="$(stat -c '%s' "$APK_PATH")"
+          echo "APK_FILENAME=$APK_FILENAME" >> "$GITHUB_ENV"
+          echo "LOCAL_SHA=$LOCAL_SHA" >> "$GITHUB_ENV"
+          echo "APK_SIZE=$APK_SIZE" >> "$GITHUB_ENV"
+          echo "Versioned APK: $APK_FILENAME"
+          echo "LOCAL SHA256: $LOCAL_SHA"
+          echo "APK size: $APK_SIZE bytes"
 
       - name: Install Worker dependencies
         run: npm ci --prefix workers
@@ -116,35 +116,35 @@ jobs:
       - name: Apply D1 migrations
         working-directory: workers
         env:
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ADMIN_PIN_HASHES: \${{ secrets.ADMIN_PIN_HASHES }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_PIN_HASHES: ${{ secrets.ADMIN_PIN_HASHES }}
         run: |
-          test -n "\$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
-          test -n "\$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-          test -n "\$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required before applying the security migration"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required before applying the security migration"; exit 1; }
           npx wrangler d1 migrations apply DB --remote
 
       - name: Deploy Worker and versioned APK
         working-directory: workers
         env:
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ADMIN_PIN_HASHES: \${{ secrets.ADMIN_PIN_HASHES }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_PIN_HASHES: ${{ secrets.ADMIN_PIN_HASHES }}
         run: |
           set -euo pipefail
-          test -n "\$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
-          test -n "\$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-          test -n "\$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required"; exit 1; }
-          test -n "\$APK_FILENAME" || { echo "::error::APK_FILENAME is not set"; exit 1; }
-          test -s "downloads/\$APK_FILENAME" || { echo "::error::Versioned APK is missing"; exit 1; }
-          npx wrangler deploy --var "RELEASE_APK_FILENAME:\$APK_FILENAME"
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required"; exit 1; }
+          test -n "$APK_FILENAME" || { echo "::error::APK_FILENAME is not set"; exit 1; }
+          test -s "downloads/$APK_FILENAME" || { echo "::error::Versioned APK is missing"; exit 1; }
+          npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
 
       - name: Authenticated production smoke test
         env:
           SMOKE_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
-          SMOKE_USERNAME: \${{ secrets.E2E_USERNAME }}
-          SMOKE_PIN: \${{ secrets.E2E_PIN }}
+          SMOKE_USERNAME: ${{ secrets.E2E_USERNAME }}
+          SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
 
       - name: Verify exact versioned production APK
@@ -152,24 +152,24 @@ jobs:
           APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
         run: |
           set -euo pipefail
-          VERSIONED_URL="\$APK_BASE_URL/\$APK_FILENAME"
-          LIVE_SHA="\$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "\$VERSIONED_URL" | sha256sum | cut -d' ' -f1)"
-          echo "LOCAL SHA256: \$LOCAL_SHA"
-          echo "LIVE SHA256:  \$LIVE_SHA"
-          test "\$LOCAL_SHA" = "\$LIVE_SHA"
-          echo "Versioned production APK verified: \$VERSIONED_URL"
+          VERSIONED_URL="$APK_BASE_URL/$APK_FILENAME"
+          LIVE_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$VERSIONED_URL" | sha256sum | cut -d' ' -f1)"
+          echo "LOCAL SHA256: $LOCAL_SHA"
+          echo "LIVE SHA256:  $LIVE_SHA"
+          test "$LOCAL_SHA" = "$LIVE_SHA"
+          echo "Versioned production APK verified: $VERSIONED_URL"
 
       - name: Verify permanent download URL resolves to exact production APK
         env:
           APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
         run: |
           set -euo pipefail
-          PERMANENT_URL="\$APK_BASE_URL/harvest-family.apk"
-          LIVE_PERMANENT_SHA="\$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "\$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
-          echo "LOCAL SHA256:          \$LOCAL_SHA"
-          echo "PERMANENT LIVE SHA256: \$LIVE_PERMANENT_SHA"
-          test "\$LOCAL_SHA" = "\$LIVE_PERMANENT_SHA"
-          echo "Permanent APK URL verified: \$PERMANENT_URL"
+          PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
+          LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
+          echo "LOCAL SHA256:          $LOCAL_SHA"
+          echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
+          test "$LOCAL_SHA" = "$LIVE_PERMANENT_SHA"
+          echo "Permanent APK URL verified: $PERMANENT_URL"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
