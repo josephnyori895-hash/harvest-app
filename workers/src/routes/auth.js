@@ -2,7 +2,7 @@
 import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
-import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin } from '../lib/auth.js'
+import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute } from '../lib/auth.js'
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
 const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
@@ -16,6 +16,7 @@ function normalizePhone(raw) {
 }
 
 export async function handleAuth(request, env, ctx) {
+  requireJwtSecretForRoute(env)
   const path = new URL(request.url).pathname
   const method = request.method
 
