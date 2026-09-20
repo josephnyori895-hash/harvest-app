@@ -42,6 +42,22 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
 
   useEffect(load, [load])
 
+  // Android hardware back should close an open group detail/settings screen
+  // before the app-level navigator changes tabs.
+  useEffect(() => {
+    const onNestedBack = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean }>).detail
+      if (!openSlug || !detail) return
+      detail.handled = true
+      setOpenSlug(null)
+      setDetail(null)
+      setRequests([])
+      setShowSettings(false)
+    }
+    window.addEventListener('harvest:nested-back', onNestedBack)
+    return () => window.removeEventListener('harvest:nested-back', onNestedBack)
+  }, [openSlug])
+
   useEffect(() => {
     let live = true
     const refreshUnread = async () => {
