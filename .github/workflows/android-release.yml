@@ -183,7 +183,7 @@ jobs:
             "HTTP/2 302"|"HTTP/1.1 302 Found") ;;
             *) echo "::error::Unexpected permanent URL status: $STATUS_LINE"; exit 1 ;;
           esac
-          test "$REDIRECT_LOCATION" = "$APK_BASE_URL/$APK_FILENAME"
+          test "$REDIRECT_LOCATION" = "$APK_BASE_URL/$APK_FILENAME?release=$APK_FILENAME"
           test "$CACHE_CONTROL" = "no-store, max-age=0"
 
           LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
