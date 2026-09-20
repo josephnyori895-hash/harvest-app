@@ -63,8 +63,13 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       setPlayerReady(prev => ({ ...prev, [s.id]: false }))
       return
     }
+    if (!s.media_url) {
+      showToast('Sermon media is unavailable', 'error')
+      return
+    }
+    audioRef.current?.pause(); videoRef.current?.pause()
     setPlaying(s.id)
-    setPlayerReady(prev => ({ ...prev, [s.id]: false }))
+    setPlayerReady(prev => ({ ...prev, [s.id]: true }))
     fetch(`${API}/api/sermons/${s.id}/play`, { method: 'POST', headers: authHeaders() }).catch(() => {})
   }
 
@@ -185,7 +190,7 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
                 <div className="min-w-0 flex-1">
                   <p className="font-extrabold text-sm leading-snug">{s.title}</p>
                   <p className="text-[11px] text-[#6B6257] mt-0.5">
-                    {s.speaker || 'Harvest Family Church'}{s.scripture ? ` · ${s.scripture}` : ''} · {fmtDur(s.duration)}{s.duration ? '' : ` · ${new Date(s.created_at).toLocaleDateString()}`}
+                    {s.speaker || 'Harvest Family Church'}{s.scripture ? ` · ${s.scripture}` : ''} · {fmtDur(Number(s.duration_secs) || 0)}{s.duration_secs ? '' : ` · ${new Date(s.created_at).toLocaleDateString()}`}
                   </p>
                   <p className="text-[10px] text-[#8B8175] mt-1">▶ {s.plays} plays · 📥 {s.downloads} downloads{s.bytes ? ` · ${fmtBytes(s.bytes)}` : ''}</p>
                 </div>
