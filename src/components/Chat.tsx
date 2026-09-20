@@ -441,8 +441,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                     {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 shadow text-xs`}>{m.reaction}</button>}
                     <div
                       onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
-                      onTouchStart={(e) => { startSwipe(e); startPress(m) }} onTouchEnd={(e) => { endSwipe(e, m); cancelPress() }} onTouchMove={(e) => { moveSwipe(e, mine); if (swipeStartX.current == null) cancelPress() }}
-                      onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))
+                      onTouchStart={e => startSwipe(e, m)} onTouchEnd={e => endSwipe(e, m)} onTouchMove={e => moveSwipe(e, mine)}
+                      onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))}
                       className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md shadow-purple-950/30' : 'bg-zinc-800/95 text-zinc-100 rounded-bl-md border border-zinc-700/50'}`}
                     >
                       {m.reply_preview && (
