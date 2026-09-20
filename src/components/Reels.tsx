@@ -211,8 +211,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       return
     }
     const wasLiked = Boolean(cur.liked)
+    const wasLikes = Number(cur.likes) || 0
     setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
-      ? { ...r, liked: !wasLiked }
+      ? { ...r, liked: !wasLiked, likes: Math.max(wasLikes + (wasLiked ? -1 : 1), 0) }
       : r))
     try {
       const token = localStorage.getItem('harvest_token') || ''
@@ -229,7 +230,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         : r))
     } catch (e: any) {
       setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
-        ? { ...r, liked: wasLiked }
+        ? { ...r, liked: wasLiked, likes: wasLikes }
         : r))
       flash(e?.message || 'Could not update appreciation')
     }
