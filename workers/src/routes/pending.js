@@ -100,20 +100,20 @@ export async function handlePending(request, env, ctx) {
     if (item.type === 'post') {
       await query(
         env,
-        `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, thumb_key, blurhash, width, height, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [item.id, item.user_id, item.caption, item.original_key, item.thumb_key, item.blurhash, item.width, item.height, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+        `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, thumb_key, blurhash, width, height, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [item.id, item.user_id, item.caption, item.original_key, item.music_track_id || null, item.thumb_key, item.blurhash, item.width, item.height, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
       )
     } else if (item.type === 'story') {
       await query(
         env,
-        `INSERT INTO stories (id, user_id, original_key, thumb_key, blurhash, expires_at) VALUES (?,?,?,?,?,?)`,
-        [item.id, item.user_id, item.original_key, item.thumb_key, item.blurhash, new Date(Date.now() + 24 * 3600_000).toISOString()],
+        `INSERT INTO stories (id, user_id, original_key, thumb_key, blurhash, expires_at, caption, music_track_id) VALUES (?,?,?,?,?,?,?,?)`,
+        [item.id, item.user_id, item.original_key, item.thumb_key, item.blurhash, new Date(Date.now() + 24 * 3600_000).toISOString(), item.caption || '', item.music_track_id || null],
       )
     } else if (item.type === 'reel') {
       await query(
         env,
-        `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, thumb_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        [item.id, item.user_id, item.caption, item.hls_master_key || item.original_key, item.poster_key, item.thumb_key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+        `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, thumb_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [item.id, item.user_id, item.caption, item.music_track_id || null, item.hls_master_key || item.original_key, item.poster_key, item.thumb_key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
       )
     } else if (item.type === 'track') {
       await query(env, `INSERT INTO tracks (id, user_id, title, artist, original_key, preview_key) VALUES (?,?,?,?,?,?)`, [item.id, item.user_id, item.caption || 'Untitled', '', item.original_key, item.original_key])
