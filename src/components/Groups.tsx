@@ -22,7 +22,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const [detail, setDetail] = useState<{ group: any; members: any[] } | null>(null)
   const [requests, setRequests] = useState<any[]>([])
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '', participation: 'admin' })
+  const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '' })
   // ── WhatsApp-style group settings (system admin) ──
   const [showSettings, setShowSettings] = useState(false)
   const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false })
@@ -101,7 +101,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not create group')
       showToast(`"${form.name.trim()}" created`)
-      setShowCreate(false); setForm({ name: '', description: '', admin_username: '', community: '', participation: 'admin' })
+      setShowCreate(false); setForm({ name: '', description: '', admin_username: '', community: '' })
       load()
     } catch (e: any) { showToast(e?.message || 'Could not create group') } finally { setBusy('') }
   }
@@ -395,13 +395,9 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
             <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
             <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
             <p className="text-[10px] text-zinc-500">A community hosts 3–10 groups.</p>
-            <div>
-              <p className="text-[11px] font-bold text-zinc-400 mb-1">Your participation:</p>
-              <div className="flex gap-2 flex-wrap">
-                {[['admin', 'Stay as admin'], ['member', 'Stay as member'], ['none', 'Not a member']].map(([v, label]) => (
-                  <button key={v} onClick={() => setForm(f => ({ ...f, participation: v }))} className={`px-3 py-2 rounded-full text-xs font-bold ${form.participation === v ? 'bg-[#7C3AED] text-white' : 'bg-zinc-800 text-zinc-300'}`}>{label}</button>
-                ))}
-              </div>
+            <div className="p-3 rounded-xl bg-zinc-950 border border-amber-500/20">
+              <p className="text-[11px] font-bold text-amber-400">CREATOR ADMIN</p>
+              <p className="text-[11px] text-zinc-400 mt-1">You will automatically become a group admin. You can add other admins later from Group Settings.</p>
             </div>
             <button disabled={busy === 'create' || !form.name.trim()} onClick={() => void create()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Create group</button>
           </div>
