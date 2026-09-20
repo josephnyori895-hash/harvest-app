@@ -232,12 +232,13 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
           {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${detail.department.joined ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' : 'bg-[#7C3AED] text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
+          {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 text-lg" aria-label="Department settings" title="Department settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
             {editing && canManage ? (
               <div className="p-3 rounded-xl bg-zinc-900 border border-amber-500/40 mb-3">
-                <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — EDIT DEPARTMENT</p>
+                <p className="text-[10px] font-bold text-amber-400 mb-2">DEPARTMENT SETTINGS</p>
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
                 <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
                 <div className="flex gap-2">
@@ -258,8 +259,8 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                     )}
                   </button>
                 )}
-                {isAdmin && (
-                  <button onClick={startEdit} className="text-[11px] font-bold text-amber-400">✏️ Edit name & description</button>
+                {canManage && (
+                  <button onClick={() => setEditing(true)} className="text-[11px] font-bold text-amber-400">⚙️ Department settings</button>
                 )}
               </>
             )}
@@ -281,7 +282,16 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                   <p className="text-[11px] text-zinc-500 truncate">@{u.username} · {u.group_name || 'Harvest'}</p>
                 </div>
                 {canManage && u.username !== viewerName && (
-                  <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="shrink-0 px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold">Remove</button>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      disabled={busy.startsWith(`assign_${detail.department.slug}`)}
+                      onClick={() => void assign(detail.department.slug, u.username, u.role === 'leader' ? 'member' : 'leader')}
+                      className="px-2.5 py-1.5 rounded-full bg-zinc-800 text-white text-[10px] font-bold"
+                    >
+                      {u.role === 'leader' ? 'Make member' : 'Make leader'}
+                    </button>
+                    <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold">Remove</button>
+                  </div>
                 )}
               </div>
             ))}
