@@ -102,7 +102,18 @@ function InnerApp() {
   const openProfile = (u) => { setBackTarget(tab); setViewUser(u); setTab('viewuser') }
   const [editProfileKey, setEditProfileKey] = useState(0)
   const [teamChat, setTeamChat] = useState(null)
-  const openTeamChat = (kind, slug, name) => { setTeamChat({ kind, slug, name }); setTab('chat') }
+  const [chatReturnTab, setChatReturnTab] = useState('home')
+  // A single Chat surface owns all team conversations. Departments and Chats
+  // only choose the same target; they never maintain separate chat state.
+  const openTeamChat = (kind, slug, name) => {
+    setChatReturnTab(tab)
+    setTeamChat({ kind, slug, name })
+    setTab('chat')
+  }
+  const closeTeamChat = () => {
+    setTeamChat(null)
+    setTab(chatReturnTab || 'home')
+  }
 
   const [users] = useDirectory(onboarded)
 
@@ -189,7 +200,7 @@ function InnerApp() {
           {tab === 'activity' && <Activity />}
           {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
           {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
-          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} teamChat={teamChat} onCloseTeam={() => setTeamChat(null)} />}
+          {tab === 'chat' && <Chat onBack={closeTeamChat} users={users} teamChat={teamChat} onCloseTeam={closeTeamChat} />}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} />}
