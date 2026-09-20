@@ -29,6 +29,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
   const [videoError, setVideoError] = useState(false)
+  const [videoRetryKey, setVideoRetryKey] = useState(0)
   // Real comments sheet on the current reel (server-backed post_comments).
   const [showComments, setShowComments] = useState(false)
   const [notice, setNotice] = useState('')
@@ -96,6 +97,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   // which previously crashed this screen with "Cannot read properties of undefined".
   const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
   const key = cur ? `${cur.user}-${cur.id ?? idx}` : ''
+  const retryVideo = () => {
+    setVideoError(false)
+    setVideoReady(false)
+    setVideoRetryKey(x => x + 1)
+  }
 
   // Mute fallback: browsers/Android WebViews block unmuted autoplay. When a video
   // starts muted but the user chose sound, retry unmuted; if still blocked, flip
@@ -254,8 +260,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
             {cur.video ? <>
               {!videoReady && !videoError && <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />}
-              {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p></div></div>}
-              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onCanPlay={() => setVideoReady(true)} onWaiting={() => setVideoReady(false)} onPlaying={() => setVideoReady(true)} onError={() => { setVideoReady(false); setVideoError(true) }} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
+              {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p><button type="button" onClick={retryVideo} className="pointer-events-auto mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button></div></div>}
+              <video key={`${cur.id ?? idx}-${videoRetryKey}` ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onCanPlay={() => setVideoReady(true)} onWaiting={() => setVideoReady(false)} onPlaying={() => setVideoReady(true)} onError={() => { setVideoReady(false); setVideoError(true) }} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
             </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}
             {heart && (
               <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
