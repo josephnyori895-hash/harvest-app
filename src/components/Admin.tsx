@@ -8,7 +8,7 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = true
 
 const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
-type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give'
+type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat'
 
 type Props = {
   onBack: () => void
@@ -41,6 +41,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const [newUser, setNewUser] = useState({ username: '', name: '', pin: '', role: 'member', group_name: GROUPS[0] })
   const [showCreate, setShowCreate] = useState(false)
   const [restoreName, setRestoreName] = useState('')
+
+  // ── Chat moderation state ──
+  const [chatConversations, setChatConversations] = useState<any[]>([])
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [selectedChat, setSelectedChat] = useState('')
+  const [loadingChats, setLoadingChats] = useState(false)
+  const [loadingChatMessages, setLoadingChatMessages] = useState(false)
 
   // ── Audit state ──
   const [audit, setAudit] = useState<any[]>([])
@@ -121,6 +128,31 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     } finally { setLoadingAccounts(false) }
   }, [])
 
+  const loadChatConversations = useCallback(async () => {
+    setLoadingChats(true); setError('')
+    try {
+      const r = await fetch(API + '/api/chat/conversations', { headers: { Authorization: 'Bearer ' + token() } })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Unable to load conversations')
+      const team = (d.conversations || []).filter((x: any) => x.key?.startsWith('group:') || x.key?.startsWith('department:'))
+      setChatConversations(team)
+      if (!selectedChat && team[0]?.key) setSelectedChat(team[0].key)
+    } catch (e: any) { setError(e?.message || 'Unable to load conversations') } finally { setLoadingChats(false) }
+  }, [selectedChat])
+
+  const loadChatMessages = useCallback(async () => {
+    if (!selectedChat) return
+    setLoadingChatMessages(true); setError('')
+    try {
+      const prefix = selectedChat.startsWith('group:') ? 'group' : 'department'
+      const slug = selectedChat.slice(prefix.length + 1)
+      const r = await fetch(API + '/api/chat/history?' + prefix + '=' + encodeURIComponent(slug) + '&limit=100', { headers: { Authorization: 'Bearer ' + token() } })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Unable to load messages')
+      setChatMessages(d.messages || [])
+    } catch (e: any) { setError(e?.message || 'Unable to load messages') } finally { setLoadingChatMessages(false) }
+  }, [selectedChat])
+
   const loadAudit = useCallback(async () => {
     if (!USE_API) return
     setLoadingAudit(true)
@@ -138,8 +170,10 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => {
     if (tab === 'moderation') void loadPending()
     if (tab === 'accounts') void loadAccounts()
+    if (tab === 'chat') void loadChatConversations()
+    if (tab === 'chat') void loadChatMessages()
     if (tab === 'audit') void loadAudit()
-  }, [tab, loadPending, loadAccounts, loadAudit])
+  }, [tab, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit])
 
   const moderate = async (id: string, action: 'approve' | 'reject') => {
     if (busy) return
@@ -234,6 +268,19 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     } finally { setBusy(null) }
   }
 
+  const moderateChatMessage = async (message: any) => {
+    if (busy || !message?.id) return
+    if (!window.confirm('Remove this message for everyone?')) return
+    setBusy(String(message.id)); setError('')
+    try {
+      const r = await fetch(API + '/api/chat/messages/' + encodeURIComponent(message.id), { method: 'DELETE', headers: { Authorization: 'Bearer ' + token() } })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Unable to remove message')
+      setChatMessages(list => list.map(x => String(x.id) === String(message.id) ? { ...x, deleted_at: new Date().toISOString(), text: 'This message was deleted' } : x))
+      flash('Message removed for everyone')
+    } catch (e: any) { setError(e?.message || 'Unable to remove message') } finally { setBusy(null) }
+  }
+
   const sendAnnounce = async () => {
     const text = annText.trim()
     if (annBusy) return
@@ -296,9 +343,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'audit'] as const).map(value => (
+        {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'chat', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
-            {value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value[0].toUpperCase() + value.slice(1)}
+            {value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
@@ -602,6 +649,25 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Chat moderation tab ── */}
+      {tab === 'chat' && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+            <h2 className="font-extrabold text-sm">💬 Chat moderation</h2>
+            <p className="text-xs text-[#766E63] mt-1">Review and remove messages from church group and department conversations.</p>
+            {loadingChats ? <p className="text-xs py-4">Loading conversations…</p> : (
+              <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} className="w-full mt-3 rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-3 text-sm">
+                <option value="">Choose a conversation</option>
+                {chatConversations.map((x: any) => <option key={x.key} value={x.key}>{x.name || x.key}</option>)}
+              </select>
+            )}
+          </div>
+          {selectedChat && (loadingChatMessages ? <p className="text-xs text-center py-8">Loading messages…</p> : chatMessages.length === 0 ? <p className="text-xs text-center py-8 text-[#766E63]">No messages in this conversation.</p> : (
+            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-white border border-[#E8DEC9] rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-[#766E63]">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-[#8A8171]' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
+          ))}
+        </div>
       )}
 
       {/* ── Audit tab ── */}
