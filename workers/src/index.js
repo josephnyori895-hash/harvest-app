@@ -48,6 +48,13 @@ export default {
       })
     }
 
+    // Serve immutable release APKs through the assets binding. The release
+    // workflow makes this Worker run first for APK paths so these requests
+    // cannot fall through to the authenticated API router.
+    if (/^\/harvest-family-[0-9]+-[0-9a-f]{7}\.apk$/.test(url.pathname) && request.method === 'GET') {
+      return env.ASSETS.fetch(request)
+    }
+
     // WebSocket upgrade → Realtime DO (chat, presence, calls).
     // NOTE: the original request object must be forwarded unchanged for upgrades.
     if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
