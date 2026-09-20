@@ -105,7 +105,7 @@ export async function handleMedia(request, env, ctx) {
 
     const obj = await env.MEDIA.head(key)
     if (!obj) return errorResponse('original not found — upload to R2 first', 404)
-    const ownerId = String(obj.customMetadata?.ownerId || '')
+    const ownerId = String(obj.customMetadata?.ownerId || obj.customMetadata?.ownerid || '')
     if (ownerId !== String(fresh.id) && fresh.role !== 'admin') {
       return errorResponse('media does not belong to this account', 403)
     }
