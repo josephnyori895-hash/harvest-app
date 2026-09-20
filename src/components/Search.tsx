@@ -61,13 +61,14 @@ export default function Search({ users, onView, onOpenUser }: { users: any[]; on
                 {recent.map((p, i) => (
                   <button key={p.id || i} onClick={() => openPost(p)} className="aspect-square bg-zinc-900 overflow-hidden relative group">
                     {p.kind === 'reel'
-                      // Poster only: a bare <video> in a grid shows Android's huge
-                      // play-glyph poster. No poster → dark tile + ▶ badge (IG style).
-                      ? p.thumb_url
-                        ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" />
-                        : <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center text-2xl">🎥</div>
+                      // IG pattern: the grid tile IS the video's visible frame.
+                      // #t=0.001 makes mobile WebViews render the first frame even
+                      // without a poster; a static dark tile is the fallback.
+                      ? p.hls_url
+                        ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                        : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center text-2xl">🎥</div>
                       : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🙏</div>}
-                    {p.kind === 'reel' && <span className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-[10px]">▶</span>}
+                    {p.kind === 'reel' && <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
                   </button>
                 ))}
               </div>
