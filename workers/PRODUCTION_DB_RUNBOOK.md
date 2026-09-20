@@ -19,7 +19,7 @@ From `workers/`:
 
 ```bash
 npm ci
-npm run db:migrate:dry
+npm run db:migrate:status
 npx wrangler d1 export DB --remote --output "backup-$(date -u +%Y%m%dT%H%M%SZ).sql"
 ```
 
