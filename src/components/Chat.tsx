@@ -483,6 +483,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                       onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
                       onTouchStart={e => startSwipe(e, m)} onTouchEnd={e => endSwipe(e, m)} onTouchMove={e => moveSwipe(e, mine)}
                       onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))}
+                      style={{ transform: !mine && swipeOffset ? `translateX(${swipeOffset}px)` : undefined, transition: swipeOffset ? 'none' : 'transform 160ms ease-out' }}
                       className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md shadow-purple-950/30' : 'bg-zinc-800/95 text-zinc-100 rounded-bl-md border border-zinc-700/50'}`}
                     >
                       {m.reply_preview && (
