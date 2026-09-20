@@ -93,7 +93,7 @@ function chatListTime(iso: string) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
-export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string }
+export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
 export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack: () => void; users: ChatUser[]; teamChat?: TeamChat | null; onCloseTeam?: () => void; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
   const { username: authUsername } = useAuth()
@@ -581,15 +581,34 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
       if (!token) return
       const headers = { Authorization: `Bearer ${token}` }
       const out: TeamChat[] = []
+      const counts = new Map<string, number>()
+      try {
+        const r = await fetch(`${API}/api/chat/conversations`, { headers })
+        if (r.ok) {
+          const d = await r.json()
+          ;(d.team_conversations || []).forEach((x: any) => counts.set(String(x.conversation_key), Number(x.unread) || 0))
+        }
+      } catch { /* offline */ }
       try {
         const r = await fetch(`${API}/api/departments`, { headers })
-        if (r.ok) { const d = await r.json(); (d.departments || []).filter((x: any) => x.joined || x.leader).forEach((x: any) => out.push({ kind: 'department', slug: x.slug, name: x.name })) }
+        if (r.ok) {
+          const d = await r.json()
+          ;(d.departments || []).filter((x: any) => x.joined || x.leader).forEach((x: any) => out.push({
+            kind: 'department', slug: x.slug, name: x.name,
+            unread: counts.get(`department:${x.slug}`) || 0,
+          }))
+        }
       } catch { /* offline */ }
       try {
         const r = await fetch(`${API}/api/groups/mine`, { headers })
-        if (r.ok) { const d = await r.json(); (d.groups || []).forEach((x: any) => out.push({ kind: 'group', slug: x.slug, name: x.name })) }
-      } catch { /* offline */ }
-      if (live) setTeams(out)
+        if (r.ok) {
+          const d = await r.json()
+          ;(d.groups || []).forEach((x: any) => out.push({
+            kind: 'group', slug: x.slug, name: x.name,
+            unread: counts.get(`group:${x.slug}`) || 0,
+          }))
+        }
+      } catch { /* offline */ }      if (live) setTeams(out)
     })()
     return () => { live = false }
   }, [])
@@ -599,8 +618,11 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
       <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">Your teams</p>
       <div className="flex gap-4 overflow-x-auto pb-3">
         {teams.map(t => (
-          <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
-            <div className="w-[62px] h-[62px] mx-auto rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
+          <button type="button" key={`\${t.kind}_\${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open \${t.name} chat`}>
+            <div className="relative w-[62px] h-[62px] mx-auto">
+              <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
+              {Number(t.unread) > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-2 border-black">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
+            </div>
             <p className="text-[11px] text-zinc-400 mt-1 truncate">{t.name}</p>
           </button>
         ))}
