@@ -37,7 +37,7 @@ export async function handleFeed(request, env, ctx) {
     const posts = await query(
       env,
       `SELECT p.id, p.user_id, u.username, u.name, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
-              p.caption, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
+              p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
               p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
         WHERE p.approved_at IS NOT NULL`,
@@ -45,7 +45,7 @@ export async function handleFeed(request, env, ctx) {
     const reels = await query(
       env,
       `SELECT r.id, r.user_id, u.username, u.name, COALESCE(u.verified, r.verified_snapshot, 0) AS verified,
-              r.caption, r.poster_key AS thumb_key, NULL AS blurhash, r.hls_master_key AS original_key,
+              r.caption, r.music_track_id, r.poster_key AS thumb_key, NULL AS blurhash, r.hls_master_key AS original_key,
               r.likes, r.comments, r.created_at, r.is_pinned, r.group_name, r.constituency, r.faith, 'reel' AS kind
          FROM reels r JOIN users u ON u.id = r.user_id
         WHERE r.approved_at IS NOT NULL`,
@@ -66,6 +66,7 @@ export async function handleFeed(request, env, ctx) {
         ? await mediaUrlOrNull(env, r.thumb_key, 900)
         : await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
       hls_url: r.kind === 'reel' ? await mediaUrlOrNull(env, r.original_key, 900) : null,
+      music: r.music_track_id ? await (async () => { const t = await query(env, 'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[r.music_track_id]); const x=t.rows[0]; return x ? { id:x.id,title:x.title,artist:x.artist,url:await mediaUrlOrNull(env,x.original_key,3600),cover_url:await mediaUrlOrNull(env,x.cover_thumb_key,3600) } : null })() : null,
     })))
 
     // stories top strip
@@ -73,12 +74,12 @@ export async function handleFeed(request, env, ctx) {
     try {
       const s = await query(
         env,
-        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, COALESCE(s.media_type, 'image') AS media_type, s.created_at
+        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type, s.created_at
            FROM stories s JOIN users u ON u.id = s.user_id
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
         [new Date().toISOString()],
       )
-      stories = await Promise.all(s.rows.map(async x => ({ ...x, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
+      stories = await Promise.all(s.rows.map(async x => ({ ...x, music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
     const nextOffset = offset + limit
     return jsonResponse({ posts: enriched, stories, nextOffset, hasMore: enriched.length === limit })
@@ -88,7 +89,7 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/stories' && request.method === 'GET') {
     const { rows } = await query(
       env,
-      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, COALESCE(s.media_type, 'image') AS media_type
+      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type
          FROM stories s JOIN users u ON u.id = s.user_id
         WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 50`,
       [new Date().toISOString()],
