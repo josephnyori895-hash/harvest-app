@@ -149,6 +149,12 @@ export async function handleDepartments(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const dep = await getDepartment(env, slug)
     if (!dep) return errorResponse('department not found', 404)
+    const actor = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
+    if (!actor.rows[0]) return errorResponse('you are not in this department', 400)
+    if (actor.rows[0].role === 'leader') {
+      const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
+      if (Number(rows[0]?.n || 0) <= 1) return errorResponse('you are the only department leader — appoint another leader first', 400)
+    }
     await query(env, 'DELETE FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
     return jsonResponse({ ok: true, joined: false })
   }
