@@ -120,7 +120,6 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
   const [actionFor, setActionFor] = useState<string | null>(null)
   const swipeStartX = useRef<number | null>(null)
   const [swipeOffset, setSwipeOffset] = useState(0)
-  const [swipeReplyId, setSwipeReplyId] = useState<string | null>(null)
   const [attach, setAttach] = useState<File | null>(null)
   // Instagram-style people search on the chats list.
   const [peopleQuery, setPeopleQuery] = useState('')
@@ -137,9 +136,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pressTimer = useRef<number | null>(null)
-  const swipeStartX = useRef<number | null>(null)
   const swipeStartY = useRef<number | null>(null)
-  const [actionFor, setActionFor] = useState<string | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
   // Last-seen unread counts (peer → count) + currently open conversation,
   // so the background poller can detect FRESH incoming messages.
@@ -325,39 +322,39 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     } catch { setNotice('Could not save reaction'); window.setTimeout(() => setNotice(''), 2000) }
   }
 
-  const startSwipe = (e: TouchEvent) => { swipeStartX.current = e.touches[0]?.clientX ?? null; setSwipeOffset(0) }
-  const moveSwipe = (e: React.TouchEvent, mine: boolean) => {
-    const start = swipeStartX.current
-    if (start == null || mine) return
-    const dx = Math.max(0, Math.min(76, (e.touches[0]?.clientX || 0) - start))
-    if (dx > 4) { e.preventDefault(); setSwipeOffset(dx) }
-  }
-  const endSwipe = (e: React.TouchEvent, m: any) => {
-    const start = swipeStartX.current; swipeStartX.current = null
-    const dx = start == null ? 0 : (e.changedTouches[0]?.clientX || 0) - start
-    setSwipeOffset(0)
-    if (dx > 52) { setSwipeReplyId(String(m.id)); setReplyTo(m); setReactingFor(null); setActionFor(null); window.setTimeout(() => setSwipeReplyId(null), 350) }
-  }
-
   const startPress = (m: any) => {
     pressTimer.current = window.setTimeout(() => setReactingFor(String(m.id)), 450)
   }
   const cancelPress = () => { if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = null } }
-  const startSwipe = (e: React.TouchEvent, m: any) => {
+  const startSwipe = (e: TouchEvent, m: any) => {
     swipeStartX.current = e.touches[0]?.clientX ?? null
     swipeStartY.current = e.touches[0]?.clientY ?? null
+    setSwipeOffset(0)
     startPress(m)
   }
-  const endSwipe = (e: React.TouchEvent, m: any) => {
+  const moveSwipe = (e: TouchEvent, mine: boolean) => {
+    const sx = swipeStartX.current
+    const sy = swipeStartY.current
+    if (sx == null || sy == null || mine) return
+    const dx = e.touches[0]?.clientX - sx
+    const dy = e.touches[0]?.clientY - sy
+    if (dx > 6 && dx > Math.abs(dy) * 1.15) {
+      e.preventDefault()
+      setSwipeOffset(Math.min(76, dx))
+    }
+  }
+  const endSwipe = (e: TouchEvent, m: any) => {
     cancelPress()
     const sx = swipeStartX.current
     const sy = swipeStartY.current
-    swipeStartX.current = null; swipeStartY.current = null
-    if (sx == null || sy == null) return
-    const dx = e.changedTouches[0]?.clientX - sx
-    const dy = e.changedTouches[0]?.clientY - sy
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+    swipeStartX.current = null
+    swipeStartY.current = null
+    const dx = sx == null ? 0 : e.changedTouches[0]?.clientX - sx
+    const dy = sy == null ? 0 : e.changedTouches[0]?.clientY - sy
+    setSwipeOffset(0)
+    if (dx > 70 && dx > Math.abs(dy) * 1.15) {
       setReplyTo(m)
+      setReactingFor(null)
       setActionFor(null)
     }
   }
