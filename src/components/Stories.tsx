@@ -267,6 +267,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
           kind: 'story',
           file: blob,
           caption: caption.trim(),
+          music_track_id: musicTrack?.id,
         },
       }).catch(() => {})
       onDone()
