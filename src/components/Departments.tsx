@@ -25,6 +25,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editing, setEditing] = useState(false)
+  const [unreadByDepartment, setUnreadByDepartment] = useState<Record<string, number>>({})
 
   const load = useCallback(() => {
     setLoading(true)
@@ -36,6 +37,26 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   }, [])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    let live = true
+    const refreshUnread = async () => {
+      if (!localStorage.getItem('harvest_token')) return
+      try {
+        const r = await fetch(`${API}/api/chat/conversations`, { headers: authHeaders() })
+        if (!r.ok) return
+        const d = await r.json()
+        const next: Record<string, number> = {}
+        ;(d.team_conversations || []).filter((x: any) => x.kind === 'department').forEach((x: any) => {
+          next[String(x.slug)] = Number(x.unread) || 0
+        })
+        if (live) setUnreadByDepartment(next)
+      } catch { /* keep the last known counts */ }
+    }
+    void refreshUnread()
+    const timer = window.setInterval(refreshUnread, 3000)
+    return () => { live = false; window.clearInterval(timer) }
+  }, [])
 
   const openDetail = async (slug: string) => {
     setOpenSlug(slug)
@@ -170,8 +191,13 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
         </button>
         <div className="shrink-0 flex flex-col items-end gap-2">
           {(d.joined || isAdmin) && onOpenDeptChat && (
-            <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+            <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="relative px-3 py-1.5 pr-8 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
               💬 Chat
+              {Number(unreadByDepartment[d.slug]) > 0 && (
+                <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-2 border-zinc-900" aria-label={`${unreadByDepartment[d.slug]} unread messages`}>
+                  {Number(unreadByDepartment[d.slug]) > 99 ? '99+' : unreadByDepartment[d.slug]}
+                </span>
+              )}
             </button>
           )}
           <button
@@ -211,7 +237,14 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
               <>
                 {detail.department.description && <p className="text-xs text-zinc-400 pb-1">{detail.department.description}</p>}
                 {(detail.department.joined || isAdmin) && onOpenDeptChat && (
-                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open team chat</button>
+                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">
+                    💬 Open team chat
+                    {Number(unreadByDepartment[detail.department.slug]) > 0 && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center" aria-label={`${unreadByDepartment[detail.department.slug]} unread messages`}>
+                        {Number(unreadByDepartment[detail.department.slug]) > 99 ? '99+' : unreadByDepartment[detail.department.slug]}
+                      </span>
+                    )}
+                  </button>
                 )}
                 {isAdmin && (
                   <button onClick={startEdit} className="text-[11px] font-bold text-amber-400">✏️ Edit name & description</button>
