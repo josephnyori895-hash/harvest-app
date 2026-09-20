@@ -289,7 +289,9 @@ export async function handleGroups(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
-    if (fresh.role !== 'admin') return errorResponse('only the system admin can change group settings', 403)
+    const actorRole = await myGroupRole(env, g.id, fresh.id)
+    const canManageSettings = fresh.role === 'admin' || actorRole === 'admin' || hasCap(fresh, 'manage_groups')
+    if (!canManageSettings) return errorResponse('group admin required', 403)
     const body = await readJson(request)
     const sets = [], vals = []
     if (body.name !== undefined) {
