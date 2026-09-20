@@ -29,7 +29,7 @@ async function check(name, path, options = {}, assert = () => true) {
 }
 
 await check('health', '/health', {}, (r, b) => r.status === 200 && b?.status === 'ok' && b?.database === 'ok' && b?.storage === 'r2')
-await check('protected endpoint rejects anonymous request', '/api/feed', {}, r => r.status === 401)
+await check('public feed is reachable anonymously', '/api/feed', {}, (r, b) => r.status === 200 && Array.isArray(b?.posts) && Array.isArray(b?.stories))
 await check('admin endpoint rejects anonymous request', '/api/pending', {}, r => r.status === 401)
 await check('M-Pesa callback accepts empty callback safely', '/api/giving/mpesa/callback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, r => r.status === 200)
 await check('unknown API route does not expose stack trace', '/api/__smoke_unknown__', {}, (r, _b, text) => r.status >= 400 && !/stack|node_modules|file:\/\//i.test(text))
