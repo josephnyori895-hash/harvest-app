@@ -1,3 +1,4 @@
+import MediaThumbnail from './MediaThumbnail'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getLikesTable, toggleLikeKey } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
