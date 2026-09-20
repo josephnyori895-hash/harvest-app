@@ -43,7 +43,7 @@ export class Realtime {
       const username = user.username
       if (!this.sockets.has(username)) this.sockets.set(username, new Set())
       this.sockets.get(username).add(upgrade[1])
-      const sockMeta = { username, userId: user.id }
+      const sockMeta = { username, userId: user.id, windowStartedAt: Date.now(), eventCount: 0 }
       upgrade[1].meta = sockMeta
 
       // presence broadcast
@@ -331,12 +331,24 @@ export class Realtime {
 
   // Hibernation-aware WebSocket close handler.
   async webSocketMessage(ws, message) {
+    const raw = String(message)
+    if (raw.length > 16384) {
+      try { ws.close(1009, 'message too large') } catch {}
+      return
+    }
     let frame
-    try { frame = JSON.parse(String(message)) } catch { return }
+    try { frame = JSON.parse(raw) } catch { return }
     if (frame?.event === '__pong' || frame?.event === 'ping') return
-    if (!frame?.event) return
+    if (!frame?.event || typeof frame.event !== 'string' || frame.event.length > 64) return
     const meta = ws.meta
     if (!meta) return
+    const now = Date.now()
+    if (now - meta.windowStartedAt >= 60_000) { meta.windowStartedAt = now; meta.eventCount = 0 }
+    meta.eventCount += 1
+    if (meta.eventCount > 120) {
+      try { ws.close(1008, 'rate limit exceeded') } catch {}
+      return
+    }
     try {
       await this.handleEvent({ id: meta.userId, username: meta.username }, frame.event, frame.data, frame.ackId, ws)
     } catch {}
