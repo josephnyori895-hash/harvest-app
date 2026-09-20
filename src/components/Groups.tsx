@@ -260,11 +260,11 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
         <div className="flex items-center gap-3 h-14 border-b border-zinc-800 px-3 sticky top-0 bg-black z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
-          {(isAdmin || detail?.group?.is_group_admin) && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
+          {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
-            {showSettings && (isAdmin || detail.group?.is_group_admin) ? (
+            {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
                 <div className="p-4 rounded-2xl bg-zinc-900 border border-amber-500/40 space-y-3">
