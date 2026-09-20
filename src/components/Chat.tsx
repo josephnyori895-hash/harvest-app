@@ -224,10 +224,11 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
         saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
         const existing = mergeMessages(msgs[k] || [], result.messages || [])
         cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
+        void markSeen()
+        void refreshInbox()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Unable to load team chat')
       }
-      void markSeen(); void refreshInbox()
       return
     }
     if (!active || !currentUser) return
@@ -238,10 +239,11 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
       saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
       const existing = mergeMessages(msgs[k] || [], result.messages || [])
       cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
+      void markSeen()
+      void refreshInbox()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load conversation')
     }
-    void markSeen(); void refreshInbox()
   }, [active, team, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
 
   const refreshUpdates = useCallback(async () => {
