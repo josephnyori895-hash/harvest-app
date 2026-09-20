@@ -123,6 +123,8 @@ jobs:
       - name: Production Worker anonymous smoke test
         env:
           SMOKE_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+          SMOKE_USERNAME: ${{ secrets.E2E_USERNAME }}
+          SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
 
       - name: Verify live APK
