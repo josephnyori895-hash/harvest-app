@@ -5,7 +5,7 @@
 name = "harvestfamily-api"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
-workers_dev = true
+workers_dev = false
 
 # ── Bindings ──
 # DB ids are filled in by `npm run cf:provision` (wrangler d1 create / r2 create).
@@ -24,6 +24,12 @@ bindings = [{ name = "REALTIME", class_name = "Realtime" }]
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Realtime"]
+
+# Explicit production migrations are run with: npm run db:migrate
+# Keep production deployment from silently targeting a developer workers.dev hostname.
+[env.production]
+name = "harvestfamily-api"
+workers_dev = false
 
 # Stories expiry + orphan cleanup + attempt-table GC (Netlify cleanup.js equivalent)
 [triggers]
