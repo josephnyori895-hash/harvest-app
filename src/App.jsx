@@ -81,6 +81,7 @@ function IgIcon({ name, active }) {
   if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
   if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'opacity(0.9)'}} role="img" aria-label="give">🤲</span>
   if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
+  if (name === 'chat') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-4.2A7.5 7.5 0 1 1 20 11.5z" /><path d="M8 11h8M8 14h5" strokeLinecap="round" /></svg>
   if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
   if (name === 'profile') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={s}><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
   return null
@@ -123,6 +124,10 @@ function InnerApp() {
 
   const handleTab = (t) => {
     if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
+    if (t === 'chat' && tab !== 'chat') {
+      setChatReturnTab(tab)
+      setTeamChat(null)
+    }
     setTab(t)
   }
   const [viewUser, setViewUser] = useState(null)
@@ -219,6 +224,7 @@ function InnerApp() {
         if (userList) return setUserList(null)
         if (viewUser) { setViewUser(null); return setTab(backTarget) }
         if (tab === 'editprofile') return setTab('profile')
+        if ((tab === 'groups' || tab === 'departments') && chatReturnTab === 'chat') return setTab('chat')
         if (tab !== 'home') return setTab('home')
         // departments has no back stack of its own — treat like other tabs
         CapApp.exitApp()
@@ -241,7 +247,16 @@ function InnerApp() {
           {tab === 'activity' && <Activity />}
           {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
           {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
-          {tab === 'chat' && <Chat onBack={closeTeamChat} users={users} teamChat={teamChat} onCloseTeam={closeTeamChat} />}
+          {tab === 'chat' && (
+            <Chat
+              onBack={closeTeamChat}
+              users={users}
+              teamChat={teamChat}
+              onCloseTeam={closeTeamChat}
+              onOpenGroups={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('groups') }}
+              onOpenDepartments={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('departments') }}
+            />
+          )}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} />}
@@ -679,7 +694,7 @@ function Nav({ tab, setTab }) {
     ['reels', 'reels'],
     ['post', 'post'],
     ['activity', 'activity'],
-    ['departments', 'departments'],
+    ['chat', 'chat'],
     ['profile', 'profile'],
   ]
   return (
