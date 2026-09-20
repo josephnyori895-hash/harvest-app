@@ -56,9 +56,9 @@ export async function handleSocial(request, env, ctx) {
   if (reply && request.method === 'DELETE') {
     const fresh=await requireMember(env,user), rid=qp.id || ''
     if(!rid) return errorResponse('reply id required',400)
-    const r=await query(env,'SELECT id,username FROM story_replies WHERE id=? AND story_id=?',[rid,reply[1]])
+    const r=await query(env,'SELECT id,user_id,username FROM story_replies WHERE id=? AND story_id=?',[rid,reply[1]])
     if(!r.rows[0]) return errorResponse('not found',404)
-    if(r.rows[0].username!==fresh.username && fresh.role!=='admin') return errorResponse('forbidden',403)
+    if((r.rows[0].user_id && r.rows[0].user_id !== fresh.id) || (!r.rows[0].user_id && r.rows[0].username !== fresh.username)) { if (fresh.role !== 'admin') return errorResponse('forbidden',403) }
     await query(env,'DELETE FROM story_replies WHERE id=?',[rid])
     return jsonResponse({ok:true})
   }
