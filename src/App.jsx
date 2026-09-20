@@ -87,7 +87,7 @@ function IgIcon({ name, active }) {
 }
 
 function InnerApp() {
-  const { setUsername, setRole, setVerified, role, isAdmin } = useAuth()
+  const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
   const [homeRefresh, setHomeRefresh] = useState(0)
@@ -192,7 +192,7 @@ function InnerApp() {
           {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} teamChat={teamChat} onCloseTeam={() => setTeamChat(null)} />}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
-          {tab === 'sermons' && <Sermons isAdmin={isAdmin} />}
+          {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} />}
           {tab === 'give' && <Give />}
           {tab === 'map' && <HarvestMap users={users} />}
           {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} />}
