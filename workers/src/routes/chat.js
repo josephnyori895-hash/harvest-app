@@ -208,8 +208,9 @@ export async function handleChat(request, env, ctx) {
     for (const r of rows) {
       const parts = r.conversation_key.replace('harvest:chat:', '').split(':')
       const peer = parts.find(p => p !== fresh.username) || fresh.username
-      const u = await query(env, 'SELECT name, verified FROM users WHERE username=?', [peer])
-      out.push({ conversation_key: r.conversation_key, peer, peer_name: u.rows[0]?.name || peer, peer_verified: !!u.rows[0]?.verified, last_text: r.last_text, last_from: r.last_from, unread: Number(r.unread) || 0, last_at: r.last_at })
+      const u = await query(env, 'SELECT name, verified, avatar_key FROM users WHERE username=?', [peer])
+      const avatar_url = await mediaUrlOrNull(env, u.rows[0]?.avatar_key, 3600)
+      out.push({ conversation_key: r.conversation_key, peer, peer_name: u.rows[0]?.name || peer, peer_verified: !!u.rows[0]?.verified, avatar_url, last_text: r.last_text, last_from: r.last_from, unread: Number(r.unread) || 0, last_at: r.last_at })
     }
 
     // Team conversations use the same unread calculation as personal chats.
