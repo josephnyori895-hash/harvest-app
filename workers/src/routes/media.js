@@ -122,6 +122,15 @@ export async function handleMedia(request, env, ctx) {
     if (ownerId !== String(fresh.id) && fresh.role !== 'admin') {
       return errorResponse('media does not belong to this account', 403)
     }
+    try {
+      validatePresign({
+        type,
+        contentType: String(obj.httpMetadata?.contentType || ''),
+        bytes: Number(obj.size) || 0,
+      })
+    } catch (e) {
+      return errorResponse(e.message || 'uploaded media failed validation', e.status || 400)
+    }
 
     const userId = fresh.id
     if (musicTrackId) { const mt = await query(env, 'SELECT id FROM tracks WHERE id=?', [String(musicTrackId)]); if (!mt.rows[0]) return errorResponse('music track not found', 404) }
