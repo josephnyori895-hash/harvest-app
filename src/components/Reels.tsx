@@ -34,6 +34,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [notice, setNotice] = useState('')
   const [serverReels, setServerReels] = useState<Reel[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
+  const [reelsLoadFailed, setReelsLoadFailed] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const useServer = useApi()
   // Double-tap to encourage: IG-style big heart pulse at the tap point.
@@ -46,6 +47,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (!useServer) return
     let cancelled = false
     setLoadingServer(true)
+    setReelsLoadFailed(false)
     fetchReels()
       .then(r => {
         if (cancelled) return
@@ -64,7 +66,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           }))
         setServerReels(mapped)
       })
-      .catch(() => { /* offline — empty state shows */ })
+      .catch(() => {
+        if (!cancelled) setReelsLoadFailed(true)
+      })
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
   }, [useServer])
@@ -72,6 +76,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const allVideos = useMemo(() => [...serverReels], [serverReels])
   useEffect(() => {
     if (!sharedReelId || loadingServer) return
+    if (reelsLoadFailed) {
+      setNotice('Unable to open that shared reel right now. Please try again.')
+      onSharedReelHandled?.()
+      return
+    }
     const target = allVideos.findIndex((r: Reel) => String(r.id) === String(sharedReelId))
     if (target >= 0) {
       setIdx(target)
@@ -79,7 +88,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       setNotice('That shared reel is no longer available.')
     }
     onSharedReelHandled?.()
-  }, [sharedReelId, loadingServer, allVideos, onSharedReelHandled])
+  }, [sharedReelId, loadingServer, reelsLoadFailed, allVideos, onSharedReelHandled])
   // Empty feed guard: allVideos[idx] is undefined before any reels are approved,
   // which previously crashed this screen with "Cannot read properties of undefined".
   const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
