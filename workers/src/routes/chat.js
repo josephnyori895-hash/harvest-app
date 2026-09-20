@@ -150,7 +150,7 @@ export async function handleChat(request, env, ctx) {
     return jsonResponse({ ok: true, reaction: rx || null })
   }
 
-  // GET /api/chat/conversations — inbox list with last message + unread counts.
+  // GET /api/chat/conversations — inbox + authorized team chats with unread counts.
   if (path === '/api/chat/conversations' && method === 'GET') {
     const fresh = await requireMember(env, user)
     const { rows } = await query(
@@ -172,9 +172,49 @@ export async function handleChat(request, env, ctx) {
       const parts = r.conversation_key.replace('harvest:chat:', '').split(':')
       const peer = parts.find(p => p !== fresh.username) || fresh.username
       const u = await query(env, 'SELECT name, verified FROM users WHERE username=?', [peer])
-      out.push({ conversation_key: r.conversation_key, peer, peer_name: u.rows[0]?.name || peer, peer_verified: !!u.rows[0]?.verified, last_text: r.last_text, last_from: r.last_from, unread: r.unread || 0, last_at: r.last_at })
+      out.push({ conversation_key: r.conversation_key, peer, peer_name: u.rows[0]?.name || peer, peer_verified: !!u.rows[0]?.verified, last_text: r.last_text, last_from: r.last_from, unread: Number(r.unread) || 0, last_at: r.last_at })
     }
-    return jsonResponse({ conversations: out })
+
+    // Team conversations use the same unread calculation as personal chats.
+    // Membership is enforced here so Departments/Chats cannot expose another
+    // department or group just by knowing its conversation key.
+    const teamResult = await query(
+      env,
+      `WITH authorized AS (
+         SELECT 'department:' || d.slug AS conversation_key, 'department' AS kind, d.slug AS slug, d.name AS name
+           FROM departments d
+           JOIN department_members dm ON dm.department_id = d.id
+          WHERE dm.user_id = ?
+         UNION
+         SELECT 'group:' || g.slug AS conversation_key, 'group' AS kind, g.slug AS slug, g.name AS name
+           FROM groups g
+           JOIN group_members gm ON gm.group_id = g.id
+          WHERE gm.user_id = ?
+       )
+       SELECT a.conversation_key, a.kind, a.slug, a.name,
+              MAX(m.created_at) AS last_at,
+              (SELECT body FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
+              (SELECT sender_username FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
+              COALESCE(SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' THEN 1 ELSE 0 END), 0) AS unread,
+              COUNT(m.id) AS total
+         FROM authorized a
+         LEFT JOIN messages m ON m.conversation_key = a.conversation_key
+        GROUP BY a.conversation_key, a.kind, a.slug, a.name
+        ORDER BY last_at DESC`,
+      [fresh.id, fresh.id, fresh.username],
+    )
+    const team_conversations = teamResult.rows.map(r => ({
+      conversation_key: r.conversation_key,
+      kind: r.kind,
+      slug: r.slug,
+      name: r.name,
+      last_text: r.last_text || '',
+      last_from: r.last_from || '',
+      unread: Number(r.unread) || 0,
+      last_at: r.last_at || null,
+    }))
+
+    return jsonResponse({ conversations: out, team_conversations })
   }
 
   // POST /api/chat/seen — mark a conversation's incoming messages as seen.
