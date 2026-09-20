@@ -8,7 +8,7 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = true
 
 const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
-type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat'
 
 type Props = {
   onBack: () => void
@@ -20,13 +20,17 @@ type Props = {
 }
 
 export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons }: Props) {
-  const [tab, setTab] = useState<Tab>('moderation')
+  const [tab, setTab] = useState<Tab>('dashboard')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const token = () => localStorage.getItem('harvest_token') || ''
 
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 2500) }
+
+  // ── Daily operations dashboard ──
+  const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, content: [] as any[], chats: [] as any[], audit: [] as any[] })
+  const [loadingDashboard, setLoadingDashboard] = useState(false)
 
   // ── Moderation state ──
   const [pending, setPending] = useState<any[]>([])
@@ -101,6 +105,33 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const [annBusy, setAnnBusy] = useState(false)
   const [annCount, setAnnCount] = useState<number | null>(null)
 
+  const loadDashboard = useCallback(async () => {
+    setLoadingDashboard(true); setError('')
+    const headers = { Authorization: 'Bearer ' + token() }
+    try {
+      const [pendingR, usersR, groupsR, departmentsR, contentR, chatsR, auditR] = await Promise.all([
+        fetch(API + '/api/pending?status=pending', { headers }),
+        fetch(API + '/api/users/map', { headers }),
+        fetch(API + '/api/groups', { headers }),
+        fetch(API + '/api/departments', { headers }),
+        fetch(API + '/api/feed?limit=8', { headers }),
+        fetch(API + '/api/chat/conversations', { headers }),
+        fetch(API + '/api/admin/audit?limit=8', { headers }),
+      ])
+      const read = async (r: Response) => r.ok ? r.json() : {}
+      const [p,u,g,d,feed,ch,a] = await Promise.all([read(pendingR),read(usersR),read(groupsR),read(departmentsR),read(contentR),read(chatsR),read(auditR)])
+      setDashboard({
+        pending: (p.pending || []).length,
+        members: (u.users || []).length,
+        groups: (g.groups || []).length,
+        departments: (d.departments || []).length,
+        content: (feed.posts || feed.items || feed.reels || []).slice(0, 8),
+        chats: (ch.team_conversations || []).slice(0, 8),
+        audit: (a.audit || []).slice(0, 8),
+      })
+    } catch (e: any) { setError(e?.message || 'Unable to load dashboard') } finally { setLoadingDashboard(false) }
+  }, [])
+
   const loadPending = useCallback(async () => {
     if (!USE_API) { setPending([]); return }
     try {
@@ -168,12 +199,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   }, [])
 
   useEffect(() => {
+    if (tab === 'dashboard') void loadDashboard()
     if (tab === 'moderation') void loadPending()
     if (tab === 'accounts') void loadAccounts()
     if (tab === 'chat') void loadChatConversations()
     if (tab === 'chat') void loadChatMessages()
     if (tab === 'audit') void loadAudit()
-  }, [tab, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit])
+  }, [tab, loadDashboard, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit])
 
   const moderate = async (id: string, action: 'approve' | 'reject') => {
     if (busy) return
@@ -338,14 +370,15 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-4">
+        <button type="button" onClick={() => setTab('dashboard')} className="px-3 py-2.5 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold">📊 Dashboard</button>
         <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">👥 Manage Groups</button>
         <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>
         <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'chat', 'audit'] as const).map(value => (
+        {(['dashboard', 'moderation', 'media', 'accounts', 'announce', 'home', 'give', 'chat', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
-            {value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
+            {value === 'dashboard' ? '📊 Today' : value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
@@ -353,6 +386,45 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {error && <div role="alert" className="mb-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
       {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
       {!USE_API && <div className="mb-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm">Admin tools require the server API. Enable VITE_USE_API=true in production.</div>}
+
+      {/* ── Daily operations dashboard ── */}
+      {tab === 'dashboard' && (
+        <div className="space-y-3">
+          {loadingDashboard ? <p className="text-sm text-[#766E63] text-center py-10">Loading today’s operations…</p> : <>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['Pending approvals', dashboard.pending, 'moderation', '🛡️'],
+                ['New members', dashboard.members, 'accounts', '👥'],
+                ['Active groups', dashboard.groups, 'groups', '🟣'],
+                ['Departments', dashboard.departments, 'departments', '🏢'],
+              ].map(([label,count,target,icon]) => <button key={String(label)} onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="text-left bg-white border border-[#E8DEC9] rounded-2xl p-4"><span className="text-lg">{icon}</span><p className="text-2xl font-extrabold mt-1">{count}</p><p className="text-[11px] text-[#766E63]">{label}</p></button>)}
+            </div>
+            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">⚡ Quick actions</h2><button onClick={() => void loadDashboard()} className="text-xs font-bold text-[#7C3AED]">Refresh</button></div>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <button onClick={() => setTab('moderation')} className="py-3 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-xs font-bold">Review approvals</button>
+                <button onClick={() => setTab('accounts')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage members</button>
+                <button onClick={() => onOpenGroups?.()} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage groups</button>
+                <button onClick={() => onOpenDepartments?.()} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage departments</button>
+                <button onClick={() => setTab('announce')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Send announcement</button>
+                <button onClick={() => setTab('chat')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Moderate chat</button>
+              </div>
+            </div>
+            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+              <h2 className="font-extrabold text-sm mb-3">📰 Recent content</h2>
+              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-[#766E63]">{x.type || 'post'} · {x.created_at ? new Date(x.created_at).toLocaleString() : ''}</p></div>) : <p className="text-xs text-[#766E63]">No recent content.</p>}
+            </div>
+            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+              <h2 className="font-extrabold text-sm mb-3">💬 Recent chat activity</h2>
+              {dashboard.chats.length ? dashboard.chats.map((x:any) => <div key={x.conversation_key} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.name}</p><p className="text-[10px] text-[#766E63] truncate">{x.last_from ? '@'+x.last_from+' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p></div>) : <p className="text-xs text-[#766E63]">No recent team chat activity.</p>}
+            </div>
+            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">🧾 Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-xs font-bold text-[#7C3AED]">View all</button></div>
+              {dashboard.audit.length ? dashboard.audit.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.action}</p><p className="text-[10px] text-[#766E63]">{x.actor_username || 'system'} → {x.target_type} {x.target_id || ''} · {new Date(x.created_at).toLocaleString()}</p></div>) : <p className="text-xs text-[#766E63] mt-2">No admin actions recorded yet.</p>}
+            </div>
+          </>}
+        </div>
+      )}
 
       {/* ── Media studio tab ── */}
       {tab === 'media' && <AdminMedia onBack={() => setTab('moderation')} />}
