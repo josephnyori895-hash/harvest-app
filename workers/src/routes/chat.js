@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
 import { mediaUrlOrNull } from '../lib/media.js'
+import { hasCap } from '../lib/capabilities.js'
 
 const MAX_MESSAGE_LENGTH = 4000
 
@@ -10,7 +11,7 @@ function cleanText(value) {
   return String(value ?? '').trim().slice(0, MAX_MESSAGE_LENGTH)
 }
 
-function cleanUsername(value) {
+function hasChatModeration(fresh) { return fresh?.role === 'admin' || hasCap(fresh, 'moderate_chat') }\n\nfunction cleanUsername(value) {
   return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32)
 }
 
@@ -67,7 +68,7 @@ async function canAccessConversation(env, me, conversationKey) {
 
 function messageSelect() {
   return `SELECT id, kind, conversation_key, sender_username AS "from", recipient_username AS "to",
-                 body AS text, status, created_at,
+                 CASE WHEN deleted_at IS NOT NULL THEN 'This message was deleted' ELSE body END AS text, status, created_at, deleted_at, deleted_by,
                  reply_to_id, reply_preview, media_key, media_type, reaction,
                  substr(created_at, 12, 5) AS at
           FROM messages`
@@ -166,6 +167,21 @@ export async function handleChat(request, env, ctx) {
     if (!(await canAccessConversation(env, fresh, m.rows[0].conversation_key))) return errorResponse('forbidden', 403)
     await query(env, 'UPDATE messages SET reaction=? WHERE id=?', [rx || null, msgId])
     return jsonResponse({ ok: true, reaction: rx || null })
+  }
+
+  // DELETE /api/chat/messages/:id — admin/delegated moderation soft-deletes a message.
+  // Keep the row for audit/history integrity; clients receive a neutral tombstone.
+  if (/^\\/api\\/chat\\/messages\\/[^/]+$/.test(path) && method === 'DELETE') {
+    const fresh = await requireMember(env, user)
+    const msgId = path.split('/')[4]
+    const m = await query(env, 'SELECT id, conversation_key, sender_username, deleted_at FROM messages WHERE id=?', [msgId])
+    if (!m.rows[0]) return errorResponse('message not found', 404)
+    if (m.rows[0].deleted_at) return jsonResponse({ ok: true, deleted: true, id: msgId })
+    if (!hasChatModeration(fresh)) return errorResponse('chat moderation is reserved for the admin or members granted moderate_chat', 403)
+    if (!(await canAccessConversation(env, fresh, m.rows[0].conversation_key))) return errorResponse('forbidden', 403)
+    const now = new Date().toISOString()
+    await query(env, 'UPDATE messages SET deleted_at=?, deleted_by=? WHERE id=? AND deleted_at IS NULL', [now, fresh.id, msgId])
+    return jsonResponse({ ok: true, deleted: true, id: msgId, deleted_at: now })
   }
 
   // GET /api/chat/conversations — inbox + authorized team chats with unread counts.
