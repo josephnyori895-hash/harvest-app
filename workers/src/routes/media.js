@@ -69,15 +69,27 @@ export async function handleMedia(request, env, ctx) {
   // POST /api/media/upload — proxy fallback (used when R2 presign creds are not configured).
   if (path === '/api/media/upload' && method === 'POST') {
     const fresh = await requireMember(env, user)
-    try {
-      const form = await request.formData()
-      const file = form.get('file')
+    // Keep the proxy fallback under the same authorization and per-user
+    // upload limits as presign. Without this, disabling R2 presigning would
+    // silently bypass both posting permissions and the 10/minute limit.
+    const form = await request.formData()
+    const file = form.get('file')
       const key = String(form.get('key') || '')
       const expectedContentType = String(form.get('contentType') || '')
       if (!(file instanceof File) || !key) return errorResponse('key and file are required', 400)
       if (!KEY_RE.test(key)) return errorResponse('invalid media key', 400)
-      const buf = await file.arrayBuffer()
       const type = key.split('/')[1]
+      if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+        return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
+      }
+      const rate = await query(
+        env,
+        'SELECT COUNT(*) AS count FROM media_upload_attempts WHERE user_id=? AND created_at > ?',
+        [fresh.id, new Date(Date.now() - 60_000).toISOString()],
+      )
+      if (Number(rate.rows[0]?.count || 0) >= 10) return errorResponse('upload rate limit 10/min', 429)
+      await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [fresh.id, new Date().toISOString()])
+      const buf = await file.arrayBuffer()
       validatePresign({ type, contentType: file.type, bytes: buf.byteLength })
       if (expectedContentType && expectedContentType !== file.type) return errorResponse('content type mismatch', 400)
       await env.MEDIA.put(key, buf, {
