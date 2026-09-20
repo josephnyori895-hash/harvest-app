@@ -114,7 +114,7 @@ export async function handleMedia(request, env, ctx) {
     const u = await query(env, 'SELECT group_name, constituency, faith, verified FROM users WHERE id=?', [userId])
     const sermonType = type === 'sermon_audio' || type === 'sermon_video'
     if (sermonType) {
-      if (!isAdmin && !fresh.verified) {
+      if (fresh.role !== 'admin' && !fresh.verified) {
         return errorResponse('sermon uploads are for verified members — ask an admin to verify your account', 403)
       }
       const storedCt = String(obj.httpMetadata?.contentType || '')
