@@ -184,7 +184,7 @@ export async function handleChat(request, env, ctx) {
         WHERE m.conversation_key LIKE 'harvest:chat:%' AND (m.conversation_key LIKE ? OR m.conversation_key LIKE ?)
         GROUP BY m.conversation_key
         ORDER BY last_at DESC LIMIT 50`,
-      [fresh.id, fresh.username, `harvest:chat:${fresh.username}:%`, `harvest:chat:%:${fresh.username}`],
+      [fresh.username, fresh.id, `harvest:chat:${fresh.username}:%`, `harvest:chat:%:${fresh.username}`],
     )
     const out = []
     for (const r of rows) {
