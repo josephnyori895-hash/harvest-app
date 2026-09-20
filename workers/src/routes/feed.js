@@ -80,10 +80,16 @@ export async function handleFeed(request, env, ctx) {
     try {
       const s = await query(
         env,
-        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type, s.created_at
+        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type, s.created_at,
+                  CASE WHEN ? IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM story_views sv
+                     WHERE sv.story_id = s.id
+                       AND (sv.viewer_user_id = ? OR (sv.viewer_user_id IS NULL AND sv.viewer_username = u2.username))
+                  ) THEN 1 ELSE 0 END AS viewed
            FROM stories s JOIN users u ON u.id = s.user_id
+          LEFT JOIN users u2 ON u2.id = ?
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
-        [new Date().toISOString()],
+        [user?.id || null, user?.id || null, user?.id || null, new Date().toISOString()],
       )
       stories = await Promise.all(s.rows.map(async x => ({ ...x, music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
@@ -95,10 +101,16 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/stories' && request.method === 'GET') {
     const { rows } = await query(
       env,
-      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type
+      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type,
+                CASE WHEN ? IS NOT NULL AND EXISTS (
+                  SELECT 1 FROM story_views sv
+                   WHERE sv.story_id = s.id
+                     AND (sv.viewer_user_id = ? OR (sv.viewer_user_id IS NULL AND sv.viewer_username = u2.username))
+                ) THEN 1 ELSE 0 END AS viewed
          FROM stories s JOIN users u ON u.id = s.user_id
+         LEFT JOIN users u2 ON u2.id = ?
         WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 50`,
-      [new Date().toISOString()],
+      [user?.id || null, user?.id || null, user?.id || null, new Date().toISOString()],
     )
     const out = await Promise.all(rows.map(async r => ({ ...r,
       thumb_url: await mediaUrlOrNull(env, r.thumb_key || (String(r.media_type) === 'video' ? null : r.original_key), 600),
@@ -257,8 +269,12 @@ export async function handleFeed(request, env, ctx) {
     const sid = path.split('/')[3]
     const exists = await query(env, 'SELECT 1 FROM stories WHERE id=?', [sid])
     if (!exists.rows[0]) return errorResponse('story not found', 404)
-    await query(env, 'INSERT OR IGNORE INTO story_views (story_id, viewer_username) VALUES (?,?)', [sid, fresh.username])
-    return jsonResponse({ ok: true })
+    await query(env, `INSERT INTO story_views (story_id, viewer_username, viewer_user_id)
+                     VALUES (?,?,?)
+                     ON CONFLICT(story_id, viewer_username) DO UPDATE SET
+                       viewer_user_id=excluded.viewer_user_id,
+                       viewed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')`, [sid, fresh.username, fresh.id])
+    return jsonResponse({ ok: true, storyId: sid, viewed: true })
   }
 
   // ── Self-delete (Instagram-style) ─────────────────────────
