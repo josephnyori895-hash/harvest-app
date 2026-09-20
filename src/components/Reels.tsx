@@ -174,6 +174,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }
   // Double-tap anywhere on the video = encourage (with a pulsing heart).
   const onVideoTap = (e: React.MouseEvent | React.TouchEvent) => {
+    const target = e.target as HTMLElement
+    if (target.closest('button, [role="button"], a, input, textarea')) {
+      lastTap.current = { time: 0, x: 0, y: 0 }
+      return
+    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const pt = 'touches' in e ? e.changedTouches[0] : e
     const x = (pt?.clientX ?? 0) - rect.left, y = (pt?.clientY ?? 0) - rect.top
