@@ -320,9 +320,12 @@ export async function handleFeed(request, env, ctx) {
     if (owner.rows[0]?.username !== fresh.username && fresh.role !== 'admin') return errorResponse('forbidden', 403)
     const { rows } = await query(
       env,
-      `SELECT v.viewer_username AS username, u.name, u.verified, v.viewed_at
-         FROM story_views v LEFT JOIN users u ON u.username = v.viewer_username
-        WHERE v.story_id=? ORDER BY v.viewed_at DESC LIMIT 200`,
+      `SELECT COALESCE(u.username, v.viewer_username) AS username,
+              u.name, u.verified, v.viewed_at
+         FROM story_views v
+         LEFT JOIN users u ON u.id = v.viewer_user_id
+        WHERE v.story_id=?
+        ORDER BY v.viewed_at DESC LIMIT 200`,
       [sid],
     )
     rows.forEach(r => { r.verified = !!r.verified })
