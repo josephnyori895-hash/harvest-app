@@ -52,7 +52,7 @@ export async function uploadToMinio(url:string, fields:Record<string,string>, fi
     const r = await fetch(target, {
       method: 'PUT',
       body: file,
-      headers: { ...fields, 'Content-Length': String(file.size) },
+      headers: { ...fields },
     })
     if (!r.ok) throw new Error(`Media upload failed (${r.status})`)
     return
