@@ -32,6 +32,20 @@ export default {
       return stub.fetch(request)
     }
 
+    // Public liveness/readiness probe for production smoke tests. Keep the
+    // response intentionally minimal: no credentials or internal infrastructure details.
+    if (url.pathname === '/health' && request.method === 'GET') {
+      let database = 'ok'
+      try {
+        await env.DB.prepare('SELECT 1 AS ok').first()
+      } catch {
+        database = 'error'
+      }
+      const storage = env.MEDIA ? 'r2' : 'missing'
+      const status = database === 'ok' && storage === 'r2' ? 'ok' : 'degraded'
+      return withCors(jsonResponse({ status, database, storage }), env, request)
+    }
+
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsFor(env, request) })
