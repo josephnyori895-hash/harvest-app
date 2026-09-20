@@ -158,6 +158,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }, [liveMoments])
 
   const liveUpdates = useMemo(() => livePosts.map((p: any) => ({
+    id: p.id,
     key: `api_${p.kind}_${p.id}`,
     user: p.name || p.username || 'Harvest member',
     username: p.username,
