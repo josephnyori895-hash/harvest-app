@@ -63,7 +63,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
     return () => { cancelled = true }
   }, [safeUser.username])
 
-  const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, username: s.username, id: s.id, img: s.thumb_url, caption: '' })), [stories])
+  const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, username: s.username, id: s.id, img: s.thumb_url, video: String(s.media_type) === 'video' ? (s.video_url || s.original_url || undefined) : undefined, caption: '' })), [stories])
 
   if (!user) return null
 
@@ -164,7 +164,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
         </div>
       )}
       {stories.length > 0 && (
-        <div className="mt-6 px-4"><h3 className="font-bold text-neutral-900 mb-3">Stories</h3><div className="flex gap-3 overflow-x-auto pb-2">{stories.slice(0, 5).map((s: any, i: number) => <button key={s.id || i} onClick={() => setStoryIdx(i)} className="flex-shrink-0 w-20 h-28 rounded-xl overflow-hidden border-2 border-neutral-200 hover:border-purple-400 transition-all hover-lift">{s.thumb_url ? <img src={s.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-amber-200 to-purple-300 flex items-center justify-center text-2xl">🌅</div>}</button>)}</div></div>
+        <div className="mt-6 px-4"><h3 className="font-bold text-neutral-900 mb-3">Stories</h3><div className="flex gap-3 overflow-x-auto pb-2">{stories.slice(0, 5).map((s: any, i: number) => <button key={s.id || i} onClick={() => setStoryIdx(i)} className="flex-shrink-0 w-20 h-28 rounded-xl overflow-hidden border-2 border-neutral-200 hover:border-purple-400 transition-all hover-lift relative">{s.thumb_url ? <img src={s.thumb_url} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} /> : String(s.media_type) === 'video' ? <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-900 flex items-center justify-center text-2xl">🎥</div> : <div className="w-full h-full bg-gradient-to-br from-amber-200 to-purple-300 flex items-center justify-center text-2xl">🌅</div>}{String(s.media_type) === 'video' && s.thumb_url && <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-[10px] text-white">▶</span>}</button>)}</div></div>
       )}
       <div className="mt-6 px-4">
         <h3 className="font-bold text-neutral-900 mb-3">Posts</h3>

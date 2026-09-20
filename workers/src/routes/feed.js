@@ -78,7 +78,7 @@ export async function handleFeed(request, env, ctx) {
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
         [new Date().toISOString()],
       )
-      stories = await Promise.all(s.rows.map(async x => ({ ...x, thumb_url: await mediaUrlOrNull(env, x.thumb_key || x.original_key, 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
+      stories = await Promise.all(s.rows.map(async x => ({ ...x, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
     const nextOffset = offset + limit
     return jsonResponse({ posts: enriched, stories, nextOffset, hasMore: enriched.length === limit })
@@ -93,7 +93,10 @@ export async function handleFeed(request, env, ctx) {
         WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 50`,
       [new Date().toISOString()],
     )
-    const out = await Promise.all(rows.map(async r => ({ ...r, thumb_url: await mediaUrlOrNull(env, r.thumb_key || r.original_key, 600) })))
+    const out = await Promise.all(rows.map(async r => ({ ...r,
+      thumb_url: await mediaUrlOrNull(env, r.thumb_key || (String(r.media_type) === 'video' ? null : r.original_key), 600),
+      video_url: String(r.media_type) === 'video' ? await mediaUrlOrNull(env, r.original_key, 1800) : null,
+    })))
     return jsonResponse({ stories: out })
   }
 

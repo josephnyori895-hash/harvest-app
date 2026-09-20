@@ -99,7 +99,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     username: s.username || '',
     id: s.id,
     label: 'Story',
-    // thumb_url exists for videos too (server-generated frame) — show it in rings.
+    // thumb_url is a poster IMAGE only — the server never hands a video URL
+    // here anymore (a video in <img> renders the broken-image glyph in rings).
     img: s.thumb_url || undefined,
     video: s.media_type === 'video' ? (s.video_url || undefined) : undefined,
     caption: s.caption,
@@ -210,14 +211,16 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
       <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
         <div className="min-w-[88px] text-center"><button onClick={() => myStoryGroup ? setMomentIdx(myStoryGroup.items[0].flatIndex) : setTab('post')} className="mx-auto block rounded-[28px] p-[3px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shadow-sm" aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-[#F4E8D0]">{myStoryGroup?.items[0]?.img
-          ? <img src={myStoryGroup.items[0].img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+          ? <img src={myStoryGroup.items[0].img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+          : myStoryGroup ? <span className="relative text-lg">🎥</span>
           : <span className="relative text-sm font-extrabold text-[#5B21B6]">+</span>}
         </span></span></button><p className="mt-1.5 text-[11px] font-bold truncate max-w-[88px]">Your story</p><p className="text-[10px] text-[#8B8175]">{myStoryGroup ? `${myStoryGroup.items.length} live` : 'Tap to share'}</p></div>
         {/* One ring per person (all their stories play in sequence) */}
-        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => setMomentIdx(first.flatIndex)} className="mx-auto block rounded-[28px] p-[3px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shadow-sm" aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]">{hasPhoto
-          ? <img src={first.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" />
+        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); const isVideo = Boolean(first.video); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => setMomentIdx(first.flatIndex)} className="mx-auto block rounded-[28px] p-[3px] bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 shadow-sm" aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]">{hasPhoto
+          ? <img src={first.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+          : isVideo ? <span className="relative text-lg">🎥</span>
           : <span className="relative text-sm font-extrabold text-[#5B21B6]">{g.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span>}
-          </span>{g.items.length > 1 && <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-black/60 text-white text-[9px] font-extrabold">×{g.items.length}</span>}
+          </span>{isVideo && hasPhoto && <span className="absolute bottom-1 left-1 w-4 h-4 rounded-full bg-black/60 text-white text-[8px] flex items-center justify-center">▶</span>}{g.items.length > 1 && <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-black/60 text-white text-[9px] font-extrabold">×{g.items.length}</span>}
         </span></button><p className="mt-1.5 text-[11px] font-bold truncate max-w-[88px]">{g.name}</p><p className="text-[10px] text-[#8B8175]">{g.items.length > 1 ? `${g.items.length} stories` : (first.label || 'Story')}</p></div> })}
         {storyGroups.length === 0 && <p className="text-sm text-[#8B8175] py-6">No stories yet — be the first to share a moment.</p>}
       </div></section>
