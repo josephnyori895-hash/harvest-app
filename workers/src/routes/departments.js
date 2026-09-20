@@ -132,6 +132,11 @@ export async function handleDepartments(request, env, ctx) {
     if (!uname) return errorResponse('username required', 400)
     const t = await query(env, 'SELECT id, username FROM users WHERE username=? AND active=1', [uname])
     if (!t.rows[0]) return errorResponse('user not found', 404)
+    const existing = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, t.rows[0].id])
+    if (role === 'member' && existing.rows[0]?.role === 'leader' && fresh.role !== 'admin') {
+      const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
+      if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot demote the only department leader', 400)
+    }
     // Admin moves are authoritative: remove from other departments first.
     await query(env, 'DELETE FROM department_members WHERE user_id=? AND department_id <> ?', [t.rows[0].id, dep.id])
     await query(
