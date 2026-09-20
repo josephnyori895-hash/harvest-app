@@ -82,7 +82,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
 
-  const loadMoreReels = async () => {
+  const loadMoreReels = async (advanceAfterLoad = false) => {
     if (!useServer || loadingServer || loadingMoreReels || !hasMoreReels) return
     setLoadingMoreReels(true)
     try {
@@ -103,6 +103,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       setServerReels(prev => [...prev, ...mapped])
       setReelsNextOffset(Number(r.nextOffset) || reelsNextOffset + mapped.length)
       setHasMoreReels(mapped.length >= 20)
+      if (advanceAfterLoad && mapped.length > 0) setIdx(i => i + 1)
     } catch {
       flash('Could not load more videos. Try again.')
     } finally {
@@ -172,7 +173,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     setIdx(i => {
       const nextIdx = i + 1
       if (nextIdx < allVideos.length) return nextIdx
-      if (hasMoreReels) void loadMoreReels()
+      if (hasMoreReels) void loadMoreReels(true)
       return allVideos.length > 0 ? i : 0
     })
   }
