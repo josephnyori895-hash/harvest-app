@@ -269,7 +269,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     const t = lastTap.current
     if (now - t.time < 350 && Math.hypot(x - t.x, y - t.y) < 40) {
       lastTap.current = { time: 0, x: 0, y: 0 }
-      if (!encouraged[key]) { setEncouraged(p => ({ ...p, [key]: true })); flash('You encouraged this video 🤲') }
+      if (!cur?.id) return
+      if (!cur.liked) { void toggleEncourage(); flash('You encouraged this video 🤲') }
       const id = ++heartSeq.current
       setHeart({ id, x, y })
       window.setTimeout(() => setHeart(h => (h?.id === id ? null : h)), 900)
