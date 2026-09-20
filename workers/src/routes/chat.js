@@ -11,7 +11,9 @@ function cleanText(value) {
   return String(value ?? '').trim().slice(0, MAX_MESSAGE_LENGTH)
 }
 
-function hasChatModeration(fresh) { return fresh?.role === 'admin' || hasCap(fresh, 'moderate_chat') }\n\nfunction cleanUsername(value) {
+function hasChatModeration(fresh) { return fresh?.role === 'admin' || hasCap(fresh, 'moderate_chat') }
+
+function cleanUsername(value) {
   return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32)
 }
 
