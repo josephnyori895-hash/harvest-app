@@ -72,8 +72,9 @@ export async function handleMedia(request, env, ctx) {
     // Keep the proxy fallback under the same authorization and per-user
     // upload limits as presign. Without this, disabling R2 presigning would
     // silently bypass both posting permissions and the 10/minute limit.
-    const form = await request.formData()
-    const file = form.get('file')
+    try {
+      const form = await request.formData()
+      const file = form.get('file')
       const key = String(form.get('key') || '')
       const expectedContentType = String(form.get('contentType') || '')
       if (!(file instanceof File) || !key) return errorResponse('key and file are required', 400)
