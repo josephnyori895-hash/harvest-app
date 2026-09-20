@@ -8,6 +8,9 @@ const http = await readFile(new URL('../workers/src/lib/http.js', import.meta.ur
 const auth = await readFile(new URL('../workers/src/lib/auth.js', import.meta.url), 'utf8')
 const routesAuth = await readFile(new URL('../workers/src/routes/auth.js', import.meta.url), 'utf8')
 const index = await readFile(new URL('../workers/src/index.js', import.meta.url), 'utf8')
+const media = await readFile(new URL('../workers/src/lib/media.js', import.meta.url), 'utf8')
+const chat = await readFile(new URL('../workers/src/routes/chat.js', import.meta.url), 'utf8')
+const securityMigration = await readFile(new URL('../workers/migrations/0013_security_hardening.sql', import.meta.url), 'utf8')
 
 // No insecure JWT fallback anywhere in the worker.
 for (const [name, src] of Object.entries({ http, auth, routesAuth, index })) {
@@ -35,5 +38,11 @@ assert.match(auth, /pbkdf2Verify/)
 // Admin PIN bootstrap stays bcrypt-hashed — never plaintext comparison.
 assert.match(auth, /bcrypt\.compare/)
 assert.doesNotMatch(auth, /pin\s*===\s*env\.ADMIN_PIN/)
+assert.match(media, /if \(!signed\) return errorResponse\('signed media URL required', 401\)/)
+assert.match(media, /x-amz-meta-ownerid/)
+assert.match(chat, /canAccessConversation/)
+assert.doesNotMatch(chat, /conversation_key\.startsWith\('group:'\).*\n.*conversation_key\.startsWith\('department:'/s)
+assert.match(securityMigration, /password_hash = NULL/)
+assert.match(securityMigration, /pin_hash = NULL/)
 
 console.log('Security hardening contract tests passed (Cloudflare Workers backend).')
