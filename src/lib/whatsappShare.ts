@@ -3,6 +3,12 @@
 // their church WhatsApp groups. Text is pre-composed so the share looks good.
 
 const BRAND = 'Harvest Family Church · Nyeri 🙏'
+const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://spiffy-frangipane-6bda1c.netlify.app').replace(/\/$/, '')
+
+function contentUrl(kind: 'post' | 'reel' | 'story', id?: string) {
+  if (!id) return undefined
+  return `${PUBLIC_APP_URL}/?shared=${kind}&id=${encodeURIComponent(id)}`
+}
 
 function openWa(text: string) {
   const url = `https://wa.me/?text=${encodeURIComponent(text)}`
@@ -19,20 +25,21 @@ export function shareToWhatsApp(text: string) {
   openWa(`${text}\n\n— ${BRAND}`)
 }
 
-export function sharePostToWhatsApp(opts: { author?: string; caption?: string; url?: string }) {
+export function sharePostToWhatsApp(opts: { author?: string; caption?: string; url?: string; id?: string; kind?: 'post' | 'reel' }) {
   const bits = [
     opts.author ? `📢 ${opts.author} shared on the Harvest app:` : '📢 From the Harvest app:',
     opts.caption,
-    opts.url,
+    opts.url || contentUrl(opts.kind || 'post', opts.id),
   ].filter(Boolean)
   shareToWhatsApp(bits.join('\n\n'))
   window.dispatchEvent(new CustomEvent('harvest:whatsapp-share', { detail: { author: opts.author, caption: opts.caption } }))
 }
 
-export function shareStoryToWhatsApp(opts: { author?: string; caption?: string }) {
+export function shareStoryToWhatsApp(opts: { author?: string; caption?: string; id?: string }) {
   const bits = [
     opts.author ? `🙏 ${opts.author}'s 24h story on the Harvest app:` : '🙏 A 24h story on the Harvest app:',
     opts.caption || 'Tap to catch it before it disappears!',
+    contentUrl('story', opts.id),
   ].filter(Boolean)
   shareToWhatsApp(bits.join('\n'))
   window.dispatchEvent(new CustomEvent('harvest:whatsapp-share', { detail: { author: opts.author, caption: opts.caption } }))
