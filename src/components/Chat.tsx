@@ -158,6 +158,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
   const pressTimer = useRef<number | null>(null)
   const swipeStartY = useRef<number | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
+  const currentProfile = users.find((u: any) => u.username === currentUser)
+  const canModerateChat = currentProfile?.role === 'admin' || String(currentProfile?.grants || '').split(',').map((x: string) => x.trim()).includes('moderate_chat')
   // Last-seen unread counts (peer → count) + currently open conversation,
   // so the background poller can detect FRESH incoming messages.
   const inboxRef = useRef<Record<string, number> | null>(null)
@@ -437,6 +439,19 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
     }
   }
 
+  const moderateDelete = async (m: any) => {
+    const id = String(m?.id || '')
+    if (!id || id.startsWith('tmp_')) return
+    try {
+      await api('/api/chat/messages/' + encodeURIComponent(id), { method: 'DELETE' })
+      saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).map(x => String(x.id) === id ? { ...x, deleted_at: new Date().toISOString(), text: 'This message was deleted', media_key: null, media_type: null, reaction: null } : x) }))
+      setNotice('Message removed for everyone')
+      window.setTimeout(() => setNotice(''), 1800)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove message')
+    }
+  }
+
   const copyMessage = async (m: any) => {
     const value = String(m.text || '')
     if (!value) return
@@ -556,6 +571,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
                         <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">😊 React</button>
                         <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">⧉ Copy</button>
                         {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 active:bg-zinc-700 text-sm flex items-center gap-3">↗ Share photo</button>}
+                        {isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-rose-950/60 active:bg-rose-950 text-sm text-rose-300 flex items-center gap-3">🗑 Remove for everyone</button>}
                       </div>
                     )}
                   </div>
