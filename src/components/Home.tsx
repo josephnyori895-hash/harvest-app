@@ -91,6 +91,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
+  const pendingLikesRef = useRef(new Set<string>())
 
   const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
   const approvedPosts: any[] = []
@@ -213,8 +214,10 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }, [sharedContent, feedLoaded, feedLoadFailed, livePosts, allMoments, onSharedContentHandled])
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const toggleLike = async (key: string) => {
+    if (pendingLikesRef.current.has(key)) return
     const post = livePosts.find((p: any) => `api_${p.kind}_${p.id}` === key)
     if (api && post?.id) {
+      pendingLikesRef.current.add(key)
       const wasLiked = Boolean(post.liked)
       setLivePosts(ps => ps.map((p: any) => `api_${p.kind}_${p.id}` === key
         ? { ...p, liked: !wasLiked, likes: Math.max((Number(p.likes) || 0) + (wasLiked ? -1 : 1), 0) }
