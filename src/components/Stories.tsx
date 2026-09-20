@@ -139,6 +139,19 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     return () => clearInterval(interval)
   }, [idx, isPaused, duration, s, isVideo])
 
+  // Record a unique view when the story becomes active. The server keys views by
+  // story ID + member, so revisiting a story is idempotent.
+  useEffect(() => {
+    if (!s?.id) return
+    const token = localStorage.getItem('harvest_token') || ''
+    const API = (import.meta.env.VITE_API_URL || '').replace(/\\/$/, '')
+    if (!token || !API) return
+    void fetch(API + '/api/stories/' + encodeURIComponent(String(s.id)) + '/view', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+    }).catch(() => {})
+  }, [s?.id])
+
   useEffect(() => { if (s?.id) { setReplies([]); setReply(''); void loadReplies() } }, [s?.id])
   if (!s) return null
   const isLastUserStory = idx === allStories.length - 1
