@@ -116,6 +116,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     if (teamChat) { setActive(null); setTeam(teamChat) } else setTeam(null)
   }, [teamChat])
   const [reactingFor, setReactingFor] = useState<string | null>(null)
+  const [actionFor, setActionFor] = useState<string | null>(null)
+  const swipeStartX = useRef<number | null>(null)
   const [attach, setAttach] = useState<File | null>(null)
   // Instagram-style people search on the chats list.
   const [peopleQuery, setPeopleQuery] = useState('')
@@ -307,6 +309,9 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     } catch { setNotice('Could not save reaction'); window.setTimeout(() => setNotice(''), 2000) }
   }
 
+  const startSwipe = (e: React.TouchEvent) => { swipeStartX.current = e.touches[0]?.clientX ?? null }
+  const endSwipe = (e: React.TouchEvent, m: any) => { const start = swipeStartX.current; swipeStartX.current = null; const dx = start == null ? 0 : (e.changedTouches[0]?.clientX || 0) - start; if (dx > 55) { setReplyTo(m); setReactingFor(null); setActionFor(null) } }
+
   const startPress = (m: any) => {
     pressTimer.current = window.setTimeout(() => setReactingFor(String(m.id)), 450)
   }
@@ -382,8 +387,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                     {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 shadow text-xs`}>{m.reaction}</button>}
                     <div
                       onContextMenu={e => { e.preventDefault(); setReactingFor(isReactionOpen ? null : String(m.id)) }}
-                      onTouchStart={() => startPress(m)} onTouchEnd={cancelPress} onTouchMove={cancelPress}
-                      onClick={() => setReactingFor(isReactionOpen ? null : String(m.id))}
+                      onTouchStart={(e) => { startSwipe(e); startPress(m) }} onTouchEnd={(e) => { endSwipe(e, m); cancelPress() }} onTouchMove={cancelPress}
+                      onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))
                       className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md shadow-purple-950/30' : 'bg-zinc-800/95 text-zinc-100 rounded-bl-md border border-zinc-700/50'}`}
                     >
                       {m.reply_preview && (
@@ -407,6 +412,13 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                           <button key={r} type="button" onClick={e => { e.stopPropagation(); react(m, r) }} className="text-xl hover:scale-125 transition-transform">{r}</button>
                         ))}
                         <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null) }} className="text-xs font-bold px-1 text-blue-400" title="Reply">↩</button>
+                      </div>
+                    )}
+                    {actionFor === String(m.id) && (
+                      <div className={`absolute ${mine ? 'right-0' : 'left-0'} top-full mt-2 z-30 w-44 rounded-2xl bg-zinc-900 border border-zinc-700 shadow-2xl p-1.5`}>
+                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">↩ Reply</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">😊 React</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-sm">⧉ Copy</button>
                       </div>
                     )}
                   </div>
