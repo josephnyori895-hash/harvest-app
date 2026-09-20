@@ -95,7 +95,7 @@ export async function handleMedia(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
-    const { key, type, caption, title, artist, cover_key: coverKeyRaw } = await readJson(request)
+    const { key, type, caption, title, artist, speaker, scripture, description, cover_key: coverKeyRaw } = await readJson(request)
     // Optional client-picked video poster (reels): a JPEG the client captured
     // from the chosen frame, uploaded to originals/post/… before confirm.
 
@@ -112,6 +112,21 @@ export async function handleMedia(request, env, ctx) {
 
     const userId = fresh.id
     const u = await query(env, 'SELECT group_name, constituency, faith, verified FROM users WHERE id=?', [userId])
+    const sermonType = type === 'sermon_audio' || type === 'sermon_video'
+    if (sermonType) {
+      if (!isAdmin && !fresh.verified) {
+        return errorResponse('sermon uploads are for verified members — ask an admin to verify your account', 403)
+      }
+      const storedCt = String(obj.httpMetadata?.contentType || '')
+      const kind = type === 'sermon_video' ? 'video' : 'audio'
+      if (kind === 'audio' && !storedCt.startsWith('audio/')) return errorResponse('sermon audio must be an audio file', 400)
+      if (kind === 'video' && !storedCt.startsWith('video/')) return errorResponse('sermon video must be a video file', 400)
+      const id = uuid()
+      await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [id, userId, String(title || caption || 'Untitled Sermon').trim().slice(0, 200), String(speaker || '').trim().slice(0, 200) || null, String(scripture || '').trim().slice(0, 200) || null, String(description || caption || '').trim().slice(0, 1000) || null, kind, key, Number(obj.size) || null])
+      await audit(env, fresh, 'sermon_published', 'sermon', id, { key, kind })
+      return jsonResponse({ id, status: 'published', kind, key }, 201)
+    }
     const snap = u.rows[0] || {}
     const isAdmin = fresh.role === 'admin'
     const now = new Date().toISOString()
