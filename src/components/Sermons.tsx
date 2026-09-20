@@ -22,7 +22,7 @@ function fmtDur(sec: number) {
 
 // Sermons — admin-published audio (mp3) & video (mp4) teachings.
 // Members stream in the app or download the original file.
-export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
+export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verified: boolean }) {
   const [sermons, setSermons] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -30,6 +30,15 @@ export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
   const [busy, setBusy] = useState('')
   const [editing, setEditing] = useState<any | null>(null)
   const [playerReady, setPlayerReady] = useState<Record<string, boolean>>({})
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadKind, setUploadKind] = useState<'audio' | 'video'>('audio')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadTitle, setUploadTitle] = useState('')
+  const [uploadSpeaker, setUploadSpeaker] = useState('')
+  const [uploadScripture, setUploadScripture] = useState('')
+  const [uploadDescription, setUploadDescription] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const uploadInput = useRef<HTMLInputElement | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -79,6 +88,37 @@ export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
     } finally { setBusy('') }
   }
 
+  const uploadSermon = async () => {
+    if (!uploadFile || !uploadTitle.trim() || uploading) return
+    setUploading(true)
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const type = uploadKind === 'video' ? 'sermon_video' : 'sermon_audio'
+      const pres = await fetch(API + '/api/media/presign', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ type, contentType: uploadFile.type, bytes: uploadFile.size, ext: (uploadFile.name.split('.').pop() || (uploadKind === 'video' ? 'mp4' : 'mp3')).toLowerCase() }),
+      })
+      const pd = await pres.json().catch(() => ({}))
+      if (!pres.ok) throw new Error(pd.error || 'Unable to prepare upload')
+      const fd = new FormData()
+      Object.entries(pd.fields || {}).forEach(([k,v]) => fd.append(k, String(v)))
+      fd.append('file', uploadFile)
+      const direct = /^https?:\/\//.test(pd.url)
+      const up = await fetch(direct ? pd.url : API + pd.url, { method:'POST', body:fd, headers: direct ? undefined : authHeaders() })
+      if (!up.ok) throw new Error('Upload failed — check your connection and file size')
+      const confirm = await fetch(API + '/api/media/confirm', {
+        method:'POST', headers:{...authHeaders(), 'Content-Type':'application/json'},
+        body:JSON.stringify({ key:pd.key, type, title:uploadTitle, speaker:uploadSpeaker, scripture:uploadScripture, description:uploadDescription }),
+      })
+      const cd = await confirm.json().catch(() => ({}))
+      if (!confirm.ok) throw new Error(cd.error || 'Could not publish sermon')
+      showToast(isAdmin ? 'Sermon published ✓' : 'Sermon uploaded ✓', 'success')
+      setUploadOpen(false); setUploadFile(null); setUploadTitle(''); setUploadSpeaker(''); setUploadScripture(''); setUploadDescription('')
+      load()
+    } catch (e: any) {
+      showToast(e?.message || 'Sermon upload failed', 'error')
+    } finally { setUploading(false) }
+  }
   const saveEdit = async () => {
     if (!editing || busy === 'edit') return
     setBusy('edit')
@@ -118,6 +158,15 @@ export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
         <h1 className="text-2xl font-extrabold mt-1">Sermons</h1>
         <p className="text-sm text-[#6B6257] mt-1">Listen or watch — and download to share with someone.</p>
       </div>
+
+      {(isAdmin || verified) && (
+        <div className="mb-5">
+          <button onClick={() => setUploadOpen(true)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-extrabold shadow-sm">
+            🎙 Upload a Sermon (MP3 or MP4)
+          </button>
+          <p className="text-[11px] text-[#6B6257] mt-1.5 text-center">{isAdmin ? 'Admin uploads publish immediately.' : 'Verified-member uploads publish immediately.'}</p>
+        </div>
+      )}
 
       {error && <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 
@@ -170,6 +219,25 @@ export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {uploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-label="Upload sermon">
+          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="font-extrabold text-sm">🎙 Upload sermon</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`py-2.5 rounded-xl text-xs font-bold border ${uploadKind === 'audio' ? 'bg-[#F3E8FF] border-[#7C3AED] text-[#5B21B6]' : 'border-[#E8DEC9]'}`}>🎧 MP3 audio</button>
+              <button onClick={() => { setUploadKind('video'); setUploadFile(null) }} className={`py-2.5 rounded-xl text-xs font-bold border ${uploadKind === 'video' ? 'bg-[#F3E8FF] border-[#7C3AED] text-[#5B21B6]' : 'border-[#E8DEC9]'}`}>🎬 MP4 video</button>
+            </div>
+            <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg,audio/mp3'} onChange={e => setUploadFile(e.target.files?.[0] || null)} className="hidden" />
+            <button onClick={() => uploadInput.current?.click()} className="w-full py-3 rounded-xl border border-dashed border-[#CFC3B2] bg-[#FFFBF0] text-sm font-bold">{uploadFile ? uploadFile.name : 'Choose file'}</button>
+            <input value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} placeholder="Sermon title *" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
+            <input value={uploadSpeaker} onChange={e => setUploadSpeaker(e.target.value)} placeholder="Speaker / preacher" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
+            <input value={uploadScripture} onChange={e => setUploadScripture(e.target.value)} placeholder="Scripture reference" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
+            <textarea value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} rows={3} placeholder="Description" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm resize-y" />
+            <button disabled={uploading || !uploadFile || !uploadTitle.trim()} onClick={() => void uploadSermon()} className="w-full py-3 rounded-xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{uploading ? 'Uploading…' : 'Upload sermon'}</button>
+          </div>
         </div>
       )}
 
