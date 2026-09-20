@@ -304,6 +304,11 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [coverBlob, setCoverBlob] = useState<Blob | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!coverPreview?.startsWith('blob:')) return undefined
+    return () => URL.revokeObjectURL(coverPreview)
+  }, [coverPreview])
   const USE_API = import.meta.env.VITE_USE_API === 'true'
   const API = import.meta.env.VITE_API_URL || ''
 
