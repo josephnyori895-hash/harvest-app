@@ -58,7 +58,11 @@ export async function handleDepartments(request, env, ctx) {
     if (exists) return errorResponse('department already exists', 409)
     const id = uuid()
     await query(env, 'INSERT INTO departments (id, slug, name, description, created_at) VALUES (?,?,?,?,?)', [id, slug, name, description, new Date().toISOString()])
-    return jsonResponse({ department: { id, slug, name, description, member_count: 0 } }, 201)
+    // The creator becomes the first department leader so the person who
+    // creates a ministry team can manage it immediately.
+    await query(env, `INSERT INTO department_members (department_id, user_id, role, joined_at) VALUES (?,?,'leader',?) ON CONFLICT (department_id, user_id) DO UPDATE SET role='leader'`, [id, fresh.id, new Date().toISOString()])
+    await audit(env, fresh, 'department_created', id, { name, creator: fresh.username })
+    return jsonResponse({ department: { id, slug, name, description, member_count: 1 }, creator_role: 'leader' }, 201)
   }
 
   // GET /api/departments/mine — the viewer's own memberships.
