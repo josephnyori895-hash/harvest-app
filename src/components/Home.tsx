@@ -60,6 +60,7 @@ const quickLinks = [
 
 export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled }: { setTab: (t: string) => void; users: any[]; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
+  const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [likesTick, setLikesTick] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const startYRef = useRef<number | null>(null)
@@ -212,6 +213,14 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     }
     onSharedContentHandled?.()
   }, [sharedContent, feedLoaded, feedLoadFailed, livePosts, allMoments, onSharedContentHandled])
+  const markStoryViewed = (id: string) => {
+    setViewedStoryIds(prev => {
+      if (prev.has(id)) return prev
+      const next = new Set(prev)
+      next.add(id)
+      return next
+    })
+  }
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const toggleLike = async (key: string) => {
     if (pendingLikesRef.current.has(key)) return
@@ -286,7 +295,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
-    {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
+    {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {commentTarget && (
       <Comments
         scope={commentTarget.scope}
