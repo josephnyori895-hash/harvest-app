@@ -96,7 +96,14 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
-export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack: () => void; users: ChatUser[]; teamChat?: TeamChat | null; onCloseTeam?: () => void; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
+export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroups, onOpenDepartments }: {
+  onBack: () => void
+  users: ChatUser[]
+  teamChat?: TeamChat | null
+  onCloseTeam?: () => void
+  onOpenGroups?: () => void
+  onOpenDepartments?: () => void
+}) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
   const [section, setSection] = useState<Section>('personal')
@@ -597,7 +604,11 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
       {tab === 'inbox' ? (
         <>
           {/* Team chats: your departments + groups, always at the top of the inbox. */}
-          <TeamChatsRail onOpen={(t) => { setError(''); setTeam(t) }} />
+          <TeamChatsRail
+            onOpen={(t) => { setError(''); setTeam(t) }}
+            onOpenGroups={onOpenGroups}
+            onOpenDepartments={onOpenDepartments}
+          />
           {/* Instagram-style avatar rail */}
           <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
             <div className="flex gap-4 overflow-x-auto pb-3">
@@ -724,7 +735,11 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
 
 // Team chats rail: every department + small group the viewer belongs to.
 // Departments act like groups (client's request) — both get real chat rooms.
-function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
+function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
+  onOpen: (t: TeamChat) => void
+  onOpenGroups?: () => void
+  onOpenDepartments?: () => void
+}) {
   const [teams, setTeams] = useState<TeamChat[]>([])
   useEffect(() => {
     let live = true
@@ -778,7 +793,21 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
   if (teams.length === 0) return null
   return (
     <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
-      <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">Your teams</p>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold">Your community</p>
+        <div className="flex items-center gap-1.5">
+          {onOpenGroups && (
+            <button type="button" onClick={onOpenGroups} className="px-2.5 py-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] font-bold text-zinc-200 active:bg-zinc-800">
+              Groups
+            </button>
+          )}
+          {onOpenDepartments && (
+            <button type="button" onClick={onOpenDepartments} className="px-2.5 py-1.5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] font-bold text-zinc-200 active:bg-zinc-800">
+              Departments
+            </button>
+          )}
+        </div>
+      </div>
       <div className="flex gap-4 overflow-x-auto pb-3">
         {teams.map(t => (
           <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
