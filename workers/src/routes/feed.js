@@ -224,7 +224,7 @@ export async function handleFeed(request, env, ctx) {
     const target = scope === 'reel'
       ? await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [targetId])
       : await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [targetId])
-    if (!target.rows[0]) return errorResponse('post not found', 404)
+    if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
     const cid = crypto.randomUUID()
     await query(
       env,
@@ -240,9 +240,10 @@ export async function handleFeed(request, env, ctx) {
   if (/^\/api\/comments\/[^/]+$/.test(path) && request.method === 'DELETE') {
     const fresh = await requireMember(env, user)
     const cid = path.split('/')[3]
-    const c = await query(env, 'SELECT id, username, post_id, scope FROM post_comments WHERE id=?', [cid])
+    const c = await query(env, 'SELECT id, user_id, username, post_id, scope FROM post_comments WHERE id=?', [cid])
     if (!c.rows[0]) return errorResponse('not found', 404)
-    if (c.rows[0].username !== fresh.username && fresh.role !== 'admin') return errorResponse('forbidden', 403)
+    const ownsComment = c.rows[0].user_id ? c.rows[0].user_id === fresh.id : c.rows[0].username === fresh.username
+    if (!ownsComment && fresh.role !== 'admin') return errorResponse('forbidden', 403)
     await query(env, 'DELETE FROM post_comments WHERE id=?', [cid])
     const col = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
     await query(env, `UPDATE ${col} SET comments = MAX(comments - 1, 0) WHERE id=?`, [c.rows[0].post_id])
