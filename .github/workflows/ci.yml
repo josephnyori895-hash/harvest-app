@@ -20,6 +20,8 @@ jobs:
         run: npm run typecheck
       - run: npm run test:admin
       - run: npm run test:security
+      - name: Dependency audit
+        run: npm audit --audit-level=high
       - run: npm run build
       - name: Sync Capacitor Android
         run: npx cap sync android
@@ -39,6 +41,8 @@ jobs:
         run: node --check workers/src/index.js && find workers/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Test media presigned upload contract
         run: npm run test:media --prefix workers
+      - name: Worker dependency audit
+        run: npm audit --prefix workers --audit-level=high
       - name: Validate wrangler config + dry-run build (no deploy)
         run: npx --prefix workers wrangler deploy --dry-run --outdir dist-check
         working-directory: workers
