@@ -3,6 +3,8 @@ import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
+import { sharePostToWhatsApp } from '../lib/whatsappShare'
+import { captureVideoFrame } from './ImageAdjuster'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -97,8 +99,30 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
   }
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 1800) }
   const share = async () => { const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text }); else { await navigator.clipboard.writeText(text); flash('Video details copied to clipboard') } } catch {} }
+  const shareWa = () => { sharePostToWhatsApp({ author: cur.user, caption: cur.cap }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
   const toggleEncourage = () => setEncouraged(p => ({ ...p, [key]: !p[key] }))
+  // Instagram-style self-delete: authors remove their own reels; admin can remove any.
+  const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
+  const [deleting, setDeleting] = useState(false)
+  const deleteReel = async (id: string) => {
+    if (deleting || !id) return
+    setDeleting(true)
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const r = await fetch(`${API}/api/reels/${encodeURIComponent(id)}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d?.error || `Could not delete (${r.status})`)
+      setServerReels(rs => rs.filter(x => String(x.id) !== String(id)))
+      setIdx(0)
+      flash('Video deleted')
+    } catch (e: any) {
+      flash(e?.message || 'Could not delete video')
+    } finally {
+      setDeleting(false)
+    }
+  }
   // Double-tap anywhere on the video = encourage (with a pulsing heart).
   const onVideoTap = (e: React.MouseEvent | React.TouchEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -167,7 +191,10 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
         {notice && <div role="status" className="mb-3 rounded-xl bg-purple-500/20 border border-purple-300/20 px-3 py-2 text-xs text-purple-100">{notice}</div>}
         <div className="grid lg:grid-cols-[minmax(0,760px)_260px] gap-5 items-stretch h-full lg:h-auto">
           <section onTouchStart={onTouchStart} onTouchEnd={(e) => { onTouchEnd(e); onVideoTap(e) }} onClick={onVideoTap} className="relative overflow-hidden rounded-none lg:rounded-[24px] bg-black h-full min-h-[520px] sm:min-h-[600px] lg:h-[calc(100vh-190px)] lg:max-h-[760px] border-0 lg:border lg:border-white/10 shadow-2xl">
-            {cur.video ? <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline className="absolute inset-0 w-full h-full object-cover" poster={cur.img} /> : <img src={cur.img} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+            {/* Blurred fill behind + object-contain front: the full video/poster
+                stays visible and centered (no cropped edges) — TikTok-style. */}
+            {cur.img && <img src={cur.img} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" />}
+            {cur.video ? <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={cur.img} className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black" onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} /> : <img src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}
             {heart && (
               <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
                 <span className="text-[120px] leading-none drop-shadow-2xl">❤️</span>
@@ -194,8 +221,10 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
               </div>
             </div>
             <div className="absolute right-2.5 sm:right-4 bottom-[68px] sm:bottom-[76px] lg:bottom-6 flex flex-col gap-2.5 sm:gap-3 z-10">
+              {(cur.user === me || isAdmin) && <button onClick={() => { if (window.confirm('Delete this video? This cannot be undone.')) void deleteReel(String(cur.id)) }} disabled={deleting} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-base disabled:opacity-50" aria-label="Delete video" title="Delete video">{deleting ? '…' : '🗑'}</button>}
               <button onClick={toggleEncourage} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border flex items-center justify-center text-lg ${encouraged[key] ? 'bg-purple-500 border-purple-400' : 'bg-white/10 border-white/10'}`} aria-label="Encourage">{encouraged[key] ? '✓' : '🤲'}</button>
               <button onClick={respond} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Respond">💬</button>
+              <button onClick={shareWa} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-white text-lg font-bold" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗</button>
               <button onClick={() => void share()} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Share">↗</button>
             </div>
             <button onClick={prev} className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/45 backdrop-blur border border-white/10 z-10" aria-label="Previous video">↑</button>
@@ -226,11 +255,28 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  // Cover-frame picker: the user scrubs the video and captures the frame that
+  // becomes the reel's poster (what everyone sees in the grid before playing).
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
+  const [coverBlob, setCoverBlob] = useState<Blob | null>(null)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const USE_API = import.meta.env.VITE_USE_API === 'true'
   const API = import.meta.env.VITE_API_URL || ''
 
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); setCoverBlob(null); setCoverPreview(null); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
+
+  const grabCover = async () => {
+    if (!videoEl || !fileUrl) return
+    try {
+      const blob = await captureVideoFrame(fileUrl, videoEl.currentTime)
+      if (!blob) throw new Error('Could not capture the frame')
+      setCoverBlob(blob); setCoverPreview(URL.createObjectURL(blob))
+      setNotice(''); flashCover()
+    } catch (e: any) { setNotice(e?.message || 'Could not set cover') }
+  }
+  const [coverFlash, setCoverFlash] = useState(false)
+  const flashCover = () => { setCoverFlash(true); window.setTimeout(() => setCoverFlash(false), 1500) }
 
   const submit = async () => {
     if (busy) return
@@ -240,10 +286,25 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
       if (USE_API && fileUrl) {
         // Background hand-off: close now, progress pill + toast take over.
         const blob = await (await fetch(fileUrl as string)).blob()
+        // Optional user-picked cover frame uploads first (small JPEG); its key
+        // rides along with the confirm call so the feed shows the chosen poster.
+        let coverKey: string | undefined
+        if (coverBlob) {
+          try {
+            const pre = await fetch(`${API}/api/media/presign`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` }, body: JSON.stringify({ type: 'post', contentType: 'image/jpeg', bytes: coverBlob.size, ext: 'jpg' }) })
+            const preD = await pre.json()
+            const fd = new FormData()
+            Object.entries(preD.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
+            fd.append('file', new File([coverBlob], 'cover.jpg', { type: 'image/jpeg' }))
+            const direct = /^https?:\/\//.test(preD.url)
+            const up = await fetch(direct ? preD.url : `${API}${preD.url}`, { method: 'POST', body: fd, headers: direct ? undefined : { Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` } })
+            if (up.ok) coverKey = preD.key
+          } catch { /* poster is optional — the video still uploads */ }
+        }
         void startBackgroundUpload({
           label: 'video',
           successMsg: 'Video shared with the Harvest family ✓',
-          task: { kind: 'reel', file: blob, caption: caption.trim() },
+          task: { kind: 'reel', file: blob, caption: caption.trim(), cover_key: coverKey },
         }).catch(() => {})
         onDone()
       } else {
@@ -257,5 +318,14 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     }
   }
 
-  return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-11 h-11 rounded-full bg-[#FFFBF0] border border-[#E8DEC9]" aria-label="Close">✕</button></div><div className="p-5 space-y-4"><label className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden cursor-pointer">{fileUrl ? <video src={fileUrl} controls className="w-full h-full object-cover" /> : <div className="h-full flex flex-col items-center justify-center text-white p-4 text-center"><span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p></div>}<input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" /></label>{fileName && <p className="text-xs text-zinc-500 truncate">{fileName}</p>}<textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="What would you like to share with your church family?" maxLength={180} rows={4} className="w-full rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] p-4 outline-none focus:ring-2 focus:ring-purple-200 resize-none" />{notice && <div role="status" className="p-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] text-sm font-semibold text-[#5B21B6]">{notice}</div>}<button onClick={() => void submit()} disabled={busy} className="w-full min-h-12 rounded-full bg-[#7C3AED] text-white font-bold hover:bg-[#6D28D9] disabled:opacity-50">{busy ? 'Uploading…' : 'Share with Harvest family'}</button></div></div></div>
+  return <div className="min-h-[calc(100vh-76px)] bg-[#FFFBF0] text-[#29251F] p-4 md:p-8"><div className="max-w-2xl mx-auto bg-white rounded-[28px] border border-[#E8DEC9] shadow-sm overflow-hidden"><div className="p-5 border-b border-[#E8DEC9] flex items-center justify-between"><div><p className="text-[11px] uppercase tracking-wider text-purple-600 font-bold">Harvest Community</p><h1 className="text-xl font-bold">Share a community video</h1></div><button onClick={onDone} className="w-11 h-11 rounded-full bg-[#FFFBF0] border border-[#E8DEC9]" aria-label="Close">✕</button></div><div className="p-5 space-y-4"><label className="block aspect-video rounded-2xl bg-[#29251F] border-2 border-dashed border-[#E8DEC9] overflow-hidden cursor-pointer">{fileUrl ? <video ref={setVideoEl} src={fileUrl} controls className="w-full h-full object-cover" /> : <div className="h-full flex flex-col items-center justify-center text-white p-4 text-center"><span className="text-4xl">🎥</span><p className="font-semibold mt-3">Add a video</p><p className="text-xs text-white/55 mt-1">A worship moment, testimony or encouragement</p></div>}<input ref={fileInputRef} type="file" accept="video/*" onChange={onFile} className="hidden" /></label>{fileUrl && (
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0]">
+                {coverPreview ? <img src={coverPreview} alt="Cover" className="w-20 h-12 rounded-lg object-cover border border-[#E8DEC9]" /> : <div className="w-20 h-12 rounded-lg bg-[#F4E8D0] flex items-center justify-center text-lg">🖼</div>}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold">Cover frame {coverPreview && <span className="text-emerald-600">✓ set</span>}</p>
+                  <p className="text-[11px] text-[#766E63]">Scrub the video to the moment you want, then tap capture. This is the picture people see first.</p>
+                </div>
+                <button type="button" onClick={() => void grabCover()} className="shrink-0 px-3 py-2 rounded-full bg-[#7C3AED] text-white text-xs font-bold">📸 Capture</button>
+              </div>
+            )}{coverFlash && <p className="text-xs text-emerald-700 font-bold text-center">Cover captured ✓</p>}{fileName && <p className="text-xs text-zinc-500 truncate">{fileName}</p>}<textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="What would you like to share with your church family?" maxLength={180} rows={4} className="w-full rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] p-4 outline-none focus:ring-2 focus:ring-purple-200 resize-none" />{notice && <div role="status" className="p-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] text-sm font-semibold text-[#5B21B6]">{notice}</div>}<button onClick={() => void submit()} disabled={busy} className="w-full min-h-12 rounded-full bg-[#7C3AED] text-white font-bold hover:bg-[#6D28D9] disabled:opacity-50">{busy ? 'Uploading…' : 'Share with Harvest family'}</button></div></div></div>
 }

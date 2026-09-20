@@ -8,35 +8,37 @@ export const BUCKET = 'harvest-media'
 const DEFAULT_TTL = 900
 
 // Sermon videos and worship tracks are larger than social clips: reels up to
-// 100 MB (~10 min at 720p) and tracks up to 20 MB. Stories allow short video
-// moments (the creator + viewer both support video) up to 30 MB (~2 min phone
-// clip); photos 10 MB.
-const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024 }
+// 100 MB (~10 min at 720p) and tracks up to 20 MB. Sermons are full services:
+// audio up to 80 MB (~80 min mp3), video up to 500 MB (~60-90 min mp4).
+// Stories allow short video moments up to 30 MB; photos 10 MB.
+const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, sermon_audio: 80 * 1024 * 1024, sermon_video: 500 * 1024 * 1024 }
 const ALLOW_CT = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
   story: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   reel: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   track: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/x-m4a-aot', 'audio/aac', 'audio/ogg'],
+  sermon_audio: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/ogg'],
+  sermon_video: ['video/mp4', 'video/webm', 'video/x-m4v', 'video/quicktime'],
 }
 
 // Upload keys are restricted to originals/<type>/<yyyy>/<mm>/<uuid>.<ext>.
-const KEY_RE = /^originals\/(avatar|post|story|reel|track)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+const KEY_RE = /^originals\/(avatar|post|story|reel|track|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
 
 // Reads also serve derived assets (thumbs/posters/hls) written by workers.
 const READ_KEY_RES = [
   KEY_RE,
-  /^thumbs\/(post|story|reel|track)\/[0-9a-f-]+(-\d+w)?\.(webp|jpg|jpeg|png)$/i,
+  /^thumbs\/(post|story|reel|track|sermon_audio|sermon_video)\/[0-9a-f-]+(-\d+w)?\.(webp|jpg|jpeg|png)$/i,
   /^posters\/[0-9a-f-]+\.(jpg|jpeg|webp|png)$/i,
   /^hls\/[0-9a-f-]+\/[a-zA-Z0-9._-]+\.(m3u8|ts)$/,
 ]
 export const isReadableKey = key => READ_KEY_RES.some(re => re.test(key))
 
 export function validatePresign({ type, contentType, bytes }) {
-  if (!['avatar', 'post', 'story', 'reel', 'track'].includes(type)) throw Object.assign(new Error('invalid type'), { status: 400 })
+  if (!['avatar', 'post', 'story', 'reel', 'track', 'sermon_audio', 'sermon_video'].includes(type)) throw Object.assign(new Error('invalid type'), { status: 400 })
   const allowed = ALLOW_CT[type]
   if (!allowed.includes(contentType)) throw Object.assign(new Error(`contentType not allowed for ${type}: ${contentType}`), { status: 400 })
-  const max = type === 'reel' ? MAX_BYTES.video || MAX_BYTES.reel : type === 'track' ? MAX_BYTES.audio || MAX_BYTES.track : MAX_BYTES.image || MAX_BYTES[type] || MAX_BYTES.post
+  const max = MAX_BYTES[type] || MAX_BYTES.post
   if (bytes > max) throw Object.assign(new Error(`bytes ${bytes} > max ${max} for ${type}`), { status: 400 })
   return max
 }
@@ -52,18 +54,18 @@ export async function signMediaKey(env, key, ttlSeconds = DEFAULT_TTL) {
   const expires = Math.floor(Date.now() / 1000) + ttl
   const signature = await hmacSign(mediaSecret(env), `${key}\n${expires}`)
   return { expires, signature }
-}
-
-export async function mediaUrl(env, key, ttlSeconds) {
+}export async function mediaUrl(env, key, ttlSeconds, opts = {}) {
   if (!key) return null
   const { expires, signature } = await signMediaKey(env, key, ttlSeconds)
   const base = String(env.PUBLIC_BASE_URL || '').replace(/\/$/, '')
-  return `${base}/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}`
+  const dl = opts.download ? `&dl=${encodeURIComponent(opts.download)}` : ''
+  return `${base}/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}${dl}
+`
 }
 
-export async function mediaUrlOrNull(env, key, ttlSeconds) {
+export async function mediaUrlOrNull(env, key, ttlSeconds, opts = {}) {
   try {
-    return await mediaUrl(env, key, ttlSeconds)
+    return await mediaUrl(env, key, ttlSeconds, opts)
   } catch {
     return null
   }
@@ -182,6 +184,13 @@ export async function handleMediaRead(request, env, ctx) {
   headers.set('Content-Type', contentTypeForKey(key, obj.httpMetadata?.contentType))
   headers.set('Cache-Control', 'private, max-age=300')
   headers.set('ETag', obj.httpEtag)
+  // ?dl=<filename> turns the read into a download (sermons): the WebView/browser
+  // saves the file under that name instead of streaming it.
+  const dl = url.searchParams.get('dl')
+  if (dl && /^[a-z0-9._-]+$/i.test(dl)) {
+    headers.set('Content-Disposition', `attachment; filename="${dl}"`)
+    headers.set('Content-Length', String(obj.size))
+  }
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
   return new Response(obj.body, { headers })
 }

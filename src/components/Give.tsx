@@ -25,11 +25,27 @@ export default function Give() {
   const [mpesaEnabled, setMpesaEnabled] = useState<boolean | null>(null)
   const [paybill, setPaybill] = useState('')
   const [pollingId, setPollingId] = useState<string | null>(null)
+  // Admin-editable content (funds, amounts, headline, paybill) with defaults.
+  const [content, setContent] = useState<Record<string, string>>({})
   const apiEnabled = useApi()
   const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
   const isAdmin = currentRole === 'admin'
 
-  const purpose = useMemo(() => FUNDS.find(f => f.id === fund)?.label || 'General Giving', [fund])
+  const funds = useMemo<any[]>(() => {
+    try { const f = JSON.parse(content.giving_funds || '[]'); if (Array.isArray(f) && f.length) return f } catch { /* default below */ }
+    return FUNDS
+  }, [content.giving_funds])
+  const quick = useMemo<number[]>(() => {
+    try { const q = JSON.parse(content.giving_quick || '[]'); if (Array.isArray(q) && q.length) return q.map(Number) } catch { /* default below */ }
+    return QUICK
+  }, [content.giving_quick])
+  const paybillName = content.paybill_name || PAYBILL_FALLBACK.name
+
+  useEffect(() => {
+    fetch(`${API}/api/content`).then(r => r.json()).then(d => setContent(d?.content || {})).catch(() => {})
+  }, [])
+
+  const purpose = useMemo(() => funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund])
 
   useEffect(() => {
     if (!apiEnabled) return
@@ -96,18 +112,18 @@ export default function Give() {
       {tab === 'give' && <>
         <div className="mb-6">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Harvest Giving</p>
-          <h1 className="text-2xl font-extrabold mt-1">Give with purpose</h1>
-          <p className="text-sm text-[#6B6257] mt-1">Secure M-Pesa giving for Harvest Family Church.</p>
+          <h1 className="text-2xl font-extrabold mt-1">{content.giving_title || 'Give with purpose'}</h1>
+          <p className="text-sm text-[#6B6257] mt-1">{content.giving_subtitle || 'Secure M-Pesa giving for Harvest Family Church.'}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {FUNDS.map(f => <button key={f.id} onClick={() => setFund(f.id)} className={`text-left p-4 rounded-2xl border transition ${fund===f.id?'bg-[#F3E8FF] border-[#7C3AED]':'bg-white border-[#E8DEC9]'}`}>
-            <p className="text-xl mb-1">{f.icon}</p><p className="text-sm font-bold">{f.label}</p><p className="text-[11px] text-[#6B6257] mt-1">{f.sub}</p>
+          {funds.map((f: any) => <button key={f.id} onClick={() => setFund(f.id)} className={`text-left p-4 rounded-2xl border transition ${fund===f.id?'bg-[#F3E8FF] border-[#7C3AED]':'bg-white border-[#E8DEC9]'}`}>
+            <p className="text-xl mb-1">{f.icon || '💝'}</p><p className="text-sm font-bold">{f.label}</p>{f.sub && <p className="text-[11px] text-[#6B6257] mt-1">{f.sub}</p>}
           </button>)}
         </div>
 
         <p className="text-xs font-semibold text-[#6B6257] mb-2">Quick amounts · KES</p>
-        <div className="flex gap-2 mb-4 flex-wrap">{QUICK.map(v => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
+        <div className="flex gap-2 mb-4 flex-wrap">{quick.map((v: number) => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
         <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder="Custom amount KES" className="input-premium mb-3" />
         <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07... or 254..." className="input-premium mb-4" />
         {mpesaEnabled === false && (
@@ -115,8 +131,8 @@ export default function Give() {
             <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
             <ol className="list-decimal ml-4 mt-2 space-y-1 text-[#78350F]">
               <li>Open <b>M-Pesa</b> → <b>Lipa na M-Pesa</b> → <b>Pay Bill</b></li>
-              <li>Business Number: <b className="select-all">{paybill || PAYBILL_FALLBACK.number}</b> <button onClick={() => { navigator.clipboard?.writeText(paybill || PAYBILL_FALLBACK.number); showToast('Paybill number copied', 'success') }} className="ml-1 text-[#7C3AED] font-bold underline">copy</button></li>
-              <li>Account: <b>{purpose}</b> (or your name)</li>
+              <li>Business Number: <b className="select-all">{paybill || content.paybill_number || PAYBILL_FALLBACK.number}</b> <button onClick={() => { navigator.clipboard?.writeText(paybill || content.paybill_number || PAYBILL_FALLBACK.number); showToast('Paybill number copied', 'success') }} className="ml-1 text-[#7C3AED] font-bold underline">copy</button></li>
+              <li>Account: <b>{purpose}</b> (or your name){paybillName && paybillName !== PAYBILL_FALLBACK.name ? '' : ''}</li>
               <li>Amount: <b>KES {Number(amount || 0).toLocaleString()}</b> → enter your PIN</li>
             </ol>
             <p className="text-[11px] text-[#92400E] mt-2">Your gift is recorded by the church treasurer. Automatic receipts activate when online giving is switched on.</p>

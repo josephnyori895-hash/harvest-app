@@ -1,6 +1,6 @@
 import type { Role } from './auth'
 
-export type ContentType = 'post' | 'story' | 'video' | 'music' | 'announcement'
+export type ContentType = 'post' | 'story' | 'video' | 'music' | 'sermon' | 'announcement'
 export type Destination = 'community' | 'group' | 'ministry' | 'worship' | 'official'
 
 export type HarvestUser = {
@@ -24,6 +24,7 @@ export function userType(user: HarvestUser): 'member' | 'verified' | 'admin' | '
 export function canCreateContent(user: HarvestUser, type: ContentType): boolean {
   const kind = userType(user)
   if (kind === 'admin') return true
+  if (type === 'sermon') return false // admin-published only (official teaching)
   if (type === 'story') return kind === 'member' || kind === 'verified'
   return kind === 'verified'
 }

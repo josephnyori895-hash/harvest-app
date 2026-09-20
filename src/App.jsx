@@ -11,6 +11,7 @@ import ViewUser from './components/ViewUser'
 import EditProfile from './components/EditProfile'
 import HarvestMap from './components/HarvestMap'
 import Music from './components/Music'
+import Sermons from './components/Sermons'
 import Give from './components/Give'
 import PostCreate from './components/PostCreate'
 import Groups from './components/Groups'
@@ -86,7 +87,7 @@ function IgIcon({ name, active }) {
 }
 
 function InnerApp() {
-  const { setUsername, setRole, setVerified, role } = useAuth()
+  const { setUsername, setRole, setVerified, role, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
   const [homeRefresh, setHomeRefresh] = useState(0)
@@ -100,9 +101,8 @@ function InnerApp() {
   // remember the origin tab so Back returns there — not always Search.
   const openProfile = (u) => { setBackTarget(tab); setViewUser(u); setTab('viewuser') }
   const [editProfileKey, setEditProfileKey] = useState(0)
-  const [deptChat, setDeptChat] = useState(null)
-  const [showRegPass, setShowRegPass] = useState(false)
-  const [showLoginPass, setShowLoginPass] = useState(false)
+  const [teamChat, setTeamChat] = useState(null)
+  const openTeamChat = (kind, slug, name) => { setTeamChat({ kind, slug, name }); setTab('chat') }
 
   const [users] = useDirectory(onboarded)
 
@@ -183,19 +183,20 @@ function InnerApp() {
       <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="flex-1 overflow-auto pb-[64px]">
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} />}
-          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} />}
+          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
           {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
           {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
-          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} deptChat={deptChat} onCloseDept={() => setDeptChat(null)} />}
+          {tab === 'chat' && <Chat onBack={() => setTab('home')} users={users} teamChat={teamChat} onCloseTeam={() => setTeamChat(null)} />}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
+          {tab === 'sermons' && <Sermons isAdmin={isAdmin} />}
           {tab === 'give' && <Give />}
           {tab === 'map' && <HarvestMap users={users} />}
-          {tab === 'groups' && <Groups />}
-          {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => { setDeptChat({ slug, name }); setTab('chat') }} />}
+          {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} />}
+          {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} />}
           {tab === 'admin' && (
             <RequireRole role="admin">
               <Admin onBack={() => setTab('profile')} users={users} setUsers={()=>{}} />
@@ -224,6 +225,8 @@ function Onboarding({ onAuthSuccess }) {
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', group_name: 'Harvest Central' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
+  const [showRegPass, setShowRegPass] = useState(false)
+  const [showLoginPass, setShowLoginPass] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 

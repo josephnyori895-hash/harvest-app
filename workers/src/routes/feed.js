@@ -203,6 +203,38 @@ export async function handleFeed(request, env, ctx) {
     return jsonResponse({ ok: true })
   }
 
+  // ── Self-delete (Instagram-style) ─────────────────────────
+  // DELETE /api/posts/:id | /api/reels/:id | /api/stories/:id — the author or an
+  // admin removes their own content. Cleans R2 objects + dependent rows (likes
+  // counters, comments) that have no FK to these tables.
+  const delMatch = path.match(/^\/api\/(posts|reels|stories)\/([0-9a-f-]+)$/i)
+  if (delMatch && request.method === 'DELETE') {
+    const fresh = await requireMember(env, user)
+    const kind = delMatch[1].toLowerCase()
+    const id = delMatch[2]
+    const table = kind // 'posts' | 'reels' | 'stories' — matches table names
+    const keyCols = {
+      posts: ['original_key', 'thumb_key'],
+      reels: ['hls_master_key', 'poster_key', 'thumb_key'],
+      stories: ['original_key', 'thumb_key'],
+    }
+    const row = await query(env, `SELECT * FROM ${table} WHERE id=?`, [id])
+    if (!row.rows[0]) return errorResponse('not found', 404)
+    const isOwner = row.rows[0].user_id === fresh.id
+    if (!isOwner && fresh.role !== 'admin') return errorResponse('you can only delete your own posts', 403)
+    // R2 objects first (best-effort), then dependent rows, then the row itself.
+    for (const col of keyCols[kind]) {
+      const key = row.rows[0][col]
+      if (key && typeof key === 'string') { try { await env.MEDIA.delete(key) } catch {} }
+    }
+    // post_comments has no FK — clean up explicitly. likes has no FK to posts either.
+    await query(env, 'DELETE FROM post_comments WHERE scope=? AND post_id=?', [kind === 'reels' ? 'reel' : 'post', id])
+    await query(env, 'DELETE FROM likes WHERE post_id=?', [id])
+    await query(env, 'DELETE FROM story_views WHERE story_id=?', [id])
+    await query(env, `DELETE FROM ${table} WHERE id=?`, [id])
+    return jsonResponse({ ok: true, deleted: id, kind })
+  }
+
   // GET /api/stories/:id/views — owner or admin sees the viewer list.
   if (/^\/api\/stories\/[^/]+\/views$/.test(path) && request.method === 'GET') {
     const fresh = await requireMember(env, user)

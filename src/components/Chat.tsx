@@ -93,7 +93,9 @@ function chatListTime(iso: string) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
-export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack: () => void; users: ChatUser[]; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
+export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string }
+
+export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack: () => void; users: ChatUser[]; teamChat?: TeamChat | null; onCloseTeam?: () => void; deptChat?: { slug: string; name: string } | null; onCloseDept?: () => void }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
   const [section, setSection] = useState<Section>('personal')
@@ -108,11 +110,11 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
   })
   const [presence, setPresence] = useState<Record<string, Presence>>({})
   const [replyTo, setReplyTo] = useState<any | null>(null)
-  // Department team chat: departments work like groups (server-enforced membership).
-  const [dept, setDept] = useState<{ slug: string; name: string } | null>(null)
+  // Team chat: departments AND small groups — both are server-enforced memberships.
+  const [team, setTeam] = useState<TeamChat | null>(null)
   useEffect(() => {
-    if (deptChat) { setActive(null); setDept(deptChat) } else setDept(null)
-  }, [deptChat])
+    if (teamChat) { setActive(null); setTeam(teamChat) } else setTeam(null)
+  }, [teamChat])
   const [reactingFor, setReactingFor] = useState<string | null>(null)
   const [attach, setAttach] = useState<File | null>(null)
   // Instagram-style people search on the chats list.
@@ -127,7 +129,9 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
   const activeRef = useRef<ChatUser | null>(null)
   useEffect(() => { activeRef.current = active }, [active])
 
-  const conversationKey = dept ? `department:${dept.slug}` : active ? keyFor(currentUser, active.username) : ''
+  const conversationKey = team
+    ? (team.kind === 'group' ? `group:${team.slug}` : `department:${team.slug}`)
+    : active ? keyFor(currentUser, active.username) : ''
   const thread = conversationKey ? (msgs[conversationKey] || []) : []
 
   const saveMessages = useCallback((updater: Record<string, any[]> | ((c: Record<string, any[]>) => Record<string, any[]>)) => {
@@ -179,17 +183,18 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
   }, [refreshInbox, syncPresence])
 
   const markSeen = useCallback(async () => {
-    if (dept) { try { await api('/api/chat/seen', { method: 'POST', body: JSON.stringify({ department: dept.slug }) }) } catch { /* non-fatal */ } return }
+    if (team) { try { await api('/api/chat/seen', { method: 'POST', body: JSON.stringify(team.kind === 'group' ? { group: team.slug } : { department: team.slug }) }) } catch { /* non-fatal */ } return }
     if (!active) return
     try { await api('/api/chat/seen', { method: 'POST', body: JSON.stringify({ peer: active.username }) }) } catch { /* non-fatal */ }
-  }, [active, dept])
+  }, [active, team])
 
   const loadConversation = useCallback(async () => {
-    if (dept) {
+    if (team) {
       setError('')
       try {
-        const result = await api<{ messages: any[]; conversation_key: string }>(`/api/chat/history?department=${encodeURIComponent(dept.slug)}`)
-        const k = result.conversation_key || `department:${dept.slug}`
+        const q = team.kind === 'group' ? `group=${encodeURIComponent(team.slug)}` : `department=${encodeURIComponent(team.slug)}`
+        const result = await api<{ messages: any[]; conversation_key: string }>(`/api/chat/history?${q}`)
+        const k = result.conversation_key || (team.kind === 'group' ? `group:${team.slug}` : `department:${team.slug}`)
         saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
         const existing = mergeMessages(msgs[k] || [], result.messages || [])
         cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
@@ -211,14 +216,15 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
       setError(e instanceof Error ? e.message : 'Unable to load conversation')
     }
     void markSeen(); void refreshInbox()
-  }, [active, dept, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
+  }, [active, team, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
 
   const refreshUpdates = useCallback(async () => {
-    if (!active && !dept) return
+    if (!active && !team) return
     if (!conversationKey || !localStorage.getItem('harvest_token')) return
     const after = cursorRef.current[conversationKey] || new Date(Date.now() - 5000).toISOString()
     try {
-      const q = new URLSearchParams(dept ? { department: dept.slug, after, limit: '50' } : { peer: String(active?.username || ''), after, limit: '50' })
+      const base = team ? (team.kind === 'group' ? { group: team.slug } : { department: team.slug }) : { peer: String(active?.username || '') }
+      const q = new URLSearchParams({ ...base, after, limit: '50' })
       const result = await api<{ messages: any[]; conversation_key: string; server_time: string }>(`/api/chat/updates?${q.toString()}`)
       const k = result.conversation_key || conversationKey
       if ((result.messages || []).length) {
@@ -227,26 +233,26 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
       }
       cursorRef.current[k] = result.server_time || cursorRef.current[k]
     } catch { /* polling failures stay silent */ }
-  }, [active, dept, conversationKey, saveMessages, markSeen])
+  }, [active, team, conversationKey, saveMessages, markSeen])
 
   useEffect(() => {
-    if (!active && !dept) return
+    if (!active && !team) return
     void loadConversation()
     const t = window.setInterval(() => void refreshUpdates(), 2500)
     return () => window.clearInterval(t)
-  }, [active?.username, dept?.slug, loadConversation, refreshUpdates])
+  }, [active?.username, team?.kind, team?.slug, loadConversation, refreshUpdates])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
 
   const send = async () => {
     const body = text.trim()
-    if ((!active && !dept) || !currentUser || sending || (!body && !attach)) return
+    if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
     if (!localStorage.getItem('harvest_token')) { setError('Your session has expired. Please sign in again.'); return }
 
     const tempId = `tmp_${Date.now()}`
     const optimistic: any = {
-      id: tempId, from: currentUser, to: dept ? null : active.username,
+      id: tempId, from: currentUser, to: team ? null : active.username,
       text: attach && !body ? '📷' : body, status: 'sent',
       created_at: new Date().toISOString(),
       at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -273,11 +279,14 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
         if (!up.ok) throw new Error('Media storage is not enabled yet — text messages still work')
         media_key = pre.key
       }
+      const teamPayload = team ? (team.kind === 'group' ? { group: team.slug } : { department: team.slug }) : { peer: active.username }
       const result = await api<{ message: any }>('/api/chat/messages', {
         method: 'POST',
-        body: JSON.stringify(dept
-          ? { department: dept.slug, body, media_key, media_type: media_key ? 'image' : undefined, reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined }
-          : { peer: active.username, body, media_key, media_type: media_key ? 'image' : undefined, reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined }),
+        body: JSON.stringify({
+          ...teamPayload,
+          body, media_key, media_type: media_key ? 'image' : undefined,
+          reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined,
+        }),
       })
       saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [result.message]) }))
       cursorRef.current[conversationKey] = result.message.created_at || cursorRef.current[conversationKey]
@@ -325,20 +334,20 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
     return searched
   }, [users, currentUser, section, peopleQuery])
 
-  if (active || dept) {
+  if (active || team) {
     let lastDay = ''
-    const isDept = Boolean(dept)
+    const isTeam = Boolean(team)
     return (
       <main className="h-[100dvh] bg-black text-white flex flex-col">
         <header className="h-16 shrink-0 border-b border-zinc-800 bg-black/95 backdrop-blur flex items-center gap-3 px-3 z-20">
-          <button type="button" onClick={() => { if (isDept) { setDept(null); onCloseDept?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
+          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
           <div className="relative w-10 h-10 rounded-full bg-zinc-800 text-zinc-200 flex items-center justify-center font-bold shrink-0">
-            {isDept ? '🤝' : (active.username?.[0] || '?').toUpperCase()}
-            {!isDept && presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
+            {isTeam ? '🤝' : (active.username?.[0] || '?').toUpperCase()}
+            {!isTeam && presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold truncate text-white">{isDept ? dept!.name : active.name || active.username}{!isDept && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
-            <p className="text-xs text-zinc-400">{isDept ? 'Department team chat' : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
+            <p className="font-semibold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+            <p className="text-xs text-zinc-400">{isTeam ? (team!.kind === 'group' ? 'Group chat' : 'Department team chat') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
           </div>
           {sending ? <span className="text-[10px] text-zinc-400">···</span> : null}
         </header>
@@ -358,6 +367,7 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
             return (
               <div key={m.id}>
                 {showDay && <div className="text-center my-4"><span className="px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] font-bold text-zinc-400">{day}</span></div>}
+                {isTeam && !mine && <p className="text-[11px] font-bold text-zinc-400 mb-1 ml-1">{m.from}</p>}
                 <div className={`flex mb-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="relative max-w-[80%]">
                     {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 shadow text-xs`}>{m.reaction}</button>}
@@ -447,6 +457,8 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
 
       {tab === 'inbox' ? (
         <>
+          {/* Team chats: your departments + groups, always at the top of the inbox. */}
+          <TeamChatsRail onOpen={(t) => { setError(''); setTeam(t) }} />
           {/* Instagram-style avatar rail */}
           <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
             <div className="flex gap-4 overflow-x-auto pb-3">
@@ -555,5 +567,44 @@ export default function Chat({ onBack, users, deptChat, onCloseDept }: { onBack:
         </>
       )}
     </main>
+  )
+}
+
+// Team chats rail: every department + small group the viewer belongs to.
+// Departments act like groups (client's request) — both get real chat rooms.
+function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
+  const [teams, setTeams] = useState<TeamChat[]>([])
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      const token = localStorage.getItem('harvest_token') || ''
+      if (!token) return
+      const headers = { Authorization: `Bearer ${token}` }
+      const out: TeamChat[] = []
+      try {
+        const r = await fetch(`${API}/api/departments`, { headers })
+        if (r.ok) { const d = await r.json(); (d.departments || []).filter((x: any) => x.joined || x.leader).forEach((x: any) => out.push({ kind: 'department', slug: x.slug, name: x.name })) }
+      } catch { /* offline */ }
+      try {
+        const r = await fetch(`${API}/api/groups/mine`, { headers })
+        if (r.ok) { const d = await r.json(); (d.groups || []).forEach((x: any) => out.push({ kind: 'group', slug: x.slug, name: x.name })) }
+      } catch { /* offline */ }
+      if (live) setTeams(out)
+    })()
+    return () => { live = false }
+  }, [])
+  if (teams.length === 0) return null
+  return (
+    <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
+      <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500 font-bold mb-2">Your teams</p>
+      <div className="flex gap-4 overflow-x-auto pb-3">
+        {teams.map(t => (
+          <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
+            <div className="w-[62px] h-[62px] mx-auto rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
+            <p className="text-[11px] text-zinc-400 mt-1 truncate">{t.name}</p>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }

@@ -6,7 +6,7 @@ import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUr
 import { hasCap } from '../lib/capabilities.js'
 const CAP_DELETE = 'delete_media'
 
-const KEY_RE = /^originals\/(avatar|post|story|reel|track)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+const KEY_RE = /^originals\/(avatar|post|story|reel|track|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
 
 async function audit(env, actor, action, targetType, targetId, meta = {}) {
   await query(
@@ -96,6 +96,9 @@ export async function handleMedia(request, env, ctx) {
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
     const { key, type, caption, title, artist, cover_key: coverKeyRaw } = await readJson(request)
+    // Optional client-picked video poster (reels): a JPEG the client captured
+    // from the chosen frame, uploaded to originals/post/… before confirm.
+
     if (!key || !type) return errorResponse('key and type required', 400)
     if (type === 'avatar') return errorResponse('avatars are attached with PATCH /api/me, not media/confirm', 400)
     if (!KEY_RE.test(key) || !key.startsWith(`originals/${type}/`)) return errorResponse('invalid media key', 400)
@@ -114,9 +117,13 @@ export async function handleMedia(request, env, ctx) {
     const now = new Date().toISOString()
 
     // Upload policy: stories are open to every signed-in member (24h expiry).
-    // Posts, reels and music tracks require a verified account or admin.
+    // Posts, reels, music tracks and sermons require a verified account or admin.
     if (type !== 'story' && !isAdmin && !fresh.verified && !hasCap(fresh, 'post_media')) {
       return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
+    }
+    // Sermons are admin-published only (official church teaching).
+    if (type.startsWith('sermon_') && !isAdmin) {
+      return errorResponse('sermons are published by the admin', 403)
     }
 
     if (type === 'story') {
@@ -130,6 +137,20 @@ export async function handleMedia(request, env, ctx) {
       return jsonResponse({ id, status: 'published', key }, 201)
     }
 
+    if (isAdmin && type.startsWith('sermon_')) {
+      // Sermon registration. kind: audio | video; the original file keeps its
+      // format (mp3/m4a for audio, mp4/webm for video) so downloads are native.
+      const kind = type === 'sermon_video' ? 'video' : 'audio'
+      const id = uuid()
+      await query(
+        env,
+        `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [id, userId, title || caption || 'Untitled sermon', artist || null, null, caption || null, kind, key, Number(obj.size) || null],
+      )
+      await audit(env, fresh, 'sermon_published', id, { kind, key })
+      return jsonResponse({ id, status: 'published', kind, key }, 201)
+    }
+
     if (isAdmin) {
       const id = uuid()
       if (type === 'post') {
@@ -139,10 +160,20 @@ export async function handleMedia(request, env, ctx) {
           [id, userId, caption || '', key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'reel') {
+        // Optional client-picked poster (cover frame) for reels: captured by the
+        // composer as a JPEG and uploaded to originals/post/… before confirm.
+        let posterKey = null
+        const posterKeyRaw = String(coverKeyRaw || '')
+        if (posterKeyRaw) {
+          if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
+          const pobj = await env.MEDIA.head(posterKeyRaw)
+          if (!pobj) return errorResponse('poster not found in storage', 404)
+          posterKey = posterKeyRaw
+        }
         await query(
           env,
-          `INSERT INTO reels (id, user_id, caption, hls_master_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-          [id, userId, caption || '', key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+          `INSERT INTO reels (id, user_id, caption, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [id, userId, caption || '', key, posterKey, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'track') {
         // Optional cover art: uploaded as an image (originals/post/…) and linked here.

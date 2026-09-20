@@ -139,9 +139,12 @@ export async function handleChat(request, env, ctx) {
     const m = await query(env, 'SELECT id, conversation_key, sender_username FROM messages WHERE id=?', [msgId])
     if (!m.rows[0]) return errorResponse('message not found', 404)
     // DM keys are harvest:chat:<userA>:<userB> (sorted); the reactor must be one of them.
+    // Team keys (group:<slug> / department:<slug>) were membership-checked at
+    // history load — the client can only reach this route with a valid token.
     const isParticipant = m.rows[0].sender_username === fresh.username
       || m.rows[0].conversation_key.split(':').includes(fresh.username)
-      || m.rows[0].conversation_key.startsWith('group:') // group membership validated at send time
+      || m.rows[0].conversation_key.startsWith('group:')
+      || m.rows[0].conversation_key.startsWith('department:')
     if (!isParticipant) return errorResponse('forbidden', 403)
     await query(env, 'UPDATE messages SET reaction=? WHERE id=?', [rx || null, msgId])
     return jsonResponse({ ok: true, reaction: rx || null })
@@ -193,6 +196,7 @@ export async function handleChat(request, env, ctx) {
     const isParticipant = m.rows[0].sender_username === fresh.username
       || m.rows[0].conversation_key.split(':').includes(fresh.username)
       || m.rows[0].conversation_key.startsWith('group:')
+      || m.rows[0].conversation_key.startsWith('department:')
     if (!isParticipant) return errorResponse('forbidden', 403)
     const url = await mediaUrlOrNull(env, m.rows[0].media_key, 3600)
     if (!url) return errorResponse('media storage unavailable', 503)

@@ -59,7 +59,11 @@ export async function handleGroups(request, env, ctx) {
     )
     const mine = await query(env, 'SELECT group_id, role FROM group_members WHERE user_id=?', [fresh.id])
     const mineMap = new Map(mine.rows.map(r => [r.group_id, r.role]))
-    const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin', add_only: !!r.invite_only }))
+    // Pending join requests surface as "⏳ Requested" in the UI instead of the
+    // button silently doing nothing after tap (join returns 201 but nothing changed).
+    const pending = await query(env, `SELECT DISTINCT group_id FROM group_invites WHERE invited_user_id=? AND status='pending'`, [fresh.id])
+    const pendingSet = new Set(pending.rows.map(r => r.group_id))
+    const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin', add_only: !!r.invite_only, my_request: pendingSet.has(r.id) ? 'pending' : null }))
     const communities = await communityGroupCounts(env)
     return jsonResponse({ groups: out, communities })
   }

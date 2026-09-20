@@ -45,7 +45,11 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not load department')
       setDetail(d)
-    } catch { setOpenSlug(null); showToast('Could not open that department') }
+      // Keep the team rail in sync after opening detail.
+      setTimeout(() => { void load() }, 0)
+    } catch {
+      setOpenSlug(null); showToast('Could not open that department')
+    }
   }
 
   const join = async (slug: string) => {
@@ -163,8 +167,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           </p>
           {d.description && <p className="text-[11px] text-zinc-400 mt-0.5">{d.description}</p>}
           <p className="text-[10px] text-zinc-500 mt-1">{d.member_count} serving</p>
-        </div>
-        <span
+        </div><span
           role="button"
           aria-label={d.joined ? `Leave ${d.name}` : `Join ${d.name}`}
           onClick={e => { e.stopPropagation(); d.joined ? void leave(d.slug) : void join(d.slug) }}
@@ -173,7 +176,8 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           {d.joined ? 'Leave' : 'Join'}
         </span>
       </div>
-    </button>
+    </button
+>
   )
 
   if (openSlug) {
@@ -233,6 +237,9 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
             {isAdmin && (
               <button disabled={busy === `del_${detail.department.slug}` || editing} onClick={() => void deleteDepartment(detail.department.slug, detail.department.name)} className="w-full mt-4 py-2.5 rounded-xl bg-red-950 border border-red-900 text-red-300 text-xs font-bold disabled:opacity-50">{busy === `del_${detail.department.slug}` ? 'Deleting…' : '🗑 Delete department'}</button>
             )}
+            {!isAdmin && (
+              <p className="text-xs text-zinc-500 text-center py-4">Members of a department see the team chat at the top of Chats when they're signed in.</p>
+            )}
           </div>
         )}
       </div>
@@ -244,7 +251,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       <div className="px-4 pt-5 pb-3 border-b border-zinc-800">
         <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
         <h1 className="text-2xl font-extrabold">Departments</h1>
-        <p className="text-xs text-zinc-500 mt-1">Find where you serve — join a team today.</p>
+        <p className="text-xs text-zinc-500 mt-1">Find where you serve - your teams have real chat rooms.</p>
       </div>
 
       <div className="p-4 space-y-6">

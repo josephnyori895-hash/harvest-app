@@ -2,16 +2,18 @@ import { useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
+import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 
 type Props = { onDone: () => void }
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-const labels: Record<ContentType, string> = { post: 'Photo post', story: 'Story (24h)', video: 'Reel / sermon video', music: 'Worship track', announcement: 'Announcement' }
+const labels: Record<ContentType, string> = { post: 'Photo post', story: 'Story (24h)', video: 'Reel / clip video', music: 'Worship track', sermon: 'Sermon (MP3/MP4)', announcement: 'Announcement' }
 const hints: Record<ContentType, string> = {
   post: 'A photo with a message for the family',
   story: 'A moment visible for 24 hours',
-  video: 'Sermon clip, worship moment or testimony',
+  video: 'Worship moment or testimony',
   music: 'Add a song to the church worship library',
+  sermon: 'Full teaching — members stream or download it',
   announcement: 'Official notice to the whole church',
 }
 
@@ -19,7 +21,7 @@ export default function PostCreate({ onDone }: Props) {
   const { role, isVerified, isAdmin } = useAuth()
   const user = useMemo(() => ({ role, verified: isVerified }), [role, isVerified])
   // Members see Story only. Admins get the full console: post, reel, track, announcement.
-  const available: ContentType[] = isAdmin ? ['post', 'video', 'music', 'announcement'] : ['story']
+  const available: ContentType[] = isAdmin ? ['post', 'video', 'sermon', 'music', 'announcement'] : ['story']
   const [type, setType] = useState<ContentType>(available[0])
   const [caption, setCaption] = useState('')
   const [title, setTitle] = useState('')
@@ -28,17 +30,34 @@ export default function PostCreate({ onDone }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [adjusting, setAdjusting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
 
-  const accept = type === 'video' ? 'video/*' : type === 'music' ? 'audio/*' : 'image/*,video/*'
+  const accept = type === 'video' ? 'video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? 'audio/mpeg,audio/mp4,mp3,audio/x-m4a,video/mp4,video/webm,.mp3,.m4a,.mp4' : 'image/*,video/*'
   const needsFile = type !== 'announcement'
 
   const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const f = event.target.files?.[0]
     if (!f) return
-    setFile(f)
-    setPreviewUrl(URL.createObjectURL(f))
+    // Images open the crop/zoom/rotate editor first; videos pass through
+    // (cover-frame picking happens on the preview below).
+    if (f.type.startsWith('image/')) {
+      setFile(f)
+      setPreviewUrl(URL.createObjectURL(f))
+      setAdjusting(true)
+    } else {
+      setFile(f)
+      setPreviewUrl(URL.createObjectURL(f))
+    }
+    event.target.value = ''
+  }
+
+  const applyAdjust = (blob: Blob, preview: string) => {
+    const adjusted = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+    setFile(adjusted)
+    setPreviewUrl(preview)
+    setAdjusting(false)
   }
 
   const submit = async () => {
@@ -46,6 +65,7 @@ export default function PostCreate({ onDone }: Props) {
     if (!canCreate) { setNotice('Your account cannot publish this type of content.'); return }
     if (needsFile && !file) { setNotice('Add the media first.'); return }
     if (type === 'music' && !title.trim()) { setNotice('Give the track a title.'); return }
+    if (type === 'sermon' && !title.trim()) { setNotice('Give the sermon a title.'); return }
     if (type === 'announcement' && !caption.trim()) { setNotice('Write the announcement text.'); return }
     setBusy(true); setNotice('')
     try {
@@ -60,7 +80,11 @@ export default function PostCreate({ onDone }: Props) {
         if (!r.ok) throw new Error(d.error || 'Could not publish announcement')
         onDone()
       } else if (file) {
-        const serverType = type === 'video' ? 'reel' : type === 'music' ? 'track' : type
+        // Sermons: audio vs video is decided by the picked file itself.
+        const serverType = type === 'video' ? 'reel'
+          : type === 'music' ? 'track'
+          : type === 'sermon' ? (file.type.startsWith('video/') ? 'sermon_video' : 'sermon_audio')
+          : type
         const label = labels[type]
         // Hand off to the background manager and close immediately —
         // progress shows in the floating pill while the user keeps browsing.
@@ -68,11 +92,11 @@ export default function PostCreate({ onDone }: Props) {
           label,
           successMsg: `${label} shared with the family ✓`,
           task: {
-            kind: serverType as 'post' | 'story' | 'reel' | 'track',
+            kind: serverType as any,
             file,
             caption: caption.trim(),
-            title: type === 'music' ? title.trim() : undefined,
-            artist: type === 'music' ? artist.trim() || 'Harvest Worship' : undefined,
+            title: (type === 'music' || type === 'sermon') ? title.trim() : undefined,
+            artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
           },
         }).catch(() => {})
         onDone()
@@ -118,6 +142,9 @@ export default function PostCreate({ onDone }: Props) {
             {previewUrl ? (
               <div className="relative bg-[#F5EEDF] aspect-[4/3] flex items-center justify-center">
                 {file?.type.startsWith('video/') ? <video src={previewUrl} controls className="w-full h-full object-cover" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />}
+                {file?.type.startsWith('image/') && (
+                  <button onClick={() => setAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-black/60 text-white text-xs font-bold" aria-label="Adjust image">✎ Adjust</button>
+                )}
                 <button onClick={() => { setFile(null); setPreviewUrl(null) }} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90" aria-label="Remove media">×</button>
               </div>
             ) : (
@@ -132,19 +159,35 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         <div className="mt-3 p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
-          <label className="text-xs font-bold text-[#766E63]">{type === 'music' ? 'TRACK DETAILS' : type === 'announcement' ? 'ANNOUNCEMENT' : 'YOUR MESSAGE'}</label>
+          <label className="text-xs font-bold text-[#766E63]">{type === 'music' ? 'TRACK DETAILS' : type === 'sermon' ? 'SERMON DETAILS' : type === 'announcement' ? 'ANNOUNCEMENT' : 'YOUR MESSAGE'}</label>
           {type === 'music' && (
             <div className="mt-2 space-y-2">
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Track title" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
               <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
             </div>
           )}
-          {type !== 'music' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
+          {type === 'sermon' && (
+            <div className="mt-2 space-y-2">
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Sermon title (e.g. The Power of Persistence)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+              <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Speaker / preacher (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+              <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 80 MB audio / 500 MB video. Members will be able to stream it and download the original file.</p>
+            </div>
+          )}
+          {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
+          {type === 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Short description (optional) — what is this teaching about?" className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
           {!isAdmin && <p className="text-[11px] text-[#766E63] mt-2">Members share stories — posts, reels and music are published by your church admins.</p>}
         </div>
 
         {notice && <div role="alert" className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
       </section>
+
+      {adjusting && file && file.type.startsWith('image/') && (
+        <ImageAdjuster
+          file={file}
+          onCancel={() => setAdjusting(false)}
+          onDone={applyAdjust}
+        />
+      )}
     </main>
   )
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMedia from './AdminMedia'
+import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
@@ -7,7 +8,7 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = true
 
 const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
-type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit'
+type Tab = 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give'
 
 type Props = {
   onBack: () => void
@@ -41,6 +42,48 @@ export default function Admin({ onBack, users, setUsers }: Props) {
   // ── Audit state ──
   const [audit, setAudit] = useState<any[]>([])
   const [loadingAudit, setLoadingAudit] = useState(false)
+
+  // ── Home content state (hero banner + weekly verse) ──
+  const [content, setContent] = useState<Record<string, string>>({})
+  const [contentBusy, setContentBusy] = useState(false)
+  const CONTENT_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [
+    { key: 'hero_kicker', label: 'Small heading (top of banner)', hint: 'e.g. Karibu, family', max: 120 },
+    { key: 'hero_title', label: 'Main banner title', hint: 'e.g. Compel. Raise. Release.', max: 120 },
+    { key: 'hero_subtitle', label: 'Banner subtitle', hint: 'e.g. Get one saved, keep one saved, get another saved.', max: 300, textarea: true },
+    { key: 'verse_text', label: 'This week’s encouragement — verse', hint: 'The quote shown mid-screen', max: 300, textarea: true },
+    { key: 'verse_ref', label: 'Verse reference', hint: 'e.g. Hebrews 10:24 · Grow together', max: 120 },
+  ]
+  // ── Give section fields ──
+  const GIVE_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [
+    { key: 'giving_title', label: 'Giving headline', hint: 'e.g. Give with purpose', max: 120 },
+    { key: 'giving_subtitle', label: 'Giving sub-text', hint: 'e.g. Secure M-Pesa giving for Harvest Family Church.', max: 300, textarea: true },
+    { key: 'paybill_number', label: 'Paybill number (manual fallback)', hint: 'e.g. 4138895', max: 20 },
+    { key: 'paybill_name', label: 'Paybill account name', hint: 'e.g. Harvest Family Church', max: 120 },
+  ]
+  const fundsJson = (() => { try { return JSON.stringify(JSON.parse(content.giving_funds || '[]'), null, 1) } catch { return (content.giving_funds || '') } })()
+  const [fundsDraft, setFundsDraft] = useState<string | null>(null)
+  const [quickDraft, setQuickDraft] = useState<string | null>(null)
+  useEffect(() => {
+    fetch(`${API}/api/content`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => setContent(d?.content || {}))
+      .catch(() => { /* empty form is fine — placeholders show defaults */ })
+  }, [])
+  const saveContent = async () => {
+    if (contentBusy) return
+    setContentBusy(true)
+    try {
+      const r = await fetch(`${API}/api/content`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(content),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
+      setContent(d.content || {})
+      setFundsDraft(null); setQuickDraft(null)
+      flash('Saved — live for everyone ✓')
+    } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
+  }
 
   // ── Announce state ──
   const [annText, setAnnText] = useState('')
@@ -241,13 +284,13 @@ export default function Admin({ onBack, users, setUsers }: Props) {
           <h1 className="font-extrabold">Harvest Admin</h1>
           <p className="text-xs text-[#766E63]">Moderation · Accounts · Audit</p>
         </div>
-        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">{tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : 'Audit'}</span>
+        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">            {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : tab === 'home' ? '🏠 Edit' : 'Audit'}</span>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['moderation', 'media', 'accounts', 'announce', 'audit'] as const).map(value => (
+        {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
-            {value === 'announce' ? '📣 Announce' : value[0].toUpperCase() + value.slice(1)}
+            {value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
@@ -299,7 +342,143 @@ export default function Admin({ onBack, users, setUsers }: Props) {
               {annBusy ? 'Sending…' : annGroup ? `📣 Send to ${annGroup}` : '📣 Send to all members'}
             </button>
             {annCount !== null && <p className="text-xs text-emerald-700 font-bold text-center">✓ Last announcement delivered to {annCount} members</p>}
+            {annText.trim().length >= 2 && (
+              <button
+                onClick={() => shareAnnouncementToWhatsApp(annText.trim())}
+                className="w-full py-3.5 rounded-xl bg-[#25D366] text-white text-sm font-extrabold flex items-center justify-center gap-2"
+                title="Opens WhatsApp — pick the church group to post it in"
+              >
+                <span aria-hidden>🟢</span> Share this on WhatsApp
+              </button>
+            )}
             <p className="text-[10px] text-[#766E63]">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Home text tab: edit the banner + weekly verse ── */}
+      {tab === 'home' && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+            <div>
+              <h2 className="font-extrabold text-sm">🏠 Home screen text</h2>
+              <p className="text-xs text-[#766E63] mt-0.5">Edits what every member sees at the top of the Community screen — the purple banner and the weekly encouragement. Changes go live for everyone immediately.</p>
+            </div>
+            {CONTENT_FIELDS.map(f => (
+              <div key={f.key}>
+                <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
+                {f.textarea ? (
+                  <textarea
+                    id={`ct-${f.key}`}
+                    value={content[f.key] ?? ''}
+                    onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
+                    rows={2}
+                    placeholder={f.hint}
+                    className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171] resize-y"
+                  />
+                ) : (
+                  <input
+                    id={`ct-${f.key}`}
+                    value={content[f.key] ?? ''}
+                    onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
+                    placeholder={f.hint}
+                    className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171]"
+                  />
+                )}
+                <p className="text-[10px] text-[#766E63] text-right mt-0.5">{(content[f.key] ?? '').length}/{f.max}</p>
+              </div>
+            ))}
+            <button
+              onClick={() => void saveContent()}
+              disabled={contentBusy}
+              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+            >
+              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+            </button>
+            <p className="text-[10px] text-[#766E63]">Tip: clear a field to restore the original default wording. Members see changes the next time they open the Community screen.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Give text tab: edit the giving screen ── */}
+      {tab === 'give' && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+            <div>
+              <h2 className="font-extrabold text-sm">💰 Give screen</h2>
+              <p className="text-xs text-[#766E63] mt-0.5">Edit the giving headline, the Paybill fallback details, the giving funds (buttons) and the quick amounts. Saves go live for every member immediately.</p>
+            </div>
+            {GIVE_FIELDS.map(f => (
+              <div key={f.key}>
+                <label htmlFor={`gv-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
+                {f.textarea ? (
+                  <textarea id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] resize-y" />
+                ) : (
+                  <input id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} placeholder={f.hint} className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                )}
+              </div>
+            ))}
+            <div>
+              <label htmlFor="gv-funds" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Giving funds (one per line: id | Label | sub-text | icon)</label>
+              <textarea
+                id="gv-funds"
+                value={fundsDraft ?? fundsJson}
+                onChange={e => setFundsDraft(e.target.value)}
+                rows={5}
+                placeholder="tithe | Tithe | First fruits | 💰"
+                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+              />
+              <p className="text-[10px] text-[#766E63] mt-0.5">Max 12 funds. The id is one word (tithe, offering, building…). Icon is any emoji. Clear to restore the defaults.</p>
+            </div>
+            <div>
+              <label htmlFor="gv-quick" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Quick amounts (comma separated KES)</label>
+              <input
+                id="gv-quick"
+                value={quickDraft ?? (() => { try { return (JSON.parse(content.giving_quick || '[]') as number[]).join(', ') } catch { return '' } })()}
+                onChange={e => setQuickDraft(e.target.value)}
+                placeholder="100, 200, 500, 1000, 2500, 5000"
+                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]"
+              />
+            </div>
+            <button
+              onClick={() => {
+                if (!window.confirm('Save and publish these giving changes to every member?')) return
+                // Parse the friendly funds format (id | Label | sub | icon) into JSON.
+                const next: Record<string, string> = { ...content }
+                if (fundsDraft !== null) {
+                  const lines = fundsDraft.split('\n').map(l => l.trim()).filter(Boolean)
+                  if (lines.length) {
+                    const funds = lines.map(l => {
+                      const [id, label, sub, icon] = l.split('|').map(x => (x || '').trim())
+                      return { id: (id || '').toLowerCase().replace(/[^a-z0-9_]/g, '_'), label: label || id, sub: sub || '', icon: icon || '💝' }
+                    }).filter(f => f.id && f.label)
+                    next.giving_funds = JSON.stringify(funds)
+                  } else next.giving_funds = ''
+                }
+                if (quickDraft !== null) {
+                  const nums = quickDraft.split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0)
+                  next.giving_quick = nums.length ? JSON.stringify(nums) : ''
+                }
+                setContent(next)
+                setTimeout(() => {
+                  void (async () => {
+                    setContentBusy(true)
+                    try {
+                      const r = await fetch(`${API}/api/content`, { method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(next) })
+                      const d = await r.json().catch(() => ({}))
+                      if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
+                      setContent(d.content || {}); setFundsDraft(null); setQuickDraft(null)
+                      flash('Give screen updated — live for everyone ✓')
+                    } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
+                  })()
+                }, 0)
+              }}
+              disabled={contentBusy}
+              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+            >
+              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+            </button>
+            <p className="text-[10px] text-[#766E63]">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
           </div>
         </div>
       )}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Harvest Family mark — traced from the client's file (WhatsApp Image 2026-09-19 at 15.37.46.jpeg).
+       Colors sampled from source: navy #221A56, yellow #EEB609, cream #F1EEE7. -->
+  <rect width="512" height="512" fill="#F1EEE7"/>
+  <!-- Yellow square (top right) -->
+  <rect x="256" y="60" width="136" height="86" fill="#EEB609"/>
+  <!-- Yellow vertical arm rising out of the bowl -->
+  <rect x="226" y="128" width="86" height="160" fill="#EEB609"/>
+  <!-- Navy U bowl: thick left + right stems, rounded bottom -->
+  <path d="M96 128 h96 v168 a64 64 0 0 0 128 0 V128 h96 v168 a160 160 0 0 1 -320 0 Z" fill="#221A56"/>
+</svg>

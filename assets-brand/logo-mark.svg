@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Harvest Family mark: navy "U" bowl + yellow "t" arm with square dot -->
+  <rect width="512" height="512" fill="#F5F1E8"/>
+  <!-- U bowl -->
+  <path d="M96 96 h104 v150 a56 56 0 0 0 112 0 V96 h104 v150 a160 160 0 0 1 -320 0 Z" fill="#2B2E83"/>
+  <!-- t arm: vertical stem rising into a square dot -->
+  <path d="M204 96 h104 v158 h-52 v-58 h-52 Z" fill="#FDB913"/>
+  <rect x="256" y="52" width="104" height="60" fill="#FDB913"/>
+</svg>

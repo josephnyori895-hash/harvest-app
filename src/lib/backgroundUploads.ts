@@ -13,7 +13,7 @@ import { showToast } from '../components/Toast'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const tok = () => localStorage.getItem('harvest_token') || ''
 
-export type UploadKind = 'avatar' | 'story' | 'post' | 'reel' | 'track'
+export type UploadKind = 'avatar' | 'story' | 'post' | 'reel' | 'track' | 'sermon_audio' | 'sermon_video'
 
 export type UploadTask = {
   kind: UploadKind
@@ -23,6 +23,8 @@ export type UploadTask = {
   title?: string
   artist?: string
   cover?: File | Blob
+  /** Reels only: pre-uploaded poster key (client-picked cover frame). */
+  cover_key?: string
 }
 
 export type BgUpload = {
@@ -190,11 +192,13 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
       title: task.title,
       artist: task.artist,
       cover_key: coverKey,
+      poster_key: task.cover_key,
     })
   }
   onPct(100)
   if (task.kind === 'story') window.dispatchEvent(new Event('harvest:approved'))
   if (task.kind === 'track') window.dispatchEvent(new Event('harvest:tracks-updated'))
+  if (task.kind === 'sermon_audio' || task.kind === 'sermon_video') window.dispatchEvent(new Event('harvest:sermons-updated'))
   if (task.kind === 'avatar') window.dispatchEvent(new Event('harvest:profile-updated'))
 }
 

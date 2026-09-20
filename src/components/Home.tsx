@@ -4,6 +4,7 @@ import { fetchFeed, useApi } from '../lib/api'
 import StoryViewer from './Stories'
 import Comments from './Comments'
 import { showToast } from './Toast'
+import { sharePostToWhatsApp, shareStoryToWhatsApp } from '../lib/whatsappShare'
 
 function timeAgo(iso?: string) {
   if (!iso) return 'Just now'
@@ -38,7 +39,22 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const startYRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [approvedTick, setApprovedTick] = useState(0)
-  const [menuPost, setMenuPost] = useState<string | null>(null)
+  const [menuPost, setMenuPost] = useState<{ key: string; kind: 'post' | 'reel'; id: string; user: string; caption: string; mine: boolean } | null>(null)
+  // Admin-editable home content (hero banner + weekly verse). Falls back to
+  // the shipped defaults when the fetch fails or values are not set.
+  const [content, setContent] = useState<Record<string, string>>({})
+  useEffect(() => {
+    const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    fetch(`${API}/api/content`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => setContent(d?.content || {}))
+      .catch(() => { /* defaults stay */ })
+  }, [])
+  const heroKicker = content.hero_kicker || 'Karibu, family'
+  const heroTitle = content.hero_title || 'Compel. Raise. Release.'
+  const heroSubtitle = content.hero_subtitle || 'Get one saved, keep one saved, get another saved.'
+  const verseText = content.verse_text || 'Let us consider how we may spur one another on toward love and good deeds.'
+  const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
   // Inline post comments (server-backed) — replaces the old "dump into chats" button.
   const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
   // Server-backed community feed (only in API mode; offline mode stays localStorage-first).
@@ -113,7 +129,10 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     time: timeAgo(p.created_at),
     likes: Number(p.likes) || 0,
     comments: Number(p.comments) || 0,
-    img: p.thumb_url || undefined,
+    // Reels: the video itself is the preview (posters are optional). Only real
+    // images go through img — feeding a video URL to <img> renders broken.
+    img: p.kind === 'reel' ? undefined : (p.thumb_url || undefined),
+    video: p.kind === 'reel' ? (p.hls_url || undefined) : undefined,
     caption: p.caption || '',
     kind: p.is_pinned ? 'Pinned' : p.kind === 'reel' ? 'Video' : 'Community',
   })), [livePosts])
@@ -136,6 +155,26 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }
   const clearCache = () => { localStorage.removeItem('harvest_pending'); localStorage.removeItem('harvest_approved_posts'); localStorage.removeItem('harvest_approved_stories'); localStorage.removeItem('harvest_scheduled'); localStorage.removeItem('harvest_cache'); window.dispatchEvent(new Event('harvest:cache-clear')); showToast('Local cache cleared', 'success') }
 
+  // Instagram-style delete: authors remove their own posts/stories; admin can remove anything.
+  const deleteMedia = async (kind: 'post' | 'reel' | 'story', id: string) => {
+    if (!window.confirm('Delete this? This cannot be undone.')) return
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const r = await fetch(`${API}/api/${kind === 'post' ? 'posts' : kind === 'reel' ? 'reels' : 'stories'}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d?.error || `Could not delete (${r.status})`)
+      if (kind === 'story') {
+        setLiveStories(ss => ss.filter(x => String(x.id) !== String(id)))
+      } else {
+        setLivePosts(ps => ps.filter(x => !(String(x.id) === String(id) && (kind === 'reel' ? x.kind === 'reel' : x.kind !== 'reel'))))
+      }
+      showToast('Deleted', 'success', 1500)
+    } catch (e: any) {
+      showToast(e?.message || 'Could not delete', 'error', 2500)
+    }
+  }
+
   const onTouchStart = (e: any) => { startYRef.current = e.touches[0].clientY }
   const onTouchEnd = (e: any) => {
     if (startYRef.current === null) return
@@ -144,7 +183,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   }
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
-    {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} />}
+    {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {commentTarget && (
       <Comments
         scope={commentTarget.scope}
@@ -158,15 +197,15 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
     <header className="sticky top-0 z-20 bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#E8DEC9]">
       <div className="px-4 py-3 flex items-center justify-between">
-        <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher"><img src="/logo.png" alt="" className="w-10 h-10 rounded-2xl object-contain bg-[#FFCD00] shadow-sm" /><span><span className="block text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</span><span className="block text-[17px] font-extrabold text-[#29251F] leading-tight">Community</span></span></button>
+        <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher"><img src="/logo.png" alt="" className="w-10 h-10 rounded-2xl object-contain bg-[#F5F1E8] shadow-sm" /><span><span className="block text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</span><span className="block text-[17px] font-extrabold text-[#29251F] leading-tight">Nyeri</span></span></button>
         <div className="flex items-center gap-2"><button onClick={() => setTab('activity')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Activity">🔔</button><button onClick={() => setTab('chat')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Messages">💬</button>{isAdmin && <button onClick={clearCache} className="w-10 h-10 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9]" aria-label="Clear local cache">🧹</button>}</div>
       </div>
     </header>
 
     <main className="px-4 pb-8">
-      <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">Karibu, family</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">Compel. Raise. Release.</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">Get one saved, keep one saved, get another saved.</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={() => setTab('chat')} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
+      <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">{heroKicker}</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">{heroTitle}</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">{heroSubtitle}</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={() => setTab('chat')} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
 
-      <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-2 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
+      <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-3 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('sermons')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎙</span><p className="mt-2 font-extrabold text-sm">Sermons</p><p className="mt-1 text-[11px] text-[#766E63]">Listen, watch & download.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
 
       <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
@@ -183,13 +222,23 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
         {storyGroups.length === 0 && <p className="text-sm text-[#8B8175] py-6">No stories yet — be the first to share a moment.</p>}
       </div></section>
 
-      <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“Let us consider how we may spur one another on toward love and good deeds.”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">Hebrews 10:24 · Grow together</p></div></section>
+      <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“{verseText}”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">{verseRef}</p></div></section>
 
-      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = !!likesTable[key]; const displayLikes = (Number(p.likes) || 0) + (liked ? 1 : 0); return <article key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="flex items-center gap-3" aria-label={`View ${p.user}'s profile`}><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div></button><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="text-left" aria-label={`View ${p.user}'s profile`}><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></button></div><button onClick={() => setMenuPost(menuPost === key ? null : key)} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button>{menuPost === key && isAdmin && <div className="absolute" />}</div>{p.video ? <video src={p.video} controls playsInline poster={p.img} className="w-full aspect-[4/3] object-cover bg-[#29251F]" /> : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button></div>{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
+      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = !!likesTable[key]; const displayLikes = (Number(p.likes) || 0) + (liked ? 1 : 0); return <article key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="flex items-center gap-3" aria-label={`View ${p.user}'s profile`}><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div></button><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="text-left" aria-label={`View ${p.user}'s profile`}><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></button></div><button onClick={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button></div>{p.video ? <video src={p.video} controls playsInline className="w-full aspect-[4/3] object-cover bg-[#1a1714] shadow-inner" /> : p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button><button onClick={() => sharePostToWhatsApp({ author: p.user, caption: p.caption })} className="px-3 py-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/40 text-xs font-extrabold text-[#128C4A]" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗ Share on WhatsApp</button></div>{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
 
       <section className="mt-7 grid grid-cols-2 gap-3">{quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}</section>
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
     </main>
+    {menuPost && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
+        <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
+          <div className="w-10 h-1 rounded-full bg-[#E8DEC9] mx-auto my-2" />
+          {menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="w-full py-3.5 text-center text-red-600 font-bold border-b border-[#F4E8D0] active:bg-red-50">🗑 Delete</button> : null}
+          <button onClick={() => { const m = menuPost; setMenuPost(null); sharePostToWhatsApp({ author: m.user, caption: m.caption }) }} className="w-full py-3.5 text-center text-[#128C4A] font-bold border-b border-[#F4E8D0] active:bg-green-50">↗ Share to WhatsApp</button>
+          <button onClick={() => setMenuPost(null)} className="w-full py-3.5 text-center font-bold text-[#766E63] active:bg-[#FAF6EC]">Cancel</button>
+        </div>
+      </div>
+    )}
     {refreshing && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#29251F] text-white text-xs font-bold shadow-xl">Refreshing community…</div>}
   </div>
 }

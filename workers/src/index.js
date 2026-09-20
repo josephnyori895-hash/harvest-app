@@ -11,6 +11,8 @@ import { handlePending, runScheduledCleanup } from './routes/pending.js'
 import { handleGiving } from './routes/giving.js'
 import { handleDepartments } from './routes/departments.js'
 import { handleGroups } from './routes/groups.js'
+import { handleContent } from './routes/content.js'
+import { handleSermons } from './routes/sermons.js'
 import { Realtime } from './realtime.js'
 
 export { Realtime }
@@ -37,7 +39,7 @@ export default {
       const user = await authenticate(env, request)
       const ctx2 = { user }
 
-      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleDepartments, handleGroups]
+      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleDepartments, handleGroups, handleContent, handleSermons]
       for (const handler of handlers) {
         const res = await handler(request, env, ctx2, extractParams(url))
         if (res) return withCors(res, env, request)

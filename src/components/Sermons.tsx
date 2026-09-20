@@ -1,0 +1,194 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { showToast } from './Toast'
+
+const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+function authHeaders(): Record<string, string> {
+  const t = localStorage.getItem('harvest_token') || ''
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+function fmtBytes(n?: number | null) {
+  if (!n) return ''
+  if (n > 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+function fmtDur(sec: number) {
+  if (!sec || isNaN(sec)) return '0:00'
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60)
+  return `${m}:${String(s).padStart(2,'0')}`
+}
+
+// Sermons — admin-published audio (mp3) & video (mp4) teachings.
+// Members stream in the app or download the original file.
+export default function Sermons({ isAdmin }: { isAdmin: boolean }) {
+  const [sermons, setSermons] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [playing, setPlaying] = useState<string | null>(null)
+  const [busy, setBusy] = useState('')
+  const [editing, setEditing] = useState<any | null>(null)
+  const [playerReady, setPlayerReady] = useState<Record<string, boolean>>({})
+
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    fetch(`${API}/api/sermons`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load sermons'))))
+      .then(d => { setSermons(Array.isArray(d.sermons) ? d.sermons : []); setError('') })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(load, [load])
+
+  const play = async (s: any) => {
+    if (playing === s.id) {
+      audioRef.current?.pause(); videoRef.current?.pause()
+      if (audioRef.current) audioRef.current.src = ''
+      if (videoRef.current) videoRef.current.src = ''
+      setPlaying(null)
+      setPlayerReady(prev => ({ ...prev, [s.id]: false }))
+      return
+    }
+    setPlaying(s.id)
+    setPlayerReady(prev => ({ ...prev, [s.id]: false }))
+    fetch(`${API}/api/sermons/${s.id}/play`, { method: 'POST', headers: authHeaders() }).catch(() => {})
+  }
+
+  const download = async (s: any) => {
+    if (busy === s.id) return
+    setBusy(s.id)
+    try {
+      const r = await fetch(`${API}/api/sermons/${s.id}/download`, { method: 'POST', headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not prepare download')
+      const ext = s.kind === 'video' ? 'mp4' : 'mp3'
+      const a = document.createElement('a')
+      a.href = d.url
+      a.download = d.filename || `${s.title.replace(/[^a-z0-9]/gi,'_').slice(0,40)}.${ext}`
+      a.rel = 'noopener'
+      document.body.appendChild(a); a.click(); a.remove()
+      showToast(`Download started — ${ext.toUpperCase()}`, 'success')
+      setSermons(xs => xs.map(x => x.id === s.id ? { ...x, downloads: (Number(x.downloads) || 0) + 1 } : x))
+    } catch (e: any) {
+      showToast(e?.message || 'Could not download', 'error')
+    } finally { setBusy('') }
+  }
+
+  const saveEdit = async () => {
+    if (!editing || busy === 'edit') return
+    setBusy('edit')
+    try {
+      const r = await fetch(`${API}/api/sermons`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editing.id,
+          title: editing.title,
+          speaker: editing.speaker,
+          scripture: editing.scripture,
+          description: editing.description,
+        }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not save')
+      showToast('Sermon updated ✓')
+      setEditing(null); load()
+    } catch (e: any) { showToast(e?.message || 'Could not save', 'error') } finally { setBusy('') }
+  }
+
+  const remove = async (s: any) => {
+    if (!window.confirm(`Delete \"${s.title}\" permanently? Members will no longer see it.`)) return
+    setBusy(s.id)
+    try {
+      const r = await fetch(`${API}/api/sermons/${s.id}`, { method: 'DELETE', headers: authHeaders() })
+      if (!r.ok) throw new Error('failed')
+      showToast('Sermon deleted')
+      load()
+    } catch { showToast('Could not delete', 'error') } finally { setBusy('') }
+  }
+
+  return (
+    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-4">
+      <div className="mb-5">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Harvest Word</p>
+        <h1 className="text-2xl font-extrabold mt-1">Sermons</h1>
+        <p className="text-sm text-[#6B6257] mt-1">Listen or watch — and download to share with someone.</p>
+      </div>
+
+      {error && <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+
+      {loading ? <p className="text-sm text-[#6B6257]">Loading…</p> : sermons.length === 0 ? (
+        <div className="text-center py-14">
+          <div className="text-4xl mb-2">🎙</div>
+          <p className="font-bold text-sm">No sermons yet</p>
+          <p className="text-xs text-[#6B6257] mt-1">{isAdmin ? 'Upload the first one below.' : 'Check back soon — new teachings are on the way.'}</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sermons.map(s => (
+            <div key={s.id} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-xl ${s.kind === 'video' ? 'bg-[#F3E8FF] text-[#7C3AED]' : 'bg-[#F4E8D0]'}`}>{s.kind === 'video' ? '🎬' : '🎧'}</div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold text-sm leading-snug">{s.title}</p>
+                  <p className="text-[11px] text-[#6B6257] mt-0.5">
+                    {s.speaker || 'Harvest Family Church'}{s.scripture ? ` · ${s.scripture}` : ''} · {fmtDur(s.duration)}{s.duration ? '' : ` · ${new Date(s.created_at).toLocaleDateString()}`}
+                  </p>
+                  <p className="text-[10px] text-[#8B8175] mt-1">▶ {s.plays} plays · 📥 {s.downloads} downloads{s.bytes ? ` · ${fmtBytes(s.bytes)}` : ''}</p>
+                </div>
+              </div>
+              {s.description && <p className="text-xs text-[#4B433A] mt-2 leading-5">{s.description}</p>}
+
+              {/* inline player */}
+              {playing === s.id && playerReady[s.id] && (
+                <div className="mt-3">
+                  {s.kind === 'video' ? (
+                    <video ref={videoRef} key={s.id} src={s.media_url} controls autoPlay playsInline className="w-full rounded-2xl bg-black" />
+                  ) : (
+                    <audio ref={audioRef} key={s.id} src={s.media_url} controls autoPlay className="w-full" />
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => void play(s)} className={`flex-1 py-2.5 rounded-2xl text-xs font-extrabold ${playing === s.id ? 'bg-[#29251F] text-white' : 'bg-[#7C3AED] text-white'}`}>
+                  {playing === s.id ? '⏸ Hide player' : s.kind === 'video' ? '▶ Watch' : '▶ Listen'}
+                </button>
+                <button onClick={() => void download(s)} disabled={busy === s.id} className="px-4 py-2.5 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6] disabled:opacity-50">
+                  {busy === s.id ? '…' : `📥 Download ${s.kind === 'video' ? 'MP4' : 'MP3'}`}
+                </button>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => setEditing({ ...s })} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-xs font-bold" aria-label="Edit sermon">✏️</button>
+                    <button onClick={() => void remove(s)} disabled={busy === s.id} className="px-3 py-2.5 rounded-2xl bg-red-50 border border-red-200 text-xs font-bold text-red-600 disabled:opacity-50" aria-label="Delete sermon">🗑</button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* admin edit sheet */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setEditing(null)} role="dialog" aria-label="Edit sermon">
+          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="font-extrabold text-sm">✏️ Edit sermon</p>
+            <input value={editing.title || ''} onChange={e => setEditing((x: any) => ({ ...x, title: e.target.value }))} placeholder="Title" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <input value={editing.speaker || ''} onChange={e => setEditing((x: any) => ({ ...x, speaker: e.target.value }))} placeholder="Speaker" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <input value={editing.scripture || ''} onChange={e => setEditing((x: any) => ({ ...x, scripture: e.target.value }))} placeholder="Scripture (e.g. John 3:16-21)" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <textarea value={editing.description || ''} onChange={e => setEditing((x: any) => ({ ...x, description: e.target.value }))} rows={3} placeholder="Description" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] resize-y" />
+            <div className="flex gap-2">
+              <button onClick={() => void saveEdit()} disabled={busy === 'edit'} className="flex-1 py-3 rounded-xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{busy === 'edit' ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => setEditing(null)} className="px-4 py-3 rounded-xl bg-[#F4E8D0] text-sm font-bold">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

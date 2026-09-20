@@ -12,7 +12,7 @@ function authHeaders() {
 // Small Groups — created by the system admin, who appoints a group admin and
 // chooses to stay (as admin or member) or not join at all. Group admins manage
 // their members: approve requests, promote/demote, remove.
-export default function Groups() {
+export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, name: string) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
   const [groups, setGroups] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,6 +23,12 @@ export default function Groups() {
   const [requests, setRequests] = useState<any[]>([])
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '', participation: 'admin' })
+  // ── WhatsApp-style group settings (system admin) ──
+  const [showSettings, setShowSettings] = useState(false)
+  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false })
+  const [addUname, setAddUname] = useState('')
+  const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
+  const [savingSettings, setSavingSettings] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -129,6 +135,64 @@ export default function Groups() {
     } catch { showToast('Could not remove member') } finally { setBusy('') }
   }
 
+  // ── Settings actions (system admin) ──
+  const startSettings = () => {
+    if (!detail?.group) return
+    setStForm({
+      name: detail.group.name || '',
+      description: detail.group.description || '',
+      community: detail.group.community || '',
+      addOnly: Boolean(detail.group.invite_only),
+    })
+    setShowSettings(true)
+  }
+
+  const saveSettings = async () => {
+    if (!detail?.group || savingSettings) return
+    const name = stForm.name.trim()
+    if (name.length < 2) { showToast('Group name is too short'); return }
+    setSavingSettings(true)
+    try {
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(detail.group.slug)}/settings`, {
+        method: 'PATCH', headers: authHeaders(),
+        body: JSON.stringify({ name, description: stForm.description.trim(), community: stForm.community.trim(), invite_only: stForm.addOnly }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not save')
+      showToast('Group settings saved ✓')
+      setShowSettings(false)
+      load(); await openDetail(detail.group.slug)
+    } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false) }
+  }
+
+  const addMemberDirect = async () => {
+    if (!detail?.group || !addUname.trim()) return
+    setBusy('add_member')
+    try {
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(detail.group.slug)}/members`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ username: addUname.trim().toLowerCase(), role: addRole }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Not found')
+      showToast(addRole === 'admin' ? `${addUname} added as admin` : `${addUname} added`)
+      setAddUname('')
+      openDetail(detail.group.slug); load()
+    } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }
+  }
+
+  const deleteGroup = async (slug: string, name: string) => {
+    if (!window.confirm(`Permanently delete "${name}"? Members will be released and the group chat history stays but the group cannot be recovered.`)) return
+    setBusy(`del_${slug}`)
+    try {
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}`, { method: 'DELETE', headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not delete')
+      showToast(`"${name}" deleted`)
+      setOpenSlug(null); setDetail(null); load()
+    } catch (e: any) { showToast(e?.message || 'Could not delete group') } finally { setBusy('') }
+  }
+
   const GroupRow = ({ g }: { g: any }) => (
     <button onClick={() => openDetail(g.slug)} className="w-full text-left p-4 rounded-2xl bg-zinc-900 border border-zinc-800 active:opacity-70">
       <div className="flex items-center justify-between gap-3">
@@ -143,7 +207,9 @@ export default function Groups() {
         </div>
         {g.joined
           ? <span onClick={e => { e.stopPropagation(); void leave(g.slug) }} role="button" className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-zinc-700 bg-zinc-800 text-zinc-300 ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</span>
-          : <span onClick={e => { e.stopPropagation(); void join(g.slug) }} role="button" className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</span>}
+          : g.my_request === 'pending'
+            ? <span onClick={e => e.stopPropagation()} role="button" className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-amber-400/20 text-amber-400 border border-amber-400/40">⏳ Requested</span>
+            : <span onClick={e => { e.stopPropagation(); void join(g.slug) }} role="button" className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</span>}
       </div>
     </button>
   )
@@ -155,12 +221,74 @@ export default function Groups() {
     return (
       <div className="bg-black text-white min-h-[70vh] pb-8">
         <div className="flex items-center gap-3 h-14 border-b border-zinc-800 px-3 sticky top-0 bg-black z-10">
-          <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
+          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
+          {isAdmin && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
+            {showSettings && isAdmin ? (
+              /* ── WhatsApp-style group settings panel ── */
+              <div className="space-y-3">
+                <div className="p-4 rounded-2xl bg-zinc-900 border border-amber-500/40 space-y-3">
+                  <p className="text-[10px] font-bold text-amber-400">ADMIN — GROUP SETTINGS</p>
+                  <div>
+                    <label htmlFor="gst-name" className="block text-[10px] font-bold text-zinc-400 mb-1">GROUP NAME</label>
+                    <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                  </div>
+                  <div>
+                    <label htmlFor="gst-desc" className="block text-[10px] font-bold text-zinc-400 mb-1">DESCRIPTION</label>
+                    <input id="gst-desc" value={stForm.description} onChange={e => setStForm(f => ({ ...f, description: e.target.value }))} placeholder="What this group is about" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                  </div>
+                  <div>
+                    <label htmlFor="gst-com" className="block text-[10px] font-bold text-zinc-400 mb-1">COMMUNITY (congregation)</label>
+                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                  </div>
+                  <button
+                    onClick={() => setStForm(f => ({ ...f, addOnly: !f.addOnly }))}
+                    className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
+                    role="switch" aria-checked={stForm.addOnly}
+                  >
+                    <span>
+                      <span className="block text-sm font-bold text-white">Add-only group</span>
+                      <span className="block text-[11px] text-zinc-400 mt-0.5">{stForm.addOnly ? 'ON — only you can add members (like a WhatsApp admin-only add)' : 'OFF — people can send join requests'}</span>
+                    </span>
+                    <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-amber-400' : 'bg-zinc-700'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
+                    </span>
+                  </button>
+                  <div className="flex gap-2">
+                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
+                    <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold">Cancel</button>
+                  </div>
+                </div>
+                <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2">
+                  <p className="text-[10px] font-bold text-amber-400">ADD MEMBER DIRECTLY</p>
+                  <div className="flex gap-2">
+                    <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
+                    <button disabled={busy === 'add_member' || !addUname.trim()} onClick={() => void addMemberDirect()} className="px-3 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Add</button>
+                  </div>
+                  <div className="flex gap-2">
+                    {(['member', 'admin'] as const).map(r => (
+                      <button key={r} onClick={() => setAddRole(r)} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${addRole === r ? 'bg-amber-400 text-black' : 'bg-zinc-800 text-zinc-300'}`}>{r === 'admin' ? 'As group admin' : 'As member'}</button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  disabled={busy === `del_${detail.group.slug}`}
+                  onClick={() => void deleteGroup(detail.group.slug, detail.group.name)}
+                  className="w-full py-2.5 rounded-xl bg-red-950 border border-red-900 text-red-300 text-xs font-bold disabled:opacity-50"
+                >
+                  {busy === `del_${detail.group.slug}` ? 'Deleting…' : '🗑 Delete this group'}
+                </button>
+              </div>
+            ) : (
+              <>
             {detail.group.description && <p className="text-xs text-zinc-400 pb-1">{detail.group.description}</p>}
+
+            {me && onOpenChat && (
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open group chat</button>
+            )}
 
             {canManage && requests.length > 0 && (
               <div className="p-3 rounded-xl bg-zinc-900 border border-amber-900/50 mb-2">
@@ -198,6 +326,8 @@ export default function Groups() {
                 ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-zinc-700 text-zinc-300 text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
                 : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Request to join</button>}
             </div>
+              </>
+            )}
           </div>
         )}
       </div>
