@@ -79,7 +79,7 @@ export async function handleGiving(request, env, ctx) {
       await query(
         env,
         `INSERT INTO giving_transactions (id, user_id, phone, amount_kes, purpose, provider, status, metadata, created_at)
-         VALUES (?,?,?,?, 'mpesa','pending', ?, ?)`,
+         VALUES (?,?,?,?,?,'mpesa','pending',?,?)`,
         [id, fresh.id, phone, amountRounded, purpose, JSON.stringify({ requestedBy: fresh.username }), now],
       )
 
