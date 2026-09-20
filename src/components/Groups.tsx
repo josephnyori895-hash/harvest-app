@@ -56,8 +56,18 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       } catch { /* keep last known counts */ }
     }
     void refreshUnread()
-    const timer = window.setInterval(refreshUnread, 3000)
-    return () => { live = false; window.clearInterval(timer) }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshUnread()
+    }, 3000)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshUnread()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   const openDetail = async (slug: string) => {
