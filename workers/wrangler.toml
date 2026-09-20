@@ -32,6 +32,8 @@ crons = ["*/10 * * * *"]
 # Static assets: the APK download lives here (assets first, then Worker for everything else).
 [assets]
 directory = "./downloads"
+# The permanent APK URL is a Worker redirect so it cannot be served as a stale static asset.
+run_worker_first = ["/harvest-family.apk"]
 
 # ── Non-secret vars (APK WebView origin is https://localhost) ──
 [vars]
