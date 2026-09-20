@@ -172,14 +172,17 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 \
             -D "$HEADER_FILE" -o "$BODY_FILE" "$PERMANENT_URL"
 
-          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r')"
+          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
           REDIRECT_LOCATION="$(awk 'BEGIN{IGNORECASE=1} /^Location:/ {sub(/^Location:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
           CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
 
           echo "PERMANENT STATUS:   $STATUS_LINE"
           echo "PERMANENT LOCATION: $REDIRECT_LOCATION"
           echo "PERMANENT CACHE:    $CACHE_CONTROL"
-          test "$STATUS_LINE" = "HTTP/2 302" || test "$STATUS_LINE" = "HTTP/1.1 302 Found"
+          case "$STATUS_LINE" in
+            "HTTP/2 302"|"HTTP/1.1 302 Found") ;;
+            *) echo "::error::Unexpected permanent URL status: $STATUS_LINE"; exit 1 ;;
+          esac
           test "$REDIRECT_LOCATION" = "$APK_BASE_URL/$APK_FILENAME"
           test "$CACHE_CONTROL" = "no-store, max-age=0"
 
