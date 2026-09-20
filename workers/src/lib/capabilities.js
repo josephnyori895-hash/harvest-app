@@ -1,10 +1,10 @@
 // Capability grants: per-user powers beyond the base role, granted by the
 // system admin to verified leaders (pastors, ministry heads).
-// Powers: post_media, create_groups, manage_groups, manage_communities, delete_media
+// Powers: post_media, create_groups, manage_groups, manage_communities, delete_media, moderate_chat
 import { httpError } from './http.js'
 import { query } from './db.js'
 
-export const ALL_CAPS = ['post_media', 'create_groups', 'manage_groups', 'manage_communities', 'delete_media']
+export const ALL_CAPS = ['post_media', 'create_groups', 'manage_groups', 'manage_communities', 'delete_media', 'moderate_chat']
 
 export function parseGrants(raw) {
   if (!raw || typeof raw !== 'string') return []
