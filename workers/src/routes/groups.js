@@ -278,7 +278,13 @@ export async function handleGroups(request, env, ctx) {
     const actorRole = await myGroupRole(env, g.id, fresh.id)
     if (fresh.role !== 'admin' && actorRole !== 'admin' && !hasCap(fresh, 'manage_groups')) return errorResponse('group admin required', 403)
     const uname = String(decodeURIComponent(mm[1])).trim().toLowerCase()
-    await query(env, 'DELETE FROM group_members WHERE group_id=? AND user_id=(SELECT id FROM users WHERE username=?)', [g.id, uname])
+    const target = await query(env, 'SELECT id, role FROM group_members WHERE group_id=? AND user_id=(SELECT id FROM users WHERE username=?)', [g.id, uname])
+    if (!target.rows[0]) return errorResponse('member not found', 404)
+    if (target.rows[0].role === 'admin') {
+      const { rows } = await query(env, `SELECT COUNT(*) AS n FROM group_members WHERE group_id=? AND role='admin'`, [g.id])
+      if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot remove the only group admin — appoint another admin first', 400)
+    }
+    await query(env, 'DELETE FROM group_members WHERE group_id=? AND user_id=?', [g.id, target.rows[0].id])
     await audit(env, fresh, 'group_member_removed', g.id, { username: uname })
     return jsonResponse({ ok: true, removed: uname })
   }
