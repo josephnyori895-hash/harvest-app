@@ -15,9 +15,12 @@ export function corsFor(env, request) {
     'Permissions-Policy': 'geolocation=(), payment=()',
     'Cache-Control': 'no-store',
   }
-  if (allowed.length === 0) headers['Access-Control-Allow-Origin'] = '*'
-  else if (allowed.includes(origin)) headers['Access-Control-Allow-Origin'] = origin
-  else headers['Access-Control-Allow-Origin'] = allowed[0]
+  // Never reflect a trusted origin for an untrusted request. Absence of ACAO
+  // makes browsers reject cross-origin access instead of granting it accidentally.
+  if (origin && allowed.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin
+    headers['Vary'] = 'Origin'
+  }
   return headers
 }
 
