@@ -7,7 +7,7 @@ import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
 
-type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
+type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
 
@@ -225,7 +225,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || 'Could not update appreciation')
       setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
-        ? { ...r, liked: Boolean(data.liked) }
+        ? { ...r, liked: Boolean(data.liked), likes: Number(data.likes) || 0 }
         : r))
     } catch (e: any) {
       setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
