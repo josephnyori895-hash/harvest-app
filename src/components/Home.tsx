@@ -222,6 +222,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     })
   }
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
+  const myStoryAllViewed = Boolean(myStoryGroup?.items.length) && myStoryGroup.items.every((item: any) => viewedStoryIds.has(String(item.id)))
   const toggleLike = async (key: string) => {
     if (pendingLikesRef.current.has(key)) return
     const post = livePosts.find((p: any) => `api_${p.kind}_${p.id}` === key)
