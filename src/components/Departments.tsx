@@ -235,7 +235,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
         </div>
         {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
-            {editing && canManage ?
+            {editing && canManage ? (
               <div className="p-3 rounded-xl bg-zinc-900 border border-amber-500/40 mb-3">
                 <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — EDIT DEPARTMENT</p>
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
