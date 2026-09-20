@@ -90,6 +90,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const [liveStories, setLiveStories] = useState<any[]>([])
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
+  const [feedLoadFailed, setFeedLoadFailed] = useState(false)
 
   const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
   const approvedPosts: any[] = []
@@ -97,6 +98,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   useEffect(() => {
     if (!api) return undefined
     let cancelled = false
+    setFeedLoadFailed(false)
     fetchFeed(0, 20)
       .then((d: any) => {
         if (cancelled) return
@@ -104,7 +106,12 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
         setLiveStories(Array.isArray(d?.stories) ? d.stories : [])
         setFeedLoaded(true)
       })
-      .catch((e: any) => { if (!cancelled) console.warn('[feed] load failed', e?.message || e) })
+      .catch((e: any) => {
+        if (cancelled) return
+        setFeedLoadFailed(true)
+        setFeedLoaded(true)
+        console.warn('[feed] load failed', e?.message || e)
+      })
     return () => { cancelled = true }
   }, [api, feedTick])
 
@@ -178,6 +185,11 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   useEffect(() => {
     if (!sharedContent || sharedContent.kind === 'reel' || !feedLoaded) return
+    if (feedLoadFailed) {
+      showToast('Unable to open that shared content right now. Please try again.', 'warning', 3000)
+      onSharedContentHandled?.()
+      return
+    }
     if (sharedContent.kind === 'story') {
       const index = allMoments.findIndex((s: any) => String(s.id) === sharedContent.id)
       if (index >= 0) {
@@ -196,7 +208,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
       showToast('That shared post is no longer available.', 'warning', 2500)
     }
     onSharedContentHandled?.()
-  }, [sharedContent, feedLoaded, livePosts, allMoments, onSharedContentHandled])
+  }, [sharedContent, feedLoaded, feedLoadFailed, livePosts, allMoments, onSharedContentHandled])
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const toggleLike = (key: string) => { toggleLikeKey(key); setLikesTick(x => x + 1); showToast('Added to your gratitude ❤️', 'success', 1000) }
   const bumpCommentCount = (key: string, delta: number) => {
