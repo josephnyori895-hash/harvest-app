@@ -3,6 +3,7 @@
 import { query, bool } from '../lib/db.js'
 import { jsonResponse, searchParams, errorResponse, readJson } from '../lib/http.js'
 import { requireMember } from '../lib/auth.js'
+import { hasCap } from '../lib/capabilities.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 
 // SQL scoring mirror (score = 0.45*exp(-h/72) + 0.25*engNorm + 0.20*affinity + 0.10*verified + pinned)
@@ -296,7 +297,7 @@ export async function handleFeed(request, env, ctx) {
     const row = await query(env, `SELECT * FROM ${table} WHERE id=?`, [id])
     if (!row.rows[0]) return errorResponse('not found', 404)
     const isOwner = row.rows[0].user_id === fresh.id
-    if (!isOwner && fresh.role !== 'admin') return errorResponse('you can only delete your own posts', 403)
+    if (!isOwner && fresh.role !== 'admin' && !hasCap(fresh, 'delete_media')) return errorResponse('you can only delete your own posts', 403)
     // R2 objects first (best-effort), then dependent rows, then the row itself.
     for (const col of keyCols[kind]) {
       const key = row.rows[0][col]
