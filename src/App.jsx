@@ -94,8 +94,14 @@ function InnerApp() {
     try {
       const params = new URLSearchParams(window.location.search)
       const kind = params.get('shared')
-      const id = params.get('id')
-      return (id && (kind === 'post' || kind === 'reel' || kind === 'story')) ? { kind, id } : null
+      const id = params.get('id')?.trim()
+      if (id && (kind === 'post' || kind === 'reel' || kind === 'story')) return { kind, id }
+      if (params.has('shared') || params.has('id')) {
+        params.delete('shared')
+        params.delete('id')
+        window.history.replaceState({}, '', params.toString() ? `${window.location.pathname}?${params.toString()}${window.location.hash}` : `${window.location.pathname}${window.location.hash}`)
+      }
+      return null
     } catch { return null }
   })
   const [homeRefresh, setHomeRefresh] = useState(0)

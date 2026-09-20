@@ -89,6 +89,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const [livePosts, setLivePosts] = useState<any[]>([])
   const [liveStories, setLiveStories] = useState<any[]>([])
   const [feedTick, setFeedTick] = useState(0)
+  const [feedLoaded, setFeedLoaded] = useState(false)
 
   const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
   const approvedPosts: any[] = []
@@ -101,6 +102,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
         if (cancelled) return
         setLivePosts(Array.isArray(d?.posts) ? d.posts : [])
         setLiveStories(Array.isArray(d?.stories) ? d.stories : [])
+        setFeedLoaded(true)
       })
       .catch((e: any) => { if (!cancelled) console.warn('[feed] load failed', e?.message || e) })
     return () => { cancelled = true }
@@ -175,22 +177,26 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const currentUser = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   useEffect(() => {
-    if (!sharedContent || sharedContent.kind === 'reel') return
+    if (!sharedContent || sharedContent.kind === 'reel' || !feedLoaded) return
     if (sharedContent.kind === 'story') {
       const index = allMoments.findIndex((s: any) => String(s.id) === sharedContent.id)
       if (index >= 0) {
         setMomentIdx(index)
-        onSharedContentHandled?.()
+      } else {
+        showToast('That shared story is no longer available.', 'warning', 2500)
       }
+      onSharedContentHandled?.()
       return
     }
     const postIndex = livePosts.findIndex((p: any) => String(p.id) === sharedContent.id)
     if (postIndex >= 0) {
       const el = document.querySelector(`[data-post-id="${CSS.escape(sharedContent.id)}"]`)
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      onSharedContentHandled?.()
+    } else {
+      showToast('That shared post is no longer available.', 'warning', 2500)
     }
-  }, [sharedContent, livePosts, allMoments, onSharedContentHandled])
+    onSharedContentHandled?.()
+  }, [sharedContent, feedLoaded, livePosts, allMoments, onSharedContentHandled])
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const toggleLike = (key: string) => { toggleLikeKey(key); setLikesTick(x => x + 1); showToast('Added to your gratitude ❤️', 'success', 1000) }
   const bumpCommentCount = (key: string, delta: number) => {

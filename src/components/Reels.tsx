@@ -19,7 +19,7 @@ const fmtViews = (v: any): string => {
   return String(n)
 }
 
-export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void }) {
+export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }: { onOpenUser?: (u: any) => void; sharedReelId?: string; onSharedReelHandled?: () => void }) {
   const { isAdmin, isVerified } = useAuth()
   const [showCreate, setShowCreate] = useState(false)
   const [idx, setIdx] = useState(0)
@@ -70,6 +70,16 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
   }, [useServer])
 
   const allVideos = useMemo(() => [...serverReels], [serverReels])
+  useEffect(() => {
+    if (!sharedReelId || loadingServer) return
+    const target = allVideos.findIndex((r: Reel) => String(r.id) === String(sharedReelId))
+    if (target >= 0) {
+      setIdx(target)
+    } else {
+      setNotice('That shared reel is no longer available.')
+    }
+    onSharedReelHandled?.()
+  }, [sharedReelId, loadingServer, allVideos, onSharedReelHandled])
   // Empty feed guard: allVideos[idx] is undefined before any reels are approved,
   // which previously crashed this screen with "Cannot read properties of undefined".
   const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
