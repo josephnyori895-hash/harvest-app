@@ -624,7 +624,7 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
           <button type="button" key={`\${t.kind}_\${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open \${t.name} chat`}>
             <div className="relative w-[62px] h-[62px] mx-auto">
               <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
-              {Number(t.unread) > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-extrabold flex items-center justify-center border-2 border-black">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
+              {Number(t.unread) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-black shadow-sm">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
             </div>
             <p className="text-[11px] text-zinc-400 mt-1 truncate">{t.name}</p>
           </button>
