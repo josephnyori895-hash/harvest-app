@@ -38,6 +38,21 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
 
   useEffect(load, [load])
 
+  // Android hardware back should close an open department detail/settings
+  // screen before the app-level navigator changes tabs.
+  useEffect(() => {
+    const onNestedBack = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean }>).detail
+      if (!openSlug || !detail) return
+      detail.handled = true
+      setOpenSlug(null)
+      setDetail(null)
+      setEditing(false)
+    }
+    window.addEventListener('harvest:nested-back', onNestedBack)
+    return () => window.removeEventListener('harvest:nested-back', onNestedBack)
+  }, [openSlug])
+
   useEffect(() => {
     let live = true
     const refreshUnread = async () => {
