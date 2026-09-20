@@ -1,69 +1,120 @@
 # Harvest Family Church — Nyeri
 
-Instagram-style church community app for Harvest Family Church Nyeri — posts, reels, stories, groups, chat, live, music, map, and giving.
+Harvest Family is a mobile-first church community app for Harvest Family Church Nyeri.
 
-## Stack
-- **Frontend:** React 19 + Vite 8 + Tailwind + Capacitor Android
-- **Backend:** Fastify + Netlify Functions
-- **Database:** Netlify Database / PostgreSQL
-- **Media:** Netlify Blobs / S3-compatible storage
+## Production architecture
+
+- **Android app:** React 19 + Vite + Capacitor 8
+- **API:** Cloudflare Workers
+- **Database:** Cloudflare D1
+- **Media:** Cloudflare R2
+- **Realtime:** Durable Objects + WebSockets
 - **Payments:** M-Pesa Daraja integration
-- **Hosting:** Netlify
+- **Production APK:** built and signed by GitHub Actions, then served from the Worker
 
-The production frontend and API are served from the same site. `/api/*` is rewritten to the Netlify Function defined under `server/netlify/functions`.
+The production API is:
+
+`https://harvestfamily-api.harvestfamily.workers.dev`
+
+The permanent APK download endpoint is:
+
+`https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk`
+
+Cloudflare recommends using a custom domain/route rather than a `workers.dev` hostname for business-critical production workloads; the current `workers.dev` URL is retained as the immediately shareable release URL. citeturn2search0
+
+## Production gates
+
+Every main-branch release now requires:
+
+1. Frontend lint and TypeScript checks.
+2. Frontend admin/security contract tests.
+3. High-severity dependency audit.
+4. Production frontend build.
+5. Capacitor Android sync and signed release APK build.
+6. APK signature verification.
+7. Remote D1 migrations.
+8. Cloudflare Worker deployment.
+9. Authenticated production smoke checks.
+10. SHA-256 verification that the live APK exactly matches the signed build artifact.
+
+GitHub Actions also runs the worker syntax checks, media-upload contract test, Wrangler dry-run, and D1 migration parsing on CI.
+
+Production deployment uses the GitHub `production` environment and a serialized deployment concurrency group. GitHub environments can be used to restrict production deployment access and protect secrets. citeturn0search0turn0search1
 
 ## Local development
 
 ```bash
-npm install
+npm ci
 npm run dev
 
-# backend dependencies
-npm install --prefix server
+npm run lint
+npm run typecheck
+npm run test:all
+npm run build
+
+npm ci --prefix workers
+npm run test:media --prefix workers
 ```
 
-For local backend development, copy `server/.env.example` to `server/.env` and provide the required values. Do not commit `.env` files or production secrets.
-
-## Production build
+For local backend development:
 
 ```bash
-npm run build
+cd workers
+npm install
+npm run dev
 ```
 
-Netlify uses the repository `netlify.toml` configuration. The build installs backend dependencies before building the Vite frontend, and publishes `dist/`.
-
-## Capacitor Android
-
-```bash
-npm run build
-npx cap sync android
-cd android && ./gradlew assembleDebug
-```
+Never commit production secrets.
 
 ## Production configuration
 
-The frontend defaults to the same-origin `/api` endpoint in production. Keep `VITE_USE_API=true` (or unset it, since production defaults to the real API) and leave `VITE_API_URL` empty unless a separate API host is intentionally used.
+Frontend production configuration is injected by the release workflow:
 
-Required backend configuration includes:
-- `NETLIFY_DB_URL` or a configured Netlify Database connection
-- `JWT_SECRET`
-- `ADMIN_PIN_HASHES` (bcrypt hashes, never plaintext PINs)
-- `CORS_ORIGINS`
-- M-Pesa credentials and public `MPESA_CALLBACK_URL` when giving is enabled
+- `VITE_API_URL=https://harvestfamily-api.harvestfamily.workers.dev`
 
-Apply database migrations before relying on production data. Never put these secrets in GitHub source files.
+Worker secrets are supplied through Cloudflare/GitHub secret management, not source control. The production release requires at minimum the JWT, Cloudflare deployment, Android signing, admin bootstrap, and E2E smoke-test credentials configured in the appropriate secret stores.
 
-## Security / demo mode
+## Database recovery
 
-Demo account switching is development-only. Production authorization must come from the backend/JWT rather than localStorage values. The browser may retain a short-lived token/session identifier, but must not be treated as the authority for roles or permissions.
+Cloudflare D1 provides built-in Time Travel point-in-time recovery. Current Cloudflare documentation states that production D1 databases can be restored to a point within the supported retention window, so rollback procedures should use Time Travel rather than destructive ad-hoc SQL. citeturn3search0
 
-## CI
+## Realtime
 
-GitHub Actions validates the frontend build, installs backend dependencies, syntax-checks backend and Netlify modules, and syncs Capacitor Android.
+The Worker exposes authenticated WebSocket realtime transport for chat, presence, typing, and call signaling. Conversation membership and recipient authorization are rechecked server-side.
 
-## Deployment
+WebRTC calls may still depend on a TURN service on restrictive mobile networks. STUN-only operation is not treated as a guaranteed universal calling path; configure a production TURN service before advertising calls as universally reliable.
 
-Pushes to `main` trigger the connected Netlify project when production builds are active and the team's credit balance permits deployment. After configuring environment variables and the database, run a production smoke test against `/api` and the main application flows.
+## Release / rollback
+
+Do not distribute an APK until the latest main-branch release workflow is green.
+
+For an application-code rollback:
+
+1. Identify the last known-good commit.
+2. Revert or deploy that commit through the normal protected production workflow.
+3. Do **not** manually edit production D1 schema to reverse a migration.
+4. If a database state must be restored, use D1 Time Travel after confirming the required recovery point.
+5. Re-run the authenticated production smoke test and live APK SHA verification.
+
+See `docs/PRODUCTION_RELEASE.md` for the operator checklist.
+
+## Security
+
+- JWT configuration fails closed when the production secret is missing or too short.
+- CORS uses an explicit origin allowlist.
+- Realtime frames are size- and rate-limited.
+- Protected operations re-check the authenticated account and resource membership.
+- Production credentials are not intended to be stored in the repository.
+- CI blocks high-severity dependency vulnerabilities.
+
+## Church release link
+
+Share this APK URL with church members:
+
+`https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk`
+
+After installation, members should sign in using their own church account. Never share an administrator PIN publicly.
 
 ---
+
 Harvest Family Church Nyeri • 2026
