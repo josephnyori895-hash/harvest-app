@@ -618,15 +618,14 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
               return (
-                <button type="button" key={c.conversation_key} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }}
-                  className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-1 text-left transition active:scale-[0.99] ${unread > 0 ? 'bg-zinc-900/80' : 'hover:bg-zinc-900/50'}`}>
+                <div key={c.conversation_key} className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-1 transition ${unread > 0 ? 'bg-zinc-900/80' : 'hover:bg-zinc-900/50'}`}>
                   <div className="relative shrink-0">
                     <div className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-zinc-300 ${unread > 0 ? 'bg-gradient-to-br from-purple-600 to-fuchsia-600 p-[2px]' : 'bg-zinc-800'}`}>
                       <div className={`w-full h-full rounded-full flex items-center justify-center ${unread > 0 ? 'bg-zinc-900' : 'bg-zinc-800'}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
                     </div>
                     {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
                   </div>
-                  <div className="min-w-0 flex-1">
+                  <button type="button" onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
                       <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-zinc-200'}`}>{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
                       <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-zinc-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
