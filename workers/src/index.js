@@ -28,7 +28,7 @@ export default {
     // filename with `wrangler deploy --var RELEASE_APK_FILENAME:...`.
     if (url.pathname === '/harvest-family.apk' && request.method === 'GET') {
       const filename = env.RELEASE_APK_FILENAME
-      if (!filename || !/^harvest-family-[0-9]+-[0-9a-f]{7}\\.apk$/.test(filename)) {
+      if (!filename || !/^harvest-family-[0-9]+-[0-9a-f]{7}\.apk$/.test(filename)) {
         return new Response('APK release target unavailable', {
           status: 503,
           headers: {
