@@ -27,6 +27,8 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
   const [muted, setMuted] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
   const [posterFailed, setPosterFailed] = useState(false)
+  const [videoReady, setVideoReady] = useState(false)
+  const [videoError, setVideoError] = useState(false)
   // Real comments sheet on the current reel (server-backed post_comments).
   const [showComments, setShowComments] = useState(false)
   const [notice, setNotice] = useState('')
@@ -94,6 +96,8 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
     let active = true
     setGeneratedPoster('')
     setPosterFailed(false)
+    setVideoReady(false)
+    setVideoError(false)
     if (!cur?.video || cur.img) return () => { active = false }
     captureVideoFrame(cur.video, 0.1).then(blob => {
       if (!active || !blob) return
@@ -211,8 +215,9 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
                 stays visible and centered (no cropped edges) — TikTok-style. */}
             {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
             {cur.video ? <>
-              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black" onError={() => setPosterFailed(true)} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
-              {!cur.img && !generatedPoster && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Preparing video preview…</p></div></div>}
+              {!videoReady && !videoError && <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />}
+              {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p></div></div>}
+              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onError={() => setVideoError(true)} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
             </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}
             {heart && (
               <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
