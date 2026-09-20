@@ -342,14 +342,14 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     return (
       <main className="h-[100dvh] bg-black text-white flex flex-col">
         <header className="h-[72px] shrink-0 border-b border-zinc-800/80 bg-black/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-black/20">
-          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full hover:bg-zinc-900 text-xl text-white" aria-label="Back">‹</button>
+          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-600/90 to-fuchsia-600/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
-            {isTeam ? '🤝' : (active.username?.[0] || '?').toUpperCase()}
-            {!isTeam && presence[active.username]?.online && <span className="absolute -right-0.5 -bottom-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-black" />}
+            <div className="w-full h-full rounded-full bg-zinc-900 border-2 border-zinc-950 flex items-center justify-center font-bold text-white">{isTeam ? (team!.kind === 'department' ? '🤝' : '👥') : (active.username?.[0] || '?').toUpperCase()}</div>
+            {!isTeam && presence[active.username]?.online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-[3px] border-zinc-950" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-semibold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
-            <p className="text-xs text-zinc-400">{isTeam ? (team!.kind === 'group' ? 'Group chat' : 'Department team chat') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Church family'}</p>
+            <p className="font-bold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+            <p className="text-xs text-zinc-400">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Harvest church family'}</p>
           </div>
           {sending ? <span className="text-[10px] text-zinc-400">···</span> : null}
         </header>
@@ -435,18 +435,18 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
               <button type="button" onClick={() => setAttach(null)} className="ml-auto text-zinc-400" aria-label="Remove attachment">✕</button>
             </div>
           )}
-          <div className="max-w-3xl mx-auto flex items-end gap-2">
-            <label className="w-11 h-11 rounded-full bg-zinc-800 text-zinc-300 flex items-center justify-center text-xl cursor-pointer shrink-0" title="Send a photo">
+          <div className="max-w-3xl mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
+            <label className="w-10 h-10 rounded-full text-zinc-300 hover:text-white hover:bg-white/10 flex items-center justify-center text-lg cursor-pointer shrink-0" title="Send a photo">
               📷
               <input type="file" accept="image/*" className="hidden" onChange={e => setAttach(e.target.files?.[0] || null)} />
             </label>
             <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => setText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              rows={1} placeholder="Message…"
+              rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
               className="flex-1 resize-none min-h-11 max-h-28 bg-zinc-900/90 border border-zinc-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-zinc-500 transition" />
             <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
-              className="h-11 w-11 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 text-white text-lg font-bold disabled:opacity-40 shrink-0" aria-label="Send">
-              {sending ? '…' : '➤'}
+              className="h-10 w-10 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-fuchsia-500 text-white text-base font-bold shadow-lg shadow-purple-900/30 disabled:opacity-30 disabled:shadow-none active:scale-95 transition shrink-0" aria-label="Send">
+              {sending ? '…' : '↑'}
             </button>
           </div>
         </div>
