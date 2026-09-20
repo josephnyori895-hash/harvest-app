@@ -88,11 +88,15 @@ export class Realtime {
 
   // Conversation fan-out: for DMs, both users' sockets; for groups, all members' sockets.
   async fanoutConversation(conversationKey, frame) {
-    if (conversationKey.startsWith('group:')) {
-      const slug = conversationKey.slice('group:'.length)
-      const g = await query(this.env, 'SELECT id FROM groups WHERE slug=?', [slug])
-      if (!g.rows[0]) return
-      const m = await query(this.env, 'SELECT user_id FROM group_members WHERE group_id=?', [g.rows[0].id])
+    if (conversationKey.startsWith('group:') || conversationKey.startsWith('department:')) {
+      const isDepartment = conversationKey.startsWith('department:')
+      const slug = conversationKey.slice(isDepartment ? 'department:'.length : 'group:'.length)
+      const membershipTable = isDepartment ? 'department_members' : 'group_members'
+      const idColumn = isDepartment ? 'department_id' : 'group_id'
+      const parentTable = isDepartment ? 'departments' : 'groups'
+      const parent = await query(this.env, `SELECT id FROM ${parentTable} WHERE slug=?`, [slug])
+      if (!parent.rows[0]) return
+      const m = await query(this.env, `SELECT user_id FROM ${membershipTable} WHERE ${idColumn}=?`, [parent.rows[0].id])
       const ids = m.rows.map(r => r.user_id)
       if (ids.length) {
         const ph = ids.map(() => '?').join(',')
@@ -121,14 +125,30 @@ export class Realtime {
     if (!me) { ack({ error: 'session expired' }); return }
 
     const canUseConversation = async conversationKey => {
-      if (!conversationKey) return false
-      const prefix = 'harvest:chat:'
-      if (!conversationKey.startsWith(prefix)) return false
-      const names = conversationKey.slice(prefix.length).split(':')
-      if (names.length !== 2 || !names[0] || !names[1]) return false
-      const meRow = await query(this.env, 'SELECT username FROM users WHERE id=?', [me.id])
-      const my = meRow.rows[0]?.username
-      return !!my && (my === names[0] || my === names[1])
+      const key = String(conversationKey || '')
+      if (!key) return false
+      if (key.startsWith('harvest:chat:')) {
+        const names = key.slice('harvest:chat:'.length).split(':')
+        if (names.length !== 2 || !names[0] || !names[1]) return false
+        return names.includes(me.username)
+      }
+      if (key.startsWith('group:')) {
+        const slug = key.slice('group:'.length)
+        const g = await query(this.env, 'SELECT id FROM groups WHERE slug=?', [slug])
+        if (!g.rows[0]) return false
+        if (me.role === 'admin') return true
+        const m = await query(this.env, 'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?', [g.rows[0].id, me.id])
+        return !!m.rows[0]
+      }
+      if (key.startsWith('department:')) {
+        const slug = key.slice('department:'.length)
+        const d = await query(this.env, 'SELECT id FROM departments WHERE slug=?', [slug])
+        if (!d.rows[0]) return false
+        if (me.role === 'admin') return true
+        const m = await query(this.env, 'SELECT 1 FROM department_members WHERE department_id=? AND user_id=?', [d.rows[0].id, me.id])
+        return !!m.rows[0]
+      }
+      return false
     }
 
     switch (event) {
@@ -138,6 +158,24 @@ export class Realtime {
         if (!text || text.length > 4000) return ack({ error: 'body 1..4000 chars required' })
         const now = new Date()
         const nowIso = now.toISOString()
+
+        if (data.kind === 'group' && data.department) {
+          const slug = String(data.department || data.departmentSlug || '').trim()
+          const d = await query(this.env, 'SELECT id, slug FROM departments WHERE slug=?', [slug])
+          if (!d.rows[0]) return ack({ error: 'department not found' })
+          const mem = await query(this.env, 'SELECT 1 FROM department_members WHERE department_id=? AND user_id=?', [d.rows[0].id, me.id])
+          if (!mem.rows[0] && me.role !== 'admin') return ack({ error: 'department membership required' })
+          const conv = `department:${d.rows[0].slug}`
+          const id = crypto.randomUUID()
+          await query(
+            this.env,
+            `INSERT INTO messages (id, kind, conversation_key, sender_id, sender_username, group_id, body, status, created_at) VALUES (?, 'group', ?, ?, ?, NULL, ?, 'sent', ?)`,
+            [id, conv, me.id, me.username, text, nowIso],
+          )
+          const msg = { id, kind: 'group', conversation_key: conv, from: me.username, departmentSlug: slug, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
+          await this.fanoutConversation(conv, { event: 'chat:message', data: msg })
+          return ack({ ok: true, id, serverId: id, at: msg.at, status: 'sent' })
+        }
 
         if (data.kind === 'group') {
           const slug = String(data.groupSlug || '').trim()
