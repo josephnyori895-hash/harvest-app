@@ -134,6 +134,9 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const pressTimer = useRef<number | null>(null)
+  const swipeStartX = useRef<number | null>(null)
+  const swipeStartY = useRef<number | null>(null)
+  const [actionFor, setActionFor] = useState<string | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
   // Last-seen unread counts (peer → count) + currently open conversation,
   // so the background poller can detect FRESH incoming messages.
@@ -326,6 +329,36 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
     pressTimer.current = window.setTimeout(() => setReactingFor(String(m.id)), 450)
   }
   const cancelPress = () => { if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = null } }
+  const startSwipe = (e: React.TouchEvent, m: any) => {
+    swipeStartX.current = e.touches[0]?.clientX ?? null
+    swipeStartY.current = e.touches[0]?.clientY ?? null
+    startPress(m)
+  }
+  const endSwipe = (e: React.TouchEvent, m: any) => {
+    cancelPress()
+    const sx = swipeStartX.current
+    const sy = swipeStartY.current
+    swipeStartX.current = null; swipeStartY.current = null
+    if (sx == null || sy == null) return
+    const dx = e.changedTouches[0]?.clientX - sx
+    const dy = e.changedTouches[0]?.clientY - sy
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      setReplyTo(m)
+      setActionFor(null)
+    }
+  }
+  const copyMessage = async (m: any) => {
+    const value = String(m.text || '')
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setNotice('Message copied')
+    } catch {
+      setNotice('Copy is not available on this device')
+    }
+    window.setTimeout(() => setNotice(''), 1800)
+    setActionFor(null)
+  }
 
   const usersForSection = useMemo(() => {
     const list = users.filter((u: any) => u.username && u.username !== currentUser)
@@ -396,7 +429,7 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                   <div className="relative max-w-[80%]">
                     {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-zinc-800 border border-zinc-700 shadow text-xs`}>{m.reaction}</button>}
                     <div
-                      onContextMenu={e => { e.preventDefault(); setReactingFor(isReactionOpen ? null : String(m.id)) }}
+                      onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
                       onTouchStart={(e) => { startSwipe(e); startPress(m) }} onTouchEnd={(e) => { endSwipe(e, m); cancelPress() }} onTouchMove={cancelPress}
                       onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))
                       className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white rounded-br-md shadow-purple-950/30' : 'bg-zinc-800/95 text-zinc-100 rounded-bl-md border border-zinc-700/50'}`}
@@ -416,12 +449,14 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                         <Ticks status={m.status} mine={mine} />
                       </div>
                     </div>
-                    {isReactionOpen && (
-                      <div className={`absolute -top-11 ${mine ? 'right-0' : 'left-0'} z-20 flex gap-1 bg-zinc-800 border border-zinc-700 shadow-lg rounded-full px-2 py-1.5`}>
+                    {(isReactionOpen || actionFor === String(m.id)) && (
+                      <div className={`absolute -top-14 ${mine ? 'right-0' : 'left-0'} z-30 flex items-center gap-1 bg-zinc-900/95 backdrop-blur border border-zinc-700 shadow-2xl rounded-2xl px-2 py-1.5`}>
                         {REACTIONS.map(r => (
-                          <button key={r} type="button" onClick={e => { e.stopPropagation(); react(m, r) }} className="text-xl hover:scale-125 transition-transform">{r}</button>
+                          <button key={r} type="button" aria-label={`React ${r}`} onClick={e => { e.stopPropagation(); react(m, r); setActionFor(null) }} className="w-8 h-8 rounded-full text-lg hover:bg-zinc-800 active:scale-90 transition">{r}</button>
                         ))}
-                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null) }} className="text-xs font-bold px-1 text-blue-400" title="Reply">↩</button>
+                        <span className="h-6 w-px bg-zinc-700 mx-0.5" />
+                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null); setActionFor(null) }} className="w-8 h-8 rounded-full hover:bg-zinc-800 text-blue-400 font-bold" aria-label="Reply">↩</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); void copyMessage(m) }} className="w-8 h-8 rounded-full hover:bg-zinc-800 text-zinc-300 font-bold" aria-label="Copy message">⧉</button>
                       </div>
                     )}
                     {actionFor === String(m.id) && (
