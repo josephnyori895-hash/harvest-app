@@ -270,7 +270,13 @@ function InnerApp() {
           {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} />}
           {tab === 'admin' && (
             <RequireRole role="admin">
-              <Admin onBack={() => setTab('profile')} users={users} setUsers={()=>{}} />
+              <Admin
+                onBack={() => setTab('profile')}
+                users={users}
+                setUsers={()=>{}}
+                onOpenGroups={() => setTab('groups')}
+                onOpenDepartments={() => setTab('departments')}
+              />
             </RequireRole>
           )}
         </div>
