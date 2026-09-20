@@ -28,10 +28,13 @@ function timeAgo(iso?: string) {
 function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [videoReady, setVideoReady] = useState(false)
+  const [generatedPoster, setGeneratedPoster] = useState<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
-    setReady(false); setFailed(false)
-    if (!poster) { setReady(true); return () => { cancelled = true } }
+    setReady(false); setFailed(false); setVideoReady(false); setGeneratedPoster(null)
+    if (!poster) return () => { cancelled = true }
     const img = new Image()
     img.decoding = 'async'
     img.onload = () => { if (!cancelled) setReady(true) }
@@ -39,12 +42,41 @@ function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string;
     img.src = poster
     return () => { cancelled = true; img.onload = null; img.onerror = null }
   }, [poster])
+
+  const captureFrame = (video: HTMLVideoElement) => {
+    if (poster || generatedPoster || !video.videoWidth || !video.videoHeight) return
+    try {
+      const canvas = document.createElement('canvas')
+      const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight))
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const frame = canvas.toDataURL('image/jpeg', 0.82)
+      if (frame.length > 100) setGeneratedPoster(frame)
+    } catch {
+      // Some WebViews block canvas extraction for media; the loaded video frame
+      // remains the fallback preview in that case.
+    }
+  }
+
+  const previewPoster = poster || generatedPoster || undefined
+  const showPoster = Boolean(previewPoster && (ready || generatedPoster))
   return <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0]">
-    {!ready && !failed && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-[#F4E8D0] via-[#EDE9FE] to-[#F4E8D0]" aria-label="Loading video preview" />}
-    {poster && !failed && <img src={poster} alt={alt} decoding="async" fetchPriority="high" className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`} />}
+    {!videoReady && !showPoster && !failed && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-[#F4E8D0] via-[#EDE9FE] to-[#F4E8D0]" aria-label="Loading video preview" />}
+    {previewPoster && !failed && <img src={previewPoster} alt={alt} decoding="async" fetchPriority="high" className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${showPoster ? 'opacity-100' : 'opacity-0'}`} />}
     {failed && <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
-    <video src={src} poster={poster || undefined} controls playsInline preload={poster ? "metadata" : "auto"} className={`absolute inset-0 w-full h-full object-cover bg-[#1a1714] shadow-inner transition-opacity duration-200 ${ready || !poster ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} aria-label="Video" />
-    {poster && ready && <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>}
+    <video
+      src={src}
+      poster={previewPoster}
+      controls
+      playsInline
+      preload="metadata"
+      onLoadedData={e => { setVideoReady(true); captureFrame(e.currentTarget) }}
+      onError={() => { if (!previewPoster) setFailed(true) }}
+      className={`absolute inset-0 w-full h-full object-cover bg-[#1a1714] shadow-inner transition-opacity duration-200 ${showPoster ? 'opacity-0' : videoReady ? 'opacity-100' : 'opacity-0'}`}
+      aria-label="Video"
+    />
+    {showPoster && <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>}
   </div>
 }
 
