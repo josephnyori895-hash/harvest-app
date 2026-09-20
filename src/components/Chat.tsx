@@ -629,7 +629,6 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                     <div className="flex items-center gap-2">
                       <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-zinc-200'}`}>{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
                       <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-zinc-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
-                      <button type="button" onClick={e => { e.stopPropagation(); togglePinned(c.conversation_key) }} className="shrink-0 text-xs text-zinc-500 hover:text-amber-300" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
                       <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-zinc-100 font-semibold' : 'text-zinc-400'}`}>
@@ -637,8 +636,8 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
                       </p>
                       {unread > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-[#ff3040] text-white text-[9px] font-extrabold flex items-center justify-center shadow-sm" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>}
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-zinc-500 hover:text-amber-300 hover:bg-zinc-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
               )
             })}
           </section>
