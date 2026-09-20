@@ -8,7 +8,8 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "cf:provision": "node scripts/provision.mjs",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test:media": "node scripts/test-media-upload.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3"
