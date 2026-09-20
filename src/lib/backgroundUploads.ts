@@ -22,6 +22,9 @@ export type UploadTask = {
   caption?: string
   title?: string
   artist?: string
+  speaker?: string
+  scripture?: string
+  description?: string
   cover?: File | Blob
   /** Reels only: pre-uploaded poster key (client-picked cover frame). */
   cover_key?: string
@@ -191,6 +194,9 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
       caption: task.caption,
       title: task.title,
       artist: task.artist,
+      speaker: task.speaker,
+      scripture: task.scripture,
+      description: task.description || task.caption,
       cover_key: coverKey,
       poster_key: task.cover_key,
     })
