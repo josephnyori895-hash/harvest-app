@@ -168,7 +168,14 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     return () => { active = false }
   }, [cur?.video, cur?.img])
 
-  const next = () => setIdx(i => (i + 1) % allVideos.length)
+  const next = () => {
+    setIdx(i => {
+      const nextIdx = i + 1
+      if (nextIdx < allVideos.length) return nextIdx
+      if (hasMoreReels) void loadMoreReels()
+      return allVideos.length > 0 ? i : 0
+    })
+  }
   const prev = () => setIdx(i => (i - 1 + allVideos.length) % allVideos.length)
   // Mobile: swipe up/down to move between reels (IG-style).
   const touchY = useRef<number | null>(null)
