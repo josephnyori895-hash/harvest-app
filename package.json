@@ -12,7 +12,8 @@
     "test:security": "node --test scripts/test-security-hardening.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
-    "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs"
+    "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs",
+    "test:all": "npm run test:admin && npm run test:security"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
