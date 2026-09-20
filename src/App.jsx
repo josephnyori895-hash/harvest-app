@@ -220,6 +220,10 @@ function InnerApp() {
     import('@capacitor/app').then(({ App: CapApp }) => {
       if (disposed) return
       CapApp.addListener('backButton', () => {
+        // Let nested Groups/Departments/Chat screens consume Android back first.
+        const nestedBack = { handled: false }
+        window.dispatchEvent(new CustomEvent('harvest:nested-back', { detail: nestedBack }))
+        if (nestedBack.handled) return
         if (groupDetail) return setGroupDetail(null)
         if (userList) return setUserList(null)
         if (viewUser) { setViewUser(null); return setTab(backTarget) }
