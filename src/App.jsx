@@ -451,6 +451,13 @@ function Onboarding({ onAuthSuccess }) {
 function Activity() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [clock, setClock] = useState(0)
+  useEffect(() => {
+    const tick = () => setClock(Date.now())
+    tick()
+    const timer = window.setInterval(tick, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
   useEffect(() => {
     let cancelled = false
     fetch(`${API}/api/activity`, { headers: authHeaders() })
@@ -471,8 +478,8 @@ function Activity() {
     <div key={keyi} className="flex gap-3 items-center bg-zinc-900 border border-zinc-800 rounded-2xl p-3">{children}</div>
   )
   const timeAgo = iso => {
-    if (!iso) return ''
-    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+    if (!iso || !clock) return ''
+    const m = Math.floor((clock - new Date(iso).getTime()) / 60000)
     if (m < 1) return 'now'
     if (m < 60) return `${m}m`
     const h = Math.floor(m / 60); if (h < 24) return `${h}h`
