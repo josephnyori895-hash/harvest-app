@@ -7,7 +7,7 @@ import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
 
-type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
+type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
 
@@ -67,6 +67,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             img: r.poster_url || r.img || undefined,
             video: r.hls_url || r.video || undefined,
             music: r.music || null,
+            liked: Boolean(r.liked),
           }))
         setServerReels(mapped)
         setReelsNextOffset(Number(r.nextOffset) || mapped.length)
@@ -102,6 +103,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           img: item.poster_url || item.img || undefined,
           video: item.hls_url || item.video || undefined,
           music: item.music || null,
+          liked: Boolean(item.liked),
         }))
       setServerReels(prev => [...prev, ...mapped])
       setReelsNextOffset(Number(r.nextOffset) || reelsNextOffset + mapped.length)
@@ -203,7 +205,35 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const url = cur.id != null ? `${window.location.origin}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : window.location.href; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
   const shareWa = () => { if (!cur) return; sharePostToWhatsApp({ author: cur.user, caption: cur.cap, id: cur.id != null ? String(cur.id) : undefined, kind: 'reel' }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
-  const toggleEncourage = () => setEncouraged(p => ({ ...p, [key]: !p[key] }))
+  const toggleEncourage = async () => {
+    if (!useServer || cur?.id == null) {
+      setEncouraged(p => ({ ...p, [key]: !p[key] }))
+      return
+    }
+    const wasLiked = Boolean(cur.liked)
+    setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
+      ? { ...r, liked: !wasLiked }
+      : r))
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\\/$/, '')
+      const res = await fetch(API + '/api/likes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+        body: JSON.stringify({ scope: 'reel', id: String(cur.id) }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Could not update appreciation')
+      setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
+        ? { ...r, liked: Boolean(data.liked) }
+        : r))
+    } catch (e: any) {
+      setServerReels(rs => rs.map(r => String(r.id) === String(cur.id)
+        ? { ...r, liked: wasLiked }
+        : r))
+      flash(e?.message || 'Could not update appreciation')
+    }
+  }
   // Instagram-style self-delete: authors remove their own reels; admin can remove any.
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const [deleting, setDeleting] = useState(false)
