@@ -20,8 +20,13 @@ const hints: Record<ContentType, string> = {
 export default function PostCreate({ onDone }: Props) {
   const { role, isVerified, isAdmin } = useAuth()
   const user = useMemo(() => ({ role, verified: isVerified }), [role, isVerified])
-  // Members see Story only. Admins get the full console: post, reel, track, announcement.
-  const available: ContentType[] = isAdmin ? ['post', 'video', 'sermon', 'music', 'announcement'] : ['story']
+  // One composer, with options derived from the user's privileges.
+  // Member: story. Verified: story + community media/sermon/music. Admin: everything.
+  const available: ContentType[] = isAdmin
+    ? ['post', 'video', 'sermon', 'music', 'announcement']
+    : isVerified
+      ? ['post', 'story', 'video', 'sermon', 'music']
+      : ['story']
   const [type, setType] = useState<ContentType>(available[0])
   const [caption, setCaption] = useState('')
   const [title, setTitle] = useState('')
@@ -34,7 +39,7 @@ export default function PostCreate({ onDone }: Props) {
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
 
-  const accept = type === 'video' ? 'video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? 'audio/mpeg,audio/mp4,mp3,audio/x-m4a,video/mp4,video/webm,.mp3,.m4a,.mp4' : 'image/*,video/*'
+  const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,audio/mpeg,.mp4,video/mp4' : 'image/*,video/*'
   const needsFile = type !== 'announcement'
 
   const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,6 +102,8 @@ export default function PostCreate({ onDone }: Props) {
             caption: caption.trim(),
             title: (type === 'music' || type === 'sermon') ? title.trim() : undefined,
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
+            speaker: type === 'sermon' ? artist.trim() || undefined : undefined,
+            scripture: undefined,
           },
         }).catch(() => {})
         onDone()
@@ -175,7 +182,8 @@ export default function PostCreate({ onDone }: Props) {
           )}
           {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
           {type === 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Short description (optional) — what is this teaching about?" className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
-          {!isAdmin && <p className="text-[11px] text-[#766E63] mt-2">Members share stories — posts, reels and music are published by your church admins.</p>}
+          {!isAdmin && !isVerified && <p className="text-[11px] text-[#766E63] mt-2">Members can share stories. Verification unlocks posts, videos, music and sermons.</p>}
+          {!isAdmin && isVerified && <p className="text-[11px] text-[#766E63] mt-2">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
         </div>
 
         {notice && <div role="alert" className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
