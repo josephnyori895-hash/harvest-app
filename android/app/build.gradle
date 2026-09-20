@@ -14,8 +14,10 @@ android {
         applicationId "com.harvestfamily.nyeri"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        def harvestVersionCode = (System.getenv("HARVEST_VERSION_CODE") ?: "1").toInteger()
+    def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0"
+    versionCode harvestVersionCode
+        versionName harvestVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
