@@ -90,7 +90,31 @@ function InnerApp() {
   const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
+  const [sharedContent, setSharedContent] = useState<{ kind: 'post' | 'reel' | 'story'; id: string } | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const kind = params.get('shared')
+      const id = params.get('id')
+      return (id && (kind === 'post' || kind === 'reel' || kind === 'story')) ? { kind, id } : null
+    } catch { return null }
+  })
   const [homeRefresh, setHomeRefresh] = useState(0)
+  useEffect(() => {
+    if (!sharedContent) return
+    if (sharedContent.kind === 'reel') setTab('reels')
+    else setTab('home')
+  }, [sharedContent])
+
+  const clearSharedContent = () => {
+    setSharedContent(null)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('shared')
+      url.searchParams.delete('id')
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash)
+    } catch {}
+  }
+
   const handleTab = (t) => {
     if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
     setTab(t)
@@ -204,9 +228,9 @@ function InnerApp() {
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="flex-1 overflow-auto pb-[calc(64px+env(safe-area-inset-bottom))]">
-          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} />}
+          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
-          {tab === 'reels' && <Reels onOpenUser={openProfile} />}
+          {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : undefined} onSharedReelHandled={clearSharedContent} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
           {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
