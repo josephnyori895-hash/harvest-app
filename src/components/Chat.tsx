@@ -497,7 +497,9 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
         <header className="h-[72px] shrink-0 border-b border-zinc-800/80 bg-black/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-black/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-600/90 to-fuchsia-600/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
-            <div className="w-full h-full rounded-full bg-zinc-900 border-2 border-zinc-950 flex items-center justify-center font-bold text-white">{isTeam ? (team!.kind === 'department' ? '🤝' : '👥') : (active.username?.[0] || '?').toUpperCase()}</div>
+            <div className="w-full h-full rounded-full bg-zinc-900 border-2 border-zinc-950 flex items-center justify-center font-bold text-white overflow-hidden">
+              {isTeam ? (team!.kind === 'department' ? '🤝' : '👥') : active.avatar_url ? <img src={active.avatar_url} alt="" className="w-full h-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
+            </div>
             {!isTeam && presence[active.username]?.online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-[3px] border-zinc-950" />}
           </div>
           <div className="min-w-0 flex-1">
@@ -641,9 +643,9 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
           <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
             <div className="flex gap-4 overflow-x-auto pb-3">
               {inbox.slice(0, 12).map(c => (
-                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="shrink-0 w-[68px] text-center" aria-label={`Open chat with ${c.peer_name}`}>
+                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }} className="shrink-0 w-[68px] text-center" aria-label={`Open chat with ${c.peer_name}`}>
                   <div className="relative p-[2.5px] rounded-full" style={{ background: c.unread > 0 ? 'linear-gradient(45deg,#f59e0b,#ec4899,#7c3aed)' : 'transparent', border: c.unread > 0 ? 'none' : '2px solid #3f3f46' }}>
-                    <div className="w-[58px] h-[58px] rounded-full bg-zinc-800 border-2 border-black flex items-center justify-center font-extrabold text-lg text-zinc-300">{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    <div className="w-[58px] h-[58px] rounded-full bg-zinc-800 border-2 border-black overflow-hidden flex items-center justify-center font-extrabold text-lg text-zinc-300">{c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
                     {presence[c.peer]?.online && <span className="absolute right-0.5 bottom-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
                   </div>
                   <p className="text-[11px] text-zinc-400 mt-1 truncate">{c.peer_name?.split(' ')[0] || c.peer}</p>
