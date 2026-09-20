@@ -36,7 +36,7 @@ export async function handleSermons(request, env, ctx) {
     const limit = Math.min(parseInt(qp.limit || '50', 10), 100)
     const { rows } = await query(
       env,
-      `SELECT s.id, s.title, s.speaker, s.scripture, s.description, s.kind, s.duration_secs, s.bytes, s.plays, s.downloads, s.created_at
+      `SELECT s.id, s.title, s.speaker, s.scripture, s.description, s.kind, s.duration_secs, s.bytes, s.plays, s.downloads, s.created_at, s.media_key, s.cover_key
          FROM sermons s ORDER BY s.created_at DESC LIMIT ?`,
       [limit],
     )
