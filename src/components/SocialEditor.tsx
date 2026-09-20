@@ -1,0 +1,15 @@
+import { useEffect, useState } from 'react'
+
+const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,'')
+const token=()=>localStorage.getItem('harvest_token')||''
+
+export default function SocialEditor({ kind, id, caption: initialCaption, musicTrack, onDone }:{kind:'post'|'reel'|'story';id:string;caption:string;musicTrack?:any;onDone:(changed?:any)=>void}) {
+  const [caption,setCaption]=useState(initialCaption||'')
+  const [query,setQuery]=useState('')
+  const [tracks,setTracks]=useState<any[]>([])
+  const [selected,setSelected]=useState<any|null>(musicTrack||null)
+  const [busy,setBusy]=useState(false)
+  useEffect(()=>{ if(!query.trim()){setTracks([]);return}; const t=setTimeout(()=>fetch(API+'/api/music?limit=50').then(r=>r.json()).then(d=>setTracks((d.tracks||[]).filter((x:any)=>(x.title+' '+x.artist).toLowerCase().includes(query.toLowerCase())))).catch(()=>setTracks([])),250); return()=>clearTimeout(t)},[query])
+  const save=async()=>{if(busy)return;setBusy(true);try{const r=await fetch(API+'/api/'+kind+'s/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({caption,music_track_id:selected?.id||null})});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Could not save changes');onDone(d)}catch(e:any){alert(e.message||'Could not save changes')}finally{setBusy(false)}}
+  return <div className="fixed inset-0 z-[70] bg-black/60 flex items-end sm:items-center justify-center" onClick={()=>onDone()}><div className="w-full sm:max-w-lg bg-white rounded-t-[28px] sm:rounded-[28px] p-5" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit {kind}</h2><button onClick={()=>onDone()} className="text-xl">×</button></div><textarea value={caption} onChange={e=>setCaption(e.target.value)} rows={5} className="mt-4 w-full border rounded-2xl p-3 text-sm" placeholder="Write a caption..." /><div className="mt-4"><p className="text-xs font-bold text-zinc-500">MUSIC</p>{selected&&<div className="mt-2 flex items-center gap-2 p-2 bg-purple-50 rounded-xl"><span>🎵</span><span className="flex-1 text-xs font-bold">{selected.title} · {selected.artist}</span><button onClick={()=>setSelected(null)}>×</button></div>}<input value={query} onChange={e=>setQuery(e.target.value)} className="mt-2 w-full border rounded-2xl px-3 py-2 text-sm" placeholder="Search worship music..." />{tracks.length>0&&<div className="max-h-36 overflow-auto mt-2 space-y-1">{tracks.map(t=><button key={t.id} onClick={()=>{setSelected(t);setQuery('')}} className="w-full text-left p-2 rounded-xl bg-zinc-50"><b className="text-xs">{t.title}</b><span className="block text-[10px] text-zinc-500">{t.artist}</span></button>)}</div>}</div><div className="flex gap-2 mt-5"><button onClick={()=>onDone()} className="flex-1 py-3 rounded-2xl bg-zinc-100 font-bold">Cancel</button><button disabled={busy} onClick={()=>void save()} className="flex-1 py-3 rounded-2xl bg-purple-600 text-white font-bold">{busy?'Saving…':'Save changes'}</button></div></div></div>
+}
