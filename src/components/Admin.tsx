@@ -16,9 +16,10 @@ type Props = {
   setUsers: (u: any[]) => void
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
+  onOpenSermons?: () => void
 }
 
-export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments }: Props) {
+export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons }: Props) {
   const [tab, setTab] = useState<Tab>('moderation')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -291,7 +292,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
       <div className="grid grid-cols-2 gap-2 mb-4">
         <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">👥 Manage Groups</button>
-        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>
+        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>\n          <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'audit'] as const).map(value => (
