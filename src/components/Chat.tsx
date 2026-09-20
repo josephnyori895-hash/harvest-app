@@ -790,7 +790,6 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
       document.removeEventListener('visibilitychange', refreshVisible)
     }
   }, [])
-  if (teams.length === 0) return null
   return (
     <section className="px-4 pt-4 pb-1 border-b border-zinc-800">
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -808,8 +807,9 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
           )}
         </div>
       </div>
-      <div className="flex gap-4 overflow-x-auto pb-3">
-        {teams.map(t => (
+      {teams.length > 0 && (
+        <div className="flex gap-4 overflow-x-auto pb-3">
+          {teams.map(t => (
           <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
             <div className="relative w-[62px] h-[62px] mx-auto">
               <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
@@ -818,8 +818,12 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
             <p className="text-[11px] text-zinc-200 mt-1 truncate">{t.name}</p>
             <p className="text-[9px] uppercase tracking-wide text-zinc-600">{t.kind === 'department' ? 'Department' : 'Group'}</p>
           </button>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+      {teams.length === 0 && (
+        <p className="text-[11px] text-zinc-500 pb-3">No groups or departments yet. Use the buttons above to browse them.</p>
+      )}
     </section>
   )
 }
