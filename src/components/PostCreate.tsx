@@ -130,7 +130,7 @@ export default function PostCreate({ onDone }: Props) {
             scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
             music_track_id: ['post','video','story'].includes(type) ? musicTrack?.id : undefined,
             description: type === 'sermon' ? caption.trim() : undefined,
-            poster_key: coverKey,
+            cover_key: coverKey,
           },
         }).catch(() => {})
         onDone()
