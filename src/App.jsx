@@ -139,6 +139,8 @@ function InnerApp() {
     localStorage.removeItem('harvest_username')
     localStorage.removeItem('harvest_role')
     localStorage.removeItem('harvest_verified')
+    localStorage.removeItem('harvest_msgs')
+    localStorage.removeItem('harvest_pinned_chats')
     setOnboarded(false)
     setTab('home')
   }
