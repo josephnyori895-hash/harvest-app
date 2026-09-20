@@ -171,13 +171,14 @@ export async function handleChat(request, env, ctx) {
               MAX(m.created_at) AS last_at,
               (SELECT body FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
               (SELECT sender_username FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' THEN 1 ELSE 0 END) AS unread,
+              SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' AND mr.message_id IS NULL THEN 1 ELSE 0 END) AS unread,
               COUNT(*) AS total
          FROM messages m
+        LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
         WHERE m.conversation_key LIKE 'harvest:chat:%' AND (m.conversation_key LIKE ? OR m.conversation_key LIKE ?)
         GROUP BY m.conversation_key
         ORDER BY last_at DESC LIMIT 50`,
-      [fresh.username, `harvest:chat:${fresh.username}:%`, `harvest:chat:%:${fresh.username}`],
+      [fresh.id, fresh.username, `harvest:chat:${fresh.username}:%`, `harvest:chat:%:${fresh.username}`],
     )
     const out = []
     for (const r of rows) {
@@ -207,13 +208,14 @@ export async function handleChat(request, env, ctx) {
               MAX(m.created_at) AS last_at,
               (SELECT body FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
               (SELECT sender_username FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              COALESCE(SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' THEN 1 ELSE 0 END), 0) AS unread,
+              COALESCE(SUM(CASE WHEN m.sender_username != ? AND m.status = 'sent' AND mr.message_id IS NULL THEN 1 ELSE 0 END), 0) AS unread,
               COUNT(m.id) AS total
          FROM authorized a
          LEFT JOIN messages m ON m.conversation_key = a.conversation_key
+         LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
         GROUP BY a.conversation_key, a.kind, a.slug, a.name
         ORDER BY last_at DESC`,
-      [fresh.id, fresh.role, fresh.id, fresh.role, fresh.username],
+      [fresh.id, fresh.role, fresh.id, fresh.role, fresh.id, fresh.username],
     )
     const team_conversations = teamResult.rows.map(r => ({
       conversation_key: r.conversation_key,
@@ -235,7 +237,15 @@ export async function handleChat(request, env, ctx) {
     const body = await readJson(request)
     const conv = await getConversation(env, fresh, body.peer, body.group, body.department)
     if (conv.error) return errorResponse(conv.error, conv.code)
-    await query(env, `UPDATE messages SET status='seen' WHERE conversation_key=? AND sender_username != ? AND status != 'seen'`, [conv.key, fresh.username])
+    await query(
+      env,
+      `INSERT INTO message_reads (message_id, user_id, read_at)
+       SELECT id, ?, ?
+         FROM messages
+        WHERE conversation_key=? AND sender_username != ?
+       ON CONFLICT(message_id, user_id) DO UPDATE SET read_at=excluded.read_at`,
+      [fresh.id, new Date().toISOString(), conv.key, fresh.username],
+    )
     return jsonResponse({ ok: true })
   }
 
