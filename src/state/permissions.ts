@@ -11,7 +11,8 @@ export type HarvestUser = {
 /**
  * Upload policy (enforced identically by the server):
  * - stories: EVERY signed-in member — they expire after 24 hours.
- * - posts, reels/videos, music, announcements: verified members + admin only.
+ * - posts, reels/videos, music, sermons: verified members + admin.
+ * - announcements: admin only.
  * Unverified members are pointed to stories (or admin verification).
  */
 export function userType(user: HarvestUser): 'member' | 'verified' | 'admin' | 'guest' {
@@ -24,7 +25,6 @@ export function userType(user: HarvestUser): 'member' | 'verified' | 'admin' | '
 export function canCreateContent(user: HarvestUser, type: ContentType): boolean {
   const kind = userType(user)
   if (kind === 'admin') return true
-  if (type === 'sermon') return false // admin-published only (official teaching)
   if (type === 'story') return kind === 'member' || kind === 'verified'
   return kind === 'verified'
 }
@@ -32,10 +32,8 @@ export function canCreateContent(user: HarvestUser, type: ContentType): boolean 
 export function canPublishDirectly(user: HarvestUser, type: ContentType): boolean {
   const kind = userType(user)
   if (kind === 'admin') return true
-  // Stories publish instantly for everyone; other types publish instantly
-  // only for verified members (server auto-approves verified uploads).
   if (type === 'story') return kind === 'member' || kind === 'verified'
-  return kind === 'verified'
+  return kind === 'verified' && type === 'sermon'
 }
 
 export function canSubmitForApproval(user: HarvestUser, type: ContentType): boolean {
