@@ -576,7 +576,7 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
   const [teams, setTeams] = useState<TeamChat[]>([])
   useEffect(() => {
     let live = true
-    ;(async () => {
+    const refresh = async () => {
       const token = localStorage.getItem('harvest_token') || ''
       if (!token) return
       const headers = { Authorization: `Bearer ${token}` }
@@ -608,9 +608,12 @@ function TeamChatsRail({ onOpen }: { onOpen: (t: TeamChat) => void }) {
             unread: counts.get(`group:${x.slug}`) || 0,
           }))
         }
-      } catch { /* offline */ }      if (live) setTeams(out)
-    })()
-    return () => { live = false }
+      } catch { /* offline */ }
+      if (live) setTeams(out)
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 3000)
+    return () => { live = false; window.clearInterval(timer) }
   }, [])
   if (teams.length === 0) return null
   return (
