@@ -119,8 +119,8 @@ export async function handleMedia(request, env, ctx) {
       }
       const storedCt = String(obj.httpMetadata?.contentType || '')
       const kind = type === 'sermon_video' ? 'video' : 'audio'
-      if (kind === 'audio' && !storedCt.startsWith('audio/')) return errorResponse('sermon audio must be an audio file', 400)
-      if (kind === 'video' && !storedCt.startsWith('video/')) return errorResponse('sermon video must be a video file', 400)
+      if (kind === 'audio' && storedCt !== 'audio/mpeg') return errorResponse('sermon audio must be an MP3 file', 400)
+      if (kind === 'video' && storedCt !== 'video/mp4') return errorResponse('sermon video must be an MP4 file', 400)
       const id = uuid()
       await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
         [id, userId, String(title || caption || 'Untitled Sermon').trim().slice(0, 200), String(speaker || '').trim().slice(0, 200) || null, String(scripture || '').trim().slice(0, 200) || null, String(description || caption || '').trim().slice(0, 1000) || null, kind, key, Number(obj.size) || null])
