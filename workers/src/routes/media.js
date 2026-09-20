@@ -95,7 +95,7 @@ export async function handleMedia(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
-    const { key, type, caption, title, artist, speaker, scripture, description, cover_key: coverKeyRaw } = await readJson(request)
+    const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw } = await readJson(request)
     // Optional client-picked video poster (reels): a JPEG the client captured
     // from the chosen frame, uploaded to originals/post/… before confirm.
 
@@ -111,6 +111,7 @@ export async function handleMedia(request, env, ctx) {
     }
 
     const userId = fresh.id
+    if (musicTrackId) { const mt = await query(env, 'SELECT id FROM tracks WHERE id=?', [String(musicTrackId)]); if (!mt.rows[0]) return errorResponse('music track not found', 404) }
     const u = await query(env, 'SELECT group_name, constituency, faith, verified FROM users WHERE id=?', [userId])
     const sermonType = type === 'sermon_audio' || type === 'sermon_video'
     if (sermonType) {
@@ -147,7 +148,7 @@ export async function handleMedia(request, env, ctx) {
       const storedCt = String(obj.httpMetadata?.contentType || '')
       const mediaType = storedCt.startsWith('video/') ? 'video' : 'image'
       const id = uuid()
-      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type) VALUES (?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType])
+      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type, caption, music_track_id) VALUES (?,?,?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType, caption || '', musicTrackId || null])
       await audit(env, fresh, 'direct_publish', 'story', id, { key, caption, mediaType })
       return jsonResponse({ id, status: 'published', key }, 201)
     }
@@ -171,8 +172,8 @@ export async function handleMedia(request, env, ctx) {
       if (type === 'post') {
         await query(
           env,
-          `INSERT INTO posts (id, user_id, caption, original_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-          [id, userId, caption || '', key, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+          `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+          [id, userId, caption || '', key, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'reel') {
         // Optional client-picked poster (cover frame) for reels: captured by the
@@ -187,8 +188,8 @@ export async function handleMedia(request, env, ctx) {
         }
         await query(
           env,
-          `INSERT INTO reels (id, user_id, caption, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          [id, userId, caption || '', key, posterKey, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+          `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          [id, userId, caption || '', musicTrackId || null, key, posterKey, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'track') {
         // Optional cover art: uploaded as an image (originals/post/…) and linked here.
@@ -209,8 +210,8 @@ export async function handleMedia(request, env, ctx) {
     const id = uuid()
     await query(
       env,
-      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, status) VALUES (?,?,?,?,?,'pending')`,
-      [id, type, userId, caption || '', key],
+      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, music_track_id, status) VALUES (?,?,?,?,?,?,'pending')`,
+      [id, type, userId, caption || '', key, musicTrackId || null],
     )
     return jsonResponse({ id, status: 'pending', at: now }, 202)
   }
