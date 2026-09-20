@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
+import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 
 type Props = { onDone: () => void }
@@ -91,6 +92,23 @@ export default function PostCreate({ onDone }: Props) {
         if (!r.ok) throw new Error(d.error || 'Could not publish announcement')
         onDone()
       } else if (file) {
+        // Capture a small JPEG cover for videos before handing the upload to the
+        // background manager. Without a poster, Android/WebView can show the
+        // browser's empty video frame until playback starts.
+        let coverKey: string | undefined
+        if (type === 'video' && previewUrl) {
+          try {
+            const coverBlob = await captureVideoFrame(previewUrl, 0.1)
+            if (coverBlob) {
+              const coverFile = new File([coverBlob], 'cover.jpg', { type: 'image/jpeg' })
+              const pre = await presign({ type: 'post', contentType: 'image/jpeg', bytes: coverFile.size, ext: 'jpg' })
+              await uploadToMinio(pre.url, pre.fields, coverFile)
+              coverKey = pre.key
+            }
+          } catch {
+            // The video remains publishable if a device cannot capture a frame.
+          }
+        }
         // Sermons: audio vs video is decided by the picked file itself.
         const serverType = type === 'video' ? 'reel'
           : type === 'music' ? 'track'
@@ -112,6 +130,7 @@ export default function PostCreate({ onDone }: Props) {
             scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
             music_track_id: ['post','video','story'].includes(type) ? musicTrack?.id : undefined,
             description: type === 'sermon' ? caption.trim() : undefined,
+            poster_key: coverKey,
           },
         }).catch(() => {})
         onDone()
