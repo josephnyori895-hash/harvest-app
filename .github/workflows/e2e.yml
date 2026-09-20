@@ -5,7 +5,6 @@ on:
 
 jobs:
   group-chat:
-    if: ${{ secrets.E2E_BASE_URL != '' && secrets.E2E_USERNAME != '' && secrets.E2E_PIN != '' && secrets.E2E_GROUP_SLUG != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
