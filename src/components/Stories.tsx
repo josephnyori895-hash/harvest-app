@@ -13,6 +13,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [videoState, setVideoState] = useState<'loading' | 'playing' | 'blocked' | 'error'>('loading')
+  const [mediaRetryKey, setMediaRetryKey] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [reply, setReply] = useState('')
   const [replies, setReplies] = useState<any[]>([])
@@ -103,7 +104,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       return () => { v.removeEventListener('canplay', onCan); v.removeEventListener('error', onFail) }
     }
     return undefined
-  }, [idx, s, isVideo])
+  }, [idx, s, isVideo, mediaRetryKey])
 
   // Pause/play sync for videos.
   useEffect(() => {
@@ -188,7 +189,22 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
         {/* object-contain: the whole photo/video stays visible and centered
             (posters/flyers keep their edges) instead of being cropped to fill. */}
-        {s.img && !isVideo && <img src={s.img} alt="" className="max-w-full max-h-full w-auto h-auto object-contain" />}
+        {s.img && !isVideo && (
+          <img
+            key={mediaRetryKey}
+            src={s.img}
+            alt=""
+            onError={() => setVideoState('error')}
+            onLoad={() => setVideoState('playing')}
+            className={`max-w-full max-h-full w-auto h-auto object-contain ${videoState === 'error' ? 'opacity-0' : ''}`}
+          />
+        )}
+        {s.img && !isVideo && videoState === 'error' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
+            <p className="text-sm text-zinc-300">Story image could not load</p>
+            <button type="button" onClick={e => { e.stopPropagation(); setVideoState('loading'); setMediaRetryKey(k => k + 1) }} className="mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button>
+          </div>
+        )}
         {isVideo && (
           <>
             <video
@@ -213,9 +229,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
               </button>
             )}
             {videoState === 'error' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 pointer-events-none">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
                 <p className="text-sm text-zinc-300">Video could not load</p>
                 <p className="text-[11px] text-zinc-500 mt-1">Check your connection and try again</p>
+                <button type="button" onClick={e => { e.stopPropagation(); setVideoState('loading'); setMediaRetryKey(k => k + 1) }} className="mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button>
               </div>
             )}
           </>
