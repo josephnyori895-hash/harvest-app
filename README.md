@@ -20,7 +20,7 @@ The permanent APK download endpoint is:
 
 `https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk`
 
-Cloudflare recommends using a custom domain/route rather than a `workers.dev` hostname for business-critical production workloads; the current `workers.dev` URL is retained as the immediately shareable release URL. citeturn2search0
+Cloudflare recommends using a custom domain/route rather than a `workers.dev` hostname for business-critical production workloads; the current `workers.dev` URL is retained as the immediately shareable release URL.
 
 ## Production gates
 
@@ -39,7 +39,7 @@ Every main-branch release now requires:
 
 GitHub Actions also runs the worker syntax checks, media-upload contract test, Wrangler dry-run, and D1 migration parsing on CI.
 
-Production deployment uses the GitHub `production` environment and a serialized deployment concurrency group. GitHub environments can be used to restrict production deployment access and protect secrets. citeturn0search0turn0search1
+Production deployment uses the GitHub `production` environment and a serialized deployment concurrency group. GitHub environments can be used to restrict production deployment access and protect secrets.
 
 ## Local development
 
