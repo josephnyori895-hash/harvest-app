@@ -282,15 +282,28 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam }: { onBack:
       let media_key: string | undefined
       if (attach) {
         const pre = await api<any>('/api/media/presign', { method: 'POST', body: JSON.stringify({ type: 'story', contentType: attach.type || 'image/jpeg', bytes: attach.size }) })
-        const fd = new FormData(); Object.entries(pre.fields || {}).forEach(([k, v]) => fd.append(k, String(v))); fd.append('file', attach)
         const target = /^https?:\/\//.test(pre.url) ? pre.url : `${API}${pre.url}`
         const isDirectR2 = /^https?:\/\//.test(pre.url)
-        const token = localStorage.getItem('harvest_token') || ''
-        const up = await fetch(target, {
-          method: 'POST',
-          body: fd,
-          headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
-        })
+        let up
+        if (isDirectR2 && pre.method === 'PUT') {
+          // Direct R2 uploads are presigned PUTs; send the signed headers exactly
+          // as returned by the Worker and never attach the Harvest bearer token.
+          up = await fetch(target, {
+            method: 'PUT',
+            body: attach,
+            headers: { ...(pre.fields || {}) },
+          })
+        } else {
+          const fd = new FormData()
+          Object.entries(pre.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
+          fd.append('file', attach)
+          const token = localStorage.getItem('harvest_token') || ''
+          up = await fetch(target, {
+            method: 'POST',
+            body: fd,
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        }
         if (!up.ok) throw new Error('Media storage is not enabled yet — text messages still work')
         media_key = pre.key
       }
