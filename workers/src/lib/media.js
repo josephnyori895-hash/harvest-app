@@ -100,71 +100,103 @@ export function contentTypeForKey(key, stored) {
   return EXTENSION_CONTENT_TYPES[ext] || 'application/octet-stream'
 }
 
-// ── Presigned POST (client uploads directly to R2) ──
-// Client flow: POST these fields as multipart/form-data to `${url}` with `file` last.
+// ── Presigned PUT (client uploads directly to R2) ──
+// R2 supports presigned PUT URLs, not HTML multipart POST uploads. The signed
+// owner metadata is required so /confirm can prove who uploaded the object.
+async function sha256Hex(value) {
+  const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
-export async function presignedPost(env, { type, contentType, bytes, ext }) {
+async function hmacBytes(key, data) {
+  const k = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  return new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(data)))
+}
+
+function encodePath(path) {
+  return path.split('/').map(segment => encodeURIComponent(segment)).join('/')
+}
+
+function encodeQuery(value) {
+  return encodeURIComponent(String(value)).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+}
+
+export async function presignedPost(env, { type, contentType, bytes, ext, ownerId }) {
   const max = validatePresign({ type, contentType, bytes })
   const now = new Date()
-  const yyyy = String(now.getFullYear())
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const yyyy = String(now.getUTCFullYear())
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
   const safeExt = (ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() ||
     (contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : type === 'reel' ? 'mp4' : type === 'track' ? 'mp3' : 'jpg')
   const key = `originals/${type}/${yyyy}/${mm}/${crypto.randomUUID()}.${safeExt}`
 
-  // R2 supports POST policies (S3-compatible). Build the policy + signature by hand.
   const accountId = env.CLOUDFLARE_ACCOUNT_ID
   const accessKeyId = env.R2_ACCESS_KEY_ID
   const secretAccessKey = env.R2_SECRET_ACCESS_KEY
   if (!accountId || !accessKeyId || !secretAccessKey) {
-    // Fallback: proxy the upload through the Worker (still works, slightly slower).
-    return { url: '/api/media/upload', fields: { key, contentType }, key, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), maxBytes: max }
+    return {
+      url: '/api/media/upload',
+      fields: { key, contentType },
+      key,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      maxBytes: max,
+      method: 'POST',
+    }
   }
 
-  const expiration = new Date(Date.now() + 15 * 60_000).toISOString()
-  const policy = {
-    expiration,
-    conditions: [
-      { bucket: env.MEDIA_BUCKET_NAME || BUCKET },
-      ['starts-with', '$key', `originals/${type}/`],
-      { acl: 'private' },
-      ['eq', '$Content-Type', contentType],
-      ['content-length-range', 1, max],
-    ],
-  }
-  const policyB64 = btoa(JSON.stringify(policy).replace(/[^\x00-\x7F]/g, ''))
+  const bucket = env.MEDIA_BUCKET_NAME || BUCKET
+  const host = `${accountId}.r2.cloudflarestorage.com`
+  const uri = `/${encodePath(bucket + '/' + key)}`
+  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\\.\\d{3}Z$/, 'Z')
+  const date = amzDate.slice(0, 8)
+  const credentialScope = `${date}/auto/s3/aws4_request`
+  const owner = String(ownerId || '')
+  if (!owner) throw Object.assign(new Error('upload owner is required'), { status: 500 })
+
+  const signedHeaders = 'content-type;host;x-amz-meta-ownerid'
+  const canonicalHeaders = `content-type:${contentType.toLowerCase()}\\nhost:${host}\\nx-amz-meta-ownerid:${owner}\\n`
+  const canonicalQuery = [
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', `${accessKeyId}/${credentialScope}`],
+    ['X-Amz-Date', amzDate],
+    ['X-Amz-Expires', '900'],
+    ['X-Amz-SignedHeaders', signedHeaders],
+  ].sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${encodeQuery(k)}=${encodeQuery(v)}`).join('&')
+  const canonicalRequest = [
+    'PUT',
+    uri,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\\n')
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\\n')
+
   const encoder = new TextEncoder()
-  const dateKey = await crypto.subtle.importKey('raw', encoder.encode(secretAccessKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const signHex = async (keyObj, data) => {
-    const sig = await crypto.subtle.sign('HMAC', keyObj, encoder.encode(data))
-    return [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join('')
-  }
-  const date = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
-  const dateKey2 = await crypto.subtle.sign('HMAC', dateKey, encoder.encode(date))
-  const dateKey3 = await crypto.subtle.importKey('raw', dateKey2, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const regionKey = await crypto.subtle.sign('HMAC', dateKey3, encoder.encode('auto'))
-  const regionKey2 = await crypto.subtle.importKey('raw', new Uint8Array(regionKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const serviceKey = await crypto.subtle.sign('HMAC', regionKey2, encoder.encode('s3'))
-  const serviceKey2 = await crypto.subtle.importKey('raw', new Uint8Array(serviceKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const signingKey = await crypto.subtle.sign('HMAC', serviceKey2, encoder.encode('aws4_request'))
-  const signingKey2 = await crypto.subtle.importKey('raw', new Uint8Array(signingKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const signature = await signHex(signingKey2, policyB64)
+  const kDate = await hmacBytes(encoder.encode('AWS4' + secretAccessKey), date)
+  const kRegion = await hmacBytes(kDate, 'auto')
+  const kService = await hmacBytes(kRegion, 's3')
+  const kSigning = await hmacBytes(kService, 'aws4_request')
+  const signature = [...await hmacBytes(kSigning, stringToSign)]
+    .map(b => b.toString(16).padStart(2, '0')).join('')
 
   return {
-    url: `https://${accountId}.r2.cloudflarestorage.com/${env.MEDIA_BUCKET_NAME || BUCKET}`,
+    url: `https://${host}${uri}?${canonicalQuery}&X-Amz-Signature=${signature}`,
     fields: {
-      key,
-      acl: 'private',
       'Content-Type': contentType,
-      Policy: policyB64,
-      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-      'X-Amz-Credential': `${accessKeyId}/${date}/auto/s3/aws4_request`,
-      'X-Amz-Date': `${date}000000Z`,
-      'X-Amz-Signature': signature,
+      'x-amz-meta-ownerid': owner,
     },
     key,
-    expiresAt: expiration,
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
     maxBytes: max,
+    method: 'PUT',
   }
 }
 
@@ -175,8 +207,7 @@ export async function handleMediaRead(request, env, ctx) {
   if (!isReadableKey(key)) return errorResponse('invalid media key', 400)
 
   const signed = await verifyMediaSignature(env, key, url.searchParams.get('expires'), url.searchParams.get('signature'))
-  const member = ctx.user && ['member', 'admin'].includes(ctx.user.role)
-  if (!signed && !member) return errorResponse('signed media URL required', 401)
+  if (!signed) return errorResponse('signed media URL required', 401)
 
   const obj = await env.MEDIA.get(key)
   if (!obj) return errorResponse('not found', 404)
