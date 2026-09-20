@@ -55,12 +55,15 @@ console.log(`
 Next steps:
   1. npx wrangler d1 migrations apply DB --remote          # schema + seed (creates members 'allan' + admin 'harvest')
   2. npx wrangler secret put JWT_SECRET                     # openssl rand -base64 48
-  3. Optional secrets (presigned direct-to-R2 uploads):
+  3. REQUIRED for admin bootstrap after security hardening:
+       npx wrangler secret put ADMIN_PIN_HASHES              # JSON array of bcrypt hashes for a private 4-6 digit bootstrap PIN
+     Never put the PIN or its hash in git. After first login, the account stores a private PBKDF2 credential.
+  4. Optional secrets (presigned direct-to-R2 uploads):
        npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
        npx wrangler secret put R2_ACCESS_KEY_ID             # dash.cloudflare.com → R2 → Manage API tokens
        npx wrangler secret put R2_SECRET_ACCESS_KEY
      (without these, uploads proxy through the Worker — still works)
-  4. Giving (skip if M-Pesa not ready): MPESA_CONSUMER_KEY/SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_URL, MPESA_ENV
-  5. npx wrangler deploy
-  6. Smoke test: curl https://harvestfamily-api.<your-subdomain>.workers.dev/health
+  5. Giving (skip if M-Pesa not ready): MPESA_CONSUMER_KEY/SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, MPESA_CALLBACK_URL, MPESA_ENV
+  6. npx wrangler deploy
+  7. Smoke test: curl https://harvestfamily-api.<your-subdomain>.workers.dev/health
 `)
