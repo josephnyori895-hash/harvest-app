@@ -12,6 +12,8 @@ function requireJwtSecret(env) {
   return secret
 }
 
+export const requireJwtSecretForRoute = requireJwtSecret
+
 export async function authenticate(env, request) {
   const h = request.headers.get('authorization') || ''
   if (!h.startsWith('Bearer ')) return null
