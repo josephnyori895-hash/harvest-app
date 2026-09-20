@@ -17,8 +17,9 @@ export async function authenticate(env, request) {
   if (!h.startsWith('Bearer ')) return null
   const token = h.slice(7).trim()
   if (!token) return null
+  const secret = requireJwtSecret(env)
   try {
-    const payload = await jwtVerify(token, requireJwtSecret(env))
+    const payload = await jwtVerify(token, secret)
     if (!payload?.id || !payload?.username || !payload?.role) throw new Error('bad payload shape')
     if (!['admin', 'member', 'guest'].includes(payload.role)) throw new Error('bad role')
     return payload
