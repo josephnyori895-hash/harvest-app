@@ -150,6 +150,45 @@ export async function handleFeed(request, env, ctx) {
     }
   }
 
+  // ── Persistent likes ─────────────────────────────────────
+  // GET /api/likes?scope=post|reel&id=<id>
+  if (path === '/api/likes' && request.method === 'GET') {
+    const fresh = await requireMember(env, user)
+    const scope = qp.scope === 'reel' ? 'reel' : 'post'
+    const id = String(qp.id || '').slice(0, 64)
+    if (!id) return errorResponse('id required', 400)
+    const table = scope === 'reel' ? 'reels' : 'posts'
+    const target = await query(env, `SELECT id, likes FROM ${table} WHERE id=? AND approved_at IS NOT NULL`, [id])
+    if (!target.rows[0]) return errorResponse('post not found', 404)
+    const mine = await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [fresh.id, scope, id])
+    return jsonResponse({ id, scope, likes: Number(target.rows[0].likes) || 0, liked: !!mine.rows[0] })
+  }
+
+  // POST /api/likes { scope, id } — toggles the current member's like.
+  if (path === '/api/likes' && request.method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const body = await readJson(request)
+    const scope = body.scope === 'reel' ? 'reel' : 'post'
+    const id = String(body.id || '').slice(0, 64)
+    if (!id) return errorResponse('id required', 400)
+    const table = scope === 'reel' ? 'reels' : 'posts'
+    const target = await query(env, `SELECT id FROM ${table} WHERE id=? AND approved_at IS NOT NULL`, [id])
+    if (!target.rows[0]) return errorResponse('post not found', 404)
+    const existing = await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [fresh.id, scope, id])
+    let liked
+    if (existing.rows[0]) {
+      await query(env, 'DELETE FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [fresh.id, scope, id])
+      await query(env, `UPDATE ${table} SET likes=MAX(likes-1,0) WHERE id=?`, [id])
+      liked = false
+    } else {
+      await query(env, 'INSERT INTO post_likes (user_id, scope, post_id) VALUES (?,?,?)', [fresh.id, scope, id])
+      await query(env, `UPDATE ${table} SET likes=likes+1 WHERE id=?`, [id])
+      liked = true
+    }
+    const current = await query(env, `SELECT likes FROM ${table} WHERE id=?`, [id])
+    return jsonResponse({ id, scope, liked, likes: Number(current.rows[0]?.likes) || 0 })
+  }
+
   // ── Comments ──────────────────────────────────────────────
   // GET /api/comments?scope=post|reel&id=<id> — newest last.
   if (path === '/api/comments' && request.method === 'GET') {
@@ -241,7 +280,7 @@ export async function handleFeed(request, env, ctx) {
     }
     // post_comments has no FK — clean up explicitly. likes has no FK to posts either.
     await query(env, 'DELETE FROM post_comments WHERE scope=? AND post_id=?', [kind === 'reels' ? 'reel' : 'post', id])
-    await query(env, 'DELETE FROM likes WHERE post_id=?', [id])
+    await query(env, 'DELETE FROM post_likes WHERE post_id=? AND scope=?', [id, kind === 'reels' ? 'reel' : 'post'])
     await query(env, 'DELETE FROM story_views WHERE story_id=?', [id])
     await query(env, `DELETE FROM ${table} WHERE id=?`, [id])
     return jsonResponse({ ok: true, deleted: id, kind })
