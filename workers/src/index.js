@@ -39,17 +39,20 @@ export default {
       }
 
       const target = new URL('/' + filename, url.origin)
-      // Add a release-specific query string to the redirect target so any
-      // intermediary cache key is unique even if an older Worker version
-      // previously served a different APK at the same path.
+      // Serve the current immutable release directly instead of redirecting.
+      // This keeps the permanent URL cache-independent while preserving the
+      // versioned APK as the immutable asset underneath it.
       target.searchParams.set('release', filename)
+      const assetResponse = await env.ASSETS.fetch(new Request(target.toString(), request))
+      if (!assetResponse.ok) return assetResponse
 
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: target.toString(),
-          'Cache-Control': 'no-store, max-age=0',
-        },
+      const headers = new Headers(assetResponse.headers)
+      headers.set('Cache-Control', 'no-store, max-age=0')
+      headers.set('Content-Disposition', 'attachment; filename="' + filename + '"')
+      return new Response(assetResponse.body, {
+        status: assetResponse.status,
+        statusText: assetResponse.statusText,
+        headers,
       })
     }
 
