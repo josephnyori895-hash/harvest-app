@@ -137,8 +137,23 @@ export async function handleDepartments(request, env, ctx) {
       const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
       if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot demote the only department leader', 400)
     }
-    // Admin moves are authoritative: remove from other departments first.
-    await query(env, 'DELETE FROM department_members WHERE user_id=? AND department_id <> ?', [t.rows[0].id, dep.id])
+    // Only a system admin may transfer someone out of another department.
+    // Department leaders can add users who are not already serving elsewhere,
+    // but cannot silently override the one-department-per-user rule.
+    const other = await query(
+      env,
+      `SELECT d.name FROM department_members dm
+         JOIN departments d ON d.id=dm.department_id
+        WHERE dm.user_id=? AND dm.department_id <> ?
+        LIMIT 1`,
+      [t.rows[0].id, dep.id],
+    )
+    if (other.rows[0] && fresh.role !== 'admin') {
+      return errorResponse(`user already serves in ${other.rows[0].name} — only the system admin can transfer them`, 409)
+    }
+    if (fresh.role === 'admin' && other.rows[0]) {
+      await query(env, 'DELETE FROM department_members WHERE user_id=? AND department_id <> ?', [t.rows[0].id, dep.id])
+    }
     await query(
       env,
       `INSERT INTO department_members (department_id, user_id, role, joined_at) VALUES (?,?,?,?)
