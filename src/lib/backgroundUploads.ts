@@ -199,8 +199,9 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
       scripture: task.scripture,
       description: task.description || task.caption,
       music_track_id: task.music_track_id,
-      cover_key: coverKey,
-      cover_key: task.cover_key,
+      // Tracks upload their cover in this lifecycle; reels may already have
+      // a pre-uploaded poster key. Prefer the newly uploaded cover when present.
+      cover_key: coverKey ?? task.cover_key,
     })
   }
   onPct(100)
