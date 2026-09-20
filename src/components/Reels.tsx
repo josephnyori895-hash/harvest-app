@@ -5,6 +5,7 @@ import Comments from './Comments'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import { captureVideoFrame } from './ImageAdjuster'
+import MediaThumbnail from './MediaThumbnail'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -25,6 +26,7 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
+  const [posterFailed, setPosterFailed] = useState(false)
   // Real comments sheet on the current reel (server-backed post_comments).
   const [showComments, setShowComments] = useState(false)
   const [notice, setNotice] = useState('')
@@ -91,6 +93,7 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
   useEffect(() => {
     let active = true
     setGeneratedPoster('')
+    setPosterFailed(false)
     if (!cur?.video || cur.img) return () => { active = false }
     captureVideoFrame(cur.video, 0.1).then(blob => {
       if (!active || !blob) return
@@ -206,8 +209,11 @@ export default function Reels({ onOpenUser }: { onOpenUser?: (u: any) => void })
           <section onTouchStart={onTouchStart} onTouchEnd={(e) => { onTouchEnd(e); onVideoTap(e) }} onClick={onVideoTap} className="relative overflow-hidden rounded-none lg:rounded-[24px] bg-black h-full min-h-[520px] sm:min-h-[600px] lg:h-[calc(100vh-190px)] lg:max-h-[760px] border-0 lg:border lg:border-white/10 shadow-2xl">
             {/* Blurred fill behind + object-contain front: the full video/poster
                 stays visible and centered (no cropped edges) — TikTok-style. */}
-            {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" />}
-            {cur.video ? <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={cur.img || generatedPoster || undefined} className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black" onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} /> : <img src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}
+            {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
+            {cur.video ? <>
+              <video ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black" onError={() => setPosterFailed(true)} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
+              {!cur.img && !generatedPoster && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Preparing video preview…</p></div></div>}
+            </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}
             {heart && (
               <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
                 <span className="text-[120px] leading-none drop-shadow-2xl">❤️</span>
