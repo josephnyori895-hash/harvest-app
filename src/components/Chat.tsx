@@ -124,6 +124,18 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
   useEffect(() => {
     if (teamChat) { setActive(null); setTeam(teamChat) } else setTeam(null)
   }, [teamChat])
+
+  // Android hardware back closes a team conversation before leaving Chat.
+  useEffect(() => {
+    const onNestedBack = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean }>).detail
+      if (!team || !detail) return
+      detail.handled = true
+      onCloseTeam?.()
+    }
+    window.addEventListener('harvest:nested-back', onNestedBack)
+    return () => window.removeEventListener('harvest:nested-back', onNestedBack)
+  }, [team, onCloseTeam])
   const [reactingFor, setReactingFor] = useState<string | null>(null)
   const [actionFor, setActionFor] = useState<string | null>(null)
   const swipeStartX = useRef<number | null>(null)
