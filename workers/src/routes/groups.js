@@ -113,16 +113,13 @@ export async function handleGroups(request, env, ctx) {
       await query(env, `INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'admin') ON CONFLICT (group_id, user_id) DO UPDATE SET role='admin'`, [id, t.rows[0].id])
     }
 
-    // Creator's own participation: stay as group admin, plain member, or leave.
-    if (stayAs === 'admin') {
-      await query(env, `INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'admin') ON CONFLICT (group_id, user_id) DO NOTHING`, [id, fresh.id])
-    } else if (stayAs === 'member') {
-      await query(env, `INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'member') ON CONFLICT (group_id, user_id) DO NOTHING`, [id, fresh.id])
-    }
-    // 'none' (or omitted) → creator stays out of the membership list.
+    // The person who creates a group is its first group admin. This mirrors
+    // WhatsApp's creator ownership model: the creator can manage the group
+    // immediately, while additional admins may be appointed below.
+    await query(env, `INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'admin') ON CONFLICT (group_id, user_id) DO UPDATE SET role='admin'`, [id, fresh.id])
 
     await audit(env, fresh, 'group_created', id, { name, admin_username: adminUsername || null, creator_participation: stayAs || 'none', community: community || null })
-    return jsonResponse({ group: { id, slug, name, description, community, member_count: adminUsername ? 1 : 0 } }, 201)
+    return jsonResponse({ group: { id, slug, name, description, community, member_count: 1 } }, 201)
   }
 
   // Everything below is /api/groups/:slug...
