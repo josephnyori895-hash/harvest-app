@@ -144,7 +144,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   useEffect(() => {
     if (!s?.id) return
     const token = localStorage.getItem('harvest_token') || ''
-    const API = (import.meta.env.VITE_API_URL || '').replace(/\\/$/, '')
+    const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
     if (!token || !API) return
     void fetch(API + '/api/stories/' + encodeURIComponent(String(s.id)) + '/view', {
       method: 'POST',
