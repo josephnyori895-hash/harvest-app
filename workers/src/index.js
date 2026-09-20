@@ -23,6 +23,31 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
 
+    // Keep the public download URL stable while every release APK uses a
+    // unique, immutable filename. The release workflow injects the current
+    // filename with `wrangler deploy --var RELEASE_APK_FILENAME:...`.
+    if (url.pathname === '/harvest-family.apk' && request.method === 'GET') {
+      const filename = env.RELEASE_APK_FILENAME
+      if (!filename || !/^harvest-family-[0-9]+-[0-9a-f]{7}\\.apk$/.test(filename)) {
+        return new Response('APK release target unavailable', {
+          status: 503,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Content-Type': 'text/plain; charset=utf-8',
+          },
+        })
+      }
+
+      const target = new URL('/' + filename, url.origin)
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: target.toString(),
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      })
+    }
+
     // WebSocket upgrade → Realtime DO (chat, presence, calls).
     // NOTE: the original request object must be forwarded unchanged for upgrades.
     if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
