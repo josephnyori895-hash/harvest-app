@@ -15,8 +15,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         def harvestVersionCode = (System.getenv("HARVEST_VERSION_CODE") ?: "1").toInteger()
-    def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0"
-    versionCode harvestVersionCode
+        def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0"
+        versionCode harvestVersionCode
         versionName harvestVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
