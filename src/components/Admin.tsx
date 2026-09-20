@@ -292,7 +292,8 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
       <div className="grid grid-cols-2 gap-2 mb-4">
         <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">👥 Manage Groups</button>
-        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>\n          <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
+        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>
+        <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {(['moderation', 'media', 'accounts', 'announce', 'home', 'give', 'audit'] as const).map(value => (
@@ -570,6 +571,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         ['manage_groups', 'Manage groups'],
                         ['manage_communities', 'Manage communities'],
                         ['delete_media', 'Delete media'],
+                        ['moderate_chat', 'Moderate chats'],
                       ] as const).map(([cap, label]) => {
                         const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
                         return (
@@ -577,7 +579,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         )
                       })}
                       </div>
-                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Posting media, creating groups, managing groups/communities, deleting media.</p>
+                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Posting media, creating groups, managing groups/communities, deleting media, moderating group/department chats.</p>
                     </div>
                   )}
                   <div className="flex gap-2 flex-wrap">
