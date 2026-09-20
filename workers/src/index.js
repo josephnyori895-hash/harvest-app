@@ -39,6 +39,11 @@ export default {
       }
 
       const target = new URL('/' + filename, url.origin)
+      // Add a release-specific query string to the redirect target so any
+      // intermediary cache key is unique even if an older Worker version
+      // previously served a different APK at the same path.
+      target.searchParams.set('release', filename)
+
       return new Response(null, {
         status: 302,
         headers: {
