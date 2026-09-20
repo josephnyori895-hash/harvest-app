@@ -267,7 +267,7 @@ export async function handleFeed(request, env, ctx) {
   if (/^\/api\/stories\/[^/]+\/view$/.test(path) && request.method === 'POST') {
     const fresh = await requireMember(env, user)
     const sid = path.split('/')[3]
-    const exists = await query(env, 'SELECT 1 FROM stories WHERE id=?', [sid])
+    const exists = await query(env, 'SELECT 1 FROM stories WHERE id=? AND expires_at>?', [sid, new Date().toISOString()])
     if (!exists.rows[0]) return errorResponse('story not found', 404)
     const viewedAt = new Date().toISOString()
     await query(env, `INSERT INTO story_views (story_id, viewer_username, viewer_user_id, viewed_at)
