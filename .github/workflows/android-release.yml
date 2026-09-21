@@ -197,39 +197,82 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-          DEPLOYMENTS_JSON="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/harvestfamily-api/deployments?per_page=10")"
+
+          fetch_json() {
+            # fetch_json <label> <url> [extra curl options...]
+            local label="$1" url="$2"
+            shift 2
+            local output
+            if ! output="$(curl --fail --silent --show-error --max-time 60 "$@" "$url")"; then
+              echo "::error::$label request failed"
+              exit 1
+            fi
+            printf '%s' "$output"
+          }
+
+          DEPLOYMENTS_JSON="$(fetch_json "Cloudflare deployments list" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/harvestfamily-api/deployments?per_page=10" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
           CURRENT_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
           PREVIOUS_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
           test -n "$CURRENT_VERSION_ID" && test "$CURRENT_VERSION_ID" != "null" || { echo "::error::Unable to identify current Worker version"; exit 1; }
           test -n "$PREVIOUS_VERSION_ID" && test "$PREVIOUS_VERSION_ID" != "null" || { echo "::error::Unable to identify previous Worker version"; exit 1; }
-          RUNS_JSON="$(curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
+          RUNS_JSON="$(fetch_json "GitHub Actions runs list" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN")"
           PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, head_sha}] | sort_by(.run_number) | last | [.run_number, .head_sha] | @tsv')"
           test -n "$PREVIOUS_RELEASE" && test "$PREVIOUS_RELEASE" != "null" || { echo "::error::No previous successful Android release found"; exit 1; }
           PREVIOUS_RUN="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f1)"
           PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f2)"
           PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
           PREVIOUS_APK_URL="$APK_BASE_URL/$PREVIOUS_APK_FILENAME"
+          PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
           echo "Current Worker version:  $CURRENT_VERSION_ID"
           echo "Previous Worker version: $PREVIOUS_VERSION_ID"
           echo "Previous verified run:   #$PREVIOUS_RUN"
           echo "Previous APK:            $PREVIOUS_APK_FILENAME"
-          PREVIOUS_SHA="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 "$PREVIOUS_APK_URL" | sha256sum | cut -d' ' -f1)"
-          test -n "$PREVIOUS_SHA" || { echo "::error::Previous verified APK is unavailable"; exit 1; }
-          echo "Previous verified SHA256: $PREVIOUS_SHA"
+
           restore_current() { echo "Restoring current Worker version $CURRENT_VERSION_ID to 100%..."; npx wrangler versions deploy "$CURRENT_VERSION_ID@100%" -y; }
           trap restore_current EXIT
+
+          # Re-add the previous version at 0% BEFORE any override requests:
+          # Cloudflare only honors Cloudflare-Workers-Version-Overrides for
+          # versions that are part of the active deployment. Routing stays
+          # effectively unchanged (current version keeps 100%).
           npx wrangler versions deploy "$PREVIOUS_VERSION_ID@0%" "$CURRENT_VERSION_ID@100%" -y
-          PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
-          BODY_FILE="$(mktemp)"
-          trap 'rm -f "$BODY_FILE"; restore_current' EXIT
-          curl --fail --silent --show-error --max-time 120 -o "$BODY_FILE" -H 'Cloudflare-Workers-Version-Overrides: harvestfamily-api="'$PREVIOUS_VERSION_ID'"' "$PERMANENT_URL"
-          ROLLBACK_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-          echo "ROLLBACK HTTP STATUS: 200"
+
+          OVERRIDE_HEADER="Cloudflare-Workers-Version-Overrides: harvestfamily-api=\"$PREVIOUS_VERSION_ID\""
+          fetch_via_previous_version() {
+            # fetch_via_previous_version <label> <url> <output-file>
+            local label="$1" url="$2" out="$3" status
+            if ! status="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 --write-out '%{http_code}' -H "$OVERRIDE_HEADER" -o "$out" "$url")"; then
+              echo "::error::$label failed (HTTP ${status:-unknown})"
+              exit 1
+            fi
+            echo "$label: HTTP $status"
+          }
+
+          PREVIOUS_BODY="$(mktemp)"
+          ROLLBACK_BODY="$(mktemp)"
+          trap 'rm -f "$PREVIOUS_BODY" "$ROLLBACK_BODY"; restore_current' EXIT
+
+          # Ground truth: the previous run's immutable versioned APK, served
+          # from the previous Worker version's own asset manifest. Every deploy
+          # replaces the static assets, so the current deployment no longer
+          # hosts it - it is only reachable through the previous version.
+          fetch_via_previous_version "Previous versioned APK" "$PREVIOUS_APK_URL" "$PREVIOUS_BODY"
+          test -s "$PREVIOUS_BODY" || { echo "::error::Previous versioned APK body is empty"; exit 1; }
+          PREVIOUS_SHA="$(sha256sum "$PREVIOUS_BODY" | cut -d' ' -f1)"
+          echo "Previous verified SHA256: $PREVIOUS_SHA"
+
+          # Rollback drill: the permanent URL, served by the previous version,
+          # must resolve to exactly the same bytes as its versioned APK.
+          fetch_via_previous_version "Rollback permanent URL" "$PERMANENT_URL" "$ROLLBACK_BODY"
+          test -s "$ROLLBACK_BODY" || { echo "::error::Rollback permanent URL body is empty"; exit 1; }
+          ROLLBACK_SHA="$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)"
           echo "ROLLBACK SHA256:      $ROLLBACK_SHA"
-          test "$PREVIOUS_SHA" = "$ROLLBACK_SHA"
+
+          test "$PREVIOUS_SHA" = "$ROLLBACK_SHA" || { echo "::error::Rollback APK SHA mismatch: $ROLLBACK_SHA != $PREVIOUS_SHA"; exit 1; }
+
           restore_current
           trap - EXIT
-          rm -f "$BODY_FILE"
+          rm -f "$PREVIOUS_BODY" "$ROLLBACK_BODY"
           echo "Permanent APK rollback drill passed; current Worker restored to 100%."
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
