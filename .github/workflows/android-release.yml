@@ -190,20 +190,27 @@ jobs:
         run: |
           set -euo pipefail
           VERSIONED_URL="$APK_BASE_URL/$APK_FILENAME"
-          # Assets can briefly 404 right after a deploy while Cloudflare
-          # propagates the new manifest, and curl --retry never retries 404s,
-          # so poll until the versioned APK serves.
+          # Assets can briefly 404 - or an edge can serve a stale 200 from the
+          # previous deployment - right after a deploy while Cloudflare
+          # propagates, and curl --retry never retries 404s. Poll until the
+          # versioned APK serves with the exact expected bytes.
           LIVE_SHA=""
           BODY_FILE="$(mktemp)"
           trap 'rm -f "$BODY_FILE"' EXIT
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             STATUS="$(curl --silent --show-error --location --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$VERSIONED_URL" || echo 000)"
             if [ "$STATUS" = "200" ]; then
-              LIVE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-              break
+              CANDIDATE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
+              if [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
+                LIVE_SHA="$CANDIDATE_SHA"
+                echo "Versioned APK: HTTP 200, SHA matched (attempt $attempt)"
+                break
+              fi
+              echo "Attempt $attempt: HTTP 200 but stale SHA (propagation?); retrying..."
+            else
+              echo "Attempt $attempt: HTTP $STATUS for versioned APK; retrying..."
             fi
-            echo "Attempt $attempt: HTTP $STATUS for versioned APK (propagation?); retrying..."
-            sleep 10
+            sleep 15
           done
           test -n "$LIVE_SHA" || { echo "::error::Versioned APK $VERSIONED_URL never returned HTTP 200 after deploy"; exit 1; }
           echo "LOCAL SHA256: $LOCAL_SHA"
@@ -242,15 +249,23 @@ jobs:
           test "$CACHE_CONTROL" = "no-store, max-age=0"
           test "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\""
 
+          # Same propagation tolerance as the versioned check: retry until a
+          # 200 whose bytes match this run's APK exactly.
           LIVE_PERMANENT_SHA=""
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$PERMANENT_URL" || echo 000)"
             if [ "$STATUS" = "200" ]; then
-              LIVE_PERMANENT_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-              break
+              CANDIDATE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
+              if [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
+                LIVE_PERMANENT_SHA="$CANDIDATE_SHA"
+                echo "Permanent URL: HTTP 200, SHA matched (attempt $attempt)"
+                break
+              fi
+              echo "Attempt $attempt: HTTP 200 but stale SHA (propagation?); retrying..."
+            else
+              echo "Attempt $attempt: HTTP $STATUS; retrying..."
             fi
-            echo "Attempt $attempt: HTTP $STATUS; retrying..."
-            sleep 10
+            sleep 15
           done
           test -n "$LIVE_PERMANENT_SHA" || { echo "::error::Permanent URL body never returned HTTP 200"; exit 1; }
           echo "LOCAL SHA256:          $LOCAL_SHA"
