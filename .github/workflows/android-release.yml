@@ -296,11 +296,6 @@ jobs:
             printf '%s' "$output"
           }
 
-          DEPLOYMENTS_JSON="$(fetch_json "Cloudflare deployments list" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/harvestfamily-api/deployments?per_page=10" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          CURRENT_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
-          PREVIOUS_VERSION_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1].versions[] | select(.percentage == 100) | .version_id' | head -n 1)"
-          test -n "$CURRENT_VERSION_ID" && test "$CURRENT_VERSION_ID" != "null" || { echo "::error::Unable to identify current Worker version"; exit 1; }
-          test -n "$PREVIOUS_VERSION_ID" && test "$PREVIOUS_VERSION_ID" != "null" || { echo "::error::Unable to identify previous Worker version"; exit 1; }
           RUNS_JSON="$(fetch_json "GitHub Actions runs list" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN")"
           PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, id, head_sha}] | sort_by(.run_number) | last | [.run_number, .id, .head_sha] | @tsv')"
           test -n "$PREVIOUS_RELEASE" && test "$PREVIOUS_RELEASE" != "null" || { echo "::error::No previous successful Android release found"; exit 1; }
@@ -309,8 +304,6 @@ jobs:
           PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f3)"
           PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
-          echo "Current Worker version:  $CURRENT_VERSION_ID"
-          echo "Previous Worker version: $PREVIOUS_VERSION_ID"
           echo "Previous verified run:   #$PREVIOUS_RUN ($PREVIOUS_APK_FILENAME)"
 
           # Ground truth: the previous run's uploaded APK artifact. It is
@@ -324,8 +317,7 @@ jobs:
           PREVIOUS_BODY="$(mktemp)"
           ROLLBACK_BODY="$(mktemp)"
           cleanup() { rm -f "$PREVIOUS_ZIP" "$PREVIOUS_BODY" "$ROLLBACK_BODY"; }
-          restore_current() { echo "Restoring current Worker version $CURRENT_VERSION_ID to 100%..."; npx wrangler versions deploy "$CURRENT_VERSION_ID@100%" -y; }
-          trap 'cleanup; restore_current' EXIT
+          trap 'cleanup' EXIT
 
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -336,67 +328,62 @@ jobs:
           PREVIOUS_SHA="$(sha256sum "$PREVIOUS_BODY" | cut -d' ' -f1)"
           echo "Previous verified SHA256: $PREVIOUS_SHA"
 
-          # Candidate previous versions: every 100% version from the ten
-          # deployments before this run's. Failed runs also deploy, so the
-          # previous *successful* release can sit several deployments back;
-          # candidates are checked in order and the drill passes as soon as
-          # one serves the previous release's exact bytes.
-          mapfile -t CANDIDATE_VERSIONS < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1:11][] | .versions[] | select(.percentage == 100) | .version_id' | awk '!seen[$0]++' | head -n 10)
-          test "${#CANDIDATE_VERSIONS[@]}" -gt 0 || { echo "::error::No candidate previous Worker versions found"; exit 1; }
-
-          # Real rollback drill: activate a previous version, confirm the
-          # permanent URL serves the previous release's exact APK bytes, then
-          # restore. Users may briefly see a previous release during the drill.
-          DRILL_VERSION=""
-          for CANDIDATE in "${CANDIDATE_VERSIONS[@]}"; do
-            if [ "$CANDIDATE" = "$CURRENT_VERSION_ID" ]; then
-              echo "Skipping $CANDIDATE (already the current version)"
-              continue
-            fi
-            echo "Activating candidate previous version $CANDIDATE at 100%..."
-            npx wrangler versions deploy "$CANDIDATE@100%" -y
-            for attempt in 1 2 3 4; do
-              sleep 10
-              STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
-              if [ "$STATUS" = "200" ]; then
-                CANDIDATE_SHA="$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)"
-                if [ "$CANDIDATE_SHA" = "$PREVIOUS_SHA" ]; then
-                  echo "Rollback permanent URL: HTTP 200, SHA matched (attempt $attempt, version $CANDIDATE)"
-                  DRILL_VERSION="$CANDIDATE"
-                  break 2
-                fi
-                echo "Attempt $attempt: HTTP 200 but SHA $CANDIDATE_SHA != $PREVIOUS_SHA (propagation?)"
-              else
-                echo "Attempt $attempt: HTTP $STATUS"
-              fi
-            done
-          done
-          if [ -z "$DRILL_VERSION" ]; then
-            echo "::error::No previous Worker version served the previous release APK ($PREVIOUS_SHA) via the permanent URL"
+          # Cross-check: the current deployment's assets must already host the
+          # re-staged previous APK (see the staging step) with identical bytes.
+          STAGED_STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$APK_BASE_URL/$PREVIOUS_APK_FILENAME" || echo 000)"
+          if [ "$STAGED_STATUS" != "200" ] || [ "$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)" != "$PREVIOUS_SHA" ]; then
+            echo "::error::Previous APK $PREVIOUS_APK_FILENAME is not correctly hosted by the current deployment (HTTP $STAGED_STATUS)"
             exit 1
           fi
+          echo "Previous APK re-staged in current assets and byte-verified."
 
-          restore_current
+          # Rollback drill, done the way a real rollback works: redeploy the
+          # Worker pointing at the previous release's APK filename. Old Worker
+          # versions cannot revive their asset manifests on workers.dev, so
+          # activating a previous version does NOT restore its APK - but the
+          # previous APK itself is hosted in the current deployment's assets
+          # (re-staged before the deploy), making the filename swap fully
+          # deterministic.
+          echo "Rolling back: redeploying Worker with $PREVIOUS_APK_FILENAME..."
+          npx wrangler deploy --var "RELEASE_APK_FILENAME:$PREVIOUS_APK_FILENAME"
+
+          ROLLBACK_SHA=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 10
+            STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
+            if [ "$STATUS" = "200" ]; then
+              CANDIDATE_SHA="$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)"
+              if [ "$CANDIDATE_SHA" = "$PREVIOUS_SHA" ]; then
+                echo "Rollback permanent URL: HTTP 200, SHA matched (attempt $attempt)"
+                ROLLBACK_SHA="$CANDIDATE_SHA"
+                break
+              fi
+              echo "Attempt $attempt: HTTP 200 but SHA $CANDIDATE_SHA != $PREVIOUS_SHA (propagation?)"
+            else
+              echo "Attempt $attempt: HTTP $STATUS"
+            fi
+          done
+          test -n "$ROLLBACK_SHA" || { echo "::error::Rollback drill failed: permanent URL never served the previous release APK ($PREVIOUS_SHA)"; exit 1; }
+
+          echo "Restoring current release: redeploying Worker with $APK_FILENAME..."
+          npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
 
           RESTORE_SHA=""
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             sleep 10
             STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
             if [ "$STATUS" = "200" ] && [ "$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)" = "$LOCAL_SHA" ]; then
-              RESTORE_SHA="$LOCAL_SHA"
               echo "Restore to current: HTTP 200, SHA matched (attempt $attempt)"
+              RESTORE_SHA="$LOCAL_SHA"
               break
             fi
             echo "Attempt $attempt: restore not confirmed (HTTP $STATUS)"
           done
-          if [ -z "$RESTORE_SHA" ]; then
-            echo "::error::Failed to confirm restore of current Worker version $CURRENT_VERSION_ID"
-            exit 1
-          fi
+          test -n "$RESTORE_SHA" || { echo "::error::Failed to confirm restore of current release ($APK_FILENAME)"; exit 1; }
 
           trap - EXIT
           cleanup
-          echo "Permanent APK rollback drill passed via version $DRILL_VERSION; current Worker restored to 100%."
+          echo "Permanent APK rollback drill passed (rollback to run #$PREVIOUS_RUN verified and restored)."
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
