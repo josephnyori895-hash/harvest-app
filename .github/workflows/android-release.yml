@@ -190,7 +190,22 @@ jobs:
         run: |
           set -euo pipefail
           VERSIONED_URL="$APK_BASE_URL/$APK_FILENAME"
-          LIVE_SHA="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 "$VERSIONED_URL" | sha256sum | cut -d' ' -f1)"
+          # Assets can briefly 404 right after a deploy while Cloudflare
+          # propagates the new manifest, and curl --retry never retries 404s,
+          # so poll until the versioned APK serves.
+          LIVE_SHA=""
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$BODY_FILE"' EXIT
+          for attempt in 1 2 3 4 5 6; do
+            STATUS="$(curl --silent --show-error --location --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$VERSIONED_URL" || echo 000)"
+            if [ "$STATUS" = "200" ]; then
+              LIVE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
+              break
+            fi
+            echo "Attempt $attempt: HTTP $STATUS for versioned APK (propagation?); retrying..."
+            sleep 10
+          done
+          test -n "$LIVE_SHA" || { echo "::error::Versioned APK $VERSIONED_URL never returned HTTP 200 after deploy"; exit 1; }
           echo "LOCAL SHA256: $LOCAL_SHA"
           echo "LIVE SHA256:  $LIVE_SHA"
           test "$LOCAL_SHA" = "$LIVE_SHA"
@@ -203,21 +218,41 @@ jobs:
           set -euo pipefail
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
           HEADER_FILE="$(mktemp)"
-          trap 'rm -f "$HEADER_FILE"' EXIT
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 -D "$HEADER_FILE" -o /dev/null "$PERMANENT_URL"
-          STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+          BODY_FILE="$(mktemp)"
+          trap 'rm -f "$HEADER_FILE" "$BODY_FILE"' EXIT
+
+          # Poll the status line: a fresh deploy can briefly 404 on workers.dev
+          # while the asset manifest propagates.
+          STATUS_LINE=""
+          for attempt in 1 2 3 4 5 6; do
+            curl --silent --show-error --max-time 120 -D "$HEADER_FILE" -o /dev/null "$PERMANENT_URL" || true
+            STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+            case "$STATUS_LINE" in
+              "HTTP/2 200"|"HTTP/1.1 200 OK") break ;;
+              *) echo "Attempt $attempt: $STATUS_LINE (propagation?); retrying..."; STATUS_LINE=""; sleep 10 ;;
+            esac
+          done
+          test -n "$STATUS_LINE" || { echo "::error::Permanent URL never returned HTTP 200"; exit 1; }
+
           CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
           CONTENT_DISPOSITION="$(awk 'BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
           echo "PERMANENT STATUS:      $STATUS_LINE"
           echo "PERMANENT CACHE:       $CACHE_CONTROL"
           echo "PERMANENT DISPOSITION: $CONTENT_DISPOSITION"
-          case "$STATUS_LINE" in
-            "HTTP/2 200"|"HTTP/1.1 200 OK") ;;
-            *) echo "::error::Unexpected permanent URL status: $STATUS_LINE"; exit 1 ;;
-          esac
           test "$CACHE_CONTROL" = "no-store, max-age=0"
           test "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\""
-          LIVE_PERMANENT_SHA="$(curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 120 "$PERMANENT_URL" | sha256sum | cut -d' ' -f1)"
+
+          LIVE_PERMANENT_SHA=""
+          for attempt in 1 2 3 4 5 6; do
+            STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$PERMANENT_URL" || echo 000)"
+            if [ "$STATUS" = "200" ]; then
+              LIVE_PERMANENT_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
+              break
+            fi
+            echo "Attempt $attempt: HTTP $STATUS; retrying..."
+            sleep 10
+          done
+          test -n "$LIVE_PERMANENT_SHA" || { echo "::error::Permanent URL body never returned HTTP 200"; exit 1; }
           echo "LOCAL SHA256:          $LOCAL_SHA"
           echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
           test "$LOCAL_SHA" = "$LIVE_PERMANENT_SHA"
