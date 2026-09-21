@@ -95,6 +95,8 @@ jobs:
           stat -c '%s bytes' "$APK"
 
       - name: Stage versioned APK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -102,6 +104,40 @@ jobs:
           APK_PATH="workers/downloads/$APK_FILENAME"
           cp "$APK" "$APK_PATH"
           test -s "$APK_PATH"
+
+          # Re-stage the previous successful release's versioned APK so the
+          # current deployment still hosts it. Workers static assets are
+          # replaced wholesale on every deploy and "wrangler versions deploy"
+          # cannot revive an old version's asset manifest, so hosting the
+          # previous APK under the current assets is what makes rollback to
+          # the previous release possible at all.
+          RUNS_JSON="$(curl --fail --silent --show-error --max-time 60 -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
+          PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, id, head_sha}] | sort_by(.run_number) | last | [.run_number, .id, .head_sha] | @tsv')"
+          if [ -n "$PREVIOUS_RELEASE" ] && [ "$PREVIOUS_RELEASE" != "null" ]; then
+            PREVIOUS_RUN="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f1)"
+            PREVIOUS_RUN_ID="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f2)"
+            PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f3)"
+            PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
+            if [ "$PREVIOUS_APK_FILENAME" != "$APK_FILENAME" ] && [ ! -s "workers/downloads/$PREVIOUS_APK_FILENAME" ]; then
+              ARTIFACT_ID="$(curl --fail --silent --show-error --max-time 60 -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
+              if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+                PREVIOUS_ZIP="$(mktemp)"
+                if curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$PREVIOUS_ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"; then
+                  unzip -p "$PREVIOUS_ZIP" '*.apk' > "workers/downloads/$PREVIOUS_APK_FILENAME"
+                  echo "Re-staged previous release APK: $PREVIOUS_APK_FILENAME ($(stat -c '%s' "workers/downloads/$PREVIOUS_APK_FILENAME") bytes)"
+                else
+                  echo "::warning::Could not download previous release artifact; rollback drill may be unable to verify"
+                fi
+                rm -f "$PREVIOUS_ZIP"
+              else
+                echo "::warning::Previous release artifact harvest-family-apk-$PREVIOUS_RUN not found (expired?); rollback drill may be unable to verify"
+              fi
+            fi
+            echo "PREVIOUS_APK_FILENAME=$PREVIOUS_APK_FILENAME" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No previous successful Android release found; skipping previous APK re-staging"
+          fi
+
           LOCAL_SHA="$(sha256sum "$APK_PATH" | cut -d' ' -f1)"
           APK_SIZE="$(stat -c '%s' "$APK_PATH")"
           echo "APK_FILENAME=$APK_FILENAME" >> "$GITHUB_ENV"
