@@ -19,7 +19,7 @@ jobs:
     environment:
       name: production
       url: https://harvestfamily-api.harvestfamily.workers.dev/health
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -286,12 +286,12 @@ jobs:
           PREVIOUS_SHA="$(sha256sum "$PREVIOUS_BODY" | cut -d' ' -f1)"
           echo "Previous verified SHA256: $PREVIOUS_SHA"
 
-          # Candidate previous versions: every 100% version from the five
+          # Candidate previous versions: every 100% version from the ten
           # deployments before this run's. Failed runs also deploy, so the
-          # immediately-previous deployment is not necessarily the previous
-          # successful release - candidates are checked in order and the drill
-          # passes as soon as one serves the previous release's exact bytes.
-          mapfile -t CANDIDATE_VERSIONS < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1:6][] | .versions[] | select(.percentage == 100) | .version_id' | head -n 5)
+          # previous *successful* release can sit several deployments back;
+          # candidates are checked in order and the drill passes as soon as
+          # one serves the previous release's exact bytes.
+          mapfile -t CANDIDATE_VERSIONS < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r '.result.deployments[1:11][] | .versions[] | select(.percentage == 100) | .version_id' | awk '!seen[$0]++' | head -n 10)
           test "${#CANDIDATE_VERSIONS[@]}" -gt 0 || { echo "::error::No candidate previous Worker versions found"; exit 1; }
 
           # Real rollback drill: activate a previous version, confirm the
@@ -299,9 +299,13 @@ jobs:
           # restore. Users may briefly see a previous release during the drill.
           DRILL_VERSION=""
           for CANDIDATE in "${CANDIDATE_VERSIONS[@]}"; do
+            if [ "$CANDIDATE" = "$CURRENT_VERSION_ID" ]; then
+              echo "Skipping $CANDIDATE (already the current version)"
+              continue
+            fi
             echo "Activating candidate previous version $CANDIDATE at 100%..."
             npx wrangler versions deploy "$CANDIDATE@100%" -y
-            for attempt in 1 2 3 4 5 6; do
+            for attempt in 1 2 3 4; do
               sleep 10
               STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
               if [ "$STATUS" = "200" ]; then
