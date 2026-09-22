@@ -2,9 +2,10 @@
 // Members stream in-app or download the original file. Downloads set the
 // Content-Disposition filename and increment a counter.
 import { query, uuid } from '../lib/db.js'
-import { requireMember, requireAdmin } from '../lib/auth.js'
+import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { mediaUrlOrNull, isReadableKey } from '../lib/media.js'
+import { hasCap } from '../lib/capabilities.js'
 
 function clean(v, max = 200) {
   return String(v ?? '').trim().slice(0, max) || null
@@ -53,11 +54,12 @@ export async function handleSermons(request, env, ctx) {
     return jsonResponse({ sermons: out })
   }
 
-  // POST /api/sermons — edit metadata (admin). Body: { id, title?, speaker?, scripture?, description? }
+  // POST /api/sermons — edit metadata. Admins and delegated sermon managers may edit.
   if (path === '/api/sermons' && method === 'POST') {
     const body = await readJson(request)
     if (!body.id) return errorResponse('id required', 400)
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
+    if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
     const sets = [], vals = []
     for (const k of ['title', 'speaker', 'scripture', 'description']) {
       if (body[k] !== undefined) { sets.push(`${k}=?`); vals.push(clean(body[k], k === 'description' ? 1000 : 200)) }
@@ -72,7 +74,8 @@ export async function handleSermons(request, env, ctx) {
   // DELETE /api/sermons/:id — admin removes a sermon (DB row; R2 original stays for audit).
   const del = path.match(/^\/api\/sermons\/([0-9a-f-]+)$/i)
   if (del && method === 'DELETE') {
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
+    if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
     const row = await query(env, 'SELECT media_key, cover_key FROM sermons WHERE id=?', [del[1]])
     if (!row.rows[0]) return errorResponse('not found', 404)
     for (const k of [row.rows[0].media_key, row.rows[0].cover_key]) {
