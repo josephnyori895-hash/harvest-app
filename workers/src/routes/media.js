@@ -48,7 +48,9 @@ export async function handleMedia(request, env, ctx) {
     // Upload policy: stories and profile avatars are open to every signed-in
     // member. All other media (posts, reels, tracks) requires a verified
     // account or admin.
-    if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+    if ((type === 'sermon_audio' || type === 'sermon_video')) {
+      if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
+    } else if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
       return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
     }
     try {
@@ -80,7 +82,9 @@ export async function handleMedia(request, env, ctx) {
       if (!(file instanceof File) || !key) return errorResponse('key and file are required', 400)
       if (!KEY_RE.test(key)) return errorResponse('invalid media key', 400)
       const type = key.split('/')[1]
-      if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+      if ((type === 'sermon_audio' || type === 'sermon_video')) {
+        if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
+      } else if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
         return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
       }
       const rate = await query(
@@ -137,8 +141,8 @@ export async function handleMedia(request, env, ctx) {
     const u = await query(env, 'SELECT group_name, constituency, faith, verified FROM users WHERE id=?', [userId])
     const sermonType = type === 'sermon_audio' || type === 'sermon_video'
     if (sermonType) {
-      if (fresh.role !== 'admin' && !fresh.verified) {
-        return errorResponse('sermon uploads are for verified members — ask an admin to verify your account', 403)
+      if (!hasCap(fresh, 'manage_sermons')) {
+        return errorResponse('sermon management permission required', 403)
       }
       const storedCt = String(obj.httpMetadata?.contentType || '')
       const kind = type === 'sermon_video' ? 'video' : 'audio'
@@ -159,10 +163,6 @@ export async function handleMedia(request, env, ctx) {
     if (type !== 'story' && !isAdmin && !fresh.verified && !hasCap(fresh, 'post_media')) {
       return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
     }
-    // Sermons are admin-published only (official church teaching).
-    if (type.startsWith('sermon_') && !isAdmin) {
-      return errorResponse('sermons are published by the admin', 403)
-    }
 
     if (type === 'story') {
       // Photos and short video moments are both allowed; record which so the
@@ -175,7 +175,7 @@ export async function handleMedia(request, env, ctx) {
       return jsonResponse({ id, status: 'published', key }, 201)
     }
 
-    if (isAdmin && type.startsWith('sermon_')) {
+    if (hasCap(fresh, 'manage_sermons') && type.startsWith('sermon_')) {
       // Sermon registration. kind: audio | video; the original file keeps its
       // format (mp3/m4a for audio, mp4/webm for video) so downloads are native.
       const kind = type === 'sermon_video' ? 'video' : 'audio'
