@@ -38,6 +38,10 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
   const [uploadScripture, setUploadScripture] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [canManageSermons, setCanManageSermons] = useState(isAdmin)
+  const [managerUsers, setManagerUsers] = useState<any[]>([])
+  const [managerBusy, setManagerBusy] = useState('')
+  const [managerSearch, setManagerSearch] = useState('')
   const uploadInput = useRef<HTMLInputElement | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -53,6 +57,35 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
   }, [])
 
   useEffect(load, [load])
+
+  useEffect(() => {
+    fetch(`${API}/api/me`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).then(d => setCanManageSermons(isAdmin || (d?.grants || []).includes('manage_sermons'))).catch(() => setCanManageSermons(isAdmin))
+  }, [isAdmin])
+
+  const loadManagers = useCallback(async () => {
+    if (!isAdmin) return
+    try {
+      const r = await fetch(`${API}/api/users/map`, { headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (r.ok) setManagerUsers(Array.isArray(d.users) ? d.users.filter((u: any) => u.role !== 'admin') : [])
+    } catch {}
+  }, [isAdmin])
+  useEffect(() => { void loadManagers() }, [loadManagers])
+
+  const toggleSermonManager = async (u: any) => {
+    if (!u?.username || managerBusy) return
+    const grants = String(u.grants || '').split(',').filter(Boolean)
+    const on = grants.includes('manage_sermons')
+    const next = on ? grants.filter((g: string) => g !== 'manage_sermons') : [...grants, 'manage_sermons']
+    setManagerBusy(u.username)
+    try {
+      const r = await fetch(`${API}/api/admin/users/${encodeURIComponent(u.username)}`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ grants: next }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not update permission')
+      setManagerUsers(xs => xs.map(x => x.username === u.username ? { ...x, grants: d.user?.grants || next.join(',') } : x))
+      showToast(on ? `${u.name || u.username} can no longer manage sermons` : `${u.name || u.username} can manage sermons`, 'success')
+    } catch (e: any) { showToast(e?.message || 'Could not update permission', 'error') } finally { setManagerBusy('') }
+  }
 
   const play = async (s: any) => {
     if (playing === s.id) {
@@ -105,11 +138,16 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       })
       const pd = await pres.json().catch(() => ({}))
       if (!pres.ok) throw new Error(pd.error || 'Unable to prepare upload')
-      const fd = new FormData()
-      Object.entries(pd.fields || {}).forEach(([k,v]) => fd.append(k, String(v)))
-      fd.append('file', uploadFile)
-      const direct = /^https?:\/\//.test(pd.url)
-      const up = await fetch(direct ? pd.url : API + pd.url, { method:'POST', body:fd, headers: direct ? undefined : authHeaders() })
+      const direct = /^https?:\\/\\//.test(pd.url)
+      let up: Response
+      if (direct) {
+        up = await fetch(pd.url, { method: pd.method || 'PUT', body: uploadFile, headers: { 'Content-Type': uploadFile.type, ...(pd.fields?.['x-amz-meta-ownerid'] ? { 'x-amz-meta-ownerid': String(pd.fields['x-amz-meta-ownerid']) } : {}) } })
+      } else {
+        const fd = new FormData()
+        Object.entries(pd.fields || {}).forEach(([k,v]) => fd.append(k, String(v)))
+        fd.append('file', uploadFile)
+        up = await fetch(API + pd.url, { method: pd.method || 'POST', body: fd, headers: authHeaders() })
+      }
       if (!up.ok) throw new Error('Upload failed — check your connection and file size')
       const confirm = await fetch(API + '/api/media/confirm', {
         method:'POST', headers:{...authHeaders(), 'Content-Type':'application/json'},
@@ -117,7 +155,7 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       })
       const cd = await confirm.json().catch(() => ({}))
       if (!confirm.ok) throw new Error(cd.error || 'Could not publish sermon')
-      showToast(isAdmin ? 'Sermon published ✓' : 'Sermon uploaded ✓', 'success')
+      showToast('Sermon published ✓', 'success')
       setUploadOpen(false); setUploadFile(null); setUploadTitle(''); setUploadSpeaker(''); setUploadScripture(''); setUploadDescription('')
       load()
     } catch (e: any) {
@@ -173,12 +211,12 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       </div>
 
       <div className="px-4 pt-5">
-      {(isAdmin || verified) && (
+      {canManageSermons && (
         <div className="mb-5 rounded-3xl p-1 bg-gradient-to-r from-[#7C3AED] to-fuchsia-500 shadow-lg shadow-purple-300/60">
           <button onClick={() => setUploadOpen(true)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-extrabold shadow-sm">
             🎙 Upload a Sermon (MP3 or MP4)
           </button>
-          <p className="text-[11px] text-[#6B6257] mt-1.5 text-center">{isAdmin ? 'Admin uploads publish immediately.' : 'Verified-member uploads publish immediately.'}</p>
+          <p className="text-[11px] text-[#6B6257] mt-1.5 text-center">{isAdmin ? 'Admin control: uploads publish immediately.' : 'You have Sermon Manager permission: uploads publish immediately.'}</p>
         </div>
       )}
 
@@ -225,7 +263,7 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
                 <button onClick={() => void download(s)} disabled={busy === s.id} className="px-4 py-2.5 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6] disabled:opacity-50">
                   {busy === s.id ? '…' : `📥 Download ${s.kind === 'video' ? 'MP4' : 'MP3'}`}
                 </button>
-                {isAdmin && (
+                {canManageSermons && (
                   <>
                     <button onClick={() => setEditing({ ...s })} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-xs font-bold" aria-label="Edit sermon">✏️</button>
                     <button onClick={() => void remove(s)} disabled={busy === s.id} className="px-3 py-2.5 rounded-2xl bg-red-50 border border-red-200 text-xs font-bold text-red-600 disabled:opacity-50" aria-label="Delete sermon">🗑</button>
@@ -252,6 +290,23 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
             <input value={uploadScripture} onChange={e => setUploadScripture(e.target.value)} placeholder="Scripture reference" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
             <textarea value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} rows={3} placeholder="Description" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm resize-y" />
             <button disabled={uploading || !uploadFile || !uploadTitle.trim()} onClick={() => void uploadSermon()} className="w-full py-3 rounded-xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{uploading ? 'Uploading…' : 'Upload sermon'}</button>
+          </div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="mt-6 rounded-3xl bg-white border border-[#E8DEC9] p-4 shadow-sm">
+          <p className="font-extrabold text-sm">🔐 Sermon managers</p>
+          <p className="text-xs text-[#766E63] mt-1">Give a member full control of sermons: upload, edit and delete. Admins always retain full access.</p>
+          <input value={managerSearch} onChange={e => setManagerSearch(e.target.value)} placeholder="Search members…" className="w-full mt-3 rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
+          <div className="mt-3 space-y-2 max-h-64 overflow-auto">
+            {managerUsers.filter(u => `${u.username} ${u.name}`.toLowerCase().includes(managerSearch.trim().toLowerCase())).slice(0, 20).map(u => {
+              const on = String(u.grants || '').split(',').filter(Boolean).includes('manage_sermons')
+              return <div key={u.username} className="flex items-center gap-3 rounded-2xl border border-[#F0E7D8] p-3">
+                <div className="min-w-0 flex-1"><p className="text-sm font-bold truncate">{u.name || u.username}</p><p className="text-[11px] text-[#766E63] truncate">@{u.username} · {u.group_name || 'Member'}</p></div>
+                <button disabled={managerBusy === u.username} onClick={() => void toggleSermonManager(u)} className={`px-3 py-2 rounded-xl text-xs font-bold ${on ? 'bg-[#7C3AED] text-white' : 'bg-[#F5EEDF] text-[#5C554C]'}`}>{managerBusy === u.username ? '…' : on ? 'Manager ✓' : 'Give access'}</button>
+              </div>
+            })}
           </div>
         </div>
       )}
