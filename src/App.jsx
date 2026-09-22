@@ -137,6 +137,7 @@ function InnerApp() {
   const openProfile = (u) => { setBackTarget(tab); setViewUser(u); setTab('viewuser') }
   const [editProfileKey, setEditProfileKey] = useState(0)
   const [teamChat, setTeamChat] = useState(null)
+  const [dmTarget, setDmTarget] = useState(null)
   const [chatReturnTab, setChatReturnTab] = useState('home')
   // A single Chat surface owns all team conversations. Departments and Chats
   // only choose the same target; they never maintain separate chat state.
@@ -148,6 +149,13 @@ function InnerApp() {
   const closeTeamChat = () => {
     setTeamChat(null)
     setTab(chatReturnTab || 'home')
+  }
+  // 'Pray with Pastor': open a 1:1 DM with the pastor's account from Home.
+  const openDm = (username, name) => {
+    setChatReturnTab(tab)
+    setTeamChat(null)
+    setDmTarget({ username, name })
+    setTab('chat')
   }
 
   const [users] = useDirectory(onboarded)
@@ -244,7 +252,7 @@ function InnerApp() {
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className={tab === 'chat' ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 overflow-auto pb-[calc(64px+env(safe-area-inset-bottom))]'}>
-          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} />}
+          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : undefined} onSharedReelHandled={clearSharedContent} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
@@ -256,6 +264,8 @@ function InnerApp() {
               onBack={closeTeamChat}
               users={users}
               teamChat={teamChat}
+              dmTarget={dmTarget}
+              onDmOpened={() => setDmTarget(null)}
               onCloseTeam={closeTeamChat}
               onOpenGroups={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('groups') }}
               onOpenDepartments={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('departments') }}

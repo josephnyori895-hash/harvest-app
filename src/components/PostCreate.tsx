@@ -24,7 +24,7 @@ export default function PostCreate({ onDone }: Props) {
   // One composer, with options derived from the user's privileges.
   // Member: story. Verified: story + community media/sermon/music. Admin: everything.
   const available: ContentType[] = isAdmin
-    ? ['post', 'video', 'sermon', 'music', 'announcement']
+    ? ['post', 'story', 'video', 'sermon', 'music', 'announcement']
     : isVerified
       ? ['post', 'story', 'video', 'sermon', 'music']
       : ['story']

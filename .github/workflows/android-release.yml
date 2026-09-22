@@ -44,6 +44,19 @@ jobs:
           npm audit --audit-level=high
           npm run build
 
+      # The Worker hosts the web app too (same origin as the API, APKs and
+      # WhatsApp share landing pages). Stage the fresh build into workers/public
+      # so `wrangler deploy` ships the site together with everything else.
+      - name: Stage web app into Worker assets
+        run: |
+          set -euo pipefail
+          rm -rf workers/public
+          mkdir -p workers/public
+          cp -r dist/. workers/public/
+          rm -f workers/public/_redirects workers/public/_headers
+          cp workers/downloads/harvest-family.apk workers/public/harvest-family.apk
+          echo "Staged web app: $(find workers/public -type f | wc -l) files"
+
       - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
@@ -175,6 +188,8 @@ jobs:
           test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required"; exit 1; }
           test -n "$APK_FILENAME" || { echo "::error::APK_FILENAME is not set"; exit 1; }
           test -s "downloads/$APK_FILENAME" || { echo "::error::Versioned APK is missing"; exit 1; }
+          test -s "public/harvest-family.apk" || { echo "::error::Web app assets are missing (workers/public not staged)"; exit 1; }
+          test -s "public/index.html" || { echo "::error::Web app index.html is missing"; exit 1; }
           npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
 
       - name: Authenticated production smoke test

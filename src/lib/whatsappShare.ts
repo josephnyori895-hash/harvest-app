@@ -3,7 +3,10 @@
 // their church WhatsApp groups. Text is pre-composed so the share looks good.
 
 const BRAND = 'Harvest Family Church · Nyeri 🙏'
-const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://spiffy-frangipane-6bda1c.netlify.app').replace(/\/$/, '')
+// Share links must land somewhere that can render the content. The API Worker
+// serves the public share landing page (/?shared=...&id=...), and unlike the
+// old Netlify demo URL it is guaranteed to stay up — it IS the backend.
+const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://harvestfamily-api.harvestfamily.workers.dev').replace(/\/$/, '')
 
 function contentUrl(kind: 'post' | 'reel' | 'story', id?: string) {
   if (!id) return undefined

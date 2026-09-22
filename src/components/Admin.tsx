@@ -66,6 +66,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     { key: 'hero_subtitle', label: 'Banner subtitle', hint: 'e.g. Get one saved, keep one saved, get another saved.', max: 300, textarea: true },
     { key: 'verse_text', label: 'This week’s encouragement — verse', hint: 'The quote shown mid-screen', max: 300, textarea: true },
     { key: 'verse_ref', label: 'Verse reference', hint: 'e.g. Hebrews 10:24 · Grow together', max: 120 },
+    { key: 'pastor_username', label: 'Pastor’s username (Pray with Pastor card)', hint: 'The app account the card opens as a chat — leave empty until the pastor joins', max: 60 },
   ]
   // ── Give section fields ──
   const GIVE_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [

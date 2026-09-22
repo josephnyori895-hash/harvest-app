@@ -96,10 +96,12 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
-export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroups, onOpenDepartments }: {
+export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments }: {
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
+  dmTarget?: { username: string; name?: string } | null
+  onDmOpened?: () => void
   onCloseTeam?: () => void
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
@@ -125,6 +127,15 @@ export default function Chat({ onBack, users, teamChat, onCloseTeam, onOpenGroup
   useEffect(() => {
     if (teamChat) { setActive(null); setTeam(teamChat) } else setTeam(null)
   }, [teamChat])
+  // 'Pray with Pastor' deep link: jump straight into the 1:1 DM.
+  useEffect(() => {
+    if (!dmTarget?.username) return
+    const u = String(dmTarget.username)
+    const dir = (users as any[]).find(x => x.username === u)
+    setActive({ username: u, name: dmTarget.name || dir?.name || u, verified: dir?.verified, avatar_url: dir?.avatar_url })
+    setTeam(null)
+    onDmOpened?.()
+  }, [dmTarget, users, onDmOpened])
 
   // Android hardware back closes a team conversation before leaving Chat.
   useEffect(() => {

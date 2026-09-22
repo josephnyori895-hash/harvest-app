@@ -208,7 +208,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
-  const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const url = cur.id != null ? `${window.location.origin}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : window.location.href; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
+  const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const publicBase = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://harvestfamily-api.harvestfamily.workers.dev').replace(/\/$/, ''); const url = cur.id != null ? `${publicBase}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : publicBase; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
   const shareWa = () => { if (!cur) return; sharePostToWhatsApp({ author: cur.user, caption: cur.cap, id: cur.id != null ? String(cur.id) : undefined, kind: 'reel' }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
   const toggleEncourage = async () => {

@@ -82,7 +82,7 @@ const quickLinks = [
   { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
 ]
 
-export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled }: { setTab: (t: string) => void; users: any[]; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void }) {
+export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (username: string, name?: string) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [likesTick, setLikesTick] = useState(0)
@@ -90,6 +90,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const startYRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [approvedTick, setApprovedTick] = useState(0)
+  // 'Pray with Pastor' — popup shown when no pastor account is configured/found.
+  const [showNoPastor, setShowNoPastor] = useState(false)
   const [editPost, setEditPost] = useState<any | null>(null)
   const [menuPost, setMenuPost] = useState<{ key: string; kind: 'post' | 'reel'; id: string; user: string; caption: string; mine: boolean } | null>(null)
   // Admin-editable home content (hero banner + weekly verse). Falls back to
@@ -107,6 +109,15 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const heroSubtitle = content.hero_subtitle || 'Get one saved, keep one saved, get another saved.'
   const verseText = content.verse_text || 'Let us consider how we may spur one another on toward love and good deeds.'
   const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
+  // The pastor account the 'Pray with Pastor' card opens (admin sets it in
+  // Admin → Home text as `pastor_username`). Resolved against the member
+  // directory; an empty/unset username means the popup is shown instead.
+  const pastorUsername = String(content.pastor_username || '').trim()
+  const pastorUser = pastorUsername ? users.find((u: any) => u.username === pastorUsername) : null
+  const openPastorChat = () => {
+    if (pastorUser && onOpenDm) onOpenDm(pastorUser.username, pastorUser.name || pastorUser.username)
+    else setShowNoPastor(true)
+  }
   // Inline post comments (server-backed) — replaces the old "dump into chats" button.
   const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
   // Server-backed community feed (only in API mode; offline mode stays localStorage-first).
@@ -337,6 +348,19 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
+    {showNoPastor && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowNoPastor(false)} role="dialog" aria-label="Pastor not available">
+        <div className="w-full max-w-[340px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-3xl">🙋‍♂️</div>
+          <h2 className="mt-4 font-extrabold text-base text-[#29251F]">Pastor has not joined yet</h2>
+          <p className="mt-2 text-sm leading-6 text-[#766E63]">Our pastor isn't on the app at the moment. You can still share a prayer request in Chats — the family is ready to pray with you.</p>
+          <div className="mt-5 flex flex-col gap-2">
+            <button onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-[#7C3AED] text-white text-sm font-extrabold active:bg-[#6D28D9]">🙏 Ask for prayer in Chats</button>
+            <button onClick={() => setShowNoPastor(false)} className="w-full py-3 rounded-full border border-[#E8DEC9] text-[#766E63] text-sm font-bold active:bg-[#FAF6EC]">Close</button>
+          </div>
+        </div>
+      </div>
+    )}
     {commentTarget && (
       <Comments
         scope={commentTarget.scope}
@@ -381,7 +405,14 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
       <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return <article data-post-id={String(p.id ?? key)} key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="flex items-center gap-3" aria-label={`View ${p.user}'s profile`}><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div></button><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="text-left" aria-label={`View ${p.user}'s profile`}><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></button></div><button onClick={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button></div>{p.video ? <MediaPreview src={p.video} poster={p.img} />: p.img ? <img src={p.img} alt="" loading="lazy" className="w-full aspect-[4/3] object-cover" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button><button onClick={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.kind === 'reel' ? 'reel' : 'post' })} className="px-3 py-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/40 text-xs font-extrabold text-[#128C4A]" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗ Share on WhatsApp</button></div>{p.music && <div className="mt-3 flex items-center gap-2 rounded-xl bg-purple-50 p-2"><span>🎵</span><span className="text-[11px] font-bold truncate">{p.music.title} · {p.music.artist}</span></div>}{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
 
-      <section className="mt-7 grid grid-cols-2 gap-3">{quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}</section>
+      <section className="mt-7 grid grid-cols-2 gap-3">
+        <button onClick={openPastorChat} className="rounded-2xl bg-gradient-to-br from-[#5B21B6] to-[#7C3AED] border border-[#7C3AED] p-4 text-left shadow-sm text-white" aria-label="Chat with the pastor">
+          <span className="text-2xl">🙋‍♂️</span>
+          <p className="mt-2 text-sm font-extrabold">Pray with Pastor</p>
+          <p className="mt-1 text-[11px] text-purple-100">{pastorUser ? `Chat with ${pastorUser.name || pastorUser.username}` : 'Private prayer chat'}</p>
+        </button>
+        {quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
+      </section>
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
     </main>
     {menuPost && (

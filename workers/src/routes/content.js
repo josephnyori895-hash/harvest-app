@@ -13,6 +13,10 @@ const EDITABLE = {
   hero_subtitle: 300,
   verse_text: 300,
   verse_ref: 120,
+  // ── Pray with Pastor card ──
+  // The username of the account the 'Pray with Pastor' card opens as a DM.
+  // Empty/unset = the card tells members the pastor has not joined yet.
+  pastor_username: 60,
   // ── Give section ──
   giving_title: 120,
   giving_subtitle: 300,

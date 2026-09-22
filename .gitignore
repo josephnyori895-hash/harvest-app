@@ -54,3 +54,6 @@ server/backups/
 # OS
 Thumbs.db
 .netlify/
+
+# Worker web-app assets are staged at build/deploy time (CI does it every release).
+workers/public/

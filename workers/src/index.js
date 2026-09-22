@@ -15,6 +15,7 @@ import { handleContent } from './routes/content.js'
 import { handleSermons } from './routes/sermons.js'
 import { handleSocial } from './routes/social.js'
 import { handleAdminAudit } from './routes/adminAudit.js'
+import { handleShare } from './routes/share.js'
 import { Realtime } from './realtime.js'
 
 export { Realtime }
@@ -90,6 +91,11 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsFor(env, request) })
     }
+
+    // Public share landing page (WhatsApp deep links) — must run before the
+    // auth/API router because it lives on '/' and needs no authentication.
+    const shareRes = await handleShare(request, env, null, {})
+    if (shareRes) return shareRes
 
     try {
       const user = await authenticate(env, request)

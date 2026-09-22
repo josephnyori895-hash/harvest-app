@@ -34,13 +34,16 @@ new_sqlite_classes = ["Realtime"]
 [triggers]
 crons = ["*/10 * * * *"]
 
-# Static assets: the APK download lives here (assets first, then Worker for everything else).
+# Static assets: the web app + APK downloads. The Worker runs FIRST for every
+# request (no run_worker_first needed since none is configured as SPA fallback):
+# index.html at / is served by handleShare (share landing or web app), and the
+# worker router handles /api/*, /ws, /health. Everything else (JS/CSS/fonts/
+# logos/APKs) is served straight from these assets.
 [assets]
-directory = "./downloads"
+directory = "./public"
 binding = "ASSETS"
-# APK requests run through the Worker so the permanent URL can redirect and
-# versioned APKs can be served explicitly through env.ASSETS.fetch().
-run_worker_first = ["/harvest-family.apk", "/harvest-family-*.apk"]
+# APK requests run through the Worker so the permanent URL stays cache-independent.
+run_worker_first = ["/harvest-family.apk", "/harvest-family-*.apk", "/downloads/harvest-family*.apk", "/", "/index.html"]
 
 # ── Non-secret vars (APK WebView origin is https://localhost) ──
 [vars]
