@@ -56,4 +56,8 @@ Thumbs.db
 .netlify/
 
 # Worker web-app assets are staged at build/deploy time (CI does it every release).
-workers/public/
+# workers/public/ is staged at build time (CI); keep a placeholder so the
+# wrangler dry-run in CI always finds an assets directory.
+!workers/public/
+workers/public/*
+!workers/public/index.html

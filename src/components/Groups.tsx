@@ -31,17 +31,6 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const [savingSettings, setSavingSettings] = useState(false)
   const [unreadByGroup, setUnreadByGroup] = useState<Record<string, number>>({})
 
-  const load = useCallback(() => {
-    setLoading(true)
-    fetch(`${API}/api/groups`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load groups'))))
-      .then(d => { setGroups(Array.isArray(d.groups) ? d.groups : []); setError('') })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
-
-  useEffect(load, [load])
-
   // Android hardware back should close an open group detail/settings screen
   // before the app-level navigator changes tabs.
   useEffect(() => {
@@ -58,6 +47,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     return () => window.removeEventListener('harvest:nested-back', onNestedBack)
   }, [openSlug])
 
+  // Live unread badge per group chat (polls while the screen is visible).
   useEffect(() => {
     let live = true
     const refreshUnread = async () => {
@@ -86,36 +76,39 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     }
   }, [])
 
+  const load = useCallback(() => {
+    setLoading(true)
+    fetch(`${API}/api/groups`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load groups'))))
+      .then(d => { setGroups(Array.isArray(d.groups) ? d.groups : []) ; setError('') })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
   const openDetail = async (slug: string) => {
-    setOpenSlug(slug)
-    setDetail(null); setRequests([])
+    setBusy(`open_${slug}`)
     try {
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}`, { headers: authHeaders() })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'Could not load group')
-      setDetail(d)
-      if (d.members?.some((m: any) => m.role === 'admin' && m.username === viewerName) || isAdmin) {
-        const rr = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/requests`, { headers: authHeaders() })
-        if (rr.ok) { const dd = await rr.json(); setRequests(dd.requests || []) }
-      }
-    } catch { setOpenSlug(null); showToast('Could not open that group') }
+      if (!r.ok) throw new Error(d.error || 'Could not open group')
+      setDetail({ group: d.group, members: d.members || [] })
+      setRequests(d.requests || [])
+      setOpenSlug(slug)
+      setShowSettings(false)
+      setStForm(f => ({ ...f, name: d.group.name, description: d.group.description || '', community: d.group.community || '', addOnly: !d.group.allow_member_add && !d.group.allow_member_invite }))
+    } catch (e: any) { showToast(e?.message || 'Could not open group') } finally { setBusy('') }
   }
 
   const create = async () => {
-    if (busy === 'create' || !form.name.trim()) return
+    if (busy === 'create') return
     setBusy('create')
     try {
-      const r = await fetch(`${API}/api/groups`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({
-          name: form.name.trim(), description: form.description.trim() || undefined,
-          admin_username: form.admin_username.trim().toLowerCase() || undefined,
-          community: form.community.trim() || undefined,
-        }),
-      })
+      const r = await fetch(`${API}/api/groups`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(form) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not create group')
-      showToast(`"${form.name.trim()}" created`)
+      showToast(`Group "${form.name}" created`)
       setShowCreate(false); setForm({ name: '', description: '', admin_username: '', community: '' })
       load()
     } catch (e: any) { showToast(e?.message || 'Could not create group') } finally { setBusy('') }
@@ -126,10 +119,11 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     try {
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/join`, { method: 'POST', headers: authHeaders() })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'failed')
-      showToast(d.status === 'pending' ? 'Request sent — the group admin will approve it' : 'Joined')
+      if (!r.ok) throw new Error(d.error || 'Could not request to join')
+      showToast(d.status === 'requested' ? 'Join request sent ⏳' : 'Welcome to the group! 🎉')
       load()
-    } catch (e: any) { showToast(e?.message || 'Could not request to join') } finally { setBusy('') }
+      if (openSlug === slug) void openDetail(slug)
+    } catch (e: any) { showToast(e?.message || 'Could not join') } finally { setBusy('') }
   }
 
   const leave = async (slug: string) => {
@@ -137,110 +131,80 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     try {
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/leave`, { method: 'POST', headers: authHeaders() })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'failed')
+      if (!r.ok) throw new Error(d.error || 'Could not leave')
       showToast('You left the group')
-      load(); if (openSlug === slug) openDetail(slug)
+      setOpenSlug(null); setDetail(null); load()
     } catch (e: any) { showToast(e?.message || 'Could not leave') } finally { setBusy('') }
   }
 
-  const decideRequest = async (slug: string, inviteId: string, approve: boolean) => {
-    setBusy(`req_${inviteId}`)
+  const decideRequest = async (slug: string, reqId: string, approve: boolean) => {
+    setBusy(`req_${reqId}`)
     try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/requests/${encodeURIComponent(inviteId)}/approve`, {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify({ approve }),
-      })
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/requests/${reqId}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ approve }) })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'failed')
-      showToast(approve ? 'Approved — they are now a member' : 'Rejected')
-      openDetail(slug); load()
-    } catch (e: any) { showToast(e?.message || 'Could not process request') } finally { setBusy('') }
+      if (!r.ok) throw new Error(d.error || 'Could not update request')
+      showToast(approve ? 'Member approved ✓' : 'Request rejected')
+      void openDetail(slug)
+    } catch (e: any) { showToast(e?.message || 'Could not update request') } finally { setBusy('') }
   }
 
-  const setRole = async (slug: string, uname: string, role: 'admin' | 'member') => {
-    setBusy(`role_${slug}_${uname}`)
+  const setRole = async (slug: string, username: string, role: 'admin' | 'member') => {
+    setBusy(`role_${slug}_${username}`)
     try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/role`, {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify({ username: uname, role }),
-      })
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/members/${encodeURIComponent(username)}/role`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ role }) })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'failed')
-      showToast(role === 'admin' ? `${uname} is now a group admin` : `${uname} is now a normal member`)
-      openDetail(slug); load()
+      if (!r.ok) throw new Error(d.error || 'Could not change role')
+      showToast(role === 'admin' ? `${username} is now a group admin ⭐` : `${username} is now a member`)
+      void openDetail(slug)
     } catch (e: any) { showToast(e?.message || 'Could not change role') } finally { setBusy('') }
   }
 
-  const removeMember = async (slug: string, uname: string) => {
-    setBusy(`rm_${slug}_${uname}`)
+  const removeMember = async (slug: string, username: string) => {
+    setBusy(`rm_${slug}_${username}`)
     try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/members/${encodeURIComponent(uname)}`, { method: 'DELETE', headers: authHeaders() })
-      if (!r.ok) throw new Error('failed')
-      showToast(`${uname} removed`)
-      openDetail(slug); load()
-    } catch { showToast('Could not remove member') } finally { setBusy('') }
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/members/${encodeURIComponent(username)}`, { method: 'DELETE', headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not remove member')
+      showToast(`${username} removed`)
+      void openDetail(slug)
+    } catch (e: any) { showToast(e?.message || 'Could not remove member') } finally { setBusy('') }
   }
 
-  // ── Settings actions (system admin) ──
-  const startSettings = () => {
-    if (!detail?.group) return
-    setStForm({
-      name: detail.group.name || '',
-      description: detail.group.description || '',
-      community: detail.group.community || '',
-      addOnly: Boolean(detail.group.invite_only),
-      allowMemberEditInfo: Boolean(detail.group.allow_member_edit_info),
-      allowMemberSend: detail.group.allow_member_send !== 0,
-      allowMemberAdd: Boolean(detail.group.allow_member_add),
-      allowMemberInvite: Boolean(detail.group.allow_member_invite),
-      approveNewMembers: detail.group.approve_new_members !== 0,
-      sendMessageHistory: Boolean(detail.group.send_message_history),
-    })
-    setShowSettings(true)
+  const addMemberDirect = async () => {
+    if (!addUname.trim()) return
+    setBusy('add_member')
+    try {
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/members`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ username: addUname.trim(), role: addRole }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not add member')
+      showToast(`${addUname.trim()} added ✓`)
+      setAddUname('')
+      void openDetail(openSlug || '')
+    } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }
   }
 
   const saveSettings = async () => {
     if (!detail?.group || savingSettings) return
-    const name = stForm.name.trim()
-    if (name.length < 2) { showToast('Group name is too short'); return }
     setSavingSettings(true)
     try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(detail.group.slug)}/settings`, {
-        method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({
-          name, description: stForm.description.trim(), community: stForm.community.trim(), invite_only: stForm.addOnly,
-          allow_member_edit_info: stForm.allowMemberEditInfo,
-          allow_member_send: stForm.allowMemberSend,
-          allow_member_add: stForm.allowMemberAdd,
-          allow_member_invite: stForm.allowMemberInvite,
-          approve_new_members: stForm.approveNewMembers,
-          send_message_history: stForm.sendMessageHistory,
-        }),
-      })
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/settings`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(stForm) })
       const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'Could not save')
+      if (!r.ok) throw new Error(d.error || 'Could not save settings')
       showToast('Group settings saved ✓')
       setShowSettings(false)
-      load(); await openDetail(detail.group.slug)
-    } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false) }
+      void openDetail(openSlug || '')
+    } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false); setBusy('') }
   }
 
-  const addMemberDirect = async () => {
-    if (!detail?.group || !addUname.trim()) return
-    setBusy('add_member')
-    try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(detail.group.slug)}/members`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ username: addUname.trim().toLowerCase(), role: addRole }),
-      })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'Not found')
-      showToast(addRole === 'admin' ? `${addUname} added as admin` : `${addUname} added`)
-      setAddUname('')
-      openDetail(detail.group.slug); load()
-    } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }
+  const startSettings = () => {
+    if (!detail) return
+    const g = detail.group
+    setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history })
+    setShowSettings(true)
   }
 
   const deleteGroup = async (slug: string, name: string) => {
-    if (!window.confirm(`Permanently delete "${name}"? Members will be released and the group chat history stays but the group cannot be recovered.`)) return
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return
     setBusy(`del_${slug}`)
     try {
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}`, { method: 'DELETE', headers: authHeaders() })
@@ -251,30 +215,50 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     } catch (e: any) { showToast(e?.message || 'Could not delete group') } finally { setBusy('') }
   }
 
+  // Group membership avatar colors — warm church tints, one per name.
+  const avatarTint = (name: string) => {
+    const tints = [
+      'from-[#EDE9FE] to-[#C4B5FD] text-[#5B21B6]',
+      'from-[#FEF3C7] to-[#FDE68A] text-[#B45309]',
+      'from-[#FCE7F3] to-[#F9A8D4] text-[#9D174D]',
+      'from-[#D1FAE5] to-[#A7F3D0] text-[#065F46]',
+      'from-[#DBEAFE] to-[#BFDBFE] text-[#1E40AF]',
+      'from-[#FFE4E6] to-[#FECDD3] text-[#9F1239]',
+    ]
+    let h = 0
+    for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 997
+    return tints[h % tints.length]
+  }
+
   const GroupRow = ({ g }: { g: any }) => (
-    <div className="w-full p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+    <div className="w-full p-4 rounded-[22px] bg-white border border-[#E8DEC9] shadow-sm hover:shadow-md transition">
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => openDetail(g.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
-          <p className="text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-            {g.name}
-            {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">ADMIN</span>}
-            {g.joined && !g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-600 text-white font-extrabold">MEMBER</span>}
-          </p>
-          {g.description && <p className="text-[11px] text-zinc-400 mt-0.5">{g.description}</p>}
-          <p className="text-[10px] text-zinc-500 mt-1">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 shrink-0 rounded-2xl bg-gradient-to-br ${avatarTint(g.name)} flex items-center justify-center text-sm font-extrabold shadow-sm`}>{String(g.name).split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-[#29251F] flex items-center gap-2 flex-wrap">
+                {g.name}
+                {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold">ADMIN</span>}
+                {g.joined && !g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold">MEMBER</span>}
+              </p>
+              <p className="text-[10px] text-[#8B8175] mt-0.5">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
+            </div>
+          </div>
+          {g.description && <p className="text-[11px] text-[#766E63] mt-2 leading-5">{g.description}</p>}
         </button>
-        <div className="shrink-0 flex items-center gap-2">
+        <div className="shrink-0 flex flex-col items-end gap-1.5">
           {g.joined && onOpenChat && (
-            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70 shadow-sm">
               💬 Chat
-              {Number(unreadByGroup[g.slug]) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-zinc-950 shadow-sm">{Number(unreadByGroup[g.slug]) > 99 ? '99+' : unreadByGroup[g.slug]}</span>}
+              {Number(unreadByGroup[g.slug]) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-white shadow-sm">{Number(unreadByGroup[g.slug]) > 99 ? '99+' : unreadByGroup[g.slug]}</span>}
             </button>
           )}
           {g.joined
-            ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-zinc-700 bg-zinc-800 text-zinc-300 ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
+            ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-[#E8DEC9] bg-[#FAF6EC] text-[#766E63] ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
             : g.my_request === 'pending'
-              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-amber-400/20 text-amber-400 border border-amber-400/40">⏳ Requested</span>
-              : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
+              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">⏳ Requested</span>
+              : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white shadow-sm ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
         </div>
       </div>
     </div>
@@ -285,33 +269,33 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     const canManage = isAdmin || isGroupAdmin
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
-      <div className="bg-black text-white min-h-[70vh] pb-8">
-        <div className="flex items-center gap-3 h-14 border-b border-zinc-800 px-3 sticky top-0 bg-black z-10">
-          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
-          <h1 className="font-bold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
+      <div className="min-h-[70vh] bg-[#FFFBF0] text-[#29251F] pb-8">
+        <div className="flex items-center gap-3 h-14 border-b border-[#E8DEC9] px-3 sticky top-0 bg-[#FFFBF0]/95 backdrop-blur z-10">
+          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-[#5B21B6]" aria-label="Back">‹</button>
+          <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
-        {!detail ? <p className="text-zinc-500 text-sm text-center py-10">Loading…</p> : (
+        {!detail ? <p className="text-[#8B8175] text-sm text-center py-10">Loading…</p> : (
           <div className="p-4 space-y-2">
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
-                <div className="p-4 rounded-2xl bg-zinc-900 border border-amber-500/40 space-y-3">
-                  <p className="text-[10px] font-bold text-amber-400">ADMIN — GROUP SETTINGS</p>
+                <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-3 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">ADMIN — GROUP SETTINGS</p>
                   <div>
-                    <label htmlFor="gst-name" className="block text-[10px] font-bold text-zinc-400 mb-1">GROUP NAME</label>
-                    <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                    <label htmlFor="gst-name" className="block text-[10px] font-bold text-[#766E63] mb-1">GROUP NAME</label>
+                    <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
                   </div>
                   <div>
-                    <label htmlFor="gst-desc" className="block text-[10px] font-bold text-zinc-400 mb-1">DESCRIPTION</label>
-                    <input id="gst-desc" value={stForm.description} onChange={e => setStForm(f => ({ ...f, description: e.target.value }))} placeholder="What this group is about" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                    <label htmlFor="gst-desc" className="block text-[10px] font-bold text-[#766E63] mb-1">DESCRIPTION</label>
+                    <input id="gst-desc" value={stForm.description} onChange={e => setStForm(f => ({ ...f, description: e.target.value }))} placeholder="What this group is about" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
                   </div>
                   <div>
-                    <label htmlFor="gst-com" className="block text-[10px] font-bold text-zinc-400 mb-1">COMMUNITY (congregation)</label>
-                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-amber-400" />
+                    <label htmlFor="gst-com" className="block text-[10px] font-bold text-[#766E63] mb-1">COMMUNITY (congregation)</label>
+                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
                   </div>
                   <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-zinc-500 tracking-widest">GROUP PERMISSIONS</p>
+                    <p className="text-[10px] font-extrabold text-[#8B8175] tracking-widest">GROUP PERMISSIONS</p>
                     {([
                       ['allowMemberEditInfo', 'Edit group settings', 'Members can change the group name and description.', stForm.allowMemberEditInfo],
                       ['allowMemberSend', 'Send new messages', 'Turn off for an announcements-only group.', stForm.allowMemberSend],
@@ -324,48 +308,48 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                         key={key}
                         type="button"
                         onClick={() => setStForm(f => ({ ...f, [key]: !f[key] }))}
-                        className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
+                        className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-left"
                         role="switch"
                         aria-checked={enabled}
                       >
                         <span className="min-w-0">
-                          <span className="block text-sm font-bold text-white">{title}</span>
-                          <span className="block text-[11px] text-zinc-400 mt-0.5">{description}</span>
+                          <span className="block text-sm font-bold text-[#29251F]">{title}</span>
+                          <span className="block text-[11px] text-[#766E63] mt-0.5">{description}</span>
                         </span>
-                        <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${enabled ? 'bg-amber-400' : 'bg-zinc-700'}`}>
-                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                        <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${enabled ? 'bg-[#7C3AED]' : 'bg-[#DDD6FE]'}`}>
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
                         </span>
                       </button>
                     ))}
                     <button
                       type="button"
                       onClick={() => setStForm(f => ({ ...f, addOnly: !f.addOnly }))}
-                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-left"
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-left"
                       role="switch" aria-checked={stForm.addOnly}
                     >
                       <span>
-                        <span className="block text-sm font-bold text-white">Admin-only membership</span>
-                        <span className="block text-[11px] text-zinc-400 mt-0.5">{stForm.addOnly ? 'ON — members cannot request to join; admins add them.' : 'OFF — members can request to join.'}</span>
+                        <span className="block text-sm font-bold text-[#29251F]">Admin-only membership</span>
+                        <span className="block text-[11px] text-[#766E63] mt-0.5">{stForm.addOnly ? 'ON — members cannot request to join; admins add them.' : 'OFF — members can request to join.'}</span>
                       </span>
-                      <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-amber-400' : 'bg-zinc-700'}`}>
-                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
+                      <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-[#7C3AED]' : 'bg-[#DDD6FE]'}`}>
+                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
                       </span>
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
-                    <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold">Cancel</button>
+                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
+                    <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-[#F4E8D0] text-[#766E63] text-xs font-bold">Cancel</button>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2">
-                  <p className="text-[10px] font-bold text-amber-400">ADD MEMBER DIRECTLY</p>
+                <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-2 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">ADD MEMBER DIRECTLY</p>
                   <div className="flex gap-2">
-                    <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
+                    <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
                     <button disabled={busy === 'add_member' || !addUname.trim()} onClick={() => void addMemberDirect()} className="px-3 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Add</button>
                   </div>
                   <div className="flex gap-2">
                     {(['member', 'admin'] as const).map(r => (
-                      <button key={r} onClick={() => setAddRole(r)} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${addRole === r ? 'bg-amber-400 text-black' : 'bg-zinc-800 text-zinc-300'}`}>{r === 'admin' ? 'As group admin' : 'As member'}</button>
+                      <button key={r} onClick={() => setAddRole(r)} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${addRole === r ? 'bg-[#7C3AED] text-white' : 'bg-[#F4E8D0] text-[#766E63]'}`}>{r === 'admin' ? 'As group admin' : 'As member'}</button>
                     ))}
                   </div>
                 </div>
@@ -373,7 +357,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                 <button
                   disabled={busy === `del_${detail.group.slug}`}
                   onClick={() => void deleteGroup(detail.group.slug, detail.group.name)}
-                  className="w-full py-2.5 rounded-xl bg-red-950 border border-red-900 text-red-300 text-xs font-bold disabled:opacity-50"
+                  className="w-full py-2.5 rounded-xl bg-white border border-red-200 text-red-600 text-xs font-bold disabled:opacity-50"
                 >
                   {busy === `del_${detail.group.slug}` ? 'Deleting…' : '🗑 Delete this group'}
                 </button>
@@ -381,59 +365,59 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
               </div>
             ) : (
               <>
-            {detail.group.description && <p className="text-xs text-zinc-400 pb-1">{detail.group.description}</p>}
+            {detail.group.description && <p className="text-xs text-[#766E63] pb-1 leading-5">{detail.group.description}</p>}
 
             {me && onOpenChat && (
-              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">💬 Open group chat{Number(unreadByGroup[detail.group.slug]) > 0 ? ` · ${Number(unreadByGroup[detail.group.slug]) > 99 ? '99+' : unreadByGroup[detail.group.slug]} new` : ''}</button>
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm">💬 Open group chat{Number(unreadByGroup[detail.group.slug]) > 0 ? ` · ${Number(unreadByGroup[detail.group.slug]) > 99 ? '99+' : unreadByGroup[detail.group.slug]} new` : ''}</button>
             )}
 
             {canManage && requests.length > 0 && (
-              <div className="p-3 rounded-xl bg-zinc-900 border border-amber-900/50 mb-2">
-                <p className="text-[10px] font-bold text-amber-400 mb-2">JOIN REQUESTS ({requests.length})</p>
+              <div className="p-3 rounded-xl bg-white border border-[#FDE68A] mb-2 shadow-sm">
+                <p className="text-[10px] font-extrabold text-[#B45309] mb-2 tracking-widest">JOIN REQUESTS ({requests.length})</p>
                 {requests.map(q => (
                   <div key={q.id} className="flex items-center gap-2 py-1.5">
-                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold truncate">{q.name || q.username}</p><p className="text-[10px] text-zinc-500">@{q.username}</p></div>
-                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, true)} className="px-3 py-1.5 rounded-full bg-green-600 text-white text-[10px] font-bold disabled:opacity-50">Approve</button>
-                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-zinc-700 text-zinc-300 text-[10px] font-bold disabled:opacity-50">Reject</button>
+                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold truncate">{q.name || q.username}</p><p className="text-[10px] text-[#8B8175]">@{q.username}</p></div>
+                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, true)} className="px-3 py-1.5 rounded-full bg-[#0F766E] text-white text-[10px] font-bold disabled:opacity-50">Approve</button>
+                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-[#F4E8D0] text-[#766E63] text-[10px] font-bold disabled:opacity-50">Reject</button>
                   </div>
                 ))}
               </div>
             )}
 
             {canManage && (
-              <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-                <p className="text-[10px] font-bold text-zinc-500 tracking-widest mb-2">GROUP PERMISSIONS</p>
+              <div className="p-3 rounded-xl bg-white border border-[#E8DEC9] shadow-sm">
+                <p className="text-[10px] font-extrabold text-[#8B8175] tracking-widest mb-2">GROUP PERMISSIONS</p>
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <span className="text-zinc-300">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
-                  <span className="text-zinc-300">{detail.group.allow_member_add ? '✓ Members can add people' : '✓ Admins add people'}</span>
-                  <span className="text-zinc-300">{detail.group.approve_new_members ? '✓ Join requests approved' : '✓ Open joining'}</span>
-                  <span className="text-zinc-300">{detail.group.allow_member_edit_info ? '✓ Members can edit info' : '✓ Admins edit info'}</span>
+                  <span className="text-[#4B433A]">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
+                  <span className="text-[#4B433A]">{detail.group.allow_member_add ? '✓ Members can add people' : '✓ Admins add people'}</span>
+                  <span className="text-[#4B433A]">{detail.group.approve_new_members ? '✓ Join requests approved' : '✓ Open joining'}</span>
+                  <span className="text-[#4B433A]">{detail.group.allow_member_edit_info ? '✓ Members can edit info' : '✓ Admins edit info'}</span>
                 </div>
               </div>
             )}
 
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold pt-1">Members ({detail.members.length})</p>
+            <p className="text-[10px] uppercase tracking-widest text-[#8B8175] font-bold pt-1">Members ({detail.members.length})</p>
             {detail.members.map(u => (
-              <div key={u.username} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-                <div className="w-9 h-9 shrink-0 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
+              <div key={u.username} className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm">
+                <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">ADMIN</span>}</p>
-                  <p className="text-[11px] text-zinc-500 truncate">@{u.username}</p>
+                  <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold ml-1">ADMIN</span>}</p>
+                  <p className="text-[11px] text-[#8B8175] truncate">@{u.username}</p>
                 </div>
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
-                    <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-zinc-800 text-white text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
-                    <button disabled={busy.startsWith(`rm_${detail.group.slug}_`)} onClick={() => void removeMember(detail.group.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold disabled:opacity-50">Remove</button>
+                    <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-[#F4E8D0] text-[#5B21B6] text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
+                    <button disabled={busy.startsWith(`rm_${detail.group.slug}_`)} onClick={() => void removeMember(detail.group.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold disabled:opacity-50">Remove</button>
                   </div>
                 )}
               </div>
             ))}
-            {detail.members.length === 0 && <p className="text-sm text-zinc-500 text-center py-8">No members yet.</p>}
+            {detail.members.length === 0 && <p className="text-sm text-[#8B8175] text-center py-8">No members yet.</p>}
 
             <div className="pt-3">
               {me
-                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-zinc-700 text-zinc-300 text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
-                : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Request to join</button>}
+                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-[#E8DEC9] bg-white text-[#766E63] text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
+                : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">Request to join</button>}
             </div>
               </>
             )}
@@ -444,39 +428,47 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   }
 
   return (
-    <div className="bg-black text-white min-h-[70vh] pb-8">
-      <div className="px-4 pt-5 pb-3 border-b border-zinc-800 flex items-end justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
-          <h1 className="text-2xl font-extrabold">Groups</h1>
-          <p className="text-xs text-zinc-500 mt-1">Fellowship in small groups across Nyeri.</p>
+    <div className="min-h-[70vh] bg-[#FFFBF0] text-[#29251F] pb-8">
+      <div className="px-4 pt-5 pb-4 bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#7C3AED] text-white">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">Harvest Family</p>
+            <h1 className="text-2xl font-extrabold">Groups</h1>
+            <p className="text-xs text-purple-100 mt-1">Fellowship in small groups across Nyeri.</p>
+          </div>
+          {isAdmin && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-[#5B21B6] text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
         </div>
-        {isAdmin && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-[#7C3AED] text-white text-xs font-extrabold">{showCreate ? 'Close' : '+ New'}</button>}
+        {(() => { const joined = groups.filter((g: any) => g.joined).length; return groups.length > 0 ? (
+          <div className="mt-4 flex gap-2">
+            <span className="px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold">👥 {groups.length} groups</span>
+            <span className="px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold">✓ {joined} joined</span>
+          </div>
+        ) : null })()}
       </div>
 
       <div className="p-4 space-y-4">
-        {error && <div role="alert" className="p-3 rounded-xl bg-rose-950 border border-rose-900 text-sm text-rose-300">{error}</div>}
+        {error && <div role="alert" className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
 
         {isAdmin && showCreate && (
-          <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2">
-            <p className="text-[10px] font-bold text-amber-400">NEW GROUP</p>
-            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
-            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
-            <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
-            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
-            <p className="text-[10px] text-zinc-500">A community hosts 3–10 groups.</p>
-            <div className="p-3 rounded-xl bg-zinc-950 border border-amber-500/20">
-              <p className="text-[11px] font-bold text-amber-400">CREATOR ADMIN</p>
-              <p className="text-[11px] text-zinc-400 mt-1">You will automatically become a group admin. You can add other admins later from Group Settings.</p>
+          <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-2 shadow-sm">
+            <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">NEW GROUP</p>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+            <p className="text-[10px] text-[#8B8175]">A community hosts 3–10 groups.</p>
+            <div className="p-3 rounded-xl bg-[#FEF3C7] border border-[#FDE68A]">
+              <p className="text-[11px] font-extrabold text-[#B45309]">CREATOR ADMIN</p>
+              <p className="text-[11px] text-[#766E63] mt-1">You will automatically become a group admin. You can add other admins later from Group Settings.</p>
             </div>
-            <button disabled={busy === 'create' || !form.name.trim()} onClick={() => void create()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Create group</button>
+            <button disabled={busy === 'create' || !form.name.trim()} onClick={() => void create()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">Create group</button>
           </div>
         )}
 
-        {loading ? <p className="text-zinc-500 text-sm">Loading…</p> : (
-          <div className="space-y-2">{groups.map(g => <GroupRow key={g.id} g={g} />)}</div>
+        {loading ? <p className="text-[#8B8175] text-sm">Loading…</p> : (
+          <div className="space-y-3">{groups.map(g => <GroupRow key={g.id} g={g} />)}</div>
         )}
-        {!loading && groups.length === 0 && <p className="text-sm text-zinc-500 text-center py-8">No groups yet{isAdmin ? ' — create the first one' : ''}.</p>}
+        {!loading && groups.length === 0 && <div className="text-center py-10"><div className="w-16 h-16 mx-auto rounded-full bg-[#F4E8D0] flex items-center justify-center text-3xl">👥</div><p className="text-sm text-[#8B8175] mt-3">No groups yet{isAdmin ? ' — create the first one' : ''}.</p></div>}
       </div>
     </div>
   )
