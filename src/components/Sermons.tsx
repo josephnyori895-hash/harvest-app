@@ -138,7 +138,7 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       })
       const pd = await pres.json().catch(() => ({}))
       if (!pres.ok) throw new Error(pd.error || 'Unable to prepare upload')
-      const direct = /^https?:\\/\\//.test(pd.url)
+      const direct = /^https?:\/\//.test(pd.url)
       let up: Response
       if (direct) {
         up = await fetch(pd.url, { method: pd.method || 'PUT', body: uploadFile, headers: { 'Content-Type': uploadFile.type, ...(pd.fields?.['x-amz-meta-ownerid'] ? { 'x-amz-meta-ownerid': String(pd.fields['x-amz-meta-ownerid']) } : {}) } })
