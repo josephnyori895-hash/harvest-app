@@ -4,7 +4,7 @@
 import { httpError } from './http.js'
 import { query } from './db.js'
 
-export const ALL_CAPS = ['post_media', 'create_groups', 'manage_groups', 'manage_communities', 'delete_media', 'moderate_chat']
+export const ALL_CAPS = ['post_media', 'create_groups', 'manage_groups', 'manage_communities', 'delete_media', 'moderate_chat', 'manage_sermons']
 
 export function parseGrants(raw) {
   if (!raw || typeof raw !== 'string') return []
