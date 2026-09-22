@@ -6,6 +6,7 @@ import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
+import VideoThumb from './VideoThumb'
 
 type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
@@ -355,7 +356,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
                 stays visible and centered (no cropped edges) — TikTok-style. */}
             {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
             {cur.video ? <>
-              {!videoReady && !videoError && <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />}
+              {!videoReady && !videoError && (cur.img || generatedPoster
+                ? <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />
+                : <VideoThumb src={cur.video} className="absolute inset-0 w-full h-full" />)}
               {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p><button type="button" onClick={retryVideo} className="pointer-events-auto mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button></div></div>}
               <video key={`${cur.id ?? idx}-${videoRetryKey}`} ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onCanPlay={() => setVideoReady(true)} onWaiting={() => setVideoReady(false)} onPlaying={() => setVideoReady(true)} onError={() => { setVideoReady(false); setVideoError(true) }} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
             </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}

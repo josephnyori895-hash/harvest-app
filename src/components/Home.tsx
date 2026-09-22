@@ -1,4 +1,5 @@
 import MediaThumbnail from './MediaThumbnail'
+import VideoThumb from './VideoThumb'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getLikesTable, toggleLikeKey } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
@@ -25,59 +26,50 @@ function timeAgo(iso?: string) {
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
 
+// Feed video preview, Android-WebView-safe.
+//
+// The old version kept a <video controls> mounted at all times; Android WebView
+// paints its huge native play-glyph over visible video elements, and autoplay
+// in feeds is blocked anyway. Now: show the server poster when it exists, or a
+// VideoThumb canvas first-frame when it doesn't — and only swap in the real
+// <video controls> after the user taps (VideoThumb's playable behavior).
 function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
-  const [ready, setReady] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [videoReady, setVideoReady] = useState(false)
-  const [generatedPoster, setGeneratedPoster] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [posterReady, setPosterReady] = useState(false)
+  const [posterFailed, setPosterFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    setReady(false); setFailed(false); setVideoReady(false); setGeneratedPoster(null)
+    setPosterReady(false); setPosterFailed(false)
     if (!poster) return () => { cancelled = true }
     const img = new Image()
     img.decoding = 'async'
-    img.onload = () => { if (!cancelled) setReady(true) }
-    img.onerror = () => { if (!cancelled) setFailed(true) }
+    img.onload = () => { if (!cancelled) setPosterReady(true) }
+    img.onerror = () => { if (!cancelled) setPosterFailed(true) }
     img.src = poster
     return () => { cancelled = true; img.onload = null; img.onerror = null }
   }, [poster])
 
-  const captureFrame = (video: HTMLVideoElement) => {
-    if (poster || generatedPoster || !video.videoWidth || !video.videoHeight) return
-    try {
-      const canvas = document.createElement('canvas')
-      const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight))
-      canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
-      canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
-      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const frame = canvas.toDataURL('image/jpeg', 0.82)
-      if (frame.length > 100) setGeneratedPoster(frame)
-    } catch {
-      // Some WebViews block canvas extraction for media; the loaded video frame
-      // remains the fallback preview in that case.
-    }
+  if (playing) {
+    return <video src={src} controls autoPlay playsInline className="w-full aspect-[4/3] object-cover bg-black" aria-label="Video" />
   }
 
-  const previewPoster = poster || generatedPoster || undefined
-  const showPoster = Boolean(previewPoster && (ready || generatedPoster))
-  return <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0]">
-    {!videoReady && !showPoster && !failed && <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-[#F4E8D0] via-[#EDE9FE] to-[#F4E8D0]" aria-label="Loading video preview" />}
-    {previewPoster && !failed && <img src={previewPoster} alt={alt} decoding="async" fetchPriority="high" className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${showPoster ? 'opacity-100' : 'opacity-0'}`} />}
-    {failed && <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
-    <video
-      src={src}
-      poster={previewPoster}
-      controls
-      playsInline
-      preload="metadata"
-      onLoadedData={e => { setVideoReady(true); captureFrame(e.currentTarget) }}
-      onError={() => { if (!previewPoster) setFailed(true) }}
-      className={`absolute inset-0 w-full h-full object-cover bg-[#1a1714] shadow-inner transition-opacity duration-200 ${showPoster ? 'opacity-0' : videoReady ? 'opacity-100' : 'opacity-0'}`}
-      aria-label="Video"
-    />
-    {showPoster && <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>}
-  </div>
+  const usePoster = Boolean(poster && posterReady && !posterFailed)
+  return (
+    <div
+      className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0] cursor-pointer"
+      onClick={() => setPlaying(true)}
+      role="button"
+      aria-label="Play video"
+    >
+      {usePoster
+        ? <img src={poster!} alt={alt} decoding="async" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover" />
+        : src
+          ? <VideoThumb src={src} playable className="absolute inset-0" />
+          : <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
+      <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>
+    </div>
+  )
 }
 
 const updatesBase: any[] = []
@@ -85,7 +77,7 @@ const updatesBase: any[] = []
 const quickLinks = [
   { tab: 'chat', icon: '🙏', title: 'Prayer', text: 'Pray with someone' },
   { tab: 'groups', icon: '👥', title: 'Groups', text: 'Find your community' },
-  { tab: 'departments', icon: '🤝', title: 'Departments', text: 'Serve with your gifts' },
+  { tab: 'departments', icon: '🤝', title: 'Departments', text: 'Become a volunteer' },
   { tab: 'give', icon: '🤲', title: 'Give', text: 'Support the ministry' },
   { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
 ]

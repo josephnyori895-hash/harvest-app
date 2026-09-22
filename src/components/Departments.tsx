@@ -4,6 +4,16 @@ import { showToast } from './Toast'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
+const departmentStyle = (department: any) => {
+  const label = `${department.slug || ''} ${department.name || ''}`.toLowerCase()
+  if (/worship|praise|music|choir/.test(label)) return { icon: '🎵', tint: 'from-fuchsia-600 to-purple-700', glow: 'bg-fuchsia-500/15' }
+  if (/media|tech|sound|camera/.test(label)) return { icon: '📸', tint: 'from-sky-500 to-indigo-700', glow: 'bg-sky-500/15' }
+  if (/usher|welcome|hospitality/.test(label)) return { icon: '👋', tint: 'from-amber-400 to-orange-600', glow: 'bg-amber-400/15' }
+  if (/children|kid|youth/.test(label)) return { icon: '✨', tint: 'from-emerald-500 to-teal-700', glow: 'bg-emerald-500/15' }
+  if (/prayer|intercess/.test(label)) return { icon: '🙏', tint: 'from-violet-500 to-indigo-800', glow: 'bg-violet-500/15' }
+  return { icon: '🤝', tint: 'from-purple-600 to-indigo-800', glow: 'bg-purple-500/15' }
+}
+
 function authHeaders() {
   const t = localStorage.getItem('harvest_token') || ''
   return t ? { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
@@ -202,17 +212,26 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
 
   const mine = departments.filter(d => d.joined)
 
-  const DeptCard = ({ d }: { d: any }) => (
-    <div className="w-full p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+  const DeptCard = ({ d }: { d: any }) => {
+    const style = departmentStyle(d)
+    return (
+    <div className="group relative w-full overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/90 shadow-xl shadow-black/20 transition hover:border-white/20">
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.tint}`} />
+      <div className="relative p-4">
       <div className="flex items-start justify-between gap-3">
-        <button onClick={() => openDetail(d.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
-          <p className="text-sm font-bold text-white flex items-center gap-2">
-            {d.name}
+        <button onClick={() => openDetail(d.slug)} className="min-w-0 flex flex-1 gap-3 text-left active:opacity-70">
+          <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-white/10 flex items-center justify-center text-2xl shadow-inner`}>
+            {style.icon}
+          </div>
+          <div className="min-w-0 pt-0.5">
+          <p className="text-sm font-bold text-white flex items-center gap-2 truncate">
+            <span className="truncate">{d.name}</span>
             {d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">LEADER</span>}
             {d.joined && !d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-600 text-white font-extrabold">JOINED</span>}
           </p>
-          {d.description && <p className="text-[11px] text-zinc-400 mt-0.5">{d.description}</p>}
-          <p className="text-[10px] text-zinc-500 mt-1">{d.member_count} serving</p>
+          {d.description && <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">{d.description}</p>}
+          <p className="text-[10px] text-zinc-500 mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
+          </div>
         </button>
         <div className="shrink-0 flex flex-col items-end gap-2">
           {(d.joined || isAdmin) && onOpenDeptChat && (
@@ -235,8 +254,9 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           </button>
         </div>
       </div>
+      </div>
     </div>
-  )
+  )}
 
   if (openSlug) {
     const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
@@ -325,10 +345,19 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
 
   return (
     <div className="bg-black text-white min-h-[70vh] pb-8">
-      <div className="px-4 pt-5 pb-3 border-b border-zinc-800">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
-        <h1 className="text-2xl font-extrabold">Departments</h1>
-        <p className="text-xs text-zinc-500 mt-1">Find where you serve - your teams have real chat rooms.</p>
+      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-white/10 bg-gradient-to-br from-[#21123e] via-[#110d20] to-black">
+        <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-fuchsia-500/20 blur-3xl" />
+        <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-violet-500/15 blur-3xl" />
+        <div className="relative">
+          <p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/70 font-bold">Harvest Family · Serve together</p>
+          <h1 className="text-3xl font-black tracking-tight mt-1">Departments</h1>
+          <p className="text-sm text-zinc-300 mt-2 max-w-sm">Find your place, build your team, and keep the conversation moving.</p>
+          <div className="flex gap-2 mt-5">
+            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{departments.length}</p><p className="text-[9px] uppercase tracking-wide text-zinc-300 mt-1">Teams</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{mine.length}</p><p className="text-[9px] uppercase tracking-wide text-zinc-300 mt-1">Your teams</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">💬</p><p className="text-[9px] uppercase tracking-wide text-zinc-300 mt-1">Team chat</p></div>
+          </div>
+        </div>
       </div>
 
       <div className="p-4 space-y-6">
@@ -345,13 +374,13 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
 
         {mine.length > 0 && (
           <section>
-            <h2 className="text-sm font-bold text-amber-400 mb-2">Your teams</h2>
+            <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
             <div className="space-y-2">{mine.map(d => <DeptCard key={d.id} d={d} />)}</div>
           </section>
         )}
 
         <section>
-          <h2 className="text-sm font-bold text-white mb-2">All departments</h2>
+          <h2 className="text-sm font-black text-white mb-3">Explore departments</h2>
           {loading ? <p className="text-zinc-500 text-sm">Loading…</p> : (
             <div className="space-y-2">
               {departments.filter(d => !d.joined).map(d => <DeptCard key={d.id} d={d} />)}

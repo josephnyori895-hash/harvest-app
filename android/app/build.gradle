@@ -14,8 +14,19 @@ android {
         applicationId "com.harvestfamily.nyeri"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        def harvestVersionCode = (System.getenv("HARVEST_VERSION_CODE") ?: "1").toInteger()
-        def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0"
+        // Versioning: CI (android-release.yml) injects HARVEST_VERSION_CODE =
+        // 1000 + run number, so every release outranks the previous one and
+        // ADB/Play installs never hit INSTALL_FAILED_VERSION_DOWNGRADE.
+        // Locally (no env set), fall back to a stamp derived from the git
+        // commit count so successive local builds also increase. CI's value
+        // (1000+) stays ahead of local counts (< 1000) so they never clash.
+        def localVersionCode = 1000
+        try {
+          def gitCount = 'git rev-list --count HEAD'.execute().text.trim()
+          if (gitCount?.isInteger()) localVersionCode = Math.max(1, gitCount.toInteger() % 900)
+        } catch (ignored) { /* not a git checkout — keep the floor */ }
+        def harvestVersionCode = (System.getenv("HARVEST_VERSION_CODE") ?: "${localVersionCode}").toInteger()
+        def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0.${localVersionCode}"
         versionCode harvestVersionCode
         versionName harvestVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

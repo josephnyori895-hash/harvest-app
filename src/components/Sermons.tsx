@@ -157,15 +157,24 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
   }
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-4">
-      <div className="mb-5">
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Harvest Word</p>
-        <h1 className="text-2xl font-extrabold mt-1">Sermons</h1>
-        <p className="text-sm text-[#6B6257] mt-1">Listen or watch — and download to share with someone.</p>
+    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] pb-8">
+      <div className="relative overflow-hidden px-5 pt-7 pb-6 bg-gradient-to-br from-[#32145f] via-[#6B21A8] to-[#A855F7] text-white shadow-xl">
+        <div className="absolute -right-8 -top-14 w-40 h-40 rounded-full bg-amber-300/25 blur-3xl" />
+        <div className="absolute -left-10 -bottom-14 w-44 h-44 rounded-full bg-blue-500/25 blur-3xl" />
+        <div className="relative">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-purple-100/75">Harvest Word</p>
+          <h1 className="text-3xl font-black tracking-tight mt-1">Sermons</h1>
+          <p className="text-sm text-purple-100 mt-2 max-w-sm">Carry the Word with you—listen, watch, and share hope.</p>
+          <div className="flex gap-2 mt-5">
+            <div className="rounded-2xl px-3 py-2 bg-white/15 border border-white/15 backdrop-blur"><p className="text-lg font-black leading-none">{sermons.length}</p><p className="text-[9px] uppercase tracking-wide text-purple-100 mt-1">Teachings</p></div>
+            <div className="rounded-2xl px-3 py-2 bg-white/15 border border-white/15 backdrop-blur"><p className="text-lg font-black leading-none">🎧</p><p className="text-[9px] uppercase tracking-wide text-purple-100 mt-1">Listen anywhere</p></div>
+          </div>
+        </div>
       </div>
 
+      <div className="px-4 pt-5">
       {(isAdmin || verified) && (
-        <div className="mb-5">
+        <div className="mb-5 rounded-3xl p-1 bg-gradient-to-r from-[#7C3AED] to-fuchsia-500 shadow-lg shadow-purple-300/60">
           <button onClick={() => setUploadOpen(true)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-extrabold shadow-sm">
             🎙 Upload a Sermon (MP3 or MP4)
           </button>
@@ -176,17 +185,18 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
       {error && <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
 
       {loading ? <p className="text-sm text-[#6B6257]">Loading…</p> : sermons.length === 0 ? (
-        <div className="text-center py-14">
-          <div className="text-4xl mb-2">🎙</div>
+        <div className="text-center py-14 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
+          <div className="mx-auto w-16 h-16 rounded-3xl bg-[#F3E8FF] flex items-center justify-center text-3xl mb-3">🎙</div>
           <p className="font-bold text-sm">No sermons yet</p>
           <p className="text-xs text-[#6B6257] mt-1">{isAdmin ? 'Upload the first one below.' : 'Check back soon — new teachings are on the way.'}</p>
         </div>
       ) : (
         <div className="space-y-3">
           {sermons.map(s => (
-            <div key={s.id} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 shadow-sm">
+            <div key={s.id} className="relative overflow-hidden bg-white border border-[#E8DEC9] rounded-3xl p-4 shadow-sm transition hover:shadow-md">
+              <div className={`absolute inset-x-0 top-0 h-1 ${s.kind === 'video' ? 'bg-gradient-to-r from-purple-600 to-fuchsia-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`} />
               <div className="flex items-start gap-3">
-                <div className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-xl ${s.kind === 'video' ? 'bg-[#F3E8FF] text-[#7C3AED]' : 'bg-[#F4E8D0]'}`}>{s.kind === 'video' ? '🎬' : '🎧'}</div>
+                <div className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-xl shadow-inner ${s.kind === 'video' ? 'bg-[#F3E8FF] text-[#7C3AED]' : 'bg-[#FFF0C7]'}`}>{s.kind === 'video' ? '🎬' : '🎧'}</div>
                 <div className="min-w-0 flex-1">
                   <p className="font-extrabold text-sm leading-snug">{s.title}</p>
                   <p className="text-[11px] text-[#6B6257] mt-0.5">
@@ -262,6 +272,7 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
