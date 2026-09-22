@@ -431,10 +431,10 @@ export async function handleUsers(request, env, ctx, params) {
   // GET /api/me
   if (path === '/api/me' && method === 'GET') {
     if (!user || user.id === '00000000-0000-0000-0000-000000000000') return jsonResponse({ user: null, role: 'guest' })
-    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, active, last_seen, avatar_key FROM users WHERE id=?', [user.id])
+    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, active, last_seen, avatar_key, grants FROM users WHERE id=?', [user.id])
     const u = bool(rows[0], 'verified', 'active')
     if (!u || !u.active) return jsonResponse({ user: null, role: 'guest' })
-    return jsonResponse({ user: { ...u, avatar_url: await mediaUrlOrNull(env, u.avatar_key, 86_400) }, role: u.role })
+    return jsonResponse({ user: { ...u, avatar_url: await mediaUrlOrNull(env, u.avatar_key, 86_400) }, role: u.role, grants: parseGrants(u.grants) })
   }
 
   return null
