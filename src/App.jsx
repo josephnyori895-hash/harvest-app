@@ -72,18 +72,20 @@ function useDirectory(enabled) {
 }
 
 function IgIcon({ name, active }) {
+  // Warm palette: brand purple when active, soft warm gray when not.
+  const c = active ? '#7C3AED' : '#A49A8E'
   const s = active ? 2.2 : 1.6
-  if (name === 'home') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4z" /></svg>
-  if (name === 'search') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={s}><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
-  if (name === 'reels') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M10 8l6 4-6 4z" fill={active ? 'black' : 'none'} stroke="none" /></svg>
-  if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-white text-black border-white' : 'border-white'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? 'black' : 'white'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
-  if (name === 'activity') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M12 21s-6-4-6-10a6 6 0 0 1 12 0c0 6-6 10-6 10z" /></svg>
-  if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-  if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'opacity(0.9)'}} role="img" aria-label="give">🤲</span>
-  if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
-  if (name === 'chat') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-4.2A7.5 7.5 0 1 1 20 11.5z" /><path d="M8 11h8M8 14h5" strokeLinecap="round" /></svg>
-  if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? 'white' : 'none'} stroke="white" strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
-  if (name === 'profile') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={s}><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+  if (name === 'home') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4z" /></svg>
+  if (name === 'search') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={s}><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
+  if (name === 'reels') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M10 8l6 4-6 4z" fill={active ? '#FFFBF0' : 'none'} stroke="none" /></svg>
+  if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'border-[#A49A8E]'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#FFFBF0' : '#A49A8E'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
+  if (name === 'activity') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 21s-6-4-6-10a6 6 0 0 1 12 0c0 6-6 10-6 10z" /></svg>
+  if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+  if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'grayscale(0.4) opacity(0.75)'}} role="img" aria-label="give">🤲</span>
+  if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
+  if (name === 'chat') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-4.2A7.5 7.5 0 1 1 20 11.5z" /><path d="M8 11h8M8 14h5" strokeLinecap="round" /></svg>
+  if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
+  if (name === 'profile') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={s}><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
   return null
 }
 
@@ -248,9 +250,9 @@ function InnerApp() {
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
-    <div className="min-h-screen bg-black flex justify-center">
+    <div className="min-h-screen bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="w-full bg-black min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="w-full bg-[#FFFBF0] min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className={tab === 'chat' ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 overflow-auto pb-[calc(64px+env(safe-area-inset-bottom))]'}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
@@ -727,7 +729,8 @@ function Nav({ tab, setTab }) {
   ]
   return (
     // Fixed to the viewport so it can never be scrolled away or mis-tapped.
-    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center min-h-[56px] border-t border-zinc-800 bg-black/95 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    // Warm church bar: deep warm-brown with a soft purple glow above the active tab.
+    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center min-h-[56px] border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
       {items.map(([id]) => (
         <button key={id} type="button" onClick={() => setTab(id)} className="p-3 active:opacity-60">
           <IgIcon name={id} active={tab === id} />

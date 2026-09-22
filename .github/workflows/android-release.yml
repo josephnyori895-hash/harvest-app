@@ -190,6 +190,10 @@ jobs:
           test -s "downloads/$APK_FILENAME" || { echo "::error::Versioned APK is missing"; exit 1; }
           test -s "public/harvest-family.apk" || { echo "::error::Web app assets are missing (workers/public not staged)"; exit 1; }
           test -s "public/index.html" || { echo "::error::Web app index.html is missing"; exit 1; }
+          # The assets directory is public/ now — bring the staged versioned APKs
+          # (current + previous release for rollback) into it before deploying.
+          cp downloads/harvest-family-*.apk public/ 2>/dev/null || true
+          test -s "public/$APK_FILENAME" || { echo "::error::Versioned APK missing from public assets"; exit 1; }
           npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
 
       - name: Authenticated production smoke test
