@@ -694,6 +694,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         ['manage_communities', 'Manage communities'],
                         ['delete_media', 'Delete media'],
                         ['moderate_chat', 'Moderate chats'],
+                        ['manage_sermons', 'Manage sermons'],
                       ] as const).map(([cap, label]) => {
                         const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
                         return (
@@ -701,7 +702,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         )
                       })}
                       </div>
-                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Posting media, creating groups, managing groups/communities, deleting media, moderating group/department chats.</p>
+                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Sermon Manager gives full control of the Sermons tab; other grants control their respective areas.</p>
                     </div>
                   )}
                   <div className="flex gap-2 flex-wrap">
