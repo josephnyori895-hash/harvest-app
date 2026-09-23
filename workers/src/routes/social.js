@@ -1,6 +1,7 @@
 import { query } from '../lib/db.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { requireMember } from '../lib/auth.js'
+import { mediaUrlOrNull } from '../lib/media.js'
 
 function clean(v, max=1000) { return String(v ?? '').trim().slice(0,max) }
 
@@ -8,6 +9,46 @@ export async function handleSocial(request, env, ctx) {
   const path = new URL(request.url).pathname
   const qp = searchParams(new URL(request.url))
   const user = ctx.user
+
+  // Persistent Reel saves: members can save/unsave approved Reels and
+  // retrieve the same saved list from any signed-in device.
+  const save = path.match(/^\/api\/reels\/([^/]+)\/save$/)
+  if (save && request.method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const reelId = save[1]
+    const reel = await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [reelId])
+    if (!reel.rows[0]) return errorResponse('reel not found', 404)
+    await query(env, 'INSERT OR IGNORE INTO reel_saves (user_id,reel_id) VALUES (?,?)', [fresh.id, reelId])
+    return jsonResponse({ ok:true, saved:true, reel_id:reelId })
+  }
+  if (save && request.method === 'DELETE') {
+    const fresh = await requireMember(env, user)
+    const reelId = save[1]
+    await query(env, 'DELETE FROM reel_saves WHERE user_id=? AND reel_id=?', [fresh.id, reelId])
+    return jsonResponse({ ok:true, saved:false, reel_id:reelId })
+  }
+
+  if (path === '/api/reels/saved' && request.method === 'GET') {
+    const fresh = await requireMember(env, user)
+    const limit = Math.min(Math.max(parseInt(qp.limit || '50', 10) || 50, 1), 100)
+    const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
+    const { rows } = await query(env,
+      `SELECT r.*, u.username, u.name, u.verified, rs.created_at AS saved_at
+         FROM reel_saves rs
+         JOIN reels r ON r.id=rs.reel_id
+         JOIN users u ON u.id=r.user_id
+        WHERE rs.user_id=? AND r.approved_at IS NOT NULL
+        ORDER BY rs.created_at DESC LIMIT ? OFFSET ?`,
+      [fresh.id, limit, offset])
+    const out = await Promise.all(rows.map(async r => ({
+      id:r.id, username:r.username, name:r.name, verified:!!r.verified,
+      caption:r.caption || '', views:r.views || 0, likes:r.likes || 0, comments:r.comments || 0,
+      poster_url: r.poster_key ? await mediaUrlOrNull(env,r.poster_key,900) : null,
+      hls_url: r.hls_master_key ? await mediaUrlOrNull(env,r.hls_master_key,900) : null,
+      saved_at:r.saved_at
+    })))
+    return jsonResponse({ reels:out, nextOffset:offset+rows.length, hasMore:rows.length===limit })
+  }
 
   // Edit captions / attached music. Owners can edit their own content; admin can moderate any.
   const edit = path.match(/^\/api\/(posts|reels|stories)\/([^/]+)$/)
