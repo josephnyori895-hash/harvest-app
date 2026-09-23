@@ -137,8 +137,18 @@ export async function handleFeed(request, env, ctx) {
       // instead of trying to decode an image as video.
       hls_url: r.hls_master_key ? await mediaUrlOrNull(env, r.hls_master_key, 900) : null,
       poster_url: await mediaUrlOrNull(env, r.poster_key, 900),
+      music: r.music_track_id ? await (async () => {
+        const t = await query(env, 'SELECT id,title,artist,cover_thumb_key FROM tracks WHERE id=?', [r.music_track_id])
+        const x = t.rows[0]
+        return x ? {
+          id: x.id,
+          title: x.title,
+          artist: x.artist || 'Harvest Worship',
+          cover_url: await mediaUrlOrNull(env, x.cover_thumb_key, 3600),
+        } : null
+      })() : null,
     })))
-    return jsonResponse({ reels: out, nextOffset: offset + limit })
+    return jsonResponse({ reels: out, nextOffset: offset + rows.length, hasMore: rows.length === limit })
   }
 
   // GET /api/music
