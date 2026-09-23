@@ -7,7 +7,7 @@ import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
 import VideoThumb from './VideoThumb'
 
-type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
+type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; saved?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
 
@@ -75,6 +75,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
               cover: r.music.cover || r.music.cover_url || '',
             } : null,
             liked: Boolean(r.liked),
+            saved: Boolean(r.saved),
           }))
         setServerReels(mapped)
         setReelsNextOffset(Number(r.nextOffset) || mapped.length)
@@ -115,6 +116,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             cover: item.music.cover || item.music.cover_url || '',
           } : null,
           liked: Boolean(item.liked),
+          saved: Boolean(item.saved),
         }))
       setServerReels(prev => [...prev, ...mapped])
       setReelsNextOffset(Number(r.nextOffset) || reelsNextOffset + mapped.length)
@@ -218,11 +220,29 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
-  const toggleSave = () => {
-    if (!cur) return
-    const next = !saved[key]
+  const toggleSave = async () => {
+    if (!useServer || !cur?.id) return flash('Sign in to save videos')
+    const wasSaved = Boolean(cur.saved ?? saved[key])
+    const next = !wasSaved
     setSaved(p => ({ ...p, [key]: next }))
-    flash(next ? 'Saved to your videos' : 'Removed from saved videos')
+    setServerReels(rs => rs.map(r => String(r.id) === String(cur.id) ? { ...r, saved: next } : r))
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const res = await fetch(`${API}/api/reels/${encodeURIComponent(String(cur.id))}/save`, {
+        method: next ? 'POST' : 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Could not update saved videos')
+      setServerReels(rs => rs.map(r => String(r.id) === String(cur.id) ? { ...r, saved: Boolean(data.saved) } : r))
+      setSaved(p => ({ ...p, [key]: Boolean(data.saved) }))
+      flash(data.saved ? 'Saved to your videos' : 'Removed from saved videos')
+    } catch (e: any) {
+      setSaved(p => ({ ...p, [key]: wasSaved }))
+      setServerReels(rs => rs.map(r => String(r.id) === String(cur.id) ? { ...r, saved: wasSaved } : r))
+      flash(e?.message || 'Could not update saved videos')
+    }
   }
 
   const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const publicBase = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://harvestfamily-api.harvestfamily.workers.dev').replace(/\/$/, ''); const url = cur.id != null ? `${publicBase}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : publicBase; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
@@ -480,8 +500,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             aria-label="Share">↗</button>
 
           <button onClick={(e) => { e.stopPropagation(); toggleSave() }}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${saved[key] ? 'ring-2 ring-amber-300/70' : ''}`}
-            aria-label={saved[key] ? 'Remove from saved videos' : 'Save video'}>🔖</button>
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${Boolean(cur.saved ?? saved[key]) ? 'ring-2 ring-amber-300/70' : ''}`}
+            aria-label={Boolean(cur.saved ?? saved[key]) ? 'Remove from saved videos' : 'Save video'}>🔖</button>
 
           <button onClick={(e) => { e.stopPropagation(); setShowMore(v => !v) }}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95"
@@ -492,7 +512,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
               <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); void share() }}
                 className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">↗ Share video</button>
               <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); toggleSave() }}
-                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">{saved[key] ? '🔖 Remove from saved' : '🔖 Save video'}</button>
+                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">{Boolean(cur.saved ?? saved[key]) ? '🔖 Remove from saved' : '🔖 Save video'}</button>
             </div>
           )}
 
