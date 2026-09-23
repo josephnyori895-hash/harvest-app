@@ -146,7 +146,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not update request')
       showToast(approve ? 'Member approved ✓' : 'Request rejected')
-      void openDetail(slug)
+      void openDetail(slug); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not update request') } finally { setBusy('') }
   }
 
@@ -157,7 +157,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not change role')
       showToast(role === 'admin' ? `${username} is now a group admin ⭐` : `${username} is now a member`)
-      void openDetail(slug)
+      void openDetail(slug); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not change role') } finally { setBusy('') }
   }
 
