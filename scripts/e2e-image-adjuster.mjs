@@ -101,7 +101,8 @@ try {
 
     await page.waitForSelector('[data-testid="post-create-edit"]', { visible: true })
     const preview = await waitForImageDimensions('[data-testid="post-create-edit"] img')
-    assert.equal(preview.mime, 'image/jpeg', `${testCase.label} export is not JPEG: ${preview.mime}`)\n    const previewRatio = preview.width / preview.height
+    assert.equal(preview.mime, 'image/jpeg', `${testCase.label} export is not JPEG: ${preview.mime}`)
+    const previewRatio = preview.width / preview.height
 
     assert.ok(Math.abs(previewRatio - testCase.ratio) < 0.01,
       `${testCase.label} Preview ratio mismatch: ${preview.width}x${preview.height} = ${previewRatio}`)
