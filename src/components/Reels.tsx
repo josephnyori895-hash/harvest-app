@@ -3,7 +3,6 @@ import { fetchReels, useApi } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
-import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
 import VideoThumb from './VideoThumb'
@@ -209,7 +208,6 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     touchY.current = null
   }
   const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const publicBase = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://harvestfamily-api.harvestfamily.workers.dev').replace(/\/$/, ''); const url = cur.id != null ? `${publicBase}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : publicBase; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
-  const shareWa = () => { if (!cur) return; sharePostToWhatsApp({ author: cur.user, caption: cur.cap, id: cur.id != null ? String(cur.id) : undefined, kind: 'reel' }); flash('Opening WhatsApp — pick a group ✓') }
   const respond = () => setShowComments(true)
   const toggleEncourage = async () => {
     if (!useServer || cur?.id == null) {
@@ -399,6 +397,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
         {/* One restrained gradient only where text needs contrast. */}
         <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
+        {notice && <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[80%] px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-sm text-[11px] text-white/85 text-center pointer-events-none">{notice}</div>}
 
         <div className="absolute left-4 right-20 bottom-5 sm:left-6 sm:right-24 sm:bottom-7 z-10">
           <button
