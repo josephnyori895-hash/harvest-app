@@ -567,6 +567,8 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   const [savedReels, setSavedReels] = useState([])
   const [savedReelsLoading, setSavedReelsLoading] = useState(false)
   const [savedReelsError, setSavedReelsError] = useState('')
+  const [savedReelSearch, setSavedReelSearch] = useState('')
+  const [savedReelDateFilter, setSavedReelDateFilter] = useState('all')
   useEffect(() => subscribeUploads(() => { setUploads(getUploads()); setHistory(getUploadHistory()) }), [])
   useEffect(() => {
     let cancelled = false
@@ -737,21 +739,77 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
             <p className="text-[11px] text-zinc-500 mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
           </div>
         )}
-        {savedReels.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 px-4">
-            {savedReels.map(r => (
-              <button key={r.id} type="button"
-                onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
-                className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 text-left active:scale-[0.98] transition-transform">
-                {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
-                <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
-                  <p className="text-[11px] font-bold truncate">{r.username}</p>
-                  <p className="text-[10px] text-white/70 line-clamp-2">{r.caption || 'Saved video'}</p>
+        {savedReels.length > 0 && (() => {
+          const q = savedReelSearch.trim().toLowerCase()
+          const now = Date.now()
+          const filtered = savedReels.filter(r => {
+            const haystack = `${r.username || ''} ${r.name || ''} ${r.caption || ''}`.toLowerCase()
+            if (q && !haystack.includes(q)) return false
+            if (savedReelDateFilter !== 'all') {
+              const savedAt = Date.parse(r.saved_at || '')
+              if (!Number.isFinite(savedAt)) return false
+              const age = now - savedAt
+              const limit = savedReelDateFilter === 'today' ? 24 * 60 * 60 * 1000
+                : savedReelDateFilter === '7d' ? 7 * 24 * 60 * 60 * 1000
+                : 30 * 24 * 60 * 60 * 1000
+              if (age < 0 || age > limit) return false
+            }
+            return true
+          })
+          return (
+            <>
+              <div className="px-4 space-y-2 mb-3">
+                <label className="relative block">
+                  <span className="sr-only">Search saved videos</span>
+                  <input
+                    value={savedReelSearch}
+                    onChange={e => setSavedReelSearch(e.target.value)}
+                    placeholder="Search creator or caption"
+                    className="w-full min-h-11 rounded-xl bg-zinc-900 border border-zinc-800 px-3 pl-9 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-zinc-600"
+                  />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm" aria-hidden>⌕</span>
+                </label>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                  {[
+                    ['all', 'All'],
+                    ['today', 'Today'],
+                    ['7d', '7 days'],
+                    ['30d', '30 days'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSavedReelDateFilter(value)}
+                      className={`min-h-9 shrink-0 rounded-full px-3 text-[11px] font-semibold border ${savedReelDateFilter === value ? 'bg-white text-zinc-900 border-white' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-              </button>
-            ))}
-          </div>
-        )}
+              </div>
+              {filtered.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 px-4">
+                  {filtered.map(r => (
+                    <button key={r.id} type="button"
+                      onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
+                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 text-left active:scale-[0.98] transition-transform">
+                      {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
+                      <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
+                        <p className="text-[11px] font-bold truncate">{r.username}</p>
+                        <p className="text-[10px] text-white/70 line-clamp-2">{r.caption || 'Saved video'}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mx-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+                  <p className="text-xs font-semibold">No saved videos match.</p>
+                  <p className="text-[11px] text-zinc-500 mt-1">Try a different creator, caption, or saved-date filter.</p>
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
 
       <div className="px-4 mt-5">
