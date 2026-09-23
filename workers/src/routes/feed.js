@@ -270,7 +270,10 @@ export async function handleFeed(request, env, ctx) {
     const c = await query(env, 'SELECT id, user_id, username, post_id, scope FROM post_comments WHERE id=?', [cid])
     if (!c.rows[0]) return errorResponse('not found', 404)
     const ownsComment = c.rows[0].user_id ? c.rows[0].user_id === fresh.id : c.rows[0].username === fresh.username
-    if (!ownsComment && fresh.role !== 'admin') return errorResponse('forbidden', 403)
+    const contentTable = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
+    const content = await query(env, `SELECT user_id FROM ${contentTable} WHERE id=?`, [c.rows[0].post_id])
+    const isContentAuthor = content.rows[0]?.user_id === fresh.id
+    if (!ownsComment && !isContentAuthor && fresh.role !== 'admin') return errorResponse('forbidden', 403)
     await query(env, 'DELETE FROM post_comments WHERE id=?', [cid])
     const col = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
     await query(env, `UPDATE ${col} SET comments = MAX(comments - 1, 0) WHERE id=?`, [c.rows[0].post_id])
