@@ -483,7 +483,6 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
     return () => URL.revokeObjectURL(coverPreview)
   }, [coverPreview])
   const USE_API = import.meta.env.VITE_USE_API === 'true'
-  const API = import.meta.env.VITE_API_URL || ''
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setFileName(f.name); setCoverBlob(null); setCoverPreview(null); const reader = new FileReader(); reader.onload = () => setFileUrl(reader.result as string); reader.readAsDataURL(f) }
 
