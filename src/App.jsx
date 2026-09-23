@@ -732,7 +732,7 @@ function Nav({ tab, setTab }) {
     // Warm church bar: deep warm-brown with a soft purple glow above the active tab.
     <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center min-h-[56px] border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
       {items.map(([id]) => (
-        <button key={id} type="button" onClick={() => setTab(id)} className="p-3 active:opacity-60">
+        <button key={id} type="button" aria-label={`Open ${id}`} onClick={() => setTab(id)} className="p-3 active:opacity-60">
           <IgIcon name={id} active={tab === id} />
         </button>
       ))}
