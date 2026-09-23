@@ -66,7 +66,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             comments: r.comments || 0,
             img: r.poster_url || r.img || undefined,
             video: r.hls_url || r.video || undefined,
-            music: r.music || null,
+            music: r.music ? {
+              title: r.music.title || 'Worship',
+              artist: r.music.artist || 'Harvest Worship',
+              cover: r.music.cover || r.music.cover_url || '',
+            } : null,
             liked: Boolean(r.liked),
           }))
         setServerReels(mapped)
@@ -102,7 +106,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           comments: item.comments || 0,
           img: item.poster_url || item.img || undefined,
           video: item.hls_url || item.video || undefined,
-          music: item.music || null,
+          music: item.music ? {
+            title: item.music.title || 'Worship',
+            artist: item.music.artist || 'Harvest Worship',
+            cover: item.music.cover || item.music.cover_url || '',
+          } : null,
           liked: Boolean(item.liked),
         }))
       setServerReels(prev => [...prev, ...mapped])
