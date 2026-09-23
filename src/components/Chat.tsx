@@ -826,7 +826,9 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
       if (live) setTeams(out)
     }
     void load()
-    return () => { live = false }
+    const refresh = () => void load()
+    window.addEventListener('harvest:groups-changed', refresh)
+    return () => { live = false; window.removeEventListener('harvest:groups-changed', refresh) }
   }, [])
 
   return (
