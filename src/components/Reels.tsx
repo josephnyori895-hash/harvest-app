@@ -327,7 +327,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   )
 
   return (
-    <div className="h-[calc(100dvh-64px)] lg:h-auto lg:min-h-[calc(100vh-49px)] bg-black lg:bg-[#211d19] text-white overflow-x-hidden">
+    <div className="h-[calc(100dvh-64px)] lg:h-[calc(100vh-49px)] bg-black text-white overflow-hidden">
       {showComments && cur.id != null && (
         <Comments
           scope="reel"
@@ -338,80 +338,131 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           onClose={() => setShowComments(false)}
         />
       )}
-      <div className="h-full lg:h-auto max-w-6xl mx-auto lg:px-4 lg:py-5">
-        <div className="hidden lg:flex items-start justify-between gap-3 mb-4 sm:mb-5">
-          <div className="min-w-0">
-            <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] text-amber-300 font-bold">Harvest Family Church</p>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mt-1">Community Videos</h1>
-            <p className="text-xs sm:text-sm text-white/60 mt-1 max-w-xl">Worship, testimonies, encouragement and moments from our family.</p>
+
+      <section
+        onTouchStart={onTouchStart}
+        onTouchEnd={(e) => { onTouchEnd(e); onVideoTap(e) }}
+        onClick={onVideoTap}
+        className="relative h-full w-full overflow-hidden bg-black"
+        aria-label="Reel viewer"
+      >
+        {(cur.img || generatedPoster) && (
+          <img
+            src={cur.img || generatedPoster}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-45"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          />
+        )}
+
+        {cur.video ? <>
+          {!videoReady && !videoError && (cur.img || generatedPoster
+            ? <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />
+            : <VideoThumb src={cur.video} className="absolute inset-0 w-full h-full" />)}
+          {videoError && !videoReady && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none">
+              <div className="text-center">
+                <div className="text-4xl mb-2">🎥</div>
+                <p className="text-xs text-white/60">Video preview unavailable</p>
+                <button type="button" onClick={retryVideo} className="pointer-events-auto mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button>
+              </div>
+            </div>
+          )}
+          <video
+            key={`${cur.id ?? idx}-${videoRetryKey}`}
+            ref={videoRef}
+            src={cur.video}
+            autoPlay
+            muted={muted}
+            loop
+            playsInline
+            poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)}
+            className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
+            onLoadedData={() => { setVideoReady(true); setVideoError(false) }}
+            onCanPlay={() => setVideoReady(true)}
+            onWaiting={() => setVideoReady(false)}
+            onPlaying={() => setVideoReady(true)}
+            onError={() => { setVideoReady(false); setVideoError(true) }}
+            onClick={() => setMuted(false)}
+            onDoubleClick={() => setMuted(true)}
+          />
+        </> : (
+          <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />
+        )}
+
+        {heart && (
+          <div key={heart.id} className="pointer-events-none absolute z-20 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
+            <span className="text-[120px] leading-none drop-shadow-2xl">❤️</span>
           </div>
-          <button onClick={() => setMuted(m => !m)} className="shrink-0 min-w-11 min-h-11 rounded-full bg-white/10 border border-white/10" aria-label={muted ? 'Unmute video' : 'Mute video'}>{muted ? '🔇' : '🔊'}</button>
+        )}
+
+        {/* One restrained gradient only where text needs contrast. */}
+        <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
+
+        <div className="absolute left-4 right-20 bottom-5 sm:left-6 sm:right-24 sm:bottom-7 z-10">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: cur.user, name: cur.user, verified: cur.verified }) }}
+            className="flex items-center gap-2.5 text-left pointer-events-auto"
+            aria-label={`View ${cur.user}'s profile`}
+          >
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold text-sm">
+              {String(cur.user).charAt(0).toUpperCase()}
+            </div>
+            <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <span className="text-amber-300">✓</span>}</span>
+          </button>
+
+          {cur.cap && <p className="mt-2 max-w-2xl text-sm sm:text-base font-medium leading-snug line-clamp-3 drop-shadow">{cur.cap}</p>}
+
+          {cur.music && (
+            <div className="mt-2 flex items-center gap-2 max-w-[75%] text-xs text-white/85">
+              <img src={cur.music.cover} alt="" className="w-6 h-6 rounded-md shrink-0" />
+              <span className="truncate">{cur.music.title} · {cur.music.artist}</span>
+            </div>
+          )}
         </div>
-        {loadingServer && <p className="mb-3 text-xs text-white/45">Loading church reels…</p>}
-        {!loadingServer && allVideos.length === 0 && <div className="mb-3 rounded-xl bg-white/5 border border-white/10 px-4 py-6 text-center"><p className="text-sm font-semibold">No videos yet</p><p className="text-xs text-white/55 mt-1">Approved community videos will appear here.</p></div>}
-        {notice && <div role="status" className="mb-3 rounded-xl bg-purple-500/20 border border-purple-300/20 px-3 py-2 text-xs text-purple-100">{notice}</div>}
-        <div className="grid lg:grid-cols-[minmax(0,760px)_260px] gap-5 items-stretch h-full lg:h-auto">
-          <section onTouchStart={onTouchStart} onTouchEnd={(e) => { onTouchEnd(e); onVideoTap(e) }} onClick={onVideoTap} className="relative overflow-hidden rounded-none lg:rounded-[24px] bg-black h-full min-h-[520px] sm:min-h-[600px] lg:h-[calc(100vh-190px)] lg:max-h-[760px] border-0 lg:border lg:border-white/10 shadow-2xl">
-            {/* Blurred fill behind + object-contain front: the full video/poster
-                stays visible and centered (no cropped edges) — TikTok-style. */}
-            {(cur.img || generatedPoster) && <img src={cur.img || generatedPoster} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-60" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />}
-            {cur.video ? <>
-              {!videoReady && !videoError && (cur.img || generatedPoster
-                ? <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-contain" fallbackIcon="🎥" />
-                : <VideoThumb src={cur.video} className="absolute inset-0 w-full h-full" />)}
-              {videoError && !videoReady && <div className="absolute inset-0 flex items-center justify-center bg-[#1a1714] pointer-events-none"><div className="text-center"><div className="text-4xl mb-2">🎥</div><p className="text-xs text-white/60">Video preview unavailable</p><button type="button" onClick={retryVideo} className="pointer-events-auto mt-3 min-h-11 px-4 rounded-xl bg-white/10 border border-white/15 text-xs font-semibold">Try again</button></div></div>}
-              <video key={`${cur.id ?? idx}-${videoRetryKey}`} ref={videoRef} src={cur.video} autoPlay muted={muted} loop playsInline poster={!posterFailed ? (cur.img || generatedPoster || undefined) : (generatedPoster || undefined)} className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`} onLoadedData={() => { setVideoReady(true); setVideoError(false) }} onCanPlay={() => setVideoReady(true)} onWaiting={() => setVideoReady(false)} onPlaying={() => setVideoReady(true)} onError={() => { setVideoReady(false); setVideoError(true) }} onClick={() => setMuted(false)} onDoubleClick={() => setMuted(true)} />
-            </> : <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />}
-            {heart && (
-              <div key={heart.id} className="pointer-events-none absolute z-30 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
-                <span className="text-[120px] leading-none drop-shadow-2xl">❤️</span>
-              </div>
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-black/30 pointer-events-none" />
-            <div className="absolute inset-x-0 top-0 p-3 sm:p-5 flex justify-between items-center pointer-events-none">
-              <span className="rounded-full bg-white/10 backdrop-blur px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold border border-white/10">Harvest Videos</span>
-              <span className="rounded-full bg-amber-400 text-[#29251F] px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold">{idx + 1} / {allVideos.length}</span>
-            </div>
-            <div className="absolute left-3 sm:left-5 right-16 sm:right-20 bottom-[68px] sm:bottom-[76px] lg:bottom-6 pointer-events-none">
-              <div className="flex items-center gap-3 mb-3 cursor-pointer pointer-events-auto" onClick={() => onOpenUser?.({ username: cur.user, name: cur.user, verified: cur.verified })} role="button" aria-label={`View ${cur.user}'s profile`}>
-                <div className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold">{String(cur.user).charAt(0).toUpperCase()}</div>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm truncate">{cur.user} {cur.verified && <span className="text-amber-300">✓</span>}</p>
-                  <p className="text-xs text-white/65 truncate">Harvest Family Church · Nyeri</p>
-                </div>
-              </div>
-              <p className="font-semibold leading-snug text-sm sm:text-base">{cur.cap}</p>
-              {cur.music && <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-black/35 backdrop-blur px-2.5 py-2 border border-white/10"><img src={cur.music.cover} alt="" className="w-8 h-8 rounded-lg shrink-0" /><div className="min-w-0"><p className="text-xs font-semibold truncate">{cur.music.title}</p><p className="text-[10px] text-white/55 truncate">{cur.music.artist}</p></div></div>}
-              <div className="mt-3 flex gap-4 text-xs text-white/60">
-                <span>👀 {fmtViews(cur.views)}</span>
-                <span>💬 {fmtViews((Number(cur.comments) || 0))} comments</span><span>♥ {fmtViews(Number(cur.likes) || 0)}</span>
-              </div>
-            </div>
-            <div className="absolute right-2.5 sm:right-4 bottom-[68px] sm:bottom-[76px] lg:bottom-6 flex flex-col gap-2.5 sm:gap-3 z-10">
-              {(cur.user === me || isAdmin) && <button onClick={() => { if (window.confirm('Delete this video? This cannot be undone.')) void deleteReel(String(cur.id)) }} disabled={deleting} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-base disabled:opacity-50" aria-label="Delete video" title="Delete video">{deleting ? '…' : '🗑'}</button>}
-              <button onClick={toggleEncourage} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border flex items-center justify-center text-lg ${encouraged[key] ? 'bg-purple-500 border-purple-400' : 'bg-white/10 border-white/10'}`} aria-label="Encourage">{encouraged[key] ? '✓' : '🤲'}</button>
-              <button onClick={respond} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Respond">💬</button>
-              <button onClick={shareWa} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-white text-lg font-bold" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗</button>
-              <button onClick={() => void share()} className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center" aria-label="Share">↗</button>
-            </div>
-            <button onClick={prev} className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/45 backdrop-blur border border-white/10 z-10" aria-label="Previous video">↑</button>
-            <button onClick={next} className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-black/45 backdrop-blur border border-white/10 z-10" aria-label="Next video">↓</button>
-          </section>
-          <aside className="hidden lg:block rounded-[24px] bg-[#2c2722] border border-white/10 p-4">
-            <p className="text-xs uppercase tracking-wider text-amber-300 font-bold">Community life</p>
-            <h2 className="font-bold text-lg mt-1">Watch with purpose</h2>
-            <div className="space-y-2 mt-4 max-h-[420px] overflow-auto">
-              {allVideos.map((r: Reel, i: number) => (
-                <button key={`${r.user}-${r.id ?? i}`} onClick={() => setIdx(i)} className={`w-full text-left p-3 rounded-2xl border ${i === idx ? 'bg-purple-500/20 border-purple-300/30' : 'bg-white/5 hover:bg-white/10 border-white/5'}`}>
-                  <p className="text-sm font-semibold truncate">{r.cap}</p>
-                  <p className="text-[11px] text-white/45 mt-0.5">{r.user} · {fmtViews(r.views)} views</p>
-                </button>
-              ))}
-            </div>
-            <div className="mt-5 p-4 rounded-2xl bg-purple-500/15 border border-purple-300/15"><p className="text-sm font-semibold">A word for today</p><p className="text-xs text-white/60 mt-1">Use your voice to encourage someone in the family.</p></div>
-          </aside>
+
+        <div className="absolute right-3 sm:right-5 bottom-6 sm:bottom-8 z-10 flex flex-col items-center gap-3">
+          {(cur.user === me || isAdmin) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this video? This cannot be undone.')) void deleteReel(String(cur.id)) }}
+              disabled={deleting}
+              className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-sm disabled:opacity-50"
+              aria-label="Delete video"
+              title="Delete video"
+            >{deleting ? '…' : '🗑'}</button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); void toggleEncourage() }}
+            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-lg"
+            aria-label="Encourage"
+          >{encouraged[key] ? '✓' : '🤲'}</button>
+          <span className="text-[10px] text-white/75 -mt-2">{fmtViews(cur.likes)}</span>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); respond() }}
+            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-base"
+            aria-label="Comments"
+          >💬</button>
+          <span className="text-[10px] text-white/75 -mt-2">{fmtViews(cur.comments)}</span>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); void share() }}
+            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-base"
+            aria-label="Share"
+          >↗</button>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setMuted(m => !m) }}
+            className="w-10 h-10 rounded-full bg-black/25 backdrop-blur-sm flex items-center justify-center text-sm"
+            aria-label={muted ? 'Unmute video' : 'Mute video'}
+          >{muted ? '🔇' : '🔊'}</button>
         </div>
-      </div>
+
+        <button onClick={(e) => { e.stopPropagation(); prev() }} className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Previous video">↑</button>
+        <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Next video">↓</button>
+      </section>
     </div>
   )
 }
