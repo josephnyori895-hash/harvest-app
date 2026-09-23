@@ -188,7 +188,7 @@ export default function PostCreate({ onDone }: Props) {
   const submit = async () => {
     if (busy) return
     if (!canCreate) { setNotice('Your account cannot publish this type of content.'); return }
-    if (needsFile && !file) { setNotice('Choose your media first.'); setStep('media'); return }
+    if (needsFile && !file) { setNotice('Choose your media first.'); goToStep('media', 'back'); return }
     if (type === 'music' && !title.trim()) { setNotice('Give the track a title.'); return }
     if (type === 'sermon' && !title.trim()) { setNotice('Give the sermon a title.'); return }
     if (type === 'announcement' && !caption.trim()) { setNotice('Write the announcement text.'); return }
