@@ -101,6 +101,8 @@ export default function PostCreate({ onDone }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [complete, setComplete] = useState(false)
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward')
   const [adjusting, setAdjusting] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -137,6 +139,12 @@ export default function PostCreate({ onDone }: Props) {
     setMusicResults([])
   }
 
+  const goToStep = (next: Step, dir: 'forward' | 'back') => {
+    setDirection(dir)
+    setNotice('')
+    setStep(next)
+  }
+
   const chooseType = (next: ContentType) => {
     if (next === type) return
     resetMedia()
@@ -157,7 +165,7 @@ export default function PostCreate({ onDone }: Props) {
     setPreviewUrl(url)
     setNotice('')
     event.target.value = ''
-    setStep('edit')
+    goToStep('edit', 'forward')
     if (picked.type.startsWith('image/')) setAdjusting(true)
   }
 
@@ -167,14 +175,14 @@ export default function PostCreate({ onDone }: Props) {
     setFile(adjusted)
     setPreviewUrl(preview)
     setAdjusting(false)
-    setStep('edit')
+    goToStep('edit', 'forward')
   }
 
   const validateAndDetails = () => {
     if (!canCreate) { setNotice('Your account cannot publish this content type.'); return }
-    if (needsFile && !file) { setNotice('Choose your media first.'); setStep('media'); return }
+    if (needsFile && !file) { setNotice('Choose your media first.'); goToStep('media', 'back'); return }
     setNotice('')
-    setStep('details')
+    goToStep('details', 'forward')
   }
 
   const submit = async () => {
@@ -199,7 +207,9 @@ export default function PostCreate({ onDone }: Props) {
         })
         const d = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(d.error || 'Could not publish announcement')
-        onDone()
+        setBusy(false)
+        setComplete(true)
+        window.setTimeout(onDone, 220)
         return
       }
 
@@ -242,7 +252,8 @@ export default function PostCreate({ onDone }: Props) {
           cover_key: coverKey,
         },
       }).catch(() => {})
-      onDone()
+      setComplete(true)
+      window.setTimeout(onDone, 220)
     } catch (e: any) {
       setNotice(e?.message || 'Unable to share this media')
       setBusy(false)
@@ -250,20 +261,34 @@ export default function PostCreate({ onDone }: Props) {
   }
 
   if (adjusting && file && file.type.startsWith('image/')) {
-    return <ImageAdjuster file={file} onCancel={() => { setAdjusting(false); setStep('media') }} onDone={applyAdjust} />
+    return <ImageAdjuster file={file} onCancel={() => { setAdjusting(false); goToStep('media', 'back') }} onDone={applyAdjust} />
+  }
+
+  if (complete) {
+    return (
+      <main className="min-h-[100dvh] bg-[#FFFBF0] text-[#29251F] flex items-center justify-center px-6" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <section className="w-full max-w-sm text-center hf-create-success" role="status" aria-live="polite">
+          <div className="mx-auto w-20 h-20 rounded-full bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center hf-create-success-icon"><Icon name="check" /></div>
+          <p className="mt-6 text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">Harvest Family</p>
+          <h1 className="mt-1 text-3xl font-black">Shared successfully</h1>
+          <p className="mt-2 text-sm leading-6 text-[#766E63]">Your {labels[type].toLowerCase()} is now being shared with the family.</p>
+        </section>
+      </main>
+    )
   }
 
   return (
     <main className="min-h-[100dvh] bg-[#FFFBF0] text-[#29251F] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <Header step={step} onClose={onDone} onBack={step === 'type' ? undefined : () => {
         setNotice('')
-        if (step === 'media') setStep('type')
-        else if (step === 'edit') setStep('media')
-        else setStep('edit')
+        if (step === 'media') goToStep('type', 'back')
+        else if (step === 'edit') goToStep('media', 'back')
+        else goToStep('edit', 'back')
       }} />
       <Progress step={step} />
 
-      <div key={step} className="flex-1 min-h-0 overflow-auto animate-[hfSlideIn_220ms_ease-out]">
+      <div key={`${step}-${direction}`} className={`flex-1 min-h-0 overflow-auto hf-create-screen ${direction === 'back' ? 'hf-create-screen-back' : 'hf-create-screen-forward'}`}>
+
         {step === 'type' && (
           <section className="px-4 pt-7 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-7">
@@ -275,7 +300,7 @@ export default function PostCreate({ onDone }: Props) {
               {available.map(item => {
                 const icon = item === 'post' ? 'photo' : item === 'video' ? 'video' : item === 'music' ? 'music' : item === 'sermon' ? 'sermon' : item === 'story' ? 'story' : 'notice'
                 return (
-                  <button key={item} onClick={() => { setType(item); setNotice(''); setStep('media') }} className="group w-full min-h-[78px] p-4 rounded-3xl border border-[#E8DEC9] bg-white text-left flex items-center gap-4 shadow-[0_4px_18px_rgba(77,58,28,0.05)] active:scale-[0.99] transition-transform">
+                  <button key={item} onClick={() => { chooseType(item); goToStep('media', 'forward') }} className="group w-full min-h-[78px] p-4 rounded-3xl border border-[#E8DEC9] bg-white text-left flex items-center gap-4 shadow-[0_4px_18px_rgba(77,58,28,0.05)] active:scale-[0.99] transition-transform">
                     <span className="w-12 h-12 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center shrink-0 group-active:scale-95 transition-transform"><Icon name={icon as any}/></span>
                     <span className="min-w-0 flex-1">
                       <strong className="block text-[15px] font-extrabold">{labels[item]}</strong>
@@ -312,7 +337,7 @@ export default function PostCreate({ onDone }: Props) {
                 <textarea autoFocus value={caption} onChange={e => setCaption(e.target.value)} rows={8} placeholder="Write the official church announcement…" className="mt-3 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-4 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#F3E8FF]" />
               </div>
             )}
-            {notice && <div role="alert" className="mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
+            {notice && <div role="alert" aria-live="assertive" className="mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700 hf-create-alert">{notice}</div>}
             {type === 'announcement' && <button onClick={() => void submit()} disabled={busy} className="mt-4 w-full min-h-12 rounded-2xl bg-[#7C3AED] text-white font-extrabold disabled:opacity-50">{busy ? 'Publishing…' : 'Publish announcement'}</button>}
           </section>
         )}
@@ -339,7 +364,7 @@ export default function PostCreate({ onDone }: Props) {
             </div>
             <div className="grid grid-cols-2 gap-3 mt-4">
               {file?.type.startsWith('image/') && <button onClick={() => setAdjusting(true)} className="min-h-12 rounded-2xl border border-[#D8CDBB] bg-white font-bold text-sm">✎ Adjust photo</button>}
-              <button onClick={() => { setFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); setStep('media') }} className="min-h-12 rounded-2xl border border-[#D8CDBB] bg-white font-bold text-sm text-[#5B5248]">Replace media</button>
+              <button onClick={() => { setFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); goToStep('media', 'back') }} className="min-h-12 rounded-2xl border border-[#D8CDBB] bg-white font-bold text-sm text-[#5B5248]">Replace media</button>
             </div>
             <button onClick={validateAndDetails} className="mt-3 w-full min-h-12 rounded-2xl bg-[#7C3AED] text-white font-extrabold active:scale-[0.99] transition-transform">Continue to details</button>
             {notice && <div role="alert" className="mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
@@ -396,10 +421,10 @@ export default function PostCreate({ onDone }: Props) {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-[#E8DEC9] bg-[#FFFBF0] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-[#E8DEC9] bg-[#FFFBF0] px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="max-w-xl mx-auto flex items-center justify-between text-[11px] text-[#8A8175]">
-          <span>{labels[type]}</span>
-          <span>{stepLabels[step]} · {['type','media','edit','details'].indexOf(step) + 1} of 4</span>
+          <span className="truncate pr-3">{labels[type]}</span>
+          <span>{stepLabels[step]} · {['type','media','edit','details'].indexOf(step) + 1}/4</span>
         </div>
       </div>
     </main>
