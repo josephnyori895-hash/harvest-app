@@ -203,6 +203,18 @@ jobs:
           SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
 
+      - name: Browser E2E — ImageAdjuster aspect ratios
+        env:
+          E2E_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+          E2E_API_URL: https://harvestfamily-api.harvestfamily.workers.dev
+          E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+          E2E_PIN: ${{ secrets.E2E_PIN }}
+        run: |
+          set -euo pipefail
+          CHROME_PATH="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME_PATH" || { echo "::error::No Chromium/Chrome executable found on runner"; exit 1; }
+          E2E_CHROME_PATH="$CHROME_PATH" npm run test:e2e:image-adjuster
+
       - name: Verify exact versioned production APK
         env:
           APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
