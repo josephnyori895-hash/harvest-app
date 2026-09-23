@@ -17,7 +17,6 @@ import PostCreate from './components/PostCreate'
 import Groups from './components/Groups'
 import Departments from './components/Departments'
 import { RequireRole } from './components/Protected'
-import GroupDetails from './components/GroupDetails'
 import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
 import { showToast } from './components/Toast'
@@ -162,7 +161,6 @@ function InnerApp() {
 
   const [users] = useDirectory(onboarded)
 
-  const [groupDetail, setGroupDetail] = useState(null)
   const [userList, setUserList] = useState(null)
 
   const handleAuthSuccess = (data) => {
@@ -234,7 +232,6 @@ function InnerApp() {
         const nestedBack = { handled: false }
         window.dispatchEvent(new CustomEvent('harvest:nested-back', { detail: nestedBack }))
         if (nestedBack.handled) return
-        if (groupDetail) return setGroupDetail(null)
         if (userList) return setUserList(null)
         if (viewUser) { setViewUser(null); return setTab(backTarget) }
         if (tab === 'editprofile') return setTab('profile')
@@ -245,7 +242,7 @@ function InnerApp() {
       }).then(s => { sub = s })
     }).catch(() => { /* web build: no hardware back */ })
     return () => { disposed = true; try { sub?.remove?.() } catch {} }
-  }, [onboarded, tab, groupDetail, userList, viewUser, backTarget, chatReturnTab])
+  }, [onboarded, tab, userList, viewUser, backTarget, chatReturnTab])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
@@ -293,7 +290,6 @@ function InnerApp() {
             </RequireRole>
           )}
         </div>
-        {groupDetail && <GroupDetails groupId={groupDetail} users={users} onBack={()=>setGroupDetail(null)} />}
         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
         <UploadPill />
         <Nav tab={tab} setTab={handleTab} />
@@ -595,8 +591,18 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
     return () => window.removeEventListener('harvest:profile-updated', loadMe)
   }, [])
 
-  const groups = {}
-  users.forEach(u => { const g = u.group_name || u.group || 'Harvest Nyeri'; if (!groups[g]) groups[g] = []; groups[g].push(u) })
+  const [memberGroups, setMemberGroups] = useState([])
+  const loadMemberGroups = () => {
+    fetch(`${API}/api/groups/mine`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('groups unavailable')))
+      .then(d => setMemberGroups(Array.isArray(d.groups) ? d.groups : []))
+      .catch(() => {})
+  }
+  useEffect(() => {
+    loadMemberGroups()
+    window.addEventListener('harvest:groups-changed', loadMemberGroups)
+    return () => window.removeEventListener('harvest:groups-changed', loadMemberGroups)
+  }, [])
 
   const toggleVerified = async (u) => {
     if (busy) return
@@ -678,15 +684,18 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
       )}
 
       <div className="mt-4 border-t border-zinc-800 pt-3">
-        <h3 className="text-sm font-bold px-4 text-white mb-2">Harvest Groups by Location</h3>
+        <div className="px-4 mb-2">
+          <h3 className="text-sm font-bold text-white">My Groups</h3>
+          <p className="text-[11px] text-zinc-500">Live membership from the Groups service</p>
+        </div>
         <div className="space-y-2 px-4">
-          {Object.entries(groups).map(([g, members]) => (
-            <div key={g} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-              <div><p className="text-sm font-semibold text-white">{g}</p><p className="text-xs text-zinc-400">{members.length} members</p></div>
-              <span className="text-xs bg-white text-black px-3 py-1 rounded-full">{members.length} 👥</span>
+          {memberGroups.map(g => (
+            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+              <div className="min-w-0"><p className="text-sm font-semibold text-white truncate">{g.name}</p><p className="text-xs text-zinc-400">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
+              <span className="text-xs bg-white text-black px-3 py-1 rounded-full">👥</span>
             </div>
           ))}
-          {Object.keys(groups).length === 0 && <p className="text-xs text-zinc-500 px-4">Loading groups…</p>}
+          {memberGroups.length === 0 && <p className="text-xs text-zinc-500 px-4">You are not in any groups.</p>}
         </div>
       </div>
 
