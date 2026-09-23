@@ -422,39 +422,44 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           )}
         </div>
 
-        <div className="absolute right-3 sm:right-5 bottom-6 sm:bottom-8 z-10 flex flex-col items-center gap-3">
+        <div className="absolute right-3 sm:right-5 bottom-6 sm:bottom-8 z-10 flex w-12 flex-col items-center gap-3 pointer-events-auto">
           {(cur.user === me || isAdmin) && (
             <button
               onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this video? This cannot be undone.')) void deleteReel(String(cur.id)) }}
               disabled={deleting}
-              className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-sm disabled:opacity-50"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-[18px] leading-none transition-transform active:scale-95 disabled:opacity-50"
               aria-label="Delete video"
               title="Delete video"
             >{deleting ? '…' : '🗑'}</button>
           )}
-          <button
-            onClick={(e) => { e.stopPropagation(); void toggleEncourage() }}
-            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-lg"
-            aria-label="Encourage"
-          >{encouraged[key] ? '✓' : '🤲'}</button>
-          <span className="text-[10px] text-white/75 -mt-2">{fmtViews(cur.likes)}</span>
 
-          <button
-            onClick={(e) => { e.stopPropagation(); respond() }}
-            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-base"
-            aria-label="Comments"
-          >💬</button>
-          <span className="text-[10px] text-white/75 -mt-2">{fmtViews(cur.comments)}</span>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); void toggleEncourage() }}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-[19px] leading-none transition-transform active:scale-95"
+              aria-label="Encourage"
+            >{encouraged[key] ? '✓' : '🤲'}</button>
+            <span className="min-h-3 text-[10px] leading-3 font-medium text-white/80 drop-shadow">{fmtViews(cur.likes)}</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); respond() }}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-[18px] leading-none transition-transform active:scale-95"
+              aria-label="Comments"
+            >💬</button>
+            <span className="min-h-3 text-[10px] leading-3 font-medium text-white/80 drop-shadow">{fmtViews(cur.comments)}</span>
+          </div>
 
           <button
             onClick={(e) => { e.stopPropagation(); void share() }}
-            className="w-11 h-11 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center text-base"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-[18px] leading-none transition-transform active:scale-95"
             aria-label="Share"
           >↗</button>
 
           <button
             onClick={(e) => { e.stopPropagation(); setMuted(m => !m) }}
-            className="w-10 h-10 rounded-full bg-black/25 backdrop-blur-sm flex items-center justify-center text-sm"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm text-[16px] leading-none transition-transform active:scale-95"
             aria-label={muted ? 'Unmute video' : 'Mute video'}
           >{muted ? '🔇' : '🔊'}</button>
         </div>
