@@ -31,6 +31,18 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   const canDelete = Boolean(s?.id && (s.username === me || isAdmin))
   const canEdit = canDelete
+  const isStoryAuthor = Boolean(s?.username && s.username === me)
+  const deleteReply = async (replyId: string) => {
+    if (!replyId) return
+    try {
+      const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,'')
+      const t=localStorage.getItem('harvest_token')||''
+      const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies?id='+encodeURIComponent(replyId),{method:'DELETE',headers:t?{Authorization:'Bearer '+t}:undefined})
+      const d=await r.json().catch(()=>({}))
+      if(!r.ok) throw new Error(d?.error||'Could not delete reply')
+      setReplies(x=>x.filter(item=>String(item.id)!==String(replyId)))
+    } catch(e:any){ window.alert(e?.message||'Could not delete reply') }
+  }
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json(); if(r.ok)setReplies(d.replies||[]) } catch {} }
   const sendReply = async () => { if(!reply.trim()||replyBusy)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReplies(x=>[...x,d.reply]); setReply(''); setShowReplies(true) } catch(e:any){window.alert(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
 
@@ -243,7 +255,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
         {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
         {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
       </div>
-      {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 64}px` : "calc(env(safe-area-inset-bottom) + 6rem)" }}><div className="flex justify-between mb-2"><b className="text-xs">Replies</b><button onClick={()=>setShowReplies(false)}>×</button></div>{replies.length ? replies.map((r:any)=><p key={r.id} className="text-xs py-1"><b>{r.name||r.username}</b> {r.body}</p>) : <p className="text-xs text-stone-400">No replies yet.</p>}</div>}
+      {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 64}px` : "calc(env(safe-area-inset-bottom) + 6rem)" }}><div className="flex justify-between mb-2"><b className="text-xs">Replies</b><button onClick={()=>setShowReplies(false)}>×</button></div>{replies.length ? replies.map((r:any)=>{
+            const canRemove = isAdmin || isStoryAuthor || (r.username && r.username === me)
+            return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={()=>void deleteReply(String(r.id))} className="min-w-11 min-h-11 shrink-0 text-stone-300 hover:text-white" aria-label="Delete reply">×</button>}</div>
+          }) : <p className="text-xs text-stone-400">No replies yet.</p>}</div>}
       <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : "calc(env(safe-area-inset-bottom) + 3rem)" }}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full bg-white/95 text-black px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400" /><button onClick={()=>void sendReply()} disabled={replyBusy} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':'Send'}</button><button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button></div>
       {canEdit && <button onClick={e=>{e.stopPropagation();setEditing(true)}} className="absolute top-14 right-16 min-h-11 text-white text-xs bg-black/50 px-3 py-2 rounded-full">✎ Edit</button>}
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
