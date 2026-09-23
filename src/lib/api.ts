@@ -86,7 +86,7 @@ export async function fetchMusic() {
 }
 
 export async function fetchReels(offset = 0, limit = 20) {
-  return apiJson(`/api/reels?offset=${offset}&limit=${limit}`) as Promise<{ reels: any[], nextOffset: number }>
+  return apiJson(`/api/reels?offset=${offset}&limit=${limit}`) as Promise<{ reels: any[], nextOffset: number, hasMore?: boolean }>
 }
 
 export async function fetchMyGiving() {
