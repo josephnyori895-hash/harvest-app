@@ -83,3 +83,43 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   70% { transform: scale(1.05); opacity: 1; }
   100% { transform: scale(1.25) translateY(-30px); opacity: 0; }
 }
+
+
+/* Harvest Family creation flow — directional screen motion and state feedback. */
+@keyframes hfCreateForward {
+  from { opacity: 0; transform: translate3d(24px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hfCreateBack {
+  from { opacity: 0; transform: translate3d(-20px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hfCreateAlert {
+  from { opacity: 0; transform: translate3d(0, -4px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hfCreateSuccess {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes hfCreateSuccessIcon {
+  0% { opacity: 0; transform: scale(.86); }
+  65% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.hf-create-screen-forward { animation: hfCreateForward 240ms cubic-bezier(.22,1,.36,1) both; }
+.hf-create-screen-back { animation: hfCreateBack 200ms cubic-bezier(.22,1,.36,1) both; }
+.hf-create-alert { animation: hfCreateAlert 160ms ease-out both; }
+.hf-create-success { animation: hfCreateSuccess 220ms cubic-bezier(.22,1,.36,1) both; }
+.hf-create-success-icon { animation: hfCreateSuccessIcon 240ms cubic-bezier(.22,1,.36,1) 40ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hf-create-screen-forward,
+  .hf-create-screen-back,
+  .hf-create-alert,
+  .hf-create-success,
+  .hf-create-success-icon {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}
