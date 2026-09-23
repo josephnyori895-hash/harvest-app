@@ -24,6 +24,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [idx, setIdx] = useState(0)
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
@@ -115,7 +116,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         }))
       setServerReels(prev => [...prev, ...mapped])
       setReelsNextOffset(Number(r.nextOffset) || reelsNextOffset + mapped.length)
-      setHasMoreReels(mapped.length >= 20)
+      setHasMoreReels(Boolean(r.hasMore ?? mapped.length >= 20))
       if (advanceAfterLoad && mapped.length > 0) setIdx(i => i + 1)
     } catch {
       flash('Could not load more videos. Try again.')
@@ -269,15 +270,14 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     }
   }
   // Double-tap anywhere on the video = encourage (with a pulsing heart).
-  const onVideoTap = (e: React.MouseEvent | React.TouchEvent) => {
+  const onVideoTap = (e: React.PointerEvent) => {
     const target = e.target as HTMLElement
     if (target.closest('button, [role="button"], a, input, textarea')) {
       lastTap.current = { time: 0, x: 0, y: 0 }
       return
     }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const pt = 'touches' in e ? e.changedTouches[0] : e
-    const x = (pt?.clientX ?? 0) - rect.left, y = (pt?.clientY ?? 0) - rect.top
+    const x = e.clientX - rect.left, y = e.clientY - rect.top
     const now = Date.now()
     const t = lastTap.current
     if (now - t.time < 350 && Math.hypot(x - t.x, y - t.y) < 40) {
@@ -287,10 +287,20 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       const id = ++heartSeq.current
       setHeart({ id, x, y })
       window.setTimeout(() => setHeart(h => (h?.id === id ? null : h)), 900)
-    } else {
-      lastTap.current = { time: now, x, y }
+      return
     }
+    lastTap.current = { time: now, x, y }
+    window.setTimeout(() => {
+      const latest = lastTap.current
+      if (latest.time !== now) return
+      const v = videoRef.current
+      if (!v) return
+      if (v.paused) { void v.play().catch(() => {}); setPaused(false) }
+      else { v.pause(); setPaused(true) }
+    }, 280)
   }
+  useEffect(() => { setPaused(false) }, [cur?.id])
+
   const bumpComments = (delta: number) => {
     setServerReels(rs => rs.map(r => (r.id === cur.id ? { ...r, comments: Math.max((Number(r.comments) || 0) + delta, 0) } : r)))
   }
@@ -347,8 +357,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
       <section
         onTouchStart={onTouchStart}
-        onTouchEnd={(e) => { onTouchEnd(e); onVideoTap(e) }}
-        onClick={onVideoTap}
+        onTouchEnd={onTouchEnd}
+        onPointerUp={onVideoTap}
         className="relative h-full w-full overflow-hidden bg-black"
         aria-label="Reel viewer"
       >
@@ -388,13 +398,19 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             onLoadedData={() => { setVideoReady(true); setVideoError(false) }}
             onCanPlay={() => setVideoReady(true)}
             onWaiting={() => { /* Keep the current frame visible during brief network stalls. */ }}
-            onPlaying={() => setVideoReady(true)}
+            onPlaying={() => { setVideoReady(true); setPaused(false) }}
+            onPause={() => setPaused(true)}
             onError={() => { setVideoReady(false); setVideoError(true) }}
           />
         </> : (
           <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />
         )}
 
+        {paused && !videoError && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/35 backdrop-blur-sm text-2xl shadow-lg" aria-hidden="true">▶</span>
+          </div>
+        )}
         {heart && (
           <div key={heart.id} className="pointer-events-none absolute z-20 animate-[heartpop_0.9s_ease-out_forwards]" style={{ left: heart.x - 60, top: heart.y - 60 }}>
             <span className="text-[120px] leading-none drop-shadow-2xl">❤️</span>
