@@ -36,13 +36,33 @@ jobs:
       - name: Configure production API URL
         run: echo "VITE_API_URL=https://harvestfamily-api.harvestfamily.workers.dev" >> "$GITHUB_ENV"
 
-      - name: Frontend release checks
+      # Each gate step emits the tail of its output as an ::error::
+      # annotation so the failing command and reason are visible without
+      # log-level repository access.
+      - name: Release lint
         run: |
-          npm run lint
-          npm run typecheck
-          npm run test:all
-          npm audit --audit-level=high
-          npm run build
+          set -o pipefail
+          npm run lint 2>&1 | tee /tmp/check-lint.log || { tail -c 1500 /tmp/check-lint.log | tr '\r\n' '  ' | sed 's/^/::error::[lint] /'; exit 1; }
+
+      - name: Release typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee /tmp/check-type.log || { tail -c 1500 /tmp/check-type.log | tr '\r\n' '  ' | sed 's/^/::error::[typecheck] /'; exit 1; }
+
+      - name: Release test:all
+        run: |
+          set -o pipefail
+          npm run test:all 2>&1 | tee /tmp/check-tests.log || { tail -c 1500 /tmp/check-tests.log | tr '\r\n' '  ' | sed 's/^/::error::[test:all] /'; exit 1; }
+
+      - name: Release dependency audit
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee /tmp/check-audit.log || { tail -c 1500 /tmp/check-audit.log | tr '\r\n' '  ' | sed 's/^/::error::[audit] /'; exit 1; }
+
+      - name: Release build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/check-build.log || { tail -c 1500 /tmp/check-build.log | tr '\r\n' '  ' | sed 's/^/::error::[build] /'; exit 1; }
 
       # The Worker hosts the web app too (same origin as the API, APKs and
       # WhatsApp share landing pages). Stage the fresh build into workers/public
