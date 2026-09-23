@@ -4,6 +4,8 @@ import { showToast } from './Toast'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
+function notifyGroupsChanged() { window.dispatchEvent(new Event('harvest:groups-changed')) }
+
 function authHeaders() {
   const t = localStorage.getItem('harvest_token') || ''
   return t ? { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
@@ -110,7 +112,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       if (!r.ok) throw new Error(d.error || 'Could not create group')
       showToast(`Group "${form.name}" created`)
       setShowCreate(false); setForm({ name: '', description: '', admin_username: '', community: '' })
-      load()
+      load(); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not create group') } finally { setBusy('') }
   }
 
@@ -133,7 +135,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not leave')
       showToast('You left the group')
-      setOpenSlug(null); setDetail(null); load()
+      setOpenSlug(null); setDetail(null); load(); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not leave') } finally { setBusy('') }
   }
 
@@ -166,7 +168,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not remove member')
       showToast(`${username} removed`)
-      void openDetail(slug)
+      void openDetail(slug); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not remove member') } finally { setBusy('') }
   }
 
@@ -179,7 +181,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       if (!r.ok) throw new Error(d.error || 'Could not add member')
       showToast(`${addUname.trim()} added ✓`)
       setAddUname('')
-      void openDetail(openSlug || '')
+      void openDetail(openSlug || ''); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }
   }
 
@@ -210,7 +212,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not save settings')
       showToast('Group settings saved ✓')
-      setShowSettings(false)
+      setShowSettings(false); notifyGroupsChanged()
       void openDetail(openSlug || '')
     } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false); setBusy('') }
   }
@@ -230,7 +232,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not delete')
       showToast(`"${name}" deleted`)
-      setOpenSlug(null); setDetail(null); load()
+      setOpenSlug(null); setDetail(null); load(); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not delete group') } finally { setBusy('') }
   }
 
