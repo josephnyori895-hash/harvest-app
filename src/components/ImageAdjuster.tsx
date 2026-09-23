@@ -57,49 +57,62 @@ export default function ImageAdjuster({
     return { vw: el.clientWidth, vh: el.clientHeight }
   }, [])
 
-  const activeRatio = PRESETS.find(p => p.id === aspect)?.ratio ?? null
+  const rotatedDimensions = useCallback(() => {
+    if (!imgSize) return { w: 0, h: 0 }
+    const rot = ((transform.rotation % 360) + 360) % 360
+    return rot === 90 || rot === 270 ? { w: imgSize.h, h: imgSize.w } : { w: imgSize.w, h: imgSize.h }
+  }, [imgSize, transform.rotation])
 
-  // Fit the image inside the crop viewport ("cover"): scale ≥ 1 so there are
-  // never empty bars. Used as the base on load, rotate, and aspect change.
+  const activeRatio = useCallback(() => {
+    if (aspect === 'original') {
+      const d = rotatedDimensions()
+      return d.w && d.h ? d.w / d.h : 1
+    }
+    return PRESETS.find(p => p.id === aspect)?.ratio ?? 1
+  }, [aspect, rotatedDimensions])
+
+  const cropSize = useCallback(() => {
+    const { vw, vh } = viewportSize()
+    if (!vw || !vh) return { cw: 0, ch: 0 }
+    const ratio = activeRatio()
+    return ratio >= vw / vh
+      ? { cw: vw, ch: vw / ratio }
+      : { cw: vh * ratio, ch: vh }
+  }, [activeRatio, viewportSize])
+
   const clampTransform = useCallback((t: Transform): Transform => {
     if (!imgSize) return t
-    const { vw, vh } = viewportSize()
-    if (!vw || !vh) return t
-    // Effective displayed image dimensions at scale 1.
+    const { cw, ch } = cropSize()
+    if (!cw || !ch) return t
     const rot = ((t.rotation % 360) + 360) % 360
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const cover = Math.max(vw / iw, vh / ih)
-    const minScale = cover > 1 ? cover : 1
-    // The displayed image is iw*minScale x ih*minScale (≥ viewport in both axes
-    // when cover ≥ 1; when minScale is 1 the image may be smaller than the
-    // viewport in one axis — then center it and allow no pan on that axis).
-    const dw = iw * minScale * t.scale
-    const dh = ih * minScale * t.scale
-    const maxX = Math.max((dw - vw) / 2, 0)
-    const maxY = Math.max((dh - vh) / 2, 0)
+    const cover = Math.max(cw / iw, ch / ih)
+    const dw = iw * cover * t.scale
+    const dh = ih * cover * t.scale
+    const maxX = Math.max((dw - cw) / 2, 0)
+    const maxY = Math.max((dh - ch) / 2, 0)
     return {
       ...t,
       scale: Math.min(Math.max(t.scale, MIN_SCALE), MAX_SCALE),
       x: Math.min(Math.max(t.x, -maxX), maxX),
       y: Math.min(Math.max(t.y, -maxY), maxY),
     }
-  }, [imgSize, viewportSize])
+  }, [cropSize, imgSize])
 
-  // minScale helper shared by zoom slider.
   const minScaleFor = useCallback(() => {
     if (!imgSize) return 1
-    const { vw, vh } = viewportSize()
-    if (!vw || !vh) return 1
-    const rot = ((transform.rotation % 360) + 360) % 360
-    const swapped = rot === 90 || rot === 270
-    const iw = swapped ? imgSize.h : imgSize.w
-    const ih = swapped ? imgSize.w : imgSize.h
-    return Math.max(vw / iw, vh / ih, 1)
-  }, [imgSize, transform.rotation, viewportSize])
+    const { cw, ch } = cropSize()
+    const d = rotatedDimensions()
+    if (!cw || !ch || !d.w || !d.h) return 1
+    return Math.max(cw / d.w, ch / d.h)
+  }, [cropSize, imgSize, rotatedDimensions])
 
-  useEffect(() => { setZoom(transform.scale) }, [transform.scale])
+  const selectAspect = (next: AspectPreset) => {
+    setAspect(next)
+    requestAnimationFrame(() => setTransform(t => clampTransform({ ...t, x: 0, y: 0 })))
+  }
 
   const rotate = () => {
     setTransform(t => clampTransform({ ...t, rotation: (t.rotation + 90) % 360, x: 0, y: 0 }))
@@ -137,49 +150,53 @@ export default function ImageAdjuster({
     setTransform(t => clampTransform({ ...t, scale: Math.max(v, min) }))
   }
 
-  // Bake the visible crop into a JPEG at up to 1440px on the long edge.
+  // Export exactly the selected crop viewport so the file ratio matches the UI.
   const exportBlob = async (): Promise<Blob> => {
     if (!imgSize || !srcUrl) throw new Error('image not ready')
     const img = new Image()
-    await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error('could not read image')); img.src = srcUrl })
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('could not read image'))
+      img.src = srcUrl
+    })
 
-    const { vw, vh } = viewportSize()
-    // Crop box in source pixels: the viewport maps to the exported rectangle.
-    const outW = vw * 2 // 2x for sharpness, capped later
-    const outH = Math.round(outW * (vh / vw))
+    const { cw, ch } = cropSize()
+    if (!cw || !ch) throw new Error('crop viewport not ready')
+    const outW = Math.max(1, Math.round(cw * 2))
+    const outH = Math.max(1, Math.round(ch * 2))
     const canvas = document.createElement('canvas')
-    canvas.width = outW; canvas.height = outH
+    canvas.width = outW
+    canvas.height = outH
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, outW, outH)
 
     const rot = ((transform.rotation % 360) + 360) % 360
-    const swapped = rot === 90 || rot === 270
-    const iw = swapped ? imgSize.h : imgSize.w
-    const ih = swapped ? imgSize.w : imgSize.h
-    const minScale = Math.max(vw / iw, vh / ih, 1)
-    const drawW = iw * minScale * transform.scale
-    const drawH = ih * minScale * transform.scale
+    const rotated = rot === 90 || rot === 270
+    const iw = rotated ? imgSize.h : imgSize.w
+    const ih = rotated ? imgSize.w : imgSize.h
+    const cover = Math.max(cw / iw, ch / ih)
+    const drawScale = cover * transform.scale
 
     ctx.save()
     ctx.translate(outW / 2 + transform.x * 2, outH / 2 + transform.y * 2)
     ctx.rotate((rot * Math.PI) / 180)
-    const drawnW = swapped ? drawH : drawW
-    const drawnH = swapped ? drawW : drawH
-    ctx.drawImage(img, -drawnW / 2, -drawnH / 2, drawnW, drawnH)
+    ctx.drawImage(img, -(imgSize.w * drawScale) / 2, -(imgSize.h * drawScale) / 2, imgSize.w * drawScale, imgSize.h * drawScale)
     ctx.restore()
 
-    // Cap long edge at 1440px to keep uploads small.
     const long = Math.max(outW, outH)
     let final = canvas
     if (long > 1440) {
       const k = 1440 / long
       const c2 = document.createElement('canvas')
-      c2.width = Math.round(outW * k); c2.height = Math.round(outH * k)
+      c2.width = Math.max(1, Math.round(outW * k))
+      c2.height = Math.max(1, Math.round(outH * k))
       c2.getContext('2d')!.drawImage(canvas, 0, 0, c2.width, c2.height)
       final = c2
     }
-    const blob: Blob = await new Promise(res => final.toBlob(b => res(b!), 'image/jpeg', 0.9))
-    return blob
+    return await new Promise<Blob>((resolve, reject) => {
+      final.toBlob(b => b ? resolve(b) : reject(new Error('could not encode image')), 'image/jpeg', 0.9)
+    })
   }
 
   const save = async () => {
@@ -202,50 +219,42 @@ export default function ImageAdjuster({
 
       <div
         ref={viewportRef}
-        className="relative flex-1 overflow-hidden touch-none select-none bg-[#111]"
+        className="relative flex-1 overflow-hidden touch-none select-none bg-[#111] flex items-center justify-center"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
         style={{ cursor: 'grab' }}
       >
-        {srcUrl && imgSize && (
-          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+        <div
+          className="relative overflow-hidden bg-[#111] shrink-0"
+          style={{ width: cropSize().cw || '100%', height: cropSize().ch || '100%', maxWidth: '100%', maxHeight: '100%' }}
+        >
+          {srcUrl && imgSize && (
             <img
               src={srcUrl}
               alt=""
               draggable={false}
-              className="max-w-none pointer-events-none"
+              className="absolute left-1/2 top-1/2 max-w-none pointer-events-none"
               style={{
                 width: (() => {
-                  const rot = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rot === 90 || rot === 270
-                  const iw = swapped ? imgSize.h : imgSize.w
-                  const ih = swapped ? imgSize.w : imgSize.h
-                  const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih, 1)
-                  return iw * minScale * transform.scale
+                  const d = rotatedDimensions()
+                  const { cw, ch } = cropSize()
+                  return imgSize.w * Math.max(cw / d.w, ch / d.h) * transform.scale
                 })(),
                 height: (() => {
-                  const rot = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rot === 90 || rot === 270
-                  const iw = swapped ? imgSize.h : imgSize.w
-                  const ih = swapped ? imgSize.w : imgSize.h
-                  const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih, 1)
-                  return ih * minScale * transform.scale
+                  const d = rotatedDimensions()
+                  const { cw, ch } = cropSize()
+                  return imgSize.h * Math.max(cw / d.w, ch / d.h) * transform.scale
                 })(),
-                transform: `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
-                transition: dragRef.current ? 'none' : 'width 0.15s, height 0.15s',
+                transform: 'translate(calc(-50% + ' + transform.x + 'px), calc(-50% + ' + transform.y + 'px)) rotate(' + transform.rotation + 'deg)',
               }}
             />
+          )}
+          <div className="absolute inset-0 pointer-events-none border-2 border-white/90" />
+          <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
+            {Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/20" />)}
           </div>
-        )}
-        {/* crop frame overlay */}
-        <div className="absolute inset-0 pointer-events-none border-2 border-white/80" />
-        <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
-          {Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/20" />)}
         </div>
       </div>
-
       <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4 bg-[#FFFBF0]">
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8A8175]">Adjust photo</p>
         <div className="flex items-center gap-3">
@@ -263,7 +272,7 @@ export default function ImageAdjuster({
             {PRESETS.map(p => (
               <button
                 key={p.id}
-                onClick={() => setAspect(p.id)}
+                onClick={() => selectAspect(p.id)}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-[#F3E8FF]' : 'bg-[#F5EEDF]'}`}
                 aria-pressed={aspect === p.id}
               >
