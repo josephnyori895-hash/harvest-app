@@ -193,11 +193,11 @@ export default function ImageAdjuster({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#FFFBF0] text-[#29251F] flex flex-col" role="dialog" aria-label="Adjust image">
+    <div className="fixed inset-0 z-[60] bg-[#FFFBF0] text-[#29251F] flex flex-col hf-image-editor" role="dialog" aria-label="Adjust image" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9]">
-        <button onClick={onCancel} className="text-sm text-[#5B5248] px-2 py-2" aria-label="Cancel">✕ Cancel</button>
+        <button onClick={onCancel} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl text-sm text-[#5B5248] px-2 py-2 active:bg-[#F5EEDF]" aria-label="Cancel">✕ Cancel</button>
         <p className="text-sm font-extrabold text-[#29251F]">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-extrabold text-[#7C3AED] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
+        <button onClick={() => void save()} disabled={rotating || !imgSize} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl text-sm font-extrabold text-[#7C3AED] px-2 py-2 active:bg-[#F3E8FF] disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
       </div>
 
       <div
@@ -247,6 +247,7 @@ export default function ImageAdjuster({
       </div>
 
       <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4 bg-[#FFFBF0]">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#8A8175]">Adjust photo</p>
         <div className="flex items-center gap-3">
           <span className="text-lg text-[#766E63] w-6">🔍−</span>
           <input
@@ -271,9 +272,9 @@ export default function ImageAdjuster({
               </button>
             ))}
           </div>
-          <button onClick={rotate} className="px-4 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xl" aria-label="Rotate 90 degrees">⟳</button>
+          <button onClick={rotate} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl bg-[#7C3AED] text-white text-xl active:scale-95 transition-transform" aria-label="Rotate 90 degrees">⟳</button>
         </div>
-        <p className="text-[11px] text-[#8A8175] text-center">Drag to reposition · pinch or slide to zoom · pick a shape</p>
+        <p className="text-[11px] leading-5 text-[#8A8175] text-center">Drag to reposition · pinch or slide to zoom · choose a crop shape</p>
       </div>
     </div>
   )
