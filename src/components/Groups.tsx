@@ -25,7 +25,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '' })
   // ── WhatsApp-style group settings (system admin) ──
   const [showSettings, setShowSettings] = useState(false)
-  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false, allowMemberEditInfo: false, allowMemberSend: true, allowMemberAdd: false, allowMemberInvite: false, approveNewMembers: true, sendMessageHistory: false })
+  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false, allowMemberEditInfo: false, allowMemberSend: true, allowMemberAdd: false, allowMemberInvite: false, approveNewMembers: true, sendMessageHistory: false, lat: '', lng: '', location_label: '' })
   const [addUname, setAddUname] = useState('')
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
@@ -187,7 +187,26 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     if (!detail?.group || savingSettings) return
     setSavingSettings(true)
     try {
-      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/settings`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(stForm) })
+      // The worker reads snake_case; map the camelCase form keys across.
+      // The location fields power registration auto-assignment (system admin only).
+      const body: Record<string, unknown> = {
+        name: stForm.name,
+        description: stForm.description,
+        community: stForm.community,
+        invite_only: stForm.addOnly,
+        allow_member_edit_info: stForm.allowMemberEditInfo,
+        allow_member_send: stForm.allowMemberSend,
+        allow_member_add: stForm.allowMemberAdd,
+        allow_member_invite: stForm.allowMemberInvite,
+        approve_new_members: stForm.approveNewMembers,
+        send_message_history: stForm.sendMessageHistory,
+      }
+      if (isAdmin) {
+        if (stForm.lat.trim() !== '') body.lat = Number(stForm.lat)
+        if (stForm.lng.trim() !== '') body.lng = Number(stForm.lng)
+        body.location_label = stForm.location_label
+      }
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/settings`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not save settings')
       showToast('Group settings saved ✓')
@@ -199,7 +218,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
   const startSettings = () => {
     if (!detail) return
     const g = detail.group
-    setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history })
+    setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history, lat: g.lat === null || g.lat === undefined ? '' : String(g.lat), lng: g.lng === null || g.lng === undefined ? '' : String(g.lng), location_label: g.location_label || '' })
     setShowSettings(true)
   }
 
@@ -294,6 +313,26 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                     <label htmlFor="gst-com" className="block text-[10px] font-bold text-[#766E63] mb-1">COMMUNITY (congregation)</label>
                     <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
                   </div>
+                  {isAdmin && (
+                    <div className="p-3 rounded-xl bg-[#F5F3FF] border border-[#DDD6FE] space-y-2">
+                      <p className="text-[10px] font-extrabold text-[#5B21B6] tracking-widest">📍 REGISTRATION LOCATION</p>
+                      <p className="text-[11px] text-[#5B21B6]/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label htmlFor="gst-lat" className="block text-[10px] font-bold text-[#766E63] mb-1">LATITUDE</label>
+                          <input id="gst-lat" inputMode="decimal" value={stForm.lat} onChange={e => setStForm(f => ({ ...f, lat: e.target.value }))} placeholder="-0.4197" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                        </div>
+                        <div>
+                          <label htmlFor="gst-lng" className="block text-[10px] font-bold text-[#766E63] mb-1">LONGITUDE</label>
+                          <input id="gst-lng" inputMode="decimal" value={stForm.lng} onChange={e => setStForm(f => ({ ...f, lng: e.target.value }))} placeholder="36.9475" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="gst-loc" className="block text-[10px] font-bold text-[#766E63] mb-1">AREA LABEL</label>
+                        <input id="gst-loc" value={stForm.location_label} onChange={e => setStForm(f => ({ ...f, location_label: e.target.value }))} placeholder="e.g. Nyeri Town" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <p className="text-[10px] font-extrabold text-[#8B8175] tracking-widest">GROUP PERMISSIONS</p>
                     {([

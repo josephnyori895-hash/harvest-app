@@ -116,8 +116,8 @@ export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 
   }
 
   return (
-    <div className="fixed inset-0 bg-zinc-900 z-50 flex flex-col">
-      <div className="flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden">
+    <div className="fixed inset-0 bg-stone-900 z-50 flex flex-col">
+      <div className="flex-1 relative bg-[#141210] flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute top-4 left-4 flex items-center gap-2 text-white">
           <span className="text-xs bg-white/20 px-2 py-1 rounded-full">{type === 'video' ? '📹 Video' : '📞 Voice'} • {status}</span>
         </div>
@@ -126,16 +126,16 @@ export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 
         {/* fallback avatar when no remote */}
         <div className={`w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 flex items-center justify-center text-2xl mb-4 ${status === 'Connected' && type === 'video' ? 'hidden' : 'flex'}`}>{peer[0].toUpperCase()}</div>
         <p className="text-white font-semibold z-10">{peer}</p>
-        <p className="text-zinc-400 text-sm z-10">{status}</p>
+        <p className="text-stone-400 text-sm z-10">{status}</p>
         {type === 'video' && (
-          <video ref={localRef} autoPlay playsInline muted className={`mt-6 w-32 h-24 bg-zinc-800 rounded-xl border-2 border-white object-cover ${camOff ? 'hidden' : 'block'}`} />
+          <video ref={localRef} autoPlay playsInline muted className={`mt-6 w-32 h-24 bg-stone-800 rounded-xl border-2 border-white object-cover ${camOff ? 'hidden' : 'block'}`} />
         )}
-        {type === 'video' && camOff && <div className="mt-6 w-32 h-24 bg-zinc-800 rounded-xl border-2 border-white flex items-center justify-center text-xs text-white">Camera off</div>}
+        {type === 'video' && camOff && <div className="mt-6 w-32 h-24 bg-stone-800 rounded-xl border-2 border-white flex items-center justify-center text-xs text-white">Camera off</div>}
       </div>
-      <div className="p-6 bg-black flex justify-center gap-6">
-        <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-black' : 'bg-zinc-800 text-white'}`}>{muted ? '🔇' : '🎤'}</button>
+      <div className="p-6 bg-[#141210] flex justify-center gap-6">
+        <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>{muted ? '🔇' : '🎤'}</button>
         <button onClick={handleEnd} className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl">✕</button>
-        <button onClick={toggleCam} className={`w-12 h-12 rounded-full flex items-center justify-center ${camOff ? 'bg-white text-black' : 'bg-zinc-800 text-white'}`}>📹</button>
+        <button onClick={toggleCam} className={`w-12 h-12 rounded-full flex items-center justify-center ${camOff ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>📹</button>
       </div>
     </div>
   )

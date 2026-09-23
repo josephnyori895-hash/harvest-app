@@ -326,6 +326,25 @@ export async function handleGroups(request, env, ctx) {
     if (body.invite_only !== undefined) {
       sets.push('invite_only=?'); vals.push(body.invite_only ? 1 : 0)
     }
+    // Location for registration auto-assignment (0006): the system admin maps
+    // each congregation's physical position; new signups near these coords
+    // join that congregation automatically (auth.js → geo.js reads these live).
+    if (body.lat !== undefined || body.lng !== undefined || body.location_label !== undefined) {
+      if (!isAdmin) return errorResponse('only admins can change the group location', 403)
+      if (body.lat !== undefined) {
+        const lat = Number(body.lat)
+        if (!Number.isFinite(lat) || lat < -90 || lat > 90) return errorResponse('lat must be between -90 and 90', 400)
+        sets.push('lat=?'); vals.push(lat)
+      }
+      if (body.lng !== undefined) {
+        const lng = Number(body.lng)
+        if (!Number.isFinite(lng) || lng < -180 || lng > 180) return errorResponse('lng must be between -180 and 180', 400)
+        sets.push('lng=?'); vals.push(lng)
+      }
+      if (body.location_label !== undefined) {
+        sets.push('location_label=?'); vals.push(String(body.location_label).trim().slice(0, 80))
+      }
+    }
     const boolFields = [
       ['allow_member_edit_info', 'allow_member_edit_info'],
       ['allow_member_send', 'allow_member_send'],

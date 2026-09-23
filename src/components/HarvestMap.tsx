@@ -74,9 +74,9 @@ export default function HarvestMap({ users }: { users: any[] }) {
   const hiddenUsers = users.filter(u => u.hidden === true)
 
   return (
-    <div className="bg-black text-white min-h-[70vh] flex flex-col">
-      <div className="p-4 border-b border-zinc-800"><h1 className="font-bold">Harvest Map</h1><p className="text-xs text-zinc-500">Groups & members nearby • Location hidden unless mutual follow (admin sees all) • {visibleUsers.length}/{users.length} visible</p><button onClick={updateMyLocation} disabled={locating} className="mt-2 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#7C3AED] text-white disabled:opacity-50">{locating ? 'Locating…' : '📍 Update my real location'}</button></div>
-      <div className="h-[220px] border-b border-zinc-800">
+    <div className="bg-[#141210] text-white min-h-[70vh] flex flex-col">
+      <div className="p-4 border-b border-stone-800"><h1 className="font-bold">Harvest Map</h1><p className="text-xs text-stone-500">Groups & members nearby • Location hidden unless mutual follow (admin sees all) • {visibleUsers.length}/{users.length} visible</p><button onClick={updateMyLocation} disabled={locating} className="mt-2 px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#7C3AED] text-white disabled:opacity-50">{locating ? 'Locating…' : '📍 Update my real location'}</button></div>
+      <div className="h-[220px] border-b border-stone-800">
         <MapContainer center={[-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {visibleUsers.map(u => (
@@ -100,17 +100,17 @@ export default function HarvestMap({ users }: { users: any[] }) {
           })}
         </MapContainer>
       </div>
-      <div className="flex gap-2 p-3 border-b border-zinc-800 overflow-x-auto">
-        <button onClick={() => setFilter('all')} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${filter === 'all' ? 'bg-white text-black' : 'bg-zinc-800'}`}>All groups</button>
+      <div className="flex gap-2 p-3 border-b border-stone-800 overflow-x-auto">
+        <button onClick={() => setFilter('all')} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${filter === 'all' ? 'bg-white text-black' : 'bg-stone-800'}`}>All groups</button>
         {Object.keys(groups).map(g => (
-          <button key={g} onClick={() => setFilter(g)} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${filter === g ? 'bg-white text-black' : 'bg-zinc-800'}`}>{g} ({groups[g].length})</button>
+          <button key={g} onClick={() => setFilter(g)} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${filter === g ? 'bg-white text-black' : 'bg-stone-800'}`}>{g} ({groups[g].length})</button>
         ))}
       </div>
       <div className="p-4 space-y-3">
         {(filter === 'all' ? Object.entries(groups) : [[filter, groups[filter] || []]] as any).map(([g, members]: any) => {
           const isCurrentGroup = myGroup === g
           return (
-          <div key={g} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <div key={g} className="bg-stone-900 border border-stone-800 rounded-xl p-3">
             <div className="flex justify-between items-center">
               <p className="font-semibold text-sm">{g}</p>
               <button disabled={joining || isCurrentGroup} onClick={() => void joinGroup(g)} className={`px-3 py-1 rounded-full text-xs font-semibold disabled:opacity-70 ${isCurrentGroup || joined===g ? 'bg-green-600 text-white' : 'bg-white text-black'}`}>
@@ -122,8 +122,8 @@ export default function HarvestMap({ users }: { users: any[] }) {
                 const canSee = !m.hidden && (isAdmin || m.me || Boolean(m.location))
                 return (
                 <div key={m.username} className="flex justify-between items-center">
-                  <div className="flex gap-2 items-center"><div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{String(m.username)[0].toUpperCase()}</div><div><p className="text-sm font-semibold">{m.username}{m.me ? ' (you)' : ''}</p><p className="text-xs text-zinc-400">{canSee ? (m.location || 'Nyeri') : '📍 Hidden — mutual follow to see'}</p></div></div>
-                  <span className="text-xs text-zinc-500">{canSee ? '✓ Visible' : '🔒 Hidden'}</span>
+                  <div className="flex gap-2 items-center"><div className="w-8 h-8 rounded-full bg-stone-700 flex items-center justify-center text-xs">{String(m.username)[0].toUpperCase()}</div><div><p className="text-sm font-semibold">{m.username}{m.me ? ' (you)' : ''}</p><p className="text-xs text-stone-400">{canSee ? (m.location || 'Nyeri') : '📍 Hidden — mutual follow to see'}</p></div></div>
+                  <span className="text-xs text-stone-500">{canSee ? '✓ Visible' : '🔒 Hidden'}</span>
                 </div>
               )})}
             </div>
@@ -131,7 +131,7 @@ export default function HarvestMap({ users }: { users: any[] }) {
           )
         })}
       </div>
-      <p className="text-[11px] text-zinc-600 text-center py-2 border-t border-zinc-800">Precise coords only for mutual follows • Others shown approx per group</p>
+      <p className="text-[11px] text-stone-600 text-center py-2 border-t border-stone-800">Precise coords only for mutual follows • Others shown approx per group</p>
     </div>
   )
 }

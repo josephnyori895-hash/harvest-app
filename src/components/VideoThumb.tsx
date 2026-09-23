@@ -73,7 +73,7 @@ export default function VideoThumb({ src, playable = false, className = '' }: { 
       aria-label={playable ? 'Play video' : undefined}
     >
       <canvas ref={canvasRef} className={`w-full h-full object-cover ${failed ? 'hidden' : ''}`} />
-      {failed && <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center text-2xl">🎥</div>}
+      {failed && <div className="absolute inset-0 bg-gradient-to-br from-stone-800 to-stone-900 flex items-center justify-center text-2xl">🎥</div>}
       <video
         ref={vidRef}
         src={`${src}#t=0.1`}

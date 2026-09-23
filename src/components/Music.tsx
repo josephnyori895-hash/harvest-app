@@ -304,7 +304,7 @@ export default function Music() {
           {track.artwork
             ? <img src={track.artwork} alt="" className="w-14 h-14 rounded-xl object-cover shadow-md" />
             : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white text-xl">🎵</div>}
-          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-black/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
+          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-[#141210]/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
             <span className="text-white text-xl">{isPlaying ? '⏸' : '▶'}</span>
           </button>
         </div>
