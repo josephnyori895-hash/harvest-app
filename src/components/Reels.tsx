@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchReels, useApi } from '../lib/api'
+import { fetchReels, useApi, presign, uploadToMinio } from '../lib/api'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
@@ -71,7 +71,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           }))
         setServerReels(mapped)
         setReelsNextOffset(Number(r.nextOffset) || mapped.length)
-        setHasMoreReels(mapped.length >= 20)
+        setHasMoreReels(Boolean(r.hasMore ?? mapped.length >= 20))
       })
       .catch(() => {
         if (!cancelled) setReelsLoadFailed(true)
@@ -379,11 +379,9 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             className={`absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain bg-black transition-opacity duration-200 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
             onLoadedData={() => { setVideoReady(true); setVideoError(false) }}
             onCanPlay={() => setVideoReady(true)}
-            onWaiting={() => setVideoReady(false)}
+            onWaiting={() => { /* Keep the current frame visible during brief network stalls. */ }}
             onPlaying={() => setVideoReady(true)}
             onError={() => { setVideoReady(false); setVideoError(true) }}
-            onClick={() => setMuted(false)}
-            onDoubleClick={() => setMuted(true)}
           />
         </> : (
           <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" fallbackIcon="🎥" />
@@ -506,14 +504,10 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
         let coverKey: string | undefined
         if (coverBlob) {
           try {
-            const pre = await fetch(`${API}/api/media/presign`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` }, body: JSON.stringify({ type: 'post', contentType: 'image/jpeg', bytes: coverBlob.size, ext: 'jpg' }) })
-            const preD = await pre.json()
-            const fd = new FormData()
-            Object.entries(preD.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
-            fd.append('file', new File([coverBlob], 'cover.jpg', { type: 'image/jpeg' }))
-            const direct = /^https?:\/\//.test(preD.url)
-            const up = await fetch(direct ? preD.url : `${API}${preD.url}`, { method: 'POST', body: fd, headers: direct ? undefined : { Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` } })
-            if (up.ok) coverKey = preD.key
+            const coverFile = new File([coverBlob], 'cover.jpg', { type: 'image/jpeg' })
+            const preD = await presign({ type: 'post', contentType: coverFile.type, bytes: coverFile.size, ext: 'jpg' })
+            await uploadToMinio(preD.url, preD.fields || {}, coverFile)
+            coverKey = preD.key
           } catch { /* poster is optional — the video still uploads */ }
         }
         void startBackgroundUpload({
