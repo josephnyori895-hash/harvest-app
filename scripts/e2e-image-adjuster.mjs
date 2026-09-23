@@ -111,7 +111,8 @@ try {
     await page.waitForSelector('[data-testid="post-create-details"]', { visible: true })
 
     const details = await waitForImageDimensions('[data-testid="post-create-details-preview"] img')
-    assert.equal(details.mime, 'image/jpeg', `${testCase.label} Details preview is not the exported JPEG: ${details.mime}`)\n    const detailsRatio = details.width / details.height
+    assert.equal(details.mime, 'image/jpeg', `${testCase.label} Details preview is not the exported JPEG: ${details.mime}`)
+    const detailsRatio = details.width / details.height
 
     assert.equal(details.width, preview.width, `${testCase.label} Details width differs from Preview`)
     assert.equal(details.height, preview.height, `${testCase.label} Details height differs from Preview`)
