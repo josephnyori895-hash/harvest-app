@@ -396,27 +396,28 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         )}
 
         {/* One restrained gradient only where text needs contrast. */}
-        <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/75 via-black/20 to-transparent pointer-events-none" />
+        {/* Compact caption-safe gradient: enough contrast at the bottom without dimming the main video. */}
+        <div className="absolute inset-x-0 bottom-0 h-40 sm:h-44 bg-gradient-to-t from-black/72 via-black/28 to-transparent pointer-events-none" />
         {notice && <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-[80%] px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-sm text-[11px] text-white/85 text-center pointer-events-none">{notice}</div>}
 
-        <div className="absolute left-4 right-20 bottom-5 sm:left-6 sm:right-24 sm:bottom-7 z-10">
+        <div className="absolute left-4 right-20 bottom-4 sm:left-6 sm:right-24 sm:bottom-5 z-10">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: cur.user, name: cur.user, verified: cur.verified }) }}
-            className="flex items-center gap-2.5 text-left pointer-events-auto"
+            className="flex items-center gap-2 text-left pointer-events-auto"
             aria-label={`View ${cur.user}'s profile`}
           >
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold text-sm">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold text-xs">
               {String(cur.user).charAt(0).toUpperCase()}
             </div>
             <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <span className="text-amber-300">✓</span>}</span>
           </button>
 
-          {cur.cap && <p className="mt-2 max-w-2xl text-sm sm:text-base font-medium leading-snug line-clamp-3 drop-shadow">{cur.cap}</p>}
+          {cur.cap && <p className="mt-1.5 max-w-[min(36rem,calc(100vw-7rem))] text-[13px] sm:text-sm font-medium leading-[1.35] line-clamp-2 drop-shadow">{cur.cap}</p>}
 
           {cur.music && (
-            <div className="mt-2 flex items-center gap-2 max-w-[75%] text-xs text-white/85">
-              <img src={cur.music.cover} alt="" className="w-6 h-6 rounded-md shrink-0" />
+            <div className="mt-1.5 flex items-center gap-1.5 max-w-[70%] text-[11px] text-white/75">
+              <img src={cur.music.cover} alt="" className="w-5 h-5 rounded shrink-0" />
               <span className="truncate">{cur.music.title} · {cur.music.artist}</span>
             </div>
           )}
