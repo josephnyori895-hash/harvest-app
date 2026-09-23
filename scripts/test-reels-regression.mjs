@@ -40,7 +40,7 @@ assert.match(reels, /Save video/)
 assert.match(reels, /More actions/)
 assert.match(reels, /saved\[key\]/)
 
-assert.match(reels, /\/api\/reels\/\\${encodeURIComponent\(String\(cur\.id\)\)}\/save/)
+assert.match(reels, /\/api\/reels\/\${encodeURIComponent\(String\(cur\.id\)\)}\/save/)
 assert.match(reels, /Saved Videos/)
 
 assert.match(app, /Search creator or caption/)
