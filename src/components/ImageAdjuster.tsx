@@ -214,7 +214,7 @@ export default function ImageAdjuster({
       <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9]">
         <button onClick={onCancel} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl text-sm text-[#5B5248] px-2 py-2 active:bg-[#F5EEDF]" aria-label="Cancel">✕ Cancel</button>
         <p className="text-sm font-extrabold text-[#29251F]">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl text-sm font-extrabold text-[#7C3AED] px-2 py-2 active:bg-[#F3E8FF] disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
+        <button data-testid="image-adjuster-save" onClick={() => void save()} disabled={rotating || !imgSize} className="min-w-11 min-h-11 inline-flex items-center justify-center rounded-xl text-sm font-extrabold text-[#7C3AED] px-2 py-2 active:bg-[#F3E8FF] disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
       </div>
 
       <div
@@ -272,6 +272,7 @@ export default function ImageAdjuster({
             {PRESETS.map(p => (
               <button
                 key={p.id}
+                data-testid={`image-adjuster-aspect-${p.id}`}
                 onClick={() => selectAspect(p.id)}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-[#F3E8FF]' : 'bg-[#F5EEDF]'}`}
                 aria-pressed={aspect === p.id}
