@@ -193,11 +193,11 @@ export default function ImageAdjuster({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black flex flex-col" role="dialog" aria-label="Adjust image">
-      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-zinc-800">
-        <button onClick={onCancel} className="text-sm text-zinc-300 px-2 py-2" aria-label="Cancel">✕ Cancel</button>
-        <p className="text-sm font-bold text-white">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-sky-400 px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
+    <div className="fixed inset-0 z-[60] bg-[#FFFBF0] text-[#29251F] flex flex-col" role="dialog" aria-label="Adjust image">
+      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9]">
+        <button onClick={onCancel} className="text-sm text-[#5B5248] px-2 py-2" aria-label="Cancel">✕ Cancel</button>
+        <p className="text-sm font-extrabold text-[#29251F]">Adjust</p>
+        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-extrabold text-[#7C3AED] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
       </div>
 
       <div
@@ -246,13 +246,13 @@ export default function ImageAdjuster({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-zinc-800 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4 bg-black">
+      <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4 bg-[#FFFBF0]">
         <div className="flex items-center gap-3">
-          <span className="text-lg text-zinc-400 w-6">🔍−</span>
+          <span className="text-lg text-[#766E63] w-6">🔍−</span>
           <input
             type="range" min={1} max={5} step={0.01} value={zoom}
             onChange={e => applyZoomSlider(Number(e.target.value))}
-            className="flex-1 accent-sky-400"
+            className="flex-1 accent-[#7C3AED]"
             aria-label="Zoom"
           />
           <span className="text-lg text-zinc-400 w-6">🔍＋</span>
@@ -263,17 +263,17 @@ export default function ImageAdjuster({
               <button
                 key={p.id}
                 onClick={() => setAspect(p.id)}
-                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
+                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-[#F3E8FF]' : 'bg-[#F5EEDF]'}`}
                 aria-pressed={aspect === p.id}
               >
-                <span className={`${p.box} rounded-sm border-2 ${aspect === p.id ? 'border-sky-400' : 'border-zinc-500'}`} />
-                <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-sky-400' : 'text-zinc-400'}`}>{p.label}</span>
+                <span className={`${p.box} rounded-sm border-2 ${aspect === p.id ? 'border-[#7C3AED]' : 'border-[#A49A8E]'}`} />
+                <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-[#7C3AED]' : 'text-zinc-400'}`}>{p.label}</span>
               </button>
             ))}
           </div>
-          <button onClick={rotate} className="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xl" aria-label="Rotate 90 degrees">⟳</button>
+          <button onClick={rotate} className="px-4 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xl" aria-label="Rotate 90 degrees">⟳</button>
         </div>
-        <p className="text-[11px] text-zinc-500 text-center">Drag to reposition · pinch or slide to zoom · pick a shape</p>
+        <p className="text-[11px] text-[#8A8175] text-center">Drag to reposition · pinch or slide to zoom · pick a shape</p>
       </div>
     </div>
   )
