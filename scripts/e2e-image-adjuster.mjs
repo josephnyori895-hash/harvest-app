@@ -71,7 +71,11 @@ async function waitForImageDimensions(selector) {
     const img = document.querySelector(sel)
     return img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
   }, { timeout: 15000 }, selector)
-  return page.$eval(selector, async img => {\n    const response = await fetch(img.src)\n    const blob = await response.blob()\n    return { width: img.naturalWidth, height: img.naturalHeight, src: img.src, mime: blob.type }\n  })
+  return page.$eval(selector, async img => {
+    const response = await fetch(img.src)
+    const blob = await response.blob()
+    return { width: img.naturalWidth, height: img.naturalHeight, src: img.src, mime: blob.type }
+  })
 }
 
 try {
