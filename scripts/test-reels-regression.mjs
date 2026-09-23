@@ -29,3 +29,8 @@ assert.match(reels, /saved\[key\]/)
 
 assert.match(reels, /\/api\/reels\/\\${encodeURIComponent\(String\(cur\.id\)\)}\/save/)
 assert.match(reels, /Saved Videos/)
+
+assert.match(app, /Search creator or caption/)
+assert.match(app, /7 days/)
+assert.match(app, /30 days/)
+assert.match(app, /saved_at/)
