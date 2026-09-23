@@ -225,6 +225,10 @@ export async function handleFeed(request, env, ctx) {
     const scope = qp.scope === 'reel' ? 'reel' : 'post'
     const id = String(qp.id || '').slice(0, 64)
     if (!id) return errorResponse('id required', 400)
+    const target = scope === 'reel'
+      ? await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [id])
+      : await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [id])
+    if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
     const { rows } = await query(
       env,
       `SELECT c.id, c.username, c.body, c.created_at, u.verified
