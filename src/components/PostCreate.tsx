@@ -317,7 +317,7 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         {step === 'media' && (
-          <section data-testid="post-create-edit" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
+          <section className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-5">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">{labels[type]}</p>
               <h1 className="mt-1 text-2xl font-black">Choose your media</h1>
@@ -343,7 +343,7 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         {step === 'edit' && (
-          <section data-testid="post-create-details" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
+          <section data-testid="post-create-edit" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-5">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">Preview</p>
               <h1 className="mt-1 text-2xl font-black">Make it look right</h1>
@@ -372,7 +372,7 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         {step === 'details' && (
-          <section className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
+          <section data-testid="post-create-details" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-5">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">{labels[type]}</p>
               <h1 className="mt-1 text-2xl font-black">Add the details</h1>
