@@ -564,7 +564,21 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   // Upload activity: live transfers + last 20 finished (successes and failures).
   const [uploads, setUploads] = useState(getUploads())
   const [history, setHistory] = useState(getUploadHistory())
+  const [savedReels, setSavedReels] = useState([])
+  const [savedReelsLoading, setSavedReelsLoading] = useState(false)
+  const [savedReelsError, setSavedReelsError] = useState('')
   useEffect(() => subscribeUploads(() => { setUploads(getUploads()); setHistory(getUploadHistory()) }), [])
+  useEffect(() => {
+    let cancelled = false
+    setSavedReelsLoading(true)
+    setSavedReelsError('')
+    fetch(`${API}/api/reels/saved?limit=50`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(new Error(d?.error || 'Could not load saved videos'))))
+      .then(d => { if (!cancelled) setSavedReels(d.reels || []) })
+      .catch(e => { if (!cancelled) setSavedReelsError(e?.message || 'Could not load saved videos') })
+      .finally(() => { if (!cancelled) setSavedReelsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   const loadMe = () => {
     fetch(`${API}/api/me`, { headers: authHeaders() })
@@ -706,6 +720,36 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
               </div>
             ))}
             <button onClick={() => clearUploadHistory()} className="text-[10px] text-zinc-500 underline px-1">Clear history</button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-zinc-800 pt-3">
+        <div className="px-4 flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-white">🔖 Saved Videos</h3>
+          <span className="text-[10px] text-zinc-500">Saved on every device</span>
+        </div>
+        {savedReelsLoading && <p className="text-xs text-zinc-500 px-4 py-2">Loading saved videos…</p>}
+        {savedReelsError && <p className="text-xs text-rose-400 px-4 py-2">{savedReelsError}</p>}
+        {!savedReelsLoading && !savedReelsError && savedReels.length === 0 && (
+          <div className="mx-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+            <p className="text-xs font-semibold">Nothing saved yet.</p>
+            <p className="text-[11px] text-zinc-500 mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
+          </div>
+        )}
+        {savedReels.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 px-4">
+            {savedReels.map(r => (
+              <button key={r.id} type="button"
+                onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
+                className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 text-left active:scale-[0.98] transition-transform">
+                {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
+                <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
+                  <p className="text-[11px] font-bold truncate">{r.username}</p>
+                  <p className="text-[10px] text-white/70 line-clamp-2">{r.caption || 'Saved video'}</p>
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>
