@@ -22,3 +22,7 @@ assert.match(feed, /music: r\.music_track_id/)
 assert.match(feed, /cover_thumb_key/)
 
 console.log('Reels regression checks: PASS')
+
+assert.match(reels, /Save video/)
+assert.match(reels, /More actions/)
+assert.match(reels, /saved\[key\]/)
