@@ -13,8 +13,9 @@
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
     "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs",
-    "test:all": "npm run test:admin && npm run test:security",
-    "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs"
+    "test:all": "npm run test:admin && npm run test:security && npm run test:reels",
+    "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs",
+    "test:reels": "node scripts/test-reels-regression.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
