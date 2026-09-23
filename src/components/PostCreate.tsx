@@ -317,7 +317,7 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         {step === 'media' && (
-          <section className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
+          <section data-testid="post-create-edit" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-5">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">{labels[type]}</p>
               <h1 className="mt-1 text-2xl font-black">Choose your media</h1>
@@ -329,7 +329,7 @@ export default function PostCreate({ onDone }: Props) {
                   <strong className="mt-4 text-base font-extrabold">{type === 'music' ? 'Choose audio' : type === 'video' ? 'Choose video' : 'Choose photo or video'}</strong>
                   <span className="mt-1 text-xs text-[#766E63]">{type === 'video' ? 'MP4 and video files up to 100 MB' : type === 'music' ? 'Audio up to 20 MB' : type === 'sermon' ? 'MP3/M4A up to 80 MB or MP4 up to 500 MB' : 'Choose from your camera or gallery'}</span>
                 </button>
-                <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
+                <input data-testid="post-create-file-input" ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
               </>
             ) : (
               <div className="p-5 rounded-3xl bg-white border border-[#E8DEC9]">
@@ -343,7 +343,7 @@ export default function PostCreate({ onDone }: Props) {
         )}
 
         {step === 'edit' && (
-          <section className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
+          <section data-testid="post-create-details" className="px-4 pt-6 pb-28 max-w-xl mx-auto w-full">
             <div className="mb-5">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#8A8175]">Preview</p>
               <h1 className="mt-1 text-2xl font-black">Make it look right</h1>
@@ -366,7 +366,7 @@ export default function PostCreate({ onDone }: Props) {
               {file?.type.startsWith('image/') && <button onClick={() => setAdjusting(true)} className="min-h-12 rounded-2xl border border-[#D8CDBB] bg-white font-bold text-sm">✎ Adjust photo</button>}
               <button onClick={() => { setFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); goToStep('media', 'back') }} className="min-h-12 rounded-2xl border border-[#D8CDBB] bg-white font-bold text-sm text-[#5B5248]">Replace media</button>
             </div>
-            <button onClick={validateAndDetails} className="mt-3 w-full min-h-12 rounded-2xl bg-[#7C3AED] text-white font-extrabold active:scale-[0.99] transition-transform">Continue to details</button>
+            <button data-testid="post-create-continue-details" onClick={validateAndDetails} className="mt-3 w-full min-h-12 rounded-2xl bg-[#7C3AED] text-white font-extrabold active:scale-[0.99] transition-transform">Continue to details</button>
             {notice && <div role="alert" className="mt-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
           </section>
         )}
@@ -378,7 +378,7 @@ export default function PostCreate({ onDone }: Props) {
               <h1 className="mt-1 text-2xl font-black">Add the details</h1>
             </div>
             <div className="rounded-3xl bg-white border border-[#E8DEC9] overflow-hidden">
-              {previewUrl && <div className="h-28 bg-[#F5EEDF] flex items-center gap-4 p-3">
+              {previewUrl && <div data-testid="post-create-details-preview" className="h-28 bg-[#F5EEDF] flex items-center gap-4 p-3">
                 {file?.type.startsWith('video/') ? <video src={previewUrl} muted playsInline className="h-full w-28 object-cover rounded-2xl" /> : file?.type.startsWith('audio/') ? <div className="h-full w-28 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center"><Icon name="music"/></div> : <img src={previewUrl} alt="" className="h-full w-28 object-cover rounded-2xl" />}
                 <div className="min-w-0"><p className="font-extrabold text-sm">{labels[type]}</p><p className="text-xs text-[#766E63] mt-1 truncate">{file?.name}</p></div>
               </div>}
