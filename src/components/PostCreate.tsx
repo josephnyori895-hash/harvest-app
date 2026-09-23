@@ -157,7 +157,7 @@ export default function PostCreate({ onDone }: Props) {
     setPreviewUrl(url)
     setNotice('')
     event.target.value = ''
-    setStep('preview' as Step)
+    setStep('edit')
     if (picked.type.startsWith('image/')) setAdjusting(true)
   }
 
