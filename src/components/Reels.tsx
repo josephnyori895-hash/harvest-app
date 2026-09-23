@@ -25,6 +25,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [encouraged, setEncouraged] = useState<Record<string, boolean>>({})
   const [muted, setMuted] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const [showMore, setShowMore] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
@@ -216,6 +218,13 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
+  const toggleSave = () => {
+    if (!cur) return
+    const next = !saved[key]
+    setSaved(p => ({ ...p, [key]: next }))
+    flash(next ? 'Saved to your videos' : 'Removed from saved videos')
+  }
+
   const share = async () => { if (!cur) return; const text = `${cur.user}: ${cur.cap} — Harvest Family Church Nyeri`; const publicBase = (import.meta.env.VITE_PUBLIC_APP_URL || 'https://harvestfamily-api.harvestfamily.workers.dev').replace(/\/$/, ''); const url = cur.id != null ? `${publicBase}/?shared=reel&id=${encodeURIComponent(String(cur.id))}` : publicBase; try { if (navigator.share) await navigator.share({ title: 'Harvest community video', text, url }); else { await navigator.clipboard.writeText(`${text}\n${url}`); flash('Video link copied to clipboard') } } catch (e: any) { if (e?.name !== 'AbortError') flash('Could not share this video') } }
   const respond = () => setShowComments(true)
   const toggleEncourage = async () => {
@@ -469,6 +478,23 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           <button onClick={(e) => { e.stopPropagation(); void share() }}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95"
             aria-label="Share">↗</button>
+
+          <button onClick={(e) => { e.stopPropagation(); toggleSave() }}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${saved[key] ? 'ring-2 ring-amber-300/70' : ''}`}
+            aria-label={saved[key] ? 'Remove from saved videos' : 'Save video'}>🔖</button>
+
+          <button onClick={(e) => { e.stopPropagation(); setShowMore(v => !v) }}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95"
+            aria-label="More actions" aria-expanded={showMore}>⋯</button>
+
+          {showMore && (
+            <div className="absolute right-14 bottom-0 z-30 min-w-44 overflow-hidden rounded-2xl border border-white/10 bg-black/75 backdrop-blur-xl shadow-2xl">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); void share() }}
+                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">↗ Share video</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); toggleSave() }}
+                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">{saved[key] ? '🔖 Remove from saved' : '🔖 Save video'}</button>
+            </div>
+          )}
 
           <button onClick={(e) => { e.stopPropagation(); setMuted(m => !m) }}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/20 backdrop-blur-sm border border-white/10 text-[16px] leading-none shadow-sm transition-transform active:scale-95"
