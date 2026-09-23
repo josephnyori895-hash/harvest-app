@@ -41,10 +41,12 @@ export default function Comments({
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [removeError, setRemoveError] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const token = localStorage.getItem('harvest_token') || ''
       const res = await fetch(`${API}/api/comments?scope=${scope}&id=${encodeURIComponent(String(postId))}`, {
@@ -98,17 +100,20 @@ export default function Comments({
   }
 
   const remove = async (id: string) => {
+    setRemoveError('')
     try {
       const token = localStorage.getItem('harvest_token') || ''
       const res = await fetch(`${API}/api/comments/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
-      if (res.ok) {
-        setComments(c => c.filter(x => x.id !== id))
-        onCountChange?.(-1)
-      }
-    } catch { /* leave the comment visible; server count unchanged */ }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || `Could not delete comment (${res.status})`)
+      setComments(c => c.filter(x => x.id !== id))
+      onCountChange?.(-1)
+    } catch (e: any) {
+      setRemoveError(e?.message || 'Could not delete comment — try again')
+    }
   }
 
   return (
@@ -121,14 +126,14 @@ export default function Comments({
         </div>
         <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
           {loading && <p className="text-xs text-[#8B8175] text-center py-6">Loading comments…</p>}
-          {!loading && comments.length === 0 && (
+          {!loading && !loadError && comments.length === 0 && (
             <div className="text-center py-10">
               <div className="text-3xl mb-2">💬</div>
               <p className="text-sm font-bold">No comments yet</p>
               <p className="text-xs text-[#8B8175] mt-1">Be the first to encourage someone.</p>
             </div>
           )}
-          {!loading && loadError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">{loadError}</div>}
+          {!loading && loadError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center justify-between gap-3"><span>{loadError}</span><button type="button" onClick={() => void load()} className="shrink-0 underline font-bold">Retry</button></div>}
           {comments.map(c => (
             <div key={c.id} className="flex gap-2.5">
               <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-[10px] font-extrabold text-[#5B21B6]">
@@ -148,6 +153,7 @@ export default function Comments({
             </div>
           ))}
         </div>
+        {removeError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{removeError}</div>}
         {sendError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{sendError}</div>}
         <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]">
           <input
