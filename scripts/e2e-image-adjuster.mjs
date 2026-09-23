@@ -71,7 +71,7 @@ async function waitForImageDimensions(selector) {
     const img = document.querySelector(sel)
     return img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
   }, { timeout: 15000 }, selector)
-  return page.$eval(selector, img => ({ width: img.naturalWidth, height: img.naturalHeight, src: img.src }))
+  return page.$eval(selector, async img => {\n    const response = await fetch(img.src)\n    const blob = await response.blob()\n    return { width: img.naturalWidth, height: img.naturalHeight, src: img.src, mime: blob.type }\n  })
 }
 
 try {
@@ -97,7 +97,7 @@ try {
 
     await page.waitForSelector('[data-testid="post-create-edit"]', { visible: true })
     const preview = await waitForImageDimensions('[data-testid="post-create-edit"] img')
-    const previewRatio = preview.width / preview.height
+    assert.equal(preview.mime, 'image/jpeg', `${testCase.label} export is not JPEG: ${preview.mime}`)\n    const previewRatio = preview.width / preview.height
 
     assert.ok(Math.abs(previewRatio - testCase.ratio) < 0.01,
       `${testCase.label} Preview ratio mismatch: ${preview.width}x${preview.height} = ${previewRatio}`)
@@ -106,7 +106,7 @@ try {
     await page.waitForSelector('[data-testid="post-create-details"]', { visible: true })
 
     const details = await waitForImageDimensions('[data-testid="post-create-details-preview"] img')
-    const detailsRatio = details.width / details.height
+    assert.equal(details.mime, 'image/jpeg', `${testCase.label} Details preview is not the exported JPEG: ${details.mime}`)\n    const detailsRatio = details.width / details.height
 
     assert.equal(details.width, preview.width, `${testCase.label} Details width differs from Preview`)
     assert.equal(details.height, preview.height, `${testCase.label} Details height differs from Preview`)
