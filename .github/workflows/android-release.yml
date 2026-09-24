@@ -279,50 +279,50 @@ jobs:
           BODY_FILE="$(mktemp)"
           trap 'rm -f "$HEADER_FILE" "$BODY_FILE"' EXIT
 
-          # Poll the status line: a fresh deploy can briefly 404 on workers.dev
-          # while the asset manifest propagates.
-          STATUS_LINE=""
-          for attempt in 1 2 3 4 5 6; do
-            curl --silent --show-error --max-time 120 -D "$HEADER_FILE" -o /dev/null "$PERMANENT_URL" || true
-            STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
-            case "$STATUS_LINE" in
-              "HTTP/2 200"|"HTTP/1.1 200 OK") break ;;
-              *) echo "Attempt $attempt: $STATUS_LINE (propagation?); retrying..."; STATUS_LINE=""; sleep 10 ;;
-            esac
-          done
-          test -n "$STATUS_LINE" || { echo "::error::Permanent URL never returned HTTP 200"; exit 1; }
-
-          CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-          CONTENT_DISPOSITION="$(awk 'BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-          echo "PERMANENT STATUS:      $STATUS_LINE"
-          echo "PERMANENT CACHE:       $CACHE_CONTROL"
-          echo "PERMANENT DISPOSITION: $CONTENT_DISPOSITION"
-          test "$CACHE_CONTROL" = "no-store, max-age=0"
-          test "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\""
-
-          # Same propagation tolerance as the versioned check: retry until a
-          # 200 whose bytes match this run's APK exactly.
+          # A newly deployed Worker can briefly race with the edge that serves
+          # the previous Worker version. A stale HTTP 200 is therefore treated
+          # like a propagation miss rather than an immediate release failure.
           LIVE_PERMANENT_SHA=""
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$PERMANENT_URL" || echo 000)"
-            if [ "$STATUS" = "200" ]; then
+            : > "$HEADER_FILE"
+            : > "$BODY_FILE"
+            curl --silent --show-error --max-time 120 -D "$HEADER_FILE" -o "$BODY_FILE" "$PERMANENT_URL" || true
+
+            STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+            CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
+            CONTENT_DISPOSITION="$(awk 'BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
+
+            if [ "$STATUS_LINE" = "HTTP/2 200" ] || [ "$STATUS_LINE" = "HTTP/1.1 200 OK" ]; then
               CANDIDATE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-              if [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
+              echo "Attempt $attempt: $STATUS_LINE; SHA=$CANDIDATE_SHA; disposition=$CONTENT_DISPOSITION"
+
+              if [ "$CACHE_CONTROL" = "no-store, max-age=0" ] &&
+                 [ "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\"" ] &&
+                 [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
                 LIVE_PERMANENT_SHA="$CANDIDATE_SHA"
-                echo "Permanent URL: HTTP 200, SHA matched (attempt $attempt)"
+                echo "Permanent URL: HTTP 200, headers and SHA matched (attempt $attempt)"
                 break
               fi
-              echo "Attempt $attempt: HTTP 200 but stale SHA (propagation?); retrying..."
+
+              echo "Attempt $attempt: stale/mismatched permanent APK response; retrying..."
             else
-              echo "Attempt $attempt: HTTP $STATUS; retrying..."
+              echo "Attempt $attempt: $STATUS_LINE (propagation?); retrying..."
             fi
             sleep 15
           done
-          test -n "$LIVE_PERMANENT_SHA" || { echo "::error::Permanent URL body never returned HTTP 200"; exit 1; }
+
+          test -n "$LIVE_PERMANENT_SHA" || {
+            echo "::error::Permanent URL did not serve this release's APK with the expected headers and SHA after propagation window"
+            echo "::error::Expected filename: $APK_FILENAME"
+            echo "::error::Expected SHA256: $LOCAL_SHA"
+            exit 1
+          }
+
           echo "LOCAL SHA256:          $LOCAL_SHA"
           echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
           test "$LOCAL_SHA" = "$LIVE_PERMANENT_SHA"
           echo "Permanent APK URL verified: $PERMANENT_URL"
+
       - name: Verify permanent APK rollback to previous verified release
         working-directory: workers
         env:
