@@ -158,7 +158,7 @@ export async function handleMedia(request, env, ctx) {
     let validatedPosterKey = null
     if (type === 'reel' && coverKeyRaw) {
       const posterKeyRaw = String(coverKeyRaw)
-      if (!/^originals\\/post\\/\\d{4}\\/\\d{2}\\/[0-9a-f-]+\\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
+      if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
       const pobj = await env.MEDIA.head(posterKeyRaw)
       if (!pobj) return errorResponse('poster not found in storage', 404)
       const posterOwnerId = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
