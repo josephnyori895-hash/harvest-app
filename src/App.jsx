@@ -352,8 +352,8 @@ function InnerApp() {
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
           {tab === 'give' && <Give />}
           {tab === 'map' && <HarvestMap users={users} />}
-          {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} />}
-          {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} />}
+          {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} onOpenUser={openProfile} />}
+          {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} onOpenUser={openProfile} />}
           {tab === 'admin' && (
             <RequireRole role="admin">
               <Admin
