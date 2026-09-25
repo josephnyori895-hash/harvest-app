@@ -351,15 +351,3 @@ jobs:
           npx wrangler deploy --var "RELEASE_APK_FILENAME:$CURRENT"
           for i in {1..10}; do sleep 10; curl --silent --show-error -o "$BODY" "$API_BASE_URL/harvest-family.apk" || true; [ "$(sha256sum "$BODY" | cut -d" " -f1)" = "$CURRENT_SHA" ] && break; done
           test "$(sha256sum "$BODY" | cut -d" " -f1)" = "$CURRENT_SHA"
-
-  release:
-    name: "RELEASED — all 14 gates passed"
-    needs: [source_integrity, release_preflight, frontend_quality, security_audit, production_build, android_prepare, signed_apk, apk_fingerprint, deploy_production, production_smoke, browser_e2e, verify_versioned_apk, verify_permanent_apk, rollback_and_restore]
-    if: success()
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          echo "HARVEST FAMILY APK RELEASED"
-          echo "Commit: $GITHUB_SHA"
-          echo "Run: #$GITHUB_RUN_NUMBER"
-          echo "All 14 release gates passed."
