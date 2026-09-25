@@ -38,6 +38,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const [editDesc, setEditDesc] = useState('')
   const [editing, setEditing] = useState(false)
   const [unreadByDepartment, setUnreadByDepartment] = useState<Record<string, number>>({})
+  const [departmentQuery, setDepartmentQuery] = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
@@ -221,6 +222,9 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
 
   const mine = departments.filter(d => d.joined)
   const availableDepartments = departments.filter(d => !d.joined)
+  const query = departmentQuery.trim().toLowerCase()
+  const filteredMine = mine.filter(d => `${d.name || ''} ${d.description || ''}`.toLowerCase().includes(query))
+  const filteredAvailable = availableDepartments.filter(d => `${d.name || ''} ${d.description || ''}`.toLowerCase().includes(query))
 
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
@@ -370,15 +374,15 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
           </div>
         )}
 
-        {mine.length > 0 && (
+        {filteredMine.length > 0 && (
           <section>
             <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
-            <div className="space-y-2">{mine.map(d => <DeptCard key={d.id} d={d} />)}</div>
+            <div className="space-y-2">{filteredMine.map(d => <DeptCard key={d.id} d={d} />)}</div>
           </section>
         )}
 
         <section>
-          <h2 className="text-sm font-black text-white mb-3">Explore departments</h2>
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-white">Explore departments</h2><span className="text-[10px] text-stone-500">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-stone-950 border border-stone-800 px-3 py-2.5 text-sm text-white outline-none focus:border-purple-500 placeholder:text-stone-600" />
           {loading ? (
             <div role="status" aria-live="polite" className="rounded-2xl border border-stone-800 bg-stone-950 px-4 py-6 text-center">
               <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
@@ -392,7 +396,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             </div>
           ) : (
             <div className="space-y-2">
-              {availableDepartments.map(d => <DeptCard key={d.id} d={d} />)}
+              {filteredAvailable.map(d => <DeptCard key={d.id} d={d} />)}
             </div>
           )}
         </section>
