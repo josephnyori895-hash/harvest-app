@@ -83,7 +83,7 @@ const quickLinks = [
   { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
 ]
 
-export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (username: string, name?: string) => void }) {
+export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [likesTick, setLikesTick] = useState(0)
@@ -123,10 +123,15 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     .filter(Boolean)
   const configuredPastors = configuredPastorNames
     .filter((name: string, index: number, list: string[]) => list.indexOf(name) === index)
-    .map(username => ({
-      username,
-      user: users.find((u: any) => normName(String(u.username || '')) === username) || null,
-    }))
+    .map(username => {
+      const user = users.find((u: any) => normName(String(u.username || '')) === username) || null
+      return {
+        username,
+        user: user
+          ? { id: String(user.id), username: String(user.username), name: user.name || user.username, verified: Boolean(user.verified), avatar_url: user.avatar_url }
+          : null,
+      }
+    })
   const availablePastors = configuredPastors.filter((entry: any) => Boolean(entry.user))
   const [showPastorPicker, setShowPastorPicker] = useState(false)
   const [showPastorUnavailable, setShowPastorUnavailable] = useState<string | null>(null)
@@ -147,7 +152,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     if (configuredPastors.length === 1) {
       const pastor = configuredPastors[0].user
       if (pastor && onOpenDm) {
-        onOpenDm(pastor.username, pastor.name || pastor.username)
+        onOpenDm({ id: String(pastor.id), username: pastor.username, name: pastor.name || pastor.username })
       } else {
         setShowPastorUnavailable(configuredPastors[0].username)
       }
@@ -429,13 +434,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                   const initials = String(displayName).split(/[\s_.-]/).filter(Boolean).map((part: string) => part[0]).slice(0, 2).join('').toUpperCase()
                   return (
                     <button
-                      key={entry.username}
+                      key={pastor?.id || `configured_${entry.username}`}
                       type="button"
                       disabled={!pastor}
                       onClick={() => {
                         if (!pastor) return
                         setShowPastorPicker(false)
-                        onOpenDm?.(pastor.username, pastor.name || pastor.username)
+                        onOpenDm?.({ id: String(pastor.id), username: pastor.username, name: pastor.name || pastor.username })
                       }}
                       className={`w-full min-h-14 flex items-center gap-3 rounded-2xl border px-3 text-left transition-colors ${pastor ? 'border-stone-200 bg-stone-50 active:bg-stone-100' : 'border-stone-100 bg-stone-50/60 opacity-60 cursor-not-allowed'}`}
                     >
