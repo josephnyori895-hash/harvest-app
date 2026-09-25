@@ -7,6 +7,7 @@ import { captureVideoFrame } from './ImageAdjuster'
 import MediaThumbnail from './MediaThumbnail'
 import VideoThumb from './VideoThumb'
 
+import ErrorMessage from './ErrorMessage'
 type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; saved?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
@@ -355,11 +356,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
               <p className="text-xs text-white/55 mt-1">Checking the church video feed.</p>
             </>
           ) : reelsLoadFailed ? (
-            <>
-              <p className="text-base font-semibold">Couldn’t load videos</p>
-              <p className="text-xs text-white/55 mt-1">Check your connection and try again.</p>
-              <button type="button" onClick={retryReels} className="mt-4 min-h-11 px-5 rounded-xl bg-white/10 border border-white/15 text-sm font-semibold">Try again</button>
-            </>
+            <ErrorMessage message="We couldn’t load Reels right now." action={<button type="button" onClick={retryReels} className="text-xs font-bold underline">Retry</button>} />
           ) : (
             <>
               <p className="text-base font-semibold">No videos yet</p>
