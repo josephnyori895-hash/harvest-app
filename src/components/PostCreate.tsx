@@ -5,6 +5,7 @@ import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
 import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 
+import ErrorMessage from './ErrorMessage'
 type Props = { onDone: () => void }
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -227,7 +228,7 @@ export default function PostCreate({ onDone }: Props) {
           {!isAdmin && isVerified && <p className="text-[11px] text-[#766E63] mt-2">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
         </div>
 
-        {notice && <div role="alert" className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{notice}</div>}
+        {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
       </section>
 
       {adjusting && file && file.type.startsWith('image/') && (
