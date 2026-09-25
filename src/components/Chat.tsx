@@ -541,6 +541,17 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <p className="font-bold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
             <p className="text-xs text-stone-400">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Harvest church family'}</p>
           </div>
+          {isTeam && (team!.kind === 'department' ? onOpenDepartments : onOpenGroups) && (
+            <button
+              type="button"
+              onClick={() => (team!.kind === 'department' ? onOpenDepartments?.() : onOpenGroups?.())}
+              className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-stone-800 text-sm text-stone-200 active:bg-white/10"
+              aria-label={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+              title={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+            >
+              ⚙️
+            </button>
+          )}
           {sending ? <span className="text-[10px] text-stone-400">···</span> : null}
         </header>
 
