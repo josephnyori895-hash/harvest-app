@@ -221,6 +221,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
     touchY.current = null
   }
+  const currentSaved = Boolean(cur?.saved ?? saved[key])
+
   const toggleSave = async () => {
     if (!useServer || !cur?.id) return flash('Sign in to save videos')
     const wasSaved = Boolean(cur.saved ?? saved[key])
@@ -394,7 +396,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             alt=""
             aria-hidden
             className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-45"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            onError={() => setPosterFailed(true)}
           />
         )}
 
@@ -480,8 +482,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
           <div className="flex flex-col items-center gap-0.5">
             <button onClick={(e) => { e.stopPropagation(); void toggleEncourage() }}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[19px] leading-none shadow-sm transition-transform active:scale-95 ${encouraged[key] ? 'ring-2 ring-purple-300/70' : ''}`}
-              aria-label="Encourage">{encouraged[key] ? '✓' : '🤲'}</button>
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[19px] leading-none shadow-sm transition-transform active:scale-95 ${Boolean(cur.liked ?? encouraged[key]) ? 'ring-2 ring-purple-300/70' : ''}`}
+              aria-label="Encourage">{Boolean(cur.liked ?? encouraged[key]) ? '✓' : '🤲'}</button>
             <span className="min-h-3 text-[10px] leading-3 font-medium text-white/80 drop-shadow">{fmtViews(cur.likes)}</span>
           </div>
 
@@ -497,8 +499,8 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             aria-label="Share">↗</button>
 
           <button onClick={(e) => { e.stopPropagation(); toggleSave() }}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${Boolean(cur.saved ?? saved[key]) ? 'ring-2 ring-amber-300/70' : ''}`}
-            aria-label={Boolean(cur.saved ?? saved[key]) ? 'Remove from saved videos' : 'Save video'}>🔖</button>
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${currentSaved ? 'ring-2 ring-amber-300/70' : ''}`}
+            aria-label={currentSaved ? 'Remove from saved videos' : 'Save video'}>🔖</button>
 
           <button onClick={(e) => { e.stopPropagation(); setShowMore(v => !v) }}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95"
@@ -509,7 +511,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
               <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); void share() }}
                 className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">↗ Share video</button>
               <button type="button" onClick={(e) => { e.stopPropagation(); setShowMore(false); toggleSave() }}
-                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">{Boolean(cur.saved ?? saved[key]) ? '🔖 Remove from saved' : '🔖 Save video'}</button>
+                className="flex min-h-11 w-full items-center gap-2 px-4 text-left text-sm font-medium hover:bg-white/10">{currentSaved ? '🔖 Remove from saved' : '🔖 Save video'}</button>
             </div>
           )}
 
