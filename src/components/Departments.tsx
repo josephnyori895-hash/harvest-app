@@ -312,7 +312,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
               </div>
             )}
             {detail.members.map(u => (
-              <button type="button" key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800 text-left active:opacity-70">
+              <div type="button" key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800">
                 <div className="w-9 h-9 shrink-0 rounded-full bg-stone-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
