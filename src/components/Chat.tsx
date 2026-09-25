@@ -3,6 +3,7 @@ import type { TouchEvent } from 'react'
 import { useAuth } from '../state/auth'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 
+import ErrorMessage from './ErrorMessage'
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
 type Presence = { online: boolean; lastSeen: string }
@@ -596,7 +597,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           <div ref={bottomRef} />
         </div>
 
-        {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-950 text-red-300' : 'bg-stone-900 text-amber-300'}`}>{error || notice}</div>}
+        {error ? <div className="px-4 py-2 shrink-0"><ErrorMessage message={error} /></div> : notice ? <div className="px-4 py-2 text-xs shrink-0 bg-stone-900 text-amber-300">{notice}</div> : null}
 
         <div className="chat-composer border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
           {replyTo && (
