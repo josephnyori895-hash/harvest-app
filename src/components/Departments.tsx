@@ -262,15 +262,15 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
     const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
     const canManage = isAdmin || isDepartmentLeader
     return (
-      <div className="bg-[#141210] text-white min-h-[70vh] pb-8">
-        <div className="flex items-center gap-3 h-14 border-b border-stone-800 px-3 sticky top-0 bg-[#141210] z-10">
+      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-[#141210] text-white pb-0">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-stone-800 px-3 bg-[#141210] z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
           {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${detail.department.joined ? 'bg-stone-800 text-stone-300 border border-stone-700' : 'bg-[#7C3AED] text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
           {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="w-10 h-10 rounded-full bg-stone-900 border border-stone-800 text-lg" aria-label="Department settings" title="Department settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-stone-500 text-sm text-center py-10">Loading…</p> : (
-          <div className="p-4 space-y-2">
+          <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-2">
             {editing && canManage ? (
               <div className="p-3 rounded-xl bg-stone-900 border border-amber-500/40 mb-3">
                 <p className="text-[10px] font-bold text-amber-400 mb-2">DEPARTMENT SETTINGS</p>
