@@ -76,7 +76,7 @@ function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string;
 const updatesBase: any[] = []
 
 const quickLinks = [
-  { tab: 'chat', icon: '🙏', title: 'Prayer', text: 'Pray with someone' },
+  { tab: 'pastor', icon: '🙏', title: 'Prayer', text: 'Talk privately with a pastor' },
   { tab: 'groups', icon: '👥', title: 'Groups', text: 'Find your community' },
   { tab: 'departments', icon: '🤝', title: 'Departments', text: 'Become a volunteer' },
   { tab: 'give', icon: '🤲', title: 'Give', text: 'Support the ministry' },
@@ -544,7 +544,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     </header>
 
     <main className="px-4 pb-8">
-      <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">{heroKicker}</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">{heroTitle}</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">{heroSubtitle}</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={() => setTab('chat')} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
+      <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">{heroKicker}</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">{heroTitle}</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">{heroSubtitle}</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={openPastorChat} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
 
       <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-3 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('sermons')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎙</span><p className="mt-2 font-extrabold text-sm">Sermons</p><p className="mt-1 text-[11px] text-[#766E63]">Listen, watch & download.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
 
@@ -576,7 +576,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           <p className="mt-2 text-sm font-extrabold">{effectivePastors.length > 1 ? 'Pray with a Pastor' : 'Pray with Pastor'}</p>
           <p className="mt-1 text-[11px] text-purple-100">{effectivePastors.length > 1 ? `${availablePastors.length} ${availablePastors.length === 1 ? 'pastor' : 'pastors'} available · Choose someone to pray with` : effectivePastors[0]?.user ? `Chat with ${effectivePastors[0].user.name || effectivePastors[0].user.username}` : 'Private prayer chat'}</p>
         </button>
-        {quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
+        {quickLinks.map(q => <button key={q.tab} onClick={() => q.tab === 'pastor' ? openPastorChat() : setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
       </section>
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
     </main>
