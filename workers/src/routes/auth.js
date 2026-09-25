@@ -91,6 +91,21 @@ export async function handleAuth(request, env, ctx) {
         [id, uname, fullName, String(phone || '').trim().slice(0, 32), normPhone, group, hash,
          Number.isFinite(Number(lat)) ? Number(lat) : null, Number.isFinite(Number(lng)) ? Number(lng) : null, now],
       )
+      // A group explicitly chosen during signup is an immediate membership, not a join request.
+      // Keep users.group_name as the profile/congregation label and create the canonical
+      // group_members row so the new member can access the group chat immediately.
+      if (pickedGroup && group === pickedGroup) {
+        const selected = await query(env, 'SELECT id FROM groups WHERE name=? LIMIT 1', [group])
+        if (!selected.rows[0]) return errorResponse('the selected group is no longer available — please choose another group', 409)
+        await query(
+          env,
+          `INSERT INTO group_members (group_id, user_id, role, joined_at)
+           VALUES (?,?,'member',?)
+           ON CONFLICT (group_id, user_id) DO NOTHING`,
+          [selected.rows[0].id, id, now],
+        )
+      }
+
       await query(
         env,
         `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,'member','self_register','user',?,?,?)`,
