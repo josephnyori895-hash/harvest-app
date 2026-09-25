@@ -22,6 +22,7 @@ import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
 import { showToast } from './components/Toast'
 import UploadPill from './components/UploadPill'
+import ErrorMessage from './components/ErrorMessage'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 
 // Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
@@ -380,7 +381,7 @@ function Onboarding({ onAuthSuccess }) {
   const [error, setError] = useState('')
   // Which kind of auth error is showing: 'network' | 'credentials' | 'server'
   // — drives the banner styling and the recovery hint per kind.
-  const [loginErrorKind, setLoginErrorKind] = useState('')
+  const [errorKind, setErrorKind] = useState('')
 
   // Ask the device for GPS (best effort — permission may be denied).
   const getPosition = () => new Promise(resolve => {
@@ -421,7 +422,7 @@ function Onboarding({ onAuthSuccess }) {
 
   const submitRegister = async () => {
     if (busy) return
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setErrorKind('')
     try {
       // Only include GPS when the member opted in AND the pick is the
       // auto/nearest option — never let a guess override a real choice.
@@ -435,7 +436,11 @@ function Onboarding({ onAuthSuccess }) {
       if (data.assigned_by === 'location' && data.group_name) {
         showToast(`Karibu! You've been placed in your nearest group: ${data.group_name}`, 'success', 4000)
       }
-    } catch (e) { setError(authError(e, 'Registration failed — check the details and try again').message) } finally { setBusy(false) }
+    } catch (e) {
+      const kind = authError(e, 'We couldn’t create your account. Check the details and try again.')
+      setErrorKind(kind.kind)
+      setError(kind.message)
+    } finally { setBusy(false) }
   }
 
   const submitLogin = async () => {
@@ -447,8 +452,8 @@ function Onboarding({ onAuthSuccess }) {
       if (!response.ok || !data.token) throw new Error(data.error || 'Sign in failed')
       onAuthSuccess?.(data)
     } catch (e) {
-      const kind = authError(e, 'Wrong username or password — try again, or ask a church admin to reset it.')
-      setLoginErrorKind(kind.kind)
+      const kind = authError(e, 'We couldn’t sign you in. Check your username or phone number and password, then try again.')
+      setErrorKind(kind.kind)
       setError(kind.message)
     } finally { setBusy(false) }
   }
@@ -527,7 +532,7 @@ function Onboarding({ onAuthSuccess }) {
               </div>
               <p className="text-[10px] text-zinc-500 mt-1.5">We use your location once, only to suggest the group nearest to you. It's never required.</p>
             </div>
-            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
+            {error && <ErrorMessage kind={errorKind} message={error} />}
           </div>
         ) : (
           <div className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
@@ -546,19 +551,12 @@ function Onboarding({ onAuthSuccess }) {
                 <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showLoginPass ? '🙈' : '👁'}</button>
               </div>
             </div>
-            {error && loginErrorKind === 'network' && (
-              <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-sm font-medium text-amber-800 flex items-start gap-2">
-                <span aria-hidden="true" className="text-base leading-5">📶</span>
-                <span>{error}</span>
-              </div>
-            )}
-            {error && loginErrorKind !== 'network' && (
-              <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">
-                {error}
-                {loginErrorKind === 'credentials' && (
-                  <p className="text-[11px] text-rose-600 mt-1.5">There's no self-service reset yet — any church admin can reset your password from Admin → Accounts.</p>
-                )}
-              </div>
+            {error && (
+              <ErrorMessage
+                kind={errorKind}
+                title={errorKind === 'credentials' ? 'We couldn’t sign you in' : undefined}
+                message={error}
+              />
             )}
           </div>
         )}
