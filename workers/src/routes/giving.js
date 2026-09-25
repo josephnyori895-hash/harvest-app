@@ -64,8 +64,10 @@ export async function handleGiving(request, env, ctx) {
       const amount = Number(body.amount)
       const phone = normalizePhone(body.phone)
       const purpose = String(body.purpose || 'General Giving').trim().slice(0, 120) || 'General Giving'
-      if (!Number.isFinite(amount) || amount < 1 || amount > 1000000) return errorResponse('amount must be between KES 1 and 1,000,000', 400)
-      if (!phone) return errorResponse('valid Kenyan M-Pesa phone number required', 400)
+      // M-Pesa STK push takes whole shillings only — reject fractions instead
+      // of silently rounding a member's gift to a different amount.
+      if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 1 || amount > 1000000) return errorResponse('amount must be a whole number between KES 1 and 1,000,000', 400)
+      if (!phone) return errorResponse('valid Kenyan M-Pesa phone number required — use 07…, 01… or 2547… format', 400)
 
       const shortCode = requiredEnv(env, 'MPESA_SHORTCODE')
       const passkey = requiredEnv(env, 'MPESA_PASSKEY')

@@ -11,7 +11,17 @@ const FUNDS = [
 const QUICK = [100, 200, 500, 1000, 2500, 5000]
 
 const PAYBILL_FALLBACK = { number: '4138895', name: 'Harvest Family Church' }
+const MIN_GIVE = 1 // Daraja's floor; church can raise later
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+
+// Kenyan mobile: 07XXXXXXXX, 01XXXXXXXX, +2547…, 2547… — normalised to 2547…
+export function normalizeMpesaPhone(raw: string): string | null {
+  const v = String(raw || '').replace(/[\s-]/g, '')
+  if (/^0[17]\d{8}$/.test(v)) return `254${v.slice(1)}`
+  if (/^254[17]\d{8}$/.test(v)) return v
+  if (/^\+254[17]\d{8}$/.test(v)) return v.slice(1)
+  return null
+}
 
 export default function Give() {
   const [fund, setFund] = useState('tithe')
@@ -23,6 +33,7 @@ export default function Give() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [mpesaEnabled, setMpesaEnabled] = useState<boolean | null>(null)
+  const [contentLoaded, setContentLoaded] = useState(false)
   const [paybill, setPaybill] = useState('')
   const [pollingId, setPollingId] = useState<string | null>(null)
   // Admin-editable content (funds, amounts, headline, paybill) with defaults.
@@ -42,7 +53,7 @@ export default function Give() {
   const paybillName = content.paybill_name || PAYBILL_FALLBACK.name
 
   useEffect(() => {
-    fetch(`${API}/api/content`).then(r => r.json()).then(d => setContent(d?.content || {})).catch(() => {})
+    fetch(`${API}/api/content`).then(r => r.json()).then(d => { setContent(d?.content || {}); setContentLoaded(true) }).catch(() => setContentLoaded(true))
   }, [])
 
   const purpose = useMemo(() => funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund])
@@ -81,10 +92,17 @@ export default function Give() {
 
   const pay = async () => {
     if (!apiEnabled) { showToast('Giving requires the server API in production', 'error'); return }
-    if (!amount || Number(amount) < 1 || !phone.trim()) { showToast('Enter a valid amount and M-Pesa phone', 'error'); return }
+    // Field-level validation: fail fast with a specific, visible error instead
+    // of a doomed STK push that leaves a permanent "pending" row.
+    const amt = Number(amount)
+    if (!Number.isFinite(amt) || amt < MIN_GIVE) { showToast(`Enter a whole amount of at least KES ${MIN_GIVE}`, 'error', 3500); return }
+    if (!Number.isInteger(amt)) { showToast('M-Pesa takes whole shillings — round to a whole number', 'error', 3500); return }
+    if (amt > 1000000) { showToast('For gifts above KES 1,000,000 please contact the treasurer', 'error', 3500); return }
+    const normalizedPhone = normalizeMpesaPhone(phone)
+    if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
     setBusy(true); setMessage('')
     try {
-      const result = await startGiving({ amount:Number(amount), phone:phone.trim(), purpose })
+      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
       showToast('M-Pesa prompt sent — check your phone', 'success')
       setPollingId(result.transactionId || null)
@@ -109,7 +127,9 @@ export default function Give() {
         <button onClick={() => setTab('admin')} className={`px-4 py-2 rounded-full text-xs font-bold ${tab==='admin'?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>Giving admin</button>
       </div>}
 
-      {tab === 'give' && <>
+      {tab === 'give' && (!contentLoaded ? (
+        <div className="mb-6 p-4 rounded-2xl bg-white border border-[#E8DEC9] animate-pulse"><div className="h-4 w-1/3 bg-[#F4E8D0] rounded mb-3" /><div className="h-3 w-2/3 bg-[#F4E8D0] rounded" /></div>
+      ) : (<>)
         <div className="mb-6">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Harvest Giving</p>
           <h1 className="text-2xl font-extrabold mt-1">{content.giving_title || 'Give with purpose'}</h1>
@@ -124,8 +144,10 @@ export default function Give() {
 
         <p className="text-xs font-semibold text-[#6B6257] mb-2">Quick amounts · KES</p>
         <div className="flex gap-2 mb-4 flex-wrap">{quick.map((v: number) => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
-        <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder="Custom amount KES" className="input-premium mb-3" />
-        <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07... or 254..." className="input-premium mb-4" />
+        <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder={`Custom amount KES (min ${MIN_GIVE})`} className="input-premium mb-1" />
+        {amount !== '' && !Number.isInteger(Number(amount)) && <p className="text-xs text-[#B45309] mb-1">M-Pesa takes whole shillings — this will be rejected.</p>}
+        <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
+        {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
         {mpesaEnabled === false && (
           <div className="mb-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] p-4 text-sm">
             <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
@@ -149,7 +171,7 @@ export default function Give() {
             <span className="text-xs font-bold capitalize">{t.status}</span>
           </div>)}
         </div>
-      </>}
+      </>))}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>
