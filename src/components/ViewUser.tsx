@@ -116,7 +116,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   return (
     <>
       {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
-       <div className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
+       <div data-profile-user-id={profile.id || ''} data-profile-username={profile.username || ''} data-profile-name={displayName} data-profile-congregation={groupName} data-profile-verified={profile.verified ? 'true' : 'false'} data-profile-role={profile.role || 'member'} className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-4 px-4 h-14">
         <button onClick={onBack} className="text-2xl hover:opacity-70 transition">‹</button>
