@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function authHeaders(): Record<string, string> {
@@ -229,7 +230,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
         </div>
       )}
 
-      {error && <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+      {error && <ErrorMessage message={error} />}
 
       {loading ? <p className="text-sm text-[#6B6257]">Loading…</p> : sermons.length === 0 ? (
         <div className="text-center py-14 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
