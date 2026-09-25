@@ -456,7 +456,13 @@ jobs:
           # staging gate already re-stages the previous production APK when the
           # Actions artifact is unavailable, so use that hosted copy as the
           # rollback ground truth in that case.
-          ARTIFACTS_JSON="$(fetch_json "Previous run artifacts" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" -H "Authorization: Bearer $GITHUB_TOKEN" || true)"
+          ARTIFACTS_JSON="$(
+            curl --silent --show-error --max-time 60 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" \
+              || true
+          )"
           ARTIFACT_ID="$(printf '%s' "$ARTIFACTS_JSON" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[]? | select(.name == $name and .expired == false) | .id' | head -n1)"
 
           PREVIOUS_ZIP="$(mktemp)"
