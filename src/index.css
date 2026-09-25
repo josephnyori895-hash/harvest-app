@@ -63,6 +63,14 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   .skeleton { @apply animate-pulse rounded-xl bg-stone-200; }
   .skeleton-avatar { @apply w-12 h-12 rounded-2xl bg-stone-200 animate-pulse; }
   .skeleton-text { @apply h-4 rounded-full bg-stone-200 animate-pulse; }
+  .hf-error-message { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px 12px; border:1px solid #F1D2D5; border-radius:14px; background:#FFF5F5; color:#7F1D1D; }
+  .hf-error-message[data-kind="network"] { border-color:#E7D7B1; background:#FFFBEB; color:#854D0E; }
+  .hf-error-icon { width:22px; height:22px; flex:0 0 22px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#FEE2E2; color:#B91C1C; font-size:13px; font-weight:800; line-height:1; }
+  .hf-error-message[data-kind="network"] .hf-error-icon { background:#FEF3C7; color:#A16207; }
+  .hf-error-copy { min-width:0; flex:1; }
+  .hf-error-title { margin:0; font-size:13px; line-height:1.25; font-weight:800; color:inherit; }
+  .hf-error-text { margin:2px 0 0; font-size:12px; line-height:1.4; font-weight:500; color:inherit; }
+  .hf-error-action { margin-top:7px; }
 }
 
 ::-webkit-scrollbar { width: 7px; height: 7px; }
