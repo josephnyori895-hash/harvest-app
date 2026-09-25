@@ -13,11 +13,12 @@
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
     "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs",
-    "test:all": "npm run test:admin && npm run test:security && npm run test:reels",
+    "test:all": "npm run test:admin && npm run test:security && npm run test:reels && npm run test:posting",
     "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs",
     "test:reels": "node scripts/test-reels-regression.mjs",
     "validate:release": "node scripts/validate-release.mjs",
-    "test:e2e:department-profile": "node scripts/e2e-department-profile.mjs"
+    "test:e2e:department-profile": "node scripts/e2e-department-profile.mjs",
+    "test:posting": "node scripts/test-posting-hardening.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
