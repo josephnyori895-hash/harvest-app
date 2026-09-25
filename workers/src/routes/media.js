@@ -206,6 +206,8 @@ export async function handleMedia(request, env, ctx) {
           if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
           const pobj = await env.MEDIA.head(posterKeyRaw)
           if (!pobj) return errorResponse('poster not found in storage', 404)
+          const posterOwnerId = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
+          if (posterOwnerId !== String(fresh.id) && fresh.role !== 'admin') return errorResponse('poster does not belong to this account', 403)
           posterKey = posterKeyRaw
         }
         await query(
