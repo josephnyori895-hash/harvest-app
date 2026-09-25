@@ -311,8 +311,8 @@ function InnerApp() {
     <UpdateGate>
     <div className="app-shell bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
-        <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
+      <div className="app-shell w-full bg-[#FFFBF0] flex flex-col h-[100dvh] min-h-[100dvh] max-h-[100dvh] overflow-hidden" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+        <div className={`app-content app-scroll flex-1 min-h-0 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
