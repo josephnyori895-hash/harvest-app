@@ -290,14 +290,14 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
     const canManage = isAdmin || isGroupAdmin
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
-      <div className="min-h-[70vh] bg-[#FFFBF0] text-[#29251F] pb-8">
-        <div className="flex items-center gap-3 h-14 border-b border-[#E8DEC9] px-3 sticky top-0 bg-[#FFFBF0]/95 backdrop-blur z-10">
+      <div className="group-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-[#FFFBF0] text-[#29251F] pb-0">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-[#E8DEC9] px-3 bg-[#FFFBF0]/95 backdrop-blur z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-[#5B21B6]" aria-label="Back">‹</button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-[#8B8175] text-sm text-center py-10">Loading…</p> : (
-          <div className="p-4 space-y-2">
+          <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-2">
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
@@ -319,7 +319,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                     <div className="p-3 rounded-xl bg-[#F5F3FF] border border-[#DDD6FE] space-y-2">
                       <p className="text-[10px] font-extrabold text-[#5B21B6] tracking-widest">📍 REGISTRATION LOCATION</p>
                       <p className="text-[11px] text-[#5B21B6]/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid min-w-0 grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="gst-lat" className="block text-[10px] font-bold text-[#766E63] mb-1">LATITUDE</label>
                           <input id="gst-lat" inputMode="decimal" value={stForm.lat} onChange={e => setStForm(f => ({ ...f, lat: e.target.value }))} placeholder="-0.4197" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
