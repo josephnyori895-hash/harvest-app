@@ -740,7 +740,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">People</button>
-              <span className="ml-auto text-xs text-stone-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
+              <span className="ml-auto text-xs text-stone-500 self-center">{(() => { const q = peopleQuery.trim().toLowerCase(); const n = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)).length : inbox.length; return `${n} chat${n === 1 ? '' : 's'}` })()}</span>
             </div>
           </section>
           <section className="px-3 pb-7">
@@ -764,7 +764,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
                 <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
               </div>
-            ) : [...inbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
+            ) : (() => { const q = peopleQuery.trim().toLowerCase(); const visibleInbox = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)) : inbox; return [...visibleInbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
@@ -791,7 +791,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                   <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-stone-500 hover:text-amber-300 hover:bg-stone-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
                 </div>
               )
-            })}
+            })()}
           </section>
         </>
       ) : (
