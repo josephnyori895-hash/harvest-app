@@ -3,6 +3,7 @@ import { fetchMe, updateProfile } from '../lib/api'
 import { getUploads, startBackgroundUpload, subscribeUploads } from '../lib/backgroundUploads'
 import { useCongregations } from '../lib/useCongregations'
 
+import ErrorMessage from './ErrorMessage'
 // EditProfile — self-service profile editing (name, photo, phone, location,
 // faith, congregation). The avatar uploads through the background manager
 // (retries on flaky network), then attaches via PATCH /api/me. Text fields
@@ -120,7 +121,7 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
         >{busy ? 'Saving…' : 'Save'}</button>
       </div>
 
-      {notice && <div role="alert" className="mx-4 mt-3 p-3 rounded-xl bg-rose-950/60 border border-rose-900 text-sm text-rose-300">{notice}</div>}
+      {notice && <div className="mx-4 mt-3"><ErrorMessage message={notice} /></div>}
       {saved && <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-950/60 border border-emerald-900 text-sm text-emerald-300">Profile saved ✓</div>}
 
       <div className="flex flex-col items-center py-6">
