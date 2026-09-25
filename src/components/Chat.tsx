@@ -506,7 +506,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
     const isTeam = Boolean(team)
     return (
-      <main className="chat-screen h-[100dvh] min-h-0 bg-[#1C1917] text-white flex flex-col overflow-hidden">
+      <main className="chat-screen h-full min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden">
         <header className="h-[72px] shrink-0 border-b border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-stone-950/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/90 to-[#A855F7]/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
@@ -635,7 +635,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   }
 
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-[#1C1917] text-white">
+    <main className="h-full min-h-0 bg-[#1C1917] text-white overflow-y-auto overflow-x-hidden">
       <header className="px-4 pt-4 pb-3 bg-[#1C1917]/95 backdrop-blur-xl border-b border-stone-800/80 sticky top-0 z-20">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center justify-between gap-3">
