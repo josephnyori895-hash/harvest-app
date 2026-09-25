@@ -134,7 +134,26 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           : null,
       }
     })
-  const availablePastors = configuredPastors.filter((entry: any) => Boolean(entry.user))
+
+  // If the admin has not configured a pastor, discover only verified accounts
+  // whose identity explicitly indicates pastor/Pst/Rev. Never pick an arbitrary
+  // verified member just because they have a verification badge.
+  const discoveredPastors = configuredPastorNames.length === 0
+    ? users
+      .filter((u: any) => Boolean(u?.verified))
+      .filter((u: any) =>
+        /(^|[._-])(pastor|pst|rev)([._-]|$)/i.test(String(u.username || '')) ||
+        /(^|\\s)(pastor|pst|rev)(\\.?)(\\s|$)/i.test(String(u.name || ''))
+      )
+      .map((u: any) => ({
+        username: normName(String(u.username || '')),
+        user: { id: String(u.id), username: String(u.username), name: u.name || u.username, verified: Boolean(u.verified), avatar_url: u.avatar_url },
+      }))
+      .filter((entry: any, index: number, list: any[]) => entry.username && list.findIndex(x => x.username === entry.username) === index)
+    : []
+
+  const effectivePastors = configuredPastorNames.length ? configuredPastors : discoveredPastors
+  const availablePastors = effectivePastors.filter((entry: any) => Boolean(entry.user))
   const [showPastorPicker, setShowPastorPicker] = useState(false)
   const [showPastorUnavailable, setShowPastorUnavailable] = useState<string | null>(null)
   const [showDirectoryError, setShowDirectoryError] = useState(false)
@@ -147,16 +166,16 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       setShowPastorPicker(true)
       return
     }
-    if (configuredPastors.length === 0) {
+    if (effectivePastors.length === 0) {
       setShowNoPastor(true)
       return
     }
-    if (configuredPastors.length === 1) {
-      const pastor = configuredPastors[0].user
+    if (effectivePastors.length === 1) {
+      const pastor = effectivePastors[0].user
       if (pastor && onOpenDm) {
         onOpenDm({ id: String(pastor.id), username: pastor.username, name: pastor.name || pastor.username })
       } else {
-        setShowPastorUnavailable(configuredPastors[0].username)
+        setShowPastorUnavailable(effectivePastors[0].username)
       }
       return
     }
@@ -420,7 +439,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
               <div className="mx-auto w-8 h-8 rounded-full border-2 border-stone-200 border-t-violet-600 animate-spin" />
               <p className="mt-3 text-xs font-semibold text-stone-500">Loading pastor support…</p>
             </div>
-          ) : configuredPastors.length === 0 ? (
+          ) : effectivePastors.length === 0 ? (
             <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 text-center">
               <p className="text-sm font-extrabold text-stone-900">Pastor support isn't configured yet</p>
               <p className="mt-1 text-xs leading-5 text-stone-500">You can still ask the Harvest Family to pray with you in Chats.</p>
@@ -554,8 +573,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       <section className="mt-7 grid grid-cols-2 gap-3">
         <button onClick={openPastorChat} className="rounded-2xl bg-gradient-to-br from-[#5B21B6] to-[#7C3AED] border border-[#7C3AED] p-4 text-left shadow-sm text-white" aria-label="Chat with the pastor">
           <span className="text-2xl">🙋‍♂️</span>
-          <p className="mt-2 text-sm font-extrabold">{configuredPastors.length > 1 ? 'Pray with a Pastor' : 'Pray with Pastor'}</p>
-          <p className="mt-1 text-[11px] text-purple-100">{configuredPastors.length > 1 ? `${availablePastors.length} ${availablePastors.length === 1 ? 'pastor' : 'pastors'} available · Choose someone to pray with` : configuredPastors[0]?.user ? `Chat with ${configuredPastors[0].user.name || configuredPastors[0].user.username}` : 'Private prayer chat'}</p>
+          <p className="mt-2 text-sm font-extrabold">{effectivePastors.length > 1 ? 'Pray with a Pastor' : 'Pray with Pastor'}</p>
+          <p className="mt-1 text-[11px] text-purple-100">{effectivePastors.length > 1 ? `${availablePastors.length} ${availablePastors.length === 1 ? 'pastor' : 'pastors'} available · Choose someone to pray with` : effectivePastors[0]?.user ? `Chat with ${effectivePastors[0].user.name || effectivePastors[0].user.username}` : 'Private prayer chat'}</p>
         </button>
         {quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
       </section>
