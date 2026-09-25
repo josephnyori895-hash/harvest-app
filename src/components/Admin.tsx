@@ -3,6 +3,7 @@ import AdminMedia from './AdminMedia'
 import { useCongregations } from '../lib/useCongregations'
 import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
@@ -408,7 +409,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         ))}
       </div>
 
-      {error && <div role="alert" className="mb-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+      {error && <ErrorMessage message={error} />}
       {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
       {!USE_API && <div className="mb-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm">Admin tools require the server API. Enable VITE_USE_API=true in production.</div>}
 
