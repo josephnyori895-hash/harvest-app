@@ -43,6 +43,8 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   const [managerUsers, setManagerUsers] = useState<any[]>([])
   const [managerBusy, setManagerBusy] = useState('')
   const [managerSearch, setManagerSearch] = useState('')
+  const [sermonQuery, setSermonQuery] = useState('')
+  const [sermonSort, setSermonSort] = useState<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'topic'>('newest')
   const uploadInput = useRef<HTMLInputElement | null>(null)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -81,6 +83,26 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
     } catch {}
   }, [isAdmin])
   useEffect(() => { void loadManagers() }, [loadManagers])
+
+  const visibleSermons = [...sermons]
+    .filter(s => {
+      const q = sermonQuery.trim().toLowerCase()
+      if (!q) return true
+      return [s.title, s.speaker, s.scripture, s.description].some(v => String(v || '').toLowerCase().includes(q))
+    })
+    .sort((a, b) => {
+      if (sermonSort === 'oldest') return String(a.created_at || '').localeCompare(String(b.created_at || ''))
+      if (sermonSort === 'largest') return (Number(b.bytes) || 0) - (Number(a.bytes) || 0)
+      if (sermonSort === 'smallest') return (Number(a.bytes) || 0) - (Number(b.bytes) || 0)
+      if (sermonSort === 'longest') return (Number(b.duration_secs) || 0) - (Number(a.duration_secs) || 0)
+      if (sermonSort === 'shortest') return (Number(a.duration_secs) || 0) - (Number(b.duration_secs) || 0)
+      if (sermonSort === 'topic') {
+        const topicA = String(a.scripture || a.title || '').toLowerCase()
+        const topicB = String(b.scripture || b.title || '').toLowerCase()
+        return topicA.localeCompare(topicB)
+      }
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''))
+    })
 
   const toggleSermonManager = async (u: any) => {
     if (!u?.username || managerBusy) return
@@ -232,6 +254,51 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
 
       {error && <ErrorMessage message={error} />}
 
+      {!loading && sermons.length > 0 && (
+        <div className="mb-5 rounded-3xl bg-white border border-[#E8DEC9] p-3 shadow-sm">
+          <div className="flex gap-2">
+            <label className="flex-1 relative">
+              <span className="sr-only">Search sermon topics</span>
+              <input
+                value={sermonQuery}
+                onChange={e => setSermonQuery(e.target.value)}
+                placeholder="Search topics, Scripture, title…"
+                className="w-full rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]"
+                aria-label="Search sermon topics, Scripture and titles"
+              />
+            </label>
+            <label className="shrink-0">
+              <span className="sr-only">Sort sermons</span>
+              <select
+                value={sermonSort}
+                onChange={e => setSermonSort(e.target.value as typeof sermonSort)}
+                className="h-full min-w-[128px] rounded-2xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 text-xs font-bold outline-none focus:border-[#7C3AED]"
+                aria-label="Sort sermons"
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="largest">Largest file</option>
+                <option value="smallest">Smallest file</option>
+                <option value="longest">Longest</option>
+                <option value="shortest">Shortest</option>
+                <option value="topic">Topic / Scripture</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {['All', 'Audio', 'Video'].map(kind => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => setSermonQuery(kind === 'All' ? '' : kind.toLowerCase())}
+                className="px-2.5 py-1.5 rounded-xl bg-[#F5EEDF] text-[10px] font-bold text-[#5C554C]"
+              >{kind}</button>
+            ))}
+            <span className="ml-auto self-center text-[10px] text-[#8B8175]">{visibleSermons.length} of {sermons.length}</span>
+          </div>
+        </div>
+      )}
+
       {loading ? <p className="text-sm text-[#6B6257]">Loading…</p> : sermons.length === 0 ? (
         <div className="text-center py-14 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
           <div className="mx-auto w-16 h-16 rounded-3xl bg-[#F3E8FF] flex items-center justify-center text-3xl mb-3">🎙</div>
@@ -240,7 +307,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
         </div>
       ) : (
         <div className="space-y-3">
-          {sermons.map(s => (
+          {visibleSermons.map(s => (
             <div key={s.id} className="relative overflow-hidden bg-white border border-[#E8DEC9] rounded-3xl p-4 shadow-sm transition hover:shadow-md">
               <div className={`absolute inset-x-0 top-0 h-1 ${s.kind === 'video' ? 'bg-gradient-to-r from-purple-600 to-fuchsia-500' : 'bg-gradient-to-r from-amber-400 to-orange-500'}`} />
               <div className="flex items-start gap-3">
@@ -282,6 +349,12 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
               </div>
             </div>
           ))}
+          {visibleSermons.length === 0 && (
+            <div className="text-center py-10 rounded-3xl bg-white border border-[#E8DEC9]">
+              <p className="font-bold text-sm">No matching sermons</p>
+              <p className="text-xs text-[#6B6257] mt-1">Try another topic, Scripture reference, or title.</p>
+            </div>
+          )}
         </div>
       )}
 
