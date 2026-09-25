@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const departmentStyle = (department: any) => {
@@ -368,7 +369,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       </div>
 
       <div className="p-4 space-y-6">
-        {error && <div role="alert" className="p-3 rounded-xl bg-rose-950 border border-rose-900 text-sm text-rose-300">{error}</div>}
+        {error && <ErrorMessage message={error} />}
 
         {isAdmin && (
           <div className="p-3 rounded-xl bg-stone-900 border border-stone-800">
