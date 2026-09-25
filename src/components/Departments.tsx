@@ -312,26 +312,21 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
               </div>
             )}
             {detail.members.map(u => (
-              <div type="button" key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800">
-                <div className="w-9 h-9 shrink-0 rounded-full bg-stone-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
-                  <p className="text-[11px] text-stone-500 truncate">@{u.username} · {u.group_name || 'Harvest'}</p>
-                </div>
+              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800">
+                <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
+                  <div className="w-9 h-9 shrink-0 rounded-full bg-stone-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
+                    <p className="text-[11px] text-stone-500 truncate">@{u.username} · {u.group_name || 'Harvest'}</p>
+                  </div>
+                </button>
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
-                    <button
-                      disabled={busy.startsWith(`assign_${detail.department.slug}`)}
-                      onClick={() => void assign(detail.department.slug, u.username, u.role === 'leader' ? 'member' : 'leader')}
-                      className="px-2.5 py-1.5 rounded-full bg-stone-800 text-white text-[10px] font-bold"
-                    >
-                      {u.role === 'leader' ? 'Make member' : 'Make leader'}
-                    </button>
+                    <button disabled={busy.startsWith(`assign_${detail.department.slug}`)} onClick={() => void assign(detail.department.slug, u.username, u.role === 'leader' ? 'member' : 'leader')} className="px-2.5 py-1.5 rounded-full bg-stone-800 text-white text-[10px] font-bold">{u.role === 'leader' ? 'Make member' : 'Make leader'}</button>
                     <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold">Remove</button>
                   </div>
                 )}
               </div>
-              </button>
             ))}
             {detail.members.length === 0 && <p className="text-sm text-stone-500 text-center py-8">No one is serving here yet — be the first to join!</p>}
             {isAdmin && (
