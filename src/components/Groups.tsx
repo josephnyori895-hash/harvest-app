@@ -453,12 +453,14 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
 
             <p className="text-[10px] uppercase tracking-widest text-[#8B8175] font-bold pt-1">Members ({detail.members.length})</p>
             {detail.members.map(u => (
-              <div key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm text-left active:opacity-70">
-                <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold ml-1">ADMIN</span>}</p>
-                  <p className="text-[11px] text-[#8B8175] truncate">@{u.username}</p>
-                </div>
+              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm">
+                <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
+                  <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold ml-1">ADMIN</span>}</p>
+                    <p className="text-[11px] text-[#8B8175] truncate">@{u.username}</p>
+                  </div>
+                </button>
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
                     <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-[#F4E8D0] text-[#5B21B6] text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
@@ -466,7 +468,6 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                   </div>
                 )}
               </div>
-              </button>
             ))}
             {detail.members.length === 0 && <p className="text-sm text-[#8B8175] text-center py-8">No members yet.</p>}
 
