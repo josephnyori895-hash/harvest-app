@@ -236,7 +236,7 @@ jobs:
         with: {node-version: 22, cache: npm}
       - run: npm ci
       - env:
-          SMOKE_BASE_URL: ${{ env.API_BASE_URL }}
+          SMOKE_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
           SMOKE_USERNAME: ${{ secrets.E2E_USERNAME }}
           SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
@@ -252,8 +252,8 @@ jobs:
       - run: npm ci
       - name: ImageAdjuster E2E
         env:
-          E2E_BASE_URL: ${{ env.API_BASE_URL }}
-          E2E_API_URL: ${{ env.API_BASE_URL }}
+          E2E_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+          E2E_API_URL: https://harvestfamily-api.harvestfamily.workers.dev
           E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
           E2E_PIN: ${{ secrets.E2E_PIN }}
         run: |
@@ -267,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - env:
-          URL: ${{ env.API_BASE_URL }}/${{ needs.deploy-production.outputs.filename }}
+          URL: https://harvestfamily-api.harvestfamily.workers.dev/${{ needs.deploy-production.outputs.filename }}
           EXPECTED: ${{ needs.deploy-production.outputs.sha }}
         run: |
           set -euo pipefail
@@ -285,7 +285,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - env:
-          URL: ${{ env.API_BASE_URL }}/harvest-family.apk
+          URL: https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk
           EXPECTED: ${{ needs.deploy-production.outputs.sha }}
           FILENAME: ${{ needs.deploy-production.outputs.filename }}
         run: |
