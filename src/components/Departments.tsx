@@ -219,6 +219,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   }
 
   const mine = departments.filter(d => d.joined)
+  const availableDepartments = departments.filter(d => !d.joined)
 
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
@@ -394,15 +395,15 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
               <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
               <p className="mt-3 text-xs font-semibold text-stone-400">Loading departments…</p>
             </div>
-          ) : departments.length === 0 ? (
+          ) : availableDepartments.length === 0 ? (
             <div className="rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
               <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">🏛️</div>
-              <h2 className="mt-4 text-sm font-extrabold text-white">No departments yet</h2>
-              <p className="mt-2 text-xs leading-5 text-stone-500">{isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.'}</p>
+              <h2 className="mt-4 text-sm font-extrabold text-white">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
+              <p className="mt-2 text-xs leading-5 text-stone-500">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {departments.filter(d => !d.joined).map(d => <DeptCard key={d.id} d={d} />)}
+              {availableDepartments.map(d => <DeptCard key={d.id} d={d} />)}
             </div>
           )}
         </section>
