@@ -228,7 +228,7 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih, 1)
+                  const minScale = Math.min(vw / iw, vh / ih) || 1
                   return iw * minScale * transform.scale
                 })(),
                 height: (() => {
@@ -237,7 +237,7 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih, 1)
+                  const minScale = Math.min(vw / iw, vh / ih) || 1
                   return ih * minScale * transform.scale
                 })(),
                 transform: `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
@@ -271,7 +271,7 @@ export default function ImageAdjuster({
             {PRESETS.map(p => (
               <button
                 key={p.id}
-                onClick={() => setAspect(p.id)}
+                onClick={() => { setAspect(p.id); setTransform({ x: 0, y: 0, scale: 1, rotation: 0 }); setZoom(1) }}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
                 aria-pressed={aspect === p.id}
               >
@@ -280,9 +280,8 @@ export default function ImageAdjuster({
               </button>
             ))}
           </div>
-          <button onClick={rotate} className="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xl" aria-label="Rotate 90 degrees">⟳</button>
         </div>
-        <p className="text-[11px] text-stone-500 text-center">Drag to reposition · pinch or slide to zoom · pick a shape</p>
+        <p className="text-[10px] text-stone-500 text-center">Drag to move · pinch or slide to zoom · double-tap to reset</p>
       </div>
     </div>
   )
