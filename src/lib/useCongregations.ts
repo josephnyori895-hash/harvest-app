@@ -7,12 +7,8 @@ import { useEffect, useState } from 'react'
 
 const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-// The five founding congregations — the seed/fallback order when the
-// groups table is empty or unreachable.
-export const DEFAULT_CONGREGATIONS = ['Harvest Central', 'Harvest Ruringu', 'Harvest Skuta', 'Harvest Majengo', 'Harvest Kamakwa']
-
 export function useCongregations(enabled = true): { congregations: string[]; live: boolean } {
-  const [congregations, setCongregations] = useState<string[]>(DEFAULT_CONGREGATIONS)
+  const [congregations, setCongregations] = useState<string[]>([])
   const [live, setLive] = useState(false)
   useEffect(() => {
     if (!enabled) return
@@ -25,9 +21,9 @@ export function useCongregations(enabled = true): { congregations: string[]; liv
           if (cancelled) return
           const rows: any[] = Array.isArray(d?.groups) ? d.groups : []
           const names = [...new Set<string>(rows.map((g: any) => String(g.name || '')).filter(Boolean))]
-          if (names.length) { setCongregations(names); setLive(true) }
+          setCongregations(names); setLive(true)
         })
-        .catch(() => { /* keep defaults — offline tolerance */ })
+        .catch(() => { if (!cancelled) { setCongregations([]); setLive(false) } })
     }
     load()
     // Refresh when groups change anywhere in the app (create/delete/settings).
