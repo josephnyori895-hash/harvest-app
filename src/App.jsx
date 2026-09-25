@@ -89,6 +89,50 @@ function IgIcon({ name, active }) {
   return null
 }
 
+// In-app update prompt for the Android build: on open, compare the
+// installed versionCode against the latest release (Worker /api/app-version).
+// Shows a dismissible card above the app when an update is available;
+// 'Later' hides it for 24h for that version. Web builds never see it.
+function UpdateGate({ children }) {
+  const [update, setUpdate] = useState(null)
+  const [hidden, setHidden] = useState(true)
+  useEffect(() => {
+    let live = true
+    import('./lib/appUpdate').then(({ checkForUpdate, isDismissed }) =>
+      checkForUpdate().then(info => {
+        if (!live) return
+        if (info.available && !isDismissed(info.versionCode)) {
+          setUpdate(info)
+          setHidden(false)
+        }
+      })
+    ).catch(() => {})
+    return () => { live = false }
+  }, [])
+  return (
+    <>
+      {update && !hidden && (
+        <div role="alert" className="fixed top-[calc(env(safe-area-inset-top)+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-[#1C1917] text-white shadow-2xl border border-[#7C3AED]/40 flex items-center gap-3">
+          <span className="text-2xl shrink-0" aria-hidden="true">🚀</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
+            <p className="text-[11px] text-stone-300 mt-0.5">This build of the church app is out of date. Tap update to get the latest version.</p>
+          </div>
+          <button
+            onClick={() => { import('./lib/appUpdate').then(({ openApkDownload }) => openApkDownload(update.apkUrl)) }}
+            className="shrink-0 px-4 py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-extrabold active:bg-[#6D28D9]"
+          >Update</button>
+          <button
+            onClick={() => { import('./lib/appUpdate').then(({ dismissUpdate }) => { dismissUpdate(update.versionCode); setHidden(true) }) }}
+            className="shrink-0 w-9 h-9 rounded-full bg-white/10 text-stone-300 text-sm" aria-label="Remind me later"
+          >✕</button>
+        </div>
+      )}
+      {children}
+    </>
+  )
+}
+
 function InnerApp() {
   const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
@@ -263,6 +307,7 @@ function InnerApp() {
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
+    <UpdateGate>
     <div className="app-shell bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -311,6 +356,7 @@ function InnerApp() {
         <Nav tab={tab} setTab={handleTab} />
       </div>
     </div>
+    </UpdateGate>
   )
 }
 

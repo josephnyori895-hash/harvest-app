@@ -64,6 +64,24 @@ export default {
       return env.ASSETS.fetch(request)
     }
 
+    // Public latest-version probe for the in-app update prompt. The release
+    // workflow injects RELEASE_APK_FILENAME=harvest-family-<run>-<sha>.apk,
+    // so the run number doubles as a monotonic versionCode (matches the
+    // Android versionCode = 1000 + run number). No auth: version info and
+    // the public download URL are not sensitive.
+    if (url.pathname === '/api/app-version' && request.method === 'GET') {
+      const filename = env.RELEASE_APK_FILENAME
+      const match = /^harvest-family-([0-9]+)-[0-9a-f]{7}\.apk$/.exec(String(filename || ''))
+      if (!match) return withCors(jsonResponse({ update_available: false }), env, request)
+      const run = Number(match[1])
+      return withCors(jsonResponse({
+        update_available: true,
+        version_code: 1000 + run,
+        version_name: `1.0.${run}`,
+        apk_url: '/harvest-family.apk',
+      }), env, request)
+    }
+
     // WebSocket upgrade → Realtime DO (chat, presence, calls).
     // NOTE: the original request object must be forwarded unchanged for upgrades.
     if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {

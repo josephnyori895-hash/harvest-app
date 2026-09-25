@@ -33,6 +33,9 @@ await check('public feed is reachable anonymously', '/api/feed', {}, (r, b) => r
 await check('admin endpoint rejects anonymous request', '/api/pending', {}, r => r.status === 401)
 await check('M-Pesa callback accepts empty callback safely', '/api/giving/mpesa/callback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, r => r.status === 200)
 await check('unknown API route does not expose stack trace', '/api/__smoke_unknown__', {}, (r, _b, text) => r.status >= 400 && !/stack|node_modules|file:\/\//i.test(text))
+// Latest-version probe must always answer shape-valid (deployments without a
+// release still return {update_available:false} rather than erroring).
+await check('app-version probe answers', '/api/app-version', {}, (r, b) => r.status === 200 && typeof b?.update_available === 'boolean')
 
 if (smokeUsername || smokePin) {
   if (!smokeUsername || !smokePin) {
