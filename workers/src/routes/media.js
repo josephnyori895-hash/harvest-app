@@ -137,6 +137,36 @@ export async function handleMedia(request, env, ctx) {
     }
 
     const userId = fresh.id
+
+    // Confirm is intentionally idempotent: a retried client must not create
+    // duplicate feed rows for the same uploaded original.
+    const duplicate = await query(env, `
+      SELECT 1 AS found FROM posts WHERE original_key=? LIMIT 1
+    `, [key])
+    const duplicateReel = type === 'reel' ? await query(env, `SELECT 1 AS found FROM reels WHERE hls_master_key=? LIMIT 1`, [key]) : { rows: [] }
+    const duplicateStory = type === 'story' ? await query(env, `SELECT 1 AS found FROM stories WHERE original_key=? LIMIT 1`, [key]) : { rows: [] }
+    const duplicateTrack = type === 'track' ? await query(env, `SELECT 1 AS found FROM tracks WHERE original_key=? LIMIT 1`, [key]) : { rows: [] }
+    const duplicateSermon = (type === 'sermon_audio' || type === 'sermon_video') ? await query(env, `SELECT 1 AS found FROM sermons WHERE media_key=? LIMIT 1`, [key]) : { rows: [] }
+    const duplicatePending = await query(env, `SELECT 1 AS found FROM pending_queue WHERE original_key=? AND status IN ('pending','approved') LIMIT 1`, [key])
+    if (duplicate.rows[0] || duplicateReel.rows[0] || duplicateStory.rows[0] || duplicateTrack.rows[0] || duplicateSermon.rows[0] || duplicatePending.rows[0]) {
+      return errorResponse('this upload has already been submitted', 409)
+    }
+
+    // A reel poster is a separate R2 object. Validate its shape, existence and
+    // ownership before either direct publication or moderation queueing so the
+    // same security rule applies to verified members and admins alike.
+    let validatedPosterKey = null
+    if (type === 'reel' && coverKeyRaw) {
+      const posterKeyRaw = String(coverKeyRaw)
+      if (!/^originals\\/post\\/\\d{4}\\/\\d{2}\\/[0-9a-f-]+\\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
+      const pobj = await env.MEDIA.head(posterKeyRaw)
+      if (!pobj) return errorResponse('poster not found in storage', 404)
+      const posterOwnerId = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
+      if (posterOwnerId !== String(fresh.id) && fresh.role !== 'admin') return errorResponse('poster does not belong to this account', 403)
+      validatedPosterKey = posterKeyRaw
+    } else if (coverKeyRaw) {
+      return errorResponse('cover key is only supported for reels', 400)
+    }
     if (musicTrackId) { const mt = await query(env, 'SELECT id FROM tracks WHERE id=?', [String(musicTrackId)]); if (!mt.rows[0]) return errorResponse('music track not found', 404) }
     const u = await query(env, 'SELECT group_name, constituency, faith, verified FROM users WHERE id=?', [userId])
     const sermonType = type === 'sermon_audio' || type === 'sermon_video'
@@ -200,16 +230,7 @@ export async function handleMedia(request, env, ctx) {
       } else if (type === 'reel') {
         // Optional client-picked poster (cover frame) for reels: captured by the
         // composer as a JPEG and uploaded to originals/post/… before confirm.
-        let posterKey = null
-        const posterKeyRaw = String(coverKeyRaw || '')
-        if (posterKeyRaw) {
-          if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
-          const pobj = await env.MEDIA.head(posterKeyRaw)
-          if (!pobj) return errorResponse('poster not found in storage', 404)
-          const posterOwnerId = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
-          if (posterOwnerId !== String(fresh.id) && fresh.role !== 'admin') return errorResponse('poster does not belong to this account', 403)
-          posterKey = posterKeyRaw
-        }
+        const posterKey = validatedPosterKey
         await query(
           env,
           `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -235,7 +256,7 @@ export async function handleMedia(request, env, ctx) {
     await query(
       env,
       `INSERT INTO pending_queue (id, type, user_id, caption, original_key, poster_key, music_track_id, status) VALUES (?,?,?,?,?,?,?,'pending')`,
-      [id, type, userId, caption || '', key, type === 'reel' ? (coverKeyRaw || null) : null, musicTrackId || null],
+      [id, type, userId, caption || '', key, type === 'reel' ? validatedPosterKey : null, musicTrackId || null],
     )
     return jsonResponse({ id, status: 'pending', at: now }, 202)
   }
