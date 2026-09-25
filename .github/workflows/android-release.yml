@@ -17,7 +17,7 @@ env:
   API_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
 
 jobs:
-  source-integrity:
+  source_integrity:
     name: "01 Source integrity"
     runs-on: ubuntu-latest
     steps:
@@ -30,9 +30,9 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --check
 
-  release-preflight:
+  release_preflight:
     name: "02 Release preflight"
-    needs: source-integrity
+    needs: source_integrity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,9 +43,9 @@ jobs:
       - run: npm ci
       - run: npm run validate:release
 
-  frontend-quality:
+  frontend_quality:
     name: "03 Frontend quality"
-    needs: release-preflight
+    needs: release_preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,9 +56,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:all
 
-  security-audit:
+  security_audit:
     name: "04 Security audit"
-    needs: frontend-quality
+    needs: frontend_quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,9 +67,9 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
 
-  production-build:
+  production_build:
     name: "05 Production build"
-    needs: security-audit
+    needs: security_audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,9 +84,9 @@ jobs:
           path: dist
           retention-days: 14
 
-  android-prepare:
+  android_prepare:
     name: "06 Android prepare"
-    needs: production-build
+    needs: production_build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,9 +109,9 @@ jobs:
           path: android
           retention-days: 14
 
-  signed-apk:
+  signed_apk:
     name: "07 Signed APK"
-    needs: android-prepare
+    needs: android_prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,9 +154,9 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 14
 
-  apk-fingerprint:
+  apk_fingerprint:
     name: "08 APK fingerprint"
-    needs: signed-apk
+    needs: signed_apk
     runs-on: ubuntu-latest
     outputs:
       filename: ${{ steps.fp.outputs.filename }}
@@ -179,16 +179,16 @@ jobs:
           path: fingerprint.txt
           retention-days: 14
 
-  deploy-production:
+  deploy_production:
     name: "09 Deploy production"
-    needs: apk-fingerprint
+    needs: apk_fingerprint
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://harvestfamily-api.harvestfamily.workers.dev/health
     outputs:
-      filename: ${{ needs.apk-fingerprint.outputs.filename }}
-      sha: ${{ needs.apk-fingerprint.outputs.sha }}
+      filename: ${{ needs.apk_fingerprint.outputs.filename }}
+      sha: ${{ needs.apk_fingerprint.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -205,8 +205,8 @@ jobs:
           mkdir -p workers/public workers/downloads
           cp -r dist/. workers/public/
           cp apk/app-release.apk workers/public/harvest-family.apk
-          cp apk/app-release.apk workers/public/${{ needs.apk-fingerprint.outputs.filename }}
-          cp apk/app-release.apk workers/downloads/${{ needs.apk-fingerprint.outputs.filename }}
+          cp apk/app-release.apk workers/public/${{ needs.apk_fingerprint.outputs.filename }}
+          cp apk/app-release.apk workers/downloads/${{ needs.apk_fingerprint.outputs.filename }}
 
           # Preserve the previous verified APK in the same deployment so the rollback gate can exercise a real rollback.
           RUNS_JSON="$(curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
@@ -239,11 +239,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ADMIN_PIN_HASHES: ${{ secrets.ADMIN_PIN_HASHES }}
-        run: npx wrangler deploy --var "RELEASE_APK_FILENAME:${{ needs.apk-fingerprint.outputs.filename }}"
+        run: npx wrangler deploy --var "RELEASE_APK_FILENAME:${{ needs.apk_fingerprint.outputs.filename }}"
 
-  production-smoke:
+  production_smoke:
     name: "10 Production smoke"
-    needs: deploy-production
+    needs: deploy_production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -256,9 +256,9 @@ jobs:
           SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
 
-  browser-e2e:
+  browser_e2e:
     name: "11 Browser E2E"
-    needs: production-smoke
+    needs: production_smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -276,14 +276,14 @@ jobs:
           test -n "$CHROME_PATH"
           E2E_CHROME_PATH="$CHROME_PATH" npm run test:e2e:image-adjuster
 
-  verify-versioned-apk:
+  verify_versioned_apk:
     name: "12 Verify versioned APK"
-    needs: [deploy-production, browser-e2e]
+    needs: [deploy_production, browser_e2e]
     runs-on: ubuntu-latest
     steps:
       - env:
-          URL: https://harvestfamily-api.harvestfamily.workers.dev/${{ needs.deploy-production.outputs.filename }}
-          EXPECTED: ${{ needs.deploy-production.outputs.sha }}
+          URL: https://harvestfamily-api.harvestfamily.workers.dev/${{ needs.deploy_production.outputs.filename }}
+          EXPECTED: ${{ needs.deploy_production.outputs.sha }}
         run: |
           set -euo pipefail
           B="$(mktemp)"; trap "rm -f $B" EXIT
@@ -294,15 +294,15 @@ jobs:
           done
           echo "::error::Versioned APK SHA mismatch or unavailable"; exit 1
 
-  verify-permanent-apk:
+  verify_permanent_apk:
     name: "13 Verify permanent APK"
-    needs: [deploy-production, verify-versioned-apk]
+    needs: [deploy_production, verify_versioned_apk]
     runs-on: ubuntu-latest
     steps:
       - env:
           URL: https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk
-          EXPECTED: ${{ needs.deploy-production.outputs.sha }}
-          FILENAME: ${{ needs.deploy-production.outputs.filename }}
+          EXPECTED: ${{ needs.deploy_production.outputs.sha }}
+          FILENAME: ${{ needs.deploy_production.outputs.filename }}
         run: |
           set -euo pipefail
           H="$(mktemp)"; B="$(mktemp)"; trap "rm -f $H $B" EXIT
@@ -316,9 +316,9 @@ jobs:
           done
           echo "::error::Permanent APK verification failed"; exit 1
 
-  rollback-and-restore:
+  rollback_and_restore:
     name: "14 Rollback and restore"
-    needs: [deploy-production, verify-permanent-apk]
+    needs: [deploy_production, verify_permanent_apk]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -330,8 +330,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
-          CURRENT: ${{ needs.deploy-production.outputs.filename }}
-          CURRENT_SHA: ${{ needs.deploy-production.outputs.sha }}
+          CURRENT: ${{ needs.deploy_production.outputs.filename }}
+          CURRENT_SHA: ${{ needs.deploy_production.outputs.sha }}
         working-directory: workers
         run: |
           set -euo pipefail
@@ -354,7 +354,7 @@ jobs:
 
   release:
     name: "RELEASED — all 14 gates passed"
-    needs: [source-integrity, release-preflight, frontend-quality, security-audit, production-build, android-prepare, signed-apk, apk-fingerprint, deploy-production, production-smoke, browser-e2e, verify-versioned-apk, verify-permanent-apk, rollback-and-restore]
+    needs: [source_integrity, release_preflight, frontend_quality, security_audit, production_build, android_prepare, signed_apk, apk_fingerprint, deploy_production, production_smoke, browser_e2e, verify_versioned_apk, verify_permanent_apk, rollback_and_restore]
     if: success()
     runs-on: ubuntu-latest
     steps:
