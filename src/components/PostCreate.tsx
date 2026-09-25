@@ -4,6 +4,7 @@ import { canCreateContent, type ContentType } from '../state/permissions'
 import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
 import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
+import VideoAdjuster from './VideoAdjuster'
 
 import ErrorMessage from './ErrorMessage'
 type Props = { onDone: () => void }
@@ -43,6 +44,8 @@ export default function PostCreate({ onDone }: Props) {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [adjusting, setAdjusting] = useState(false)
+  const [videoAdjusting, setVideoAdjusting] = useState(false)
+  const [videoCover, setVideoCover] = useState<Blob | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
   useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
@@ -61,17 +64,28 @@ export default function PostCreate({ onDone }: Props) {
       : type
     const tooBig = uploadTooLarge(serverType, f.size)
     if (tooBig) { setNotice(tooBig); event.target.value = ''; return }
-    // Images open the crop/zoom/rotate editor first; videos pass through
-    // (cover-frame picking happens on the preview below).
+    // Photos and videos use the same simple edit-first flow. Videos let the
+    // user choose a cover frame without changing the original video.
     if (f.type.startsWith('image/')) {
       setFile(f)
       setPreviewUrl(URL.createObjectURL(f))
       setAdjusting(true)
+    } else if (f.type.startsWith('video/')) {
+      setFile(f)
+      setPreviewUrl(URL.createObjectURL(f))
+      setVideoCover(null)
+      setVideoAdjusting(true)
     } else {
       setFile(f)
       setPreviewUrl(URL.createObjectURL(f))
     }
     event.target.value = ''
+  }
+
+  const applyVideoAdjust = (editedFile: File, cover: Blob | null) => {
+    setFile(editedFile)
+    setVideoCover(cover)
+    setVideoAdjusting(false)
   }
 
   const applyAdjust = (blob: Blob, preview: string) => {
@@ -107,7 +121,7 @@ export default function PostCreate({ onDone }: Props) {
         let coverKey: string | undefined
         if (type === 'video' && previewUrl) {
           try {
-            const coverBlob = await captureVideoFrame(previewUrl, 0.1)
+            const coverBlob = videoCover || await captureVideoFrame(previewUrl, 0.1)
             if (coverBlob) {
               const coverFile = new File([coverBlob], 'cover.jpg', { type: 'image/jpeg' })
               const pre = await presign({ type: 'post', contentType: 'image/jpeg', bytes: coverFile.size, ext: 'jpg' })
@@ -236,6 +250,13 @@ export default function PostCreate({ onDone }: Props) {
           file={file}
           onCancel={() => setAdjusting(false)}
           onDone={applyAdjust}
+        />
+      )}
+      {videoAdjusting && file && file.type.startsWith('video/') && (
+        <VideoAdjuster
+          file={file}
+          onCancel={() => setVideoAdjusting(false)}
+          onDone={applyVideoAdjust}
         />
       )}
     </main>
