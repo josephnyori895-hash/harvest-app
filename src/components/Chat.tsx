@@ -726,18 +726,18 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="mt-3 text-xs font-semibold text-stone-400">Loading conversations…</p>
               </div>
             ) : inbox.length === 0 ? (
-              {inboxError ? (
+              inboxError ? (
                 <div className="mx-3 mt-6">
                   <ErrorMessage message={inboxError} kind="network" action={<button type="button" onClick={() => { setInboxError(''); setInboxLoading(true); void refreshInbox() }} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />
                 </div>
               ) : (
-              <div className="mx-3 mt-6 rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
-                <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">💬</div>
-                <h2 className="mt-4 text-sm font-extrabold text-white">Your conversations</h2>
-                <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
-                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
-              </div>
-              )}
+                <div className="mx-3 mt-6 rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">💬</div>
+                  <h2 className="mt-4 text-sm font-extrabold text-white">Your conversations</h2>
+                  <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
+                  <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
+                </div>
+              )
             ) : [...inbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
