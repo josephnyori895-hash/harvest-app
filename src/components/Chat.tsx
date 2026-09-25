@@ -5,7 +5,6 @@ import { showMessageNotification, ensureNotificationChannel } from '../lib/notif
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
-import UnreadBadge from './UnreadBadge'
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
 type Presence = { online: boolean; lastSeen: string }
