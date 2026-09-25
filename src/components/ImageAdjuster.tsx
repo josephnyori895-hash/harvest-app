@@ -105,6 +105,11 @@ export default function ImageAdjuster({
     setTransform(t => clampTransform({ ...t, rotation: (t.rotation + 90) % 360, x: 0, y: 0 }))
   }
 
+  const reset = () => {
+    setTransform({ x: 0, y: 0, scale: 1, rotation: 0 })
+    setZoom(1)
+  }
+
   // Drag to pan (mouse + touch).
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === 'touch' && (e as any).isPrimary === false) return
@@ -131,6 +136,8 @@ export default function ImageAdjuster({
     setTransform(t => clampTransform({ ...t, scale: pinchRef.current!.baseScale * ratio }))
   }
   const onTouchEnd = () => { pinchRef.current = null }
+
+  const onDoubleClick = () => reset()
 
   const applyZoomSlider = (v: number) => {
     const min = minScaleFor()
@@ -204,7 +211,7 @@ export default function ImageAdjuster({
         ref={viewportRef}
         className="relative flex-1 overflow-hidden touch-none select-none bg-[#111]"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
         style={{ cursor: 'grab' }}
       >
         {srcUrl && imgSize && (
@@ -248,17 +255,19 @@ export default function ImageAdjuster({
 
       <div className="shrink-0 border-t border-stone-800 px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#141210]">
         <div className="flex items-center gap-3">
-          <span className="text-lg text-stone-400 w-6">🔍−</span>
+          <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍−</span>
           <input
             type="range" min={1} max={5} step={0.01} value={zoom}
             onChange={e => applyZoomSlider(Number(e.target.value))}
             className="flex-1 accent-sky-400"
             aria-label="Zoom"
           />
-          <span className="text-lg text-stone-400 w-6">🔍＋</span>
+          <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍＋</span>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-2 overflow-x-auto">
+        <div className="flex items-center gap-2">
+          <button onClick={reset} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Reset image adjustments">Reset</button>
+          <button onClick={rotate} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Rotate image">↻ Rotate</button>
+          <div className="flex gap-2 overflow-x-auto min-w-0">
             {PRESETS.map(p => (
               <button
                 key={p.id}
