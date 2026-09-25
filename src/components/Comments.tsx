@@ -155,7 +155,7 @@ export default function Comments({
           ))}
         </div>
         {removeError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={removeError} /></div>}
-        {sendError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={sendError} /></div>
+        {sendError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={sendError} /></div>}
         <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}>
           <input
             value={text}
