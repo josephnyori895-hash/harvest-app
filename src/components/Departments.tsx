@@ -4,6 +4,7 @@ import { showToast } from './Toast'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
+import UnreadBadge from './UnreadBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const departmentStyle = (department: any) => {
@@ -222,6 +223,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
   const mine = departments.filter(d => d.joined)
   const availableDepartments = departments.filter(d => !d.joined)
   const availableDepartments = departments.filter(d => !d.joined)
+  const availableDepartments = departments.filter(d => !d.joined)
 
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
@@ -248,11 +250,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           {(d.joined || isAdmin) && onOpenDeptChat && (
             <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
               💬 Chat
-              {Number(unreadByDepartment[d.slug]) > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-stone-950 shadow-sm" aria-label={`${unreadByDepartment[d.slug]} unread messages`}>
-                  {Number(unreadByDepartment[d.slug]) > 99 ? '99+' : unreadByDepartment[d.slug]}
-                </span>
-              )}
+              <UnreadBadge count={Number(unreadByDepartment[d.slug])} className="absolute -right-1.5 -top-1.5" />
             </button>
           )}
           <button
@@ -298,11 +296,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                 {(detail.department.joined || isAdmin) && onOpenDeptChat && (
                   <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">
                     💬 Open team chat
-                    {Number(unreadByDepartment[detail.department.slug]) > 0 && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-stone-950 shadow-sm" aria-label={`${unreadByDepartment[detail.department.slug]} unread messages`}>
-                        {Number(unreadByDepartment[detail.department.slug]) > 99 ? '99+' : unreadByDepartment[detail.department.slug]}
-                      </span>
-                    )}
+                    <UnreadBadge count={Number(unreadByDepartment[detail.department.slug])} className="absolute right-3 top-1/2 -translate-y-1/2" />
                   </button>
                 )}
                 {canManage && (
