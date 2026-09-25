@@ -102,7 +102,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
-  dmTarget?: { username: string; name?: string } | null
+  dmTarget?: { id: string; username: string; name?: string } | null
   onDmOpened?: () => void
   onCloseTeam?: () => void
   onOpenGroups?: () => void
@@ -142,10 +142,21 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   }, [teamChat])
   // 'Pray with Pastor' deep link: jump straight into the 1:1 DM.
   useEffect(() => {
-    if (!dmTarget?.username) return
+    if (!dmTarget?.id || !dmTarget?.username) return
+    const id = String(dmTarget.id)
     const u = String(dmTarget.username)
-    const dir = (users as any[]).find(x => x.username === u)
-    setActive({ username: u, name: dmTarget.name || dir?.name || u, verified: dir?.verified, avatar_url: dir?.avatar_url })
+    // The database user ID is canonical. The username is retained only because
+    // the existing chat API uses it as the peer address/conversation key.
+    const dir = (users as any[]).find(x => String(x.id) === id)
+    if (!dir || String(dir.username || '').trim().toLowerCase().replace(/^@/, '') !== u.trim().toLowerCase().replace(/^@/, '')) return
+    setActive({
+      ...dir,
+      id,
+      username: String(dir.username),
+      name: dir.name || dmTarget.name || u,
+      verified: dir.verified,
+      avatar_url: dir.avatar_url,
+    })
     setTeam(null)
     setChatView('chats')
     onDmOpened?.()
