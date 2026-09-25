@@ -16,7 +16,7 @@ function authHeaders() {
 // Small Groups — created by the system admin, who appoints a group admin and
 // chooses to stay (as admin or member) or not join at all. Group admins manage
 // their members: approve requests, promote/demote, remove.
-export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, name: string) => void }) {
+export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug: string, name: string) => void; onOpenUser?: (u: any) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
   const [groups, setGroups] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -453,7 +453,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
 
             <p className="text-[10px] uppercase tracking-widest text-[#8B8175] font-bold pt-1">Members ({detail.members.length})</p>
             {detail.members.map(u => (
-              <div key={u.username} className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm">
+              <button type="button" key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm text-left active:opacity-70">
                 <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold ml-1">ADMIN</span>}</p>
@@ -466,6 +466,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
                   </div>
                 )}
               </div>
+              </button>
             ))}
             {detail.members.length === 0 && <p className="text-sm text-[#8B8175] text-center py-8">No members yet.</p>}
 
