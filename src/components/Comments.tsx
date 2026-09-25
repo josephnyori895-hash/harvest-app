@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function timeAgo(iso?: string) {
@@ -133,7 +134,7 @@ export default function Comments({
               <p className="text-xs text-[#8B8175] mt-1">Be the first to encourage someone.</p>
             </div>
           )}
-          {!loading && loadError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center justify-between gap-3"><span>{loadError}</span><button type="button" onClick={() => void load()} className="shrink-0 underline font-bold">Retry</button></div>}
+          {!loading && loadError && <ErrorMessage message={loadError} action={<button type="button" onClick={() => void load()} className="text-xs font-bold underline">Retry</button>} />}
           {comments.map(c => (
             <div key={c.id} className="flex gap-2.5">
               <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-[10px] font-extrabold text-[#5B21B6]">
@@ -153,8 +154,8 @@ export default function Comments({
             </div>
           ))}
         </div>
-        {removeError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{removeError}</div>}
-        {sendError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{sendError}</div>}
+        {removeError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={removeError} /></div>
+        {sendError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={sendError} /></div>
         <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}>
           <input
             value={text}
