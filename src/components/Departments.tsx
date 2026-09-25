@@ -220,6 +220,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
 
   const mine = departments.filter(d => d.joined)
   const availableDepartments = departments.filter(d => !d.joined)
+  const availableDepartments = departments.filter(d => !d.joined)
 
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
