@@ -28,6 +28,16 @@ async function check(name, path, options = {}, assert = () => true) {
   }
 }
 
+// A just-deployed Worker can briefly serve the previous version (edge
+// propagation). Runs right after deploy retry once after a short wait.
+async function checkAfterDeploy(name, path, options = {}, assert = () => true) {
+  const first = await check(name, path, options, assert)
+  if (first.response?.ok) return first
+  await new Promise(r => setTimeout(r, 5000))
+  checks.pop()
+  return check(`${name} (retry)`, path, options, assert)
+}
+
 await check('health', '/health', {}, (r, b) => r.status === 200 && b?.status === 'ok' && b?.database === 'ok' && b?.storage === 'r2')
 await check('public feed is reachable anonymously', '/api/feed', {}, (r, b) => r.status === 200 && Array.isArray(b?.posts) && Array.isArray(b?.stories))
 await check('admin endpoint rejects anonymous request', '/api/pending', {}, r => r.status === 401)
@@ -35,7 +45,7 @@ await check('M-Pesa callback accepts empty callback safely', '/api/giving/mpesa/
 await check('unknown API route does not expose stack trace', '/api/__smoke_unknown__', {}, (r, _b, text) => r.status >= 400 && !/stack|node_modules|file:\/\//i.test(text))
 // Latest-version probe must always answer shape-valid (deployments without a
 // release still return {update_available:false} rather than erroring).
-await check('app-version probe answers', '/api/app-version', {}, (r, b) => r.status === 200 && typeof b?.update_available === 'boolean')
+await checkAfterDeploy('app-version probe answers', '/api/app-version', {}, (r, b) => r.status === 200 && typeof b?.update_available === 'boolean')
 
 if (smokeUsername || smokePin) {
   if (!smokeUsername || !smokePin) {
