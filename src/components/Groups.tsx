@@ -309,7 +309,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-[#8B8175] text-sm text-center py-10">Loading…</p> : (
-          <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-2">
+          <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">

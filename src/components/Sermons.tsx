@@ -286,7 +286,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
 
       {uploadOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-label="Upload sermon">
-          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3" onClick={e => e.stopPropagation()}>
+          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-3" onClick={e => e.stopPropagation()}>
             <p className="font-extrabold text-sm">🎙 Upload sermon</p>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`py-2.5 rounded-xl text-xs font-bold border ${uploadKind === 'audio' ? 'bg-[#F3E8FF] border-[#7C3AED] text-[#5B21B6]' : 'border-[#E8DEC9]'}`}>🎧 MP3 audio</button>
@@ -323,7 +323,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
       {/* admin edit sheet */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setEditing(null)} role="dialog" aria-label="Edit sermon">
-          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3" onClick={e => e.stopPropagation()}>
+          <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-3" onClick={e => e.stopPropagation()}>
             <p className="font-extrabold text-sm">✏️ Edit sermon</p>
             <input value={editing.title || ''} onChange={e => setEditing((x: any) => ({ ...x, title: e.target.value }))} placeholder="Title" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
             <input value={editing.speaker || ''} onChange={e => setEditing((x: any) => ({ ...x, speaker: e.target.value }))} placeholder="Speaker" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />

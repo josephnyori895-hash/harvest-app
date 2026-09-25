@@ -112,7 +112,7 @@ function UpdateGate({ children }) {
   return (
     <>
       {update && !hidden && (
-        <div role="alert" className="fixed top-[calc(env(safe-area-inset-top)+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-[#1C1917] text-white shadow-2xl border border-[#7C3AED]/40 flex items-center gap-3">
+        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-[#1C1917] text-white shadow-2xl border border-[#7C3AED]/40 flex items-center gap-3">
           <span className="text-2xl shrink-0" aria-hidden="true">🚀</span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
@@ -310,7 +310,7 @@ function InnerApp() {
     <UpdateGate>
     <div className="app-shell bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
@@ -421,7 +421,7 @@ function Onboarding({ onAuthSuccess }) {
   return (
     <div className="min-h-[100dvh] bg-white flex justify-center">
       {/* Safe-area padding keeps the app name + toggle clear of Android status-bar icons */}
-      <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-[#FFCD00] shadow-sm" />
@@ -904,7 +904,7 @@ function Nav({ tab, setTab }) {
   return (
     // Fixed to the viewport so it can never be scrolled away or mis-tapped.
     // Warm church bar: deep warm-brown with a soft purple glow above the active tab.
-    <div className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
+    <div className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
       {items.map(([id]) => (
         <button key={id} type="button" aria-label={`Open ${id}`} onClick={() => setTab(id)} className="active:opacity-60">
           <IgIcon name={id} active={tab === id} />

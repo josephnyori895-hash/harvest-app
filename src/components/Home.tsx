@@ -424,7 +424,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     </main>
     {menuPost && (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
-        <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
+        <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))]" onClick={e => e.stopPropagation()}>
           <div className="w-10 h-1 rounded-full bg-[#E8DEC9] mx-auto my-2" />
           {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="w-full py-3.5 text-center font-bold border-b border-[#F4E8D0] active:bg-[#FAF6EC]">✎ Edit</button> : null}{menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="w-full py-3.5 text-center text-red-600 font-bold border-b border-[#F4E8D0] active:bg-red-50">🗑 Delete</button> : null}
           <button onClick={() => { const m = menuPost; setMenuPost(null); sharePostToWhatsApp({ author: m.user, caption: m.caption, id: m.id, kind: m.kind }) }} className="w-full py-3.5 text-center text-[#128C4A] font-bold border-b border-[#F4E8D0] active:bg-green-50">↗ Share to WhatsApp</button>

@@ -277,7 +277,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
           {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="w-10 h-10 rounded-full bg-stone-900 border border-stone-800 text-lg" aria-label="Department settings" title="Department settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-stone-500 text-sm text-center py-10">Loading…</p> : (
-          <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-2">
+          <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
             {editing && canManage ? (
               <div className="p-3 rounded-xl bg-stone-900 border border-amber-500/40 mb-3">
                 <p className="text-[10px] font-bold text-amber-400 mb-2">DEPARTMENT SETTINGS</p>

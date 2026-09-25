@@ -155,7 +155,7 @@ export default function Comments({
         </div>
         {removeError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{removeError}</div>}
         {sendError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{sendError}</div>}
-        <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + env(safe-area-inset-bottom))` }}>
+        <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}>
           <input
             value={text}
             onChange={e => { setText(e.target.value); setSendError('') }}

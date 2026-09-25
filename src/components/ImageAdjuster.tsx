@@ -246,7 +246,7 @@ export default function ImageAdjuster({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-stone-800 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-4 bg-[#141210]">
+      <div className="shrink-0 border-t border-stone-800 px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#141210]">
         <div className="flex items-center gap-3">
           <span className="text-lg text-stone-400 w-6">🔍−</span>
           <input

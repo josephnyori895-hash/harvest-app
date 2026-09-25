@@ -598,7 +598,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
         {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-950 text-red-300' : 'bg-stone-900 text-amber-300'}`}>{error || notice}</div>}
 
-        <div className="chat-composer border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
+        <div className="chat-composer border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
           {replyTo && (
             <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-stone-900 rounded-r-xl py-1.5 pr-2">
               <div className="min-w-0 flex-1 text-xs text-stone-300">
