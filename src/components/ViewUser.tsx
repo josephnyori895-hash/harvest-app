@@ -146,7 +146,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
               <div className="flex-1"><p className="text-lg font-bold text-gradient-warm">{followState.follows_you ? 'Yes' : '—'}</p><p className="text-xs text-neutral-600">Follows you</p></div>
             </div>
           </div>
-          <div className="text-right"><span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap block ${profile.role === 'admin' ? 'badge-admin' : profile.verified ? 'badge-verified' : 'badge-member'}`}>{profile.role === 'admin' ? 'Admin' : profile.verified ? 'Verified' : 'Member'}</span></div>
+          <div className="text-right"><span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap block ${profile.role === 'admin' ? 'badge-admin' : profile.role === 'leader' ? 'bg-amber-100 text-amber-800' : profile.verified ? 'badge-verified' : 'badge-member'}`}>{profile.role === 'admin' ? 'Admin' : profile.role === 'leader' ? 'Leader' : profile.verified ? 'Verified' : 'Member'}</span></div>
         </div>
         <div className="mt-4 space-y-2">
           <div className="flex items-center gap-2 text-sm"><span className="text-xl">📍</span><span className="font-medium">{profile.location || 'Nyeri'}</span></div>
