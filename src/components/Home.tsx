@@ -98,12 +98,14 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   // Admin-editable home content (hero banner + weekly verse). Falls back to
   // the shipped defaults when the fetch fails or values are not set.
   const [content, setContent] = useState<Record<string, string>>({})
+  const [contentLoaded, setContentLoaded] = useState(false)
   useEffect(() => {
     const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-    fetch(`${API}/api/content`)
+    fetch(`${API}/api/content?view=home&t=${Date.now()}`, { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(d => setContent(d?.content || {}))
       .catch(() => { /* defaults stay */ })
+      .finally(() => setContentLoaded(true))
   }, [])
   const heroKicker = content.hero_kicker || 'Karibu, family'
   const heroTitle = content.hero_title || 'Compel. Raise. Release.'
@@ -141,7 +143,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       setShowDirectoryError(true)
       return
     }
-    if (directoryLoading) {
+    if (directoryLoading || !contentLoaded) {
       setShowPastorPicker(true)
       return
     }
@@ -412,6 +414,11 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
               <p className="text-sm font-extrabold text-stone-900">Couldn't load pastors</p>
               <p className="mt-1 text-xs leading-5 text-stone-500">Check your connection and try again.</p>
               <button type="button" onClick={onRefreshDirectory} className="mt-3 px-4 py-2 rounded-full bg-violet-600 text-white text-xs font-extrabold">Retry</button>
+            </div>
+           ) : !contentLoaded ? (
+            <div className="py-8 text-center" role="status" aria-live="polite">
+              <div className="mx-auto w-8 h-8 rounded-full border-2 border-stone-200 border-t-violet-600 animate-spin" />
+              <p className="mt-3 text-xs font-semibold text-stone-500">Loading pastor support…</p>
             </div>
           ) : configuredPastors.length === 0 ? (
             <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 text-center">
