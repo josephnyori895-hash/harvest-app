@@ -519,10 +519,20 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           </div>
         )}
 
-        {loading ? <p className="text-[#8B8175] text-sm">Loading…</p> : (
+        {loading ? (
+          <div role="status" aria-live="polite" className="rounded-2xl border border-[#E8DEC9] bg-white px-4 py-6 text-center">
+            <div className="mx-auto w-7 h-7 rounded-full border-2 border-[#E8DEC9] border-t-[#7C3AED] animate-spin" aria-hidden="true" />
+            <p className="mt-3 text-xs font-semibold text-[#8B8175]">Loading groups…</p>
+          </div>
+        ) : groups.length === 0 ? (
+          <div className="rounded-3xl border border-[#E8DEC9] bg-white px-5 py-10 text-center">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-[#F4E8D0] flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
+            <h2 className="mt-4 text-sm font-extrabold text-[#29251F]">No groups yet</h2>
+            <p className="mt-2 text-xs leading-5 text-[#8B8175]">Groups you can join will appear here. isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
+          </div>
+        ) : (
           <div className="space-y-3">{groups.map(g => <GroupRow key={g.id} g={g} />)}</div>
         )}
-        {!loading && groups.length === 0 && <div className="text-center py-10"><div className="w-16 h-16 mx-auto rounded-full bg-[#F4E8D0] flex items-center justify-center text-3xl">👥</div><p className="text-sm text-[#8B8175] mt-3">No groups yet{isAdmin ? ' — create the first one' : ''}.</p></div>}
       </div>
     </div>
   )
