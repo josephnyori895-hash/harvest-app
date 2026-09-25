@@ -66,6 +66,10 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
 
   const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, username: s.username, id: s.id, img: s.thumb_url, video: String(s.media_type) === 'video' ? (s.video_url || s.original_url || undefined) : undefined, caption: '' })), [stories])
 
+  // Hooks must run on every render — this was below the `!user` early return
+  // and tripped rules-of-hooks (CI lint gate).
+  const { congregations: groups } = useCongregations(isAdmin)
+
   if (!user) return null
 
   const toggleFollow = async () => {
@@ -100,7 +104,6 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
 
   const toggleVerify = () => adminPatch({ verified: !profile.verified })
   const cycleRole = () => adminPatch({ role: profile.role === 'admin' ? 'member' : 'admin' })
-  const { congregations: groups } = useCongregations(isAdmin)
   const addToGroup = (group: string) => adminPatch({ group_name: group })
 
   const displayName = profile.name || profile.username
