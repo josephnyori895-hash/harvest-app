@@ -118,8 +118,7 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
     String(content.pastor_usernames || ''),
     String(content.pastor_username || ''),
   ]
-    .flatMap(value => value.split(/[,
-]+/))
+    .flatMap(value => value.split(/[,\n]+/))
     .map(normName)
     .filter(Boolean)
   const pastorUsers = configuredPastorNames
