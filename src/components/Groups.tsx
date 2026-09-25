@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function notifyGroupsChanged() { window.dispatchEvent(new Event('harvest:groups-changed')) }
@@ -500,7 +501,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       </div>
 
       <div className="p-4 space-y-4">
-        {error && <div role="alert" className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
+        {error && <ErrorMessage message={error} />}
 
         {isAdmin && showCreate && (
           <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-2 shadow-sm">
