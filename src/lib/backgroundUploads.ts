@@ -144,7 +144,7 @@ async function idbAll(): Promise<QueueRecord[]> {
 // --- transfer helpers -------------------------------------------------------
 // Upload with real progress via XMLHttpRequest (fetch cannot report upload
 // progress). Resolves { ok, status } like a fetch response.
-export function xhrSend(url: string, method: string, body: FormData | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number }> {
+export function xhrSend(url: string, method: string, body: FormData | Blob | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open(method, url)
@@ -182,11 +182,21 @@ async function uploadOne(
   pctTo: number,
 ): Promise<string> {
   const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: file.type || 'application/octet-stream', bytes: file.size, ext: extOf(file, filename) })
-  const form = new FormData()
-  Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
-  form.append('file', file)
   const direct = /^https?:\/\//.test(presign.url)
-  const up = await xhrSend(direct ? presign.url : `${API}${presign.url}`, 'POST', form, direct ? undefined : { Authorization: `Bearer ${tok()}` }, p => onPct(pctFrom + Math.round(p * (pctTo - pctFrom))))
+  const method = String(presign.method || (direct ? 'PUT' : 'POST')).toUpperCase()
+  const directHeaders = Object.fromEntries(Object.entries(presign.fields || {}).map(([k, v]) => [k, String(v)]))
+  const form = new FormData()
+  if (!direct) {
+    Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
+    form.append('file', file)
+  }
+  const up = await xhrSend(
+    direct ? presign.url : `${API}${presign.url}`,
+    method,
+    direct ? file : form,
+    direct ? directHeaders : { Authorization: `Bearer ${tok()}` },
+    p => onPct(pctFrom + Math.round(p * (pctTo - pctFrom))),
+  )
   if (!up.ok) throw new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
   return presign.key as string
 }
