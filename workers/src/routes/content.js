@@ -17,6 +17,7 @@ const EDITABLE = {
   // The username of the account the 'Pray with Pastor' card opens as a DM.
   // Empty/unset = the card tells members the pastor has not joined yet.
   pastor_username: 60,
+  pastor_usernames: 600,
   // ── Give section ──
   giving_title: 120,
   giving_subtitle: 300,
