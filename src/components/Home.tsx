@@ -543,7 +543,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         <button onClick={openPastorChat} className="rounded-2xl bg-gradient-to-br from-[#5B21B6] to-[#7C3AED] border border-[#7C3AED] p-4 text-left shadow-sm text-white" aria-label="Chat with the pastor">
           <span className="text-2xl">🙋‍♂️</span>
           <p className="mt-2 text-sm font-extrabold">{configuredPastors.length > 1 ? 'Pray with a Pastor' : 'Pray with Pastor'}</p>
-          <p className="mt-1 text-[11px] text-purple-100">{configuredPastors.length > 1 ? `${configuredPastors.length} pastors available · Choose someone to pray with` : configuredPastors[0]?.user ? `Chat with ${configuredPastors[0].user.name || configuredPastors[0].user.username}` : 'Private prayer chat'}</p>
+          <p className="mt-1 text-[11px] text-purple-100">{configuredPastors.length > 1 ? `${availablePastors.length} ${availablePastors.length === 1 ? 'pastor' : 'pastors'} available · Choose someone to pray with` : configuredPastors[0]?.user ? `Chat with ${configuredPastors[0].user.name || configuredPastors[0].user.username}` : 'Private prayer chat'}</p>
         </button>
         {quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
       </section>
