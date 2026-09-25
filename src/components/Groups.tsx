@@ -3,6 +3,7 @@ import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 
 import ErrorMessage from './ErrorMessage'
+import UnreadBadge from './UnreadBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function notifyGroupsChanged() { window.dispatchEvent(new Event('harvest:groups-changed')) }
@@ -285,7 +286,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           {g.joined && onOpenChat && (
             <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70 shadow-sm">
               💬 Chat
-              {Number(unreadByGroup[g.slug]) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-white shadow-sm">{Number(unreadByGroup[g.slug]) > 99 ? '99+' : unreadByGroup[g.slug]}</span>}
+              {Number(unreadByGroup[g.slug]) > 0 && <UnreadBadge count={Number(unreadByGroup[g.slug])} className="absolute -right-1.5 -top-1.5" />}
             </button>
           )}
           {g.joined
@@ -422,7 +423,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
             {detail.group.description && <p className="text-xs text-[#766E63] pb-1 leading-5">{detail.group.description}</p>}
 
             {me && onOpenChat && (
-              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm">💬 Open group chat{Number(unreadByGroup[detail.group.slug]) > 0 ? ` · ${Number(unreadByGroup[detail.group.slug]) > 99 ? '99+' : unreadByGroup[detail.group.slug]} new` : ''}</button>
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm"><span className="flex items-center justify-center gap-2">💬 Open group chat <UnreadBadge count={Number(unreadByGroup[detail.group.slug])} /></span></button>
             )}
 
             {canManage && requests.length > 0 && (
