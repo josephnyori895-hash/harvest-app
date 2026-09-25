@@ -123,3 +123,22 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
     animation-delay: 0ms !important;
   }
 }
+
+
+/* App-wide mobile layout hardening.
+   Keep safe-area insets and fixed chrome out of scrollable content, prevent
+   flex children from forcing horizontal overflow, and use dynamic viewport
+   units so Android browser/keyboard chrome cannot clip panels. */
+html { height: 100%; }
+body { min-height: 100%; overscroll-behavior-x: none; }
+#root { min-height: 100dvh; }
+.app-shell { min-height: 100dvh; width: 100%; min-width: 0; overflow-x: clip; }
+.app-content { min-width: 0; width: 100%; }
+.app-scroll { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+.app-scroll-bottom-safe { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+.app-fixed-nav { padding-bottom: env(safe-area-inset-bottom); min-height: calc(56px + env(safe-area-inset-bottom)); }
+.app-fixed-nav > button { min-width: 44px; min-height: 44px; flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 640px) {
+  .app-fixed-nav { min-height: calc(60px + env(safe-area-inset-bottom)); }
+  .app-fixed-nav > button { padding: 8px 2px; }
+}
