@@ -138,8 +138,11 @@ export async function handleDepartments(request, env, ctx) {
     if (!t.rows[0]) return errorResponse('user not found', 404)
     const existing = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, t.rows[0].id])
     if (role === 'member' && existing.rows[0]?.role === 'leader' && fresh.role !== 'admin') {
+      if (t.rows[0].id === fresh.id) return errorResponse('leaders cannot demote themselves — appoint another leader first', 400)
       const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
       if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot demote the only department leader', 400)
+      const targetIsLeader = existing.rows[0]?.role === 'leader'
+      if (targetIsLeader) return errorResponse('only the system admin can change another leader', 403)
     }
     // Only a system admin may transfer someone out of another department.
     // Department leaders can add users who are not already serving elsewhere,
@@ -199,6 +202,7 @@ export async function handleDepartments(request, env, ctx) {
     const target = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, t.rows[0].id])
     if (!target.rows[0]) return errorResponse('member not found', 404)
     if (target.rows[0].role === 'leader') {
+      if (fresh.role !== 'admin') return errorResponse('only the system admin can remove a department leader', 403)
       const { rows } = await query(env, `SELECT COUNT(*) AS n FROM department_members WHERE department_id=? AND role='leader'`, [dep.id])
       if (Number(rows[0]?.n || 0) <= 1) return errorResponse('cannot remove the only department leader — appoint another leader first', 400)
     }

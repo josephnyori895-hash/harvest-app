@@ -52,26 +52,40 @@ function authHeaders() {
 // Auto-refreshes when verification/admin actions fire 'harvest:verified'.
 function useDirectory(enabled) {
   const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   const load = () => {
-    fetch(`${API}/api/users/map`, { headers: authHeaders() })
+    if (users.length === 0) setLoading(true)
+    fetch(API + '/api/users/map', { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('directory unavailable'))))
       .then(d => {
-        if (!Array.isArray(d.users)) return
+        if (!Array.isArray(d.users)) throw new Error('directory unavailable')
         const me = localStorage.getItem('harvest_username') || ''
         setUsers(d.users.map(u => ({ ...u, group: u.group_name, me: u.username === me })))
+        setError(false)
       })
-      .catch(() => {})
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
   }
   useEffect(() => {
     if (!enabled) return
     load()
     window.addEventListener('harvest:verified', load)
     window.addEventListener('harvest:profile-updated', load)
-    return () => { window.removeEventListener('harvest:verified', load); window.removeEventListener('harvest:profile-updated', load) }
+    const refreshOnVisible = () => { if (document.visibilityState === 'visible') load() }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load()
+    }, 30000)
+    document.addEventListener('visibilitychange', refreshOnVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshOnVisible)
+      window.removeEventListener('harvest:verified', load)
+      window.removeEventListener('harvest:profile-updated', load)
+    }
   }, [enabled])
-  return [users, setUsers]
+  return [users, setUsers, loading, error, load]
 }
-
 function IgIcon({ name, active }) {
   // Warm palette: brand purple when active, soft warm gray when not.
   const c = active ? '#7C3AED' : '#A49A8E'
@@ -220,7 +234,7 @@ function InnerApp() {
     setTab('chat')
   }
 
-  const [users] = useDirectory(onboarded)
+  const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded)
 
   const [userList, setUserList] = useState(null)
 
@@ -313,7 +327,7 @@ function InnerApp() {
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
-          {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
+          {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}

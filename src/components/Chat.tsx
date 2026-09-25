@@ -528,7 +528,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
     const isTeam = Boolean(team)
     return (
-      <main className="chat-screen h-full min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden">
+      <main className="chat-screen h-[100dvh] max-h-[100dvh] min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden">
         <header className="h-[72px] shrink-0 border-b border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-stone-950/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/90 to-[#A855F7]/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
@@ -541,6 +541,17 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <p className="font-bold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
             <p className="text-xs text-stone-400">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Harvest church family'}</p>
           </div>
+          {isTeam && (team!.kind === 'department' ? onOpenDepartments : onOpenGroups) && (
+            <button
+              type="button"
+              onClick={() => (team!.kind === 'department' ? onOpenDepartments?.() : onOpenGroups?.())}
+              className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-stone-800 text-sm text-stone-200 active:bg-white/10"
+              aria-label={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+              title={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+            >
+              ⚙️
+            </button>
+          )}
           {sending ? <span className="text-[10px] text-stone-400">···</span> : null}
         </header>
 

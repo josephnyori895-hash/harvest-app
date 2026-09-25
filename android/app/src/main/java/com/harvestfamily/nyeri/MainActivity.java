@@ -36,7 +36,7 @@ public class MainActivity extends BridgeActivity {
 
             float density = getResources().getDisplayMetrics().density;
             int topDp = Math.round(bars.top / density);
-            int bottomDp = Math.round((keyboardVisible ? ime.bottom : bars.bottom) / density);
+            int bottomDp = Math.round(bars.bottom / density);
             int leftDp = Math.round(bars.left / density);
             int rightDp = Math.round(bars.right / density);
 
@@ -55,7 +55,7 @@ public class MainActivity extends BridgeActivity {
                 );
                 webView.evaluateJavascript(js, null);
             }
-            return WindowInsetsCompat.CONSUMED;
+            // Keep the insets flowing to WebView so its visual viewport can resize for the IME.\n            return windowInsets;
         });
     }
 }

@@ -83,7 +83,7 @@ const quickLinks = [
   { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
 ]
 
-export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (username: string, name?: string) => void }) {
+export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (username: string, name?: string) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [likesTick, setLikesTick] = useState(0)
@@ -110,21 +110,50 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const heroSubtitle = content.hero_subtitle || 'Get one saved, keep one saved, get another saved.'
   const verseText = content.verse_text || 'Let us consider how we may spur one another on toward love and good deeds.'
   const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
-  // The pastor account the 'Pray with Pastor' card opens (admin sets it in
-  // Admin → Home text as `pastor_username`). Resolved against the member
-  // directory; an empty/unset username means the popup is shown instead.
-  const pastorUsername = String(content.pastor_username || '').trim()
-  // Tolerant match: admins type this by hand, so accept case differences, a
-  // leading @, or the member's display name as well as the exact username.
+  // Pastors are configured explicitly by stable username(s), not inferred from
+  // display names. Legacy `pastor_username` remains supported; admins can
+  // provide multiple accounts in `pastor_usernames` as a comma/newline list.
   const normName = (s: string) => s.trim().toLowerCase().replace(/^@/, '')
-  const wanted = normName(pastorUsername)
-  const pastorUser = wanted
-    ? (users.find((u: any) => normName(String(u.username || '')) === wanted)
-      ?? users.find((u: any) => normName(String(u.name || '')) === wanted))
-    : null
+  const configuredPastorNames = [
+    String(content.pastor_usernames || ''),
+    String(content.pastor_username || ''),
+  ]
+    .flatMap(value => value.split(/[,\n]+/))
+    .map(normName)
+    .filter(Boolean)
+  const configuredPastors = configuredPastorNames
+    .filter((name: string, index: number, list: string[]) => list.indexOf(name) === index)
+    .map(username => ({
+      username,
+      user: users.find((u: any) => normName(String(u.username || '')) === username) || null,
+    }))
+  const availablePastors = configuredPastors.filter((entry: any) => Boolean(entry.user))
+  const [showPastorPicker, setShowPastorPicker] = useState(false)
+  const [showPastorUnavailable, setShowPastorUnavailable] = useState<string | null>(null)
+  const [showDirectoryError, setShowDirectoryError] = useState(false)
   const openPastorChat = () => {
-    if (pastorUser && onOpenDm) onOpenDm(pastorUser.username, pastorUser.name || pastorUser.username)
-    else setShowNoPastor(true)
+    if (directoryError && users.length === 0) {
+      setShowDirectoryError(true)
+      return
+    }
+    if (directoryLoading) {
+      setShowPastorPicker(true)
+      return
+    }
+    if (configuredPastors.length === 0) {
+      setShowNoPastor(true)
+      return
+    }
+    if (configuredPastors.length === 1) {
+      const pastor = configuredPastors[0].user
+      if (pastor && onOpenDm) {
+        onOpenDm(pastor.username, pastor.name || pastor.username)
+      } else {
+        setShowPastorUnavailable(configuredPastors[0].username)
+      }
+      return
+    }
+    setShowPastorPicker(true)
   }
   // Inline post comments (server-backed) — replaces the old "dump into chats" button.
   const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
@@ -356,15 +385,111 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
+    {showPastorPicker && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
+        <div className="w-full sm:max-w-lg max-h-[82dvh] overflow-auto bg-white rounded-t-[28px] p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="w-10 h-1 rounded-full bg-stone-200 mx-auto mb-4" />
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-violet-600 font-bold">Prayer</p>
+              <h2 className="text-lg font-extrabold text-stone-900">Choose a pastor</h2>
+            </div>
+            <button type="button" onClick={() => setShowPastorPicker(false)} aria-label="Close pastor picker" className="w-10 h-10 rounded-full bg-stone-100 text-stone-600">✕</button>
+          </div>
+          <p className="text-xs text-stone-500 mb-4">Choose someone you'd like to pray with.</p>
+          {directoryLoading ? (
+            <div className="py-8 text-center" role="status" aria-live="polite">
+              <div className="mx-auto w-8 h-8 rounded-full border-2 border-stone-200 border-t-violet-600 animate-spin" />
+              <p className="mt-3 text-xs font-semibold text-stone-500">Checking pastor availability…</p>
+            </div>
+          ) : directoryError && availablePastors.length === 0 ? (
+            <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4">
+              <p className="text-sm font-extrabold text-stone-900">Couldn't load pastors</p>
+              <p className="mt-1 text-xs leading-5 text-stone-500">Check your connection and try again.</p>
+              <button type="button" onClick={onRefreshDirectory} className="mt-3 px-4 py-2 rounded-full bg-violet-600 text-white text-xs font-extrabold">Retry</button>
+            </div>
+          ) : configuredPastors.length === 0 ? (
+            <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 text-center">
+              <p className="text-sm font-extrabold text-stone-900">Pastor support isn't configured yet</p>
+              <p className="mt-1 text-xs leading-5 text-stone-500">You can still ask the Harvest Family to pray with you in Chats.</p>
+              <button type="button" onClick={() => { setShowPastorPicker(false); setShowNoPastor(true) }} className="mt-3 w-full py-2.5 rounded-full bg-violet-600 text-white text-xs font-extrabold">🙏 Ask for prayer in Chats</button>
+            </div>
+          ) : (
+            <>
+              {availablePastors.length === 0 && (
+                <div className="mb-3 rounded-2xl bg-amber-50 border border-amber-100 p-3">
+                  <p className="text-xs font-extrabold text-amber-900">No pastors are available right now.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-amber-800">The configured pastors haven't joined Harvest yet.</p>
+                </div>
+              )}
+              <div className="space-y-2">
+                {configuredPastors.map((entry: any) => {
+                  const pastor = entry.user
+                  const displayName = pastor?.name || entry.username
+                  const initials = String(displayName).split(/[\s_.-]/).filter(Boolean).map((part: string) => part[0]).slice(0, 2).join('').toUpperCase()
+                  return (
+                    <button
+                      key={entry.username}
+                      type="button"
+                      disabled={!pastor}
+                      onClick={() => {
+                        if (!pastor) return
+                        setShowPastorPicker(false)
+                        onOpenDm?.(pastor.username, pastor.name || pastor.username)
+                      }}
+                      className={`w-full min-h-14 flex items-center gap-3 rounded-2xl border px-3 text-left transition-colors ${pastor ? 'border-stone-200 bg-stone-50 active:bg-stone-100' : 'border-stone-100 bg-stone-50/60 opacity-60 cursor-not-allowed'}`}
+                    >
+                      <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-sm font-extrabold text-stone-700">{initials}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-stone-900 truncate">{pastor?.name || entry.username}</p>
+                        <p className="text-[11px] text-stone-500 truncate">@{entry.username}</p>
+                        {!pastor && <p className="text-[10px] font-semibold text-amber-700 mt-0.5">Not on Harvest yet</p>}
+                      </div>
+                      {pastor ? <span className="text-violet-600 font-bold" aria-hidden="true">›</span> : <span className="text-[10px] font-bold text-stone-400">Unavailable</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )}
+    {showPastorUnavailable && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowPastorUnavailable(null)} role="dialog" aria-modal="true" aria-label="Pastor unavailable">
+        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-2xl">🙏</div>
+          <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">Pastor isn't on Harvest yet</h2>
+          <p className="mt-2 text-center text-sm leading-6 text-stone-500">@{showPastorUnavailable} hasn't joined the app yet. You can still ask the Harvest Family to pray with you in Chats.</p>
+          <div className="mt-5 space-y-2">
+            <button type="button" onClick={() => { setShowPastorUnavailable(null); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>
+            <button type="button" onClick={() => setShowPastorUnavailable(null)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {showDirectoryError && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowDirectoryError(false)} role="dialog" aria-modal="true" aria-label="Pastor directory unavailable">
+        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-14 h-14 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-2xl">↯</div>
+          <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">Couldn't load pastors</h2>
+          <p className="mt-2 text-center text-sm leading-6 text-stone-500">Check your connection and try again. We won't assume a pastor hasn't joined when the directory is unavailable.</p>
+          <div className="mt-5 space-y-2">
+            <button type="button" onClick={() => { setShowDirectoryError(false); onRefreshDirectory?.() }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">Retry</button>
+            <button type="button" onClick={() => setShowDirectoryError(false)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
+          </div>
+        </div>
+      </div>
+    )}
     {showNoPastor && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowNoPastor(false)} role="dialog" aria-label="Pastor not available">
-        <div className="w-full max-w-[340px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
-          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-3xl">🙋‍♂️</div>
-          <h2 className="mt-4 font-extrabold text-base text-[#29251F]">Pastor has not joined yet</h2>
-          <p className="mt-2 text-sm leading-6 text-[#766E63]">Our pastor isn't on the app at the moment. You can still share a prayer request in Chats — the family is ready to pray with you.</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowNoPastor(false)} role="dialog" aria-modal="true" aria-label="Pastor support unavailable">
+        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-3xl">🙏</div>
+          <h2 className="mt-4 font-extrabold text-base text-stone-900">Pastor support isn't available yet</h2>
+          <p className="mt-2 text-sm leading-6 text-stone-500">You can still share a prayer request in Chats — the Harvest Family is ready to pray with you.</p>
           <div className="mt-5 flex flex-col gap-2">
-            <button onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-[#7C3AED] text-white text-sm font-extrabold active:bg-[#6D28D9]">🙏 Ask for prayer in Chats</button>
-            <button onClick={() => setShowNoPastor(false)} className="w-full py-3 rounded-full border border-[#E8DEC9] text-[#766E63] text-sm font-bold active:bg-[#FAF6EC]">Close</button>
+            <button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>
+            <button type="button" onClick={() => setShowNoPastor(false)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
           </div>
         </div>
       </div>
@@ -417,8 +542,8 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
       <section className="mt-7 grid grid-cols-2 gap-3">
         <button onClick={openPastorChat} className="rounded-2xl bg-gradient-to-br from-[#5B21B6] to-[#7C3AED] border border-[#7C3AED] p-4 text-left shadow-sm text-white" aria-label="Chat with the pastor">
           <span className="text-2xl">🙋‍♂️</span>
-          <p className="mt-2 text-sm font-extrabold">Pray with Pastor</p>
-          <p className="mt-1 text-[11px] text-purple-100">{pastorUser ? `Chat with ${pastorUser.name || pastorUser.username}` : 'Private prayer chat'}</p>
+          <p className="mt-2 text-sm font-extrabold">{configuredPastors.length > 1 ? 'Pray with a Pastor' : 'Pray with Pastor'}</p>
+          <p className="mt-1 text-[11px] text-purple-100">{configuredPastors.length > 1 ? `${availablePastors.length} ${availablePastors.length === 1 ? 'pastor' : 'pastors'} available · Choose someone to pray with` : configuredPastors[0]?.user ? `Chat with ${configuredPastors[0].user.name || configuredPastors[0].user.username}` : 'Private prayer chat'}</p>
         </button>
         {quickLinks.map(q => <button key={q.tab} onClick={() => setTab(q.tab)} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">{q.icon}</span><p className="mt-2 text-sm font-extrabold">{q.title}</p><p className="mt-1 text-[11px] text-[#8B8175]">{q.text}</p></button>)}
       </section>
