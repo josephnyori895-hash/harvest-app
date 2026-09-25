@@ -55,7 +55,8 @@ public class MainActivity extends BridgeActivity {
                 );
                 webView.evaluateJavascript(js, null);
             }
-            // Keep the insets flowing to WebView so its visual viewport can resize for the IME.\n            return windowInsets;
+            // Keep the insets flowing to WebView so its visual viewport can resize for the IME.
+            return windowInsets;
         });
     }
 }
