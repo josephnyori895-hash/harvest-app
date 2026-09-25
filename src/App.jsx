@@ -370,7 +370,7 @@ export default function App() {
 
 function Onboarding({ onAuthSuccess }) {
   const [mode, setMode] = useState('register') // 'register' | 'login'
-  const { congregations: REG_GROUP_OPTIONS } = useCongregations()
+  const { congregations: REG_GROUP_OPTIONS, live: groupsLive } = useCongregations()
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', group_name: 'Harvest Central' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
@@ -389,11 +389,27 @@ function Onboarding({ onAuthSuccess }) {
     )
   })
 
+  // GPS is an optional helper: only collected when the member taps
+  // "Use my location". A hand-picked group is always honoured by the server.
+  const [useMyLocation, setUseMyLocation] = useState(false)
+  const [gpsStatus, setGpsStatus] = useState('') // '' | 'locating' | 'ok' | 'denied'
+
+  const captureLocation = () => {
+    setGpsStatus('locating')
+    getPosition().then(pos => {
+      if (pos) { setGpsStatus('ok'); setUseMyLocation(true) }
+      else { setGpsStatus('denied'); setUseMyLocation(false) }
+    })
+  }
+
   const submitRegister = async () => {
     if (busy) return
     setBusy(true); setError('')
     try {
-      const pos = await getPosition()
+      // Only include GPS when the member opted in AND the pick is the
+      // auto/nearest option — never let a guess override a real choice.
+      let pos = null
+      if (useMyLocation && !form.group_name) pos = await getPosition()
       const payload = { ...form, ...(pos || {}) }
       const response = await fetch(`${API}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json().catch(() => ({}))
@@ -476,7 +492,19 @@ function Onboarding({ onAuthSuccess }) {
                 </select>
                 <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-base">▾</span>
               </div>
-              <p className="text-[11px] font-medium text-zinc-600 mt-2.5">You'll be grouped with members near you.</p>
+              <p className="text-[11px] font-medium text-zinc-600 mt-2.5">This exact group is saved on your profile — GPS is never used to change it.</p>
+              {!groupsLive && (
+                <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1">
+                  <span aria-hidden="true">⚠</span> Couldn't reach the latest group list — showing the default congregations.
+                </p>
+              )}
+              <div className="mt-3 flex items-center gap-2">
+                <button type="button" onClick={captureLocation} disabled={gpsStatus === 'locating'} className="px-3 py-2 rounded-full bg-white border border-zinc-300 text-[11px] font-bold text-zinc-700 disabled:opacity-50">
+                  {gpsStatus === 'locating' ? '📍 Locating…' : gpsStatus === 'ok' ? '📍 Location saved' : '📍 Use my location (optional)'}
+                </button>
+                {gpsStatus === 'denied' && <span className="text-[10px] text-zinc-500">Location off — pick your group above instead</span>}
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-1.5">We use your location once, only to suggest the group nearest to you. It's never required.</p>
             </div>
             {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
           </div>

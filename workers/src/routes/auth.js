@@ -39,15 +39,12 @@ export async function handleAuth(request, env, ctx) {
       if (pass.length < 8) return errorResponse('password must be at least 8 characters', 400)
       // Location-based auto-assignment: if the device shares GPS at signup,
       // the member joins the nearest congregation group automatically.
-      // Priority: admin-set group locations (D1) → built-in centroids → member's choice.
-      // A chosen/nearest name is only used if that group actually EXISTS —
-      // deleted congregations must never come back as profile ghosts.
-      let near = null
-      try {
-        const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
-        near = nearestFromRows(located.rows, Number(lat), Number(lng))
-      } catch { /* groups table may be empty — fall through */ }
-      if (!near) near = nearestCommunity(Number(lat), Number(lng))
+      // Priority: explicit member choice → admin-set group locations (D1)
+      // → built-in centroids. A member who deliberately picked a group is
+      // never overridden by a GPS guess; GPS only fills in when the choice
+      // is empty, missing, or no longer exists. A chosen/nearest name is
+      // only used if that group actually EXISTS — deleted congregations
+      // must never come back as profile ghosts.
       const exists = async (name) => {
         if (!name) return false
         try {
@@ -56,14 +53,29 @@ export async function handleAuth(request, env, ctx) {
         } catch { return false }
       }
       let group = null
-      if (await exists(near)) group = near
-      else if (await exists(groupName)) group = groupName
-      else {
-        // Fall back to the first existing congregation group, else no group.
-        try {
-          const r = await query(env, "SELECT name FROM groups WHERE slug LIKE 'harvest_%' ORDER BY slug LIMIT 1")
-          group = r.rows[0]?.name || ''
-        } catch { group = '' }
+      const pickedGroup = String(groupName || '').trim()
+      if (pickedGroup && await exists(pickedGroup)) {
+        // Honour the member's explicit choice — GPS is ignored on purpose.
+        group = pickedGroup
+      } else {
+        // Choice missing/invalid: try GPS nearest, then the pick again
+        // (belt-and-braces), then the first congregation group.
+        let near = null
+        const hasGps = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+        if (hasGps) {
+          try {
+            const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
+            near = nearestFromRows(located.rows, Number(lat), Number(lng))
+          } catch { /* groups table may be empty — fall through */ }
+          if (!near) near = nearestCommunity(Number(lat), Number(lng))
+        }
+        if (near && await exists(near)) group = near
+        else {
+          try {
+            const r = await query(env, "SELECT name FROM groups WHERE slug LIKE 'harvest_%' ORDER BY slug LIMIT 1")
+            group = r.rows[0]?.name || ''
+          } catch { group = '' }
+        }
       }
 
       const dup = await query(env, 'SELECT username, phone_normalized FROM users WHERE username=? OR phone_normalized=? LIMIT 2', [uname, normPhone])
@@ -88,7 +100,7 @@ export async function handleAuth(request, env, ctx) {
 
       const token = await jwtSign({ id, username: uname, role: 'member', group_name: group, verified: false }, env.JWT_SECRET, '24h')
       await clearLoginRateLimit(env, identity)
-      return jsonResponse({ token, role: 'member', username: uname, verified: false, group_name: group, assigned_by: near ? 'location' : 'choice', expiresIn: '24h' }, 201)
+      return jsonResponse({ token, role: 'member', username: uname, verified: false, group_name: group, assigned_by: pickedGroup && group === pickedGroup ? 'choice' : 'location', expiresIn: '24h' }, 201)
     } catch (e) {
       if (e?.status) throw e
       return errorResponse('registration failed', 500)
