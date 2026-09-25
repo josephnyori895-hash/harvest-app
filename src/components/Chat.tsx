@@ -505,7 +505,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
     const isTeam = Boolean(team)
     return (
-      <main className="h-[100dvh] bg-[#1C1917] text-white flex flex-col">
+      <main className="chat-screen h-[100dvh] min-h-0 bg-[#1C1917] text-white flex flex-col overflow-hidden">
         <header className="h-[72px] shrink-0 border-b border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-stone-950/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/90 to-[#A855F7]/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
@@ -521,7 +521,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           {sending ? <span className="text-[10px] text-stone-400">···</span> : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4">
           {thread.length === 0 ? (
             <div className="min-h-full flex items-center justify-center py-12">
               <div className="w-full max-w-sm text-center px-6">
@@ -570,7 +570,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                       </div>
                     </div>
                     {(isReactionOpen || actionFor === String(m.id)) && (
-                      <div className={`absolute -top-14 ${mine ? 'right-0' : 'left-0'} z-30 flex items-center gap-1 bg-stone-900/95 backdrop-blur border border-stone-700 shadow-2xl rounded-2xl px-2 py-1.5`}>
+                      <div className={`chat-message-actions absolute ${mine ? 'right-0' : 'left-0'} z-30 flex items-center gap-1 bg-stone-900/95 backdrop-blur border border-stone-700 shadow-2xl rounded-2xl px-2 py-1.5`}>
                         {REACTIONS.map(r => (
                           <button key={r} type="button" aria-label={`React ${r}`} onClick={e => { e.stopPropagation(); react(m, r); setActionFor(null) }} className="w-8 h-8 rounded-full text-lg hover:bg-stone-800 active:scale-90 transition">{r}</button>
                         ))}
@@ -580,7 +580,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                       </div>
                     )}
                     {actionFor === String(m.id) && (
-                      <div className={`absolute ${mine ? 'right-0' : 'left-0'} top-full mt-2 z-30 w-48 rounded-2xl bg-stone-900/98 border border-stone-700 shadow-2xl p-1.5 backdrop-blur`}>
+                      <div className={`chat-message-menu absolute ${mine ? 'right-0' : 'left-0'} top-full mt-2 z-30 w-48 max-w-[calc(100vw-2rem)] rounded-2xl bg-stone-900/98 border border-stone-700 shadow-2xl p-1.5 backdrop-blur`}>
                         <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 active:bg-stone-700 text-sm flex items-center gap-3">↩ Reply</button>
                         <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 text-sm">😊 React</button>
                         <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 text-sm">⧉ Copy</button>
@@ -598,7 +598,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
         {(notice || error) && <div className={`px-4 py-2 text-xs shrink-0 ${error ? 'bg-red-950 text-red-300' : 'bg-stone-900 text-amber-300'}`}>{error || notice}</div>}
 
-        <div className="border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
+        <div className="chat-composer border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
           {replyTo && (
             <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-stone-900 rounded-r-xl py-1.5 pr-2">
               <div className="min-w-0 flex-1 text-xs text-stone-300">
@@ -614,7 +614,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <button type="button" onClick={() => setAttach(null)} className="ml-auto text-stone-400" aria-label="Remove attachment">✕</button>
             </div>
           )}
-          <div className="max-w-3xl mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
+          <div className="max-w-3xl w-full min-w-0 mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
             <label className="w-10 h-10 rounded-full text-stone-300 hover:text-white hover:bg-white/10 flex items-center justify-center text-lg cursor-pointer shrink-0" title="Send a photo">
               📷
               <input type="file" accept="image/*" className="hidden" onChange={e => setAttach(e.target.files?.[0] || null)} />
@@ -622,7 +622,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => setText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
               rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
-              className="flex-1 resize-none min-h-11 max-h-28 bg-stone-900/90 border border-stone-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-stone-500 transition" />
+              className="flex-1 min-w-0 resize-none min-h-11 max-h-24 overflow-y-auto bg-stone-900/90 border border-stone-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-stone-500 transition" />
             <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
               className="h-10 w-10 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-fuchsia-500 text-white text-base font-bold shadow-lg shadow-purple-900/30 disabled:opacity-30 disabled:shadow-none active:scale-95 transition shrink-0" aria-label="Send">
               {sending ? '…' : '↑'}
