@@ -5,6 +5,7 @@ import { showMessageNotification, ensureNotificationChannel } from '../lib/notif
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
+import UnreadBadge from './UnreadBadge'
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
 type Presence = { online: boolean; lastSeen: string }
@@ -206,6 +207,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   }, [])
 
   const refreshInbox = useCallback(async () => {
+    if (!inboxLoadedRef.current) setInboxLoading(true)
     if (!localStorage.getItem('harvest_token')) { setInboxLoading(false); return }
     try {
       const r = await api<{ conversations: any[] }>('/api/chat/conversations')
@@ -725,6 +727,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <div role="status" aria-live="polite" className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 px-5 py-8 text-center">
                 <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
                 <p className="mt-3 text-xs font-semibold text-stone-400">Loading conversations…</p>
+              </div>
+            ) : inboxError ? (
+              <div className="mx-3 mt-6">
+                <ErrorMessage
+                  message={inboxError}
+                  kind="network"
+                  action={<button type="button" onClick={() => void refreshInbox()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>}
+                />
               </div>
             ) : inbox.length === 0 ? (
               inboxError ? (
