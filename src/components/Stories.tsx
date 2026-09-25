@@ -20,6 +20,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [replies, setReplies] = useState<any[]>([])
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
+  const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const historyPushedRef = useRef(false)
@@ -42,10 +43,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       const d=await r.json().catch(()=>({}))
       if(!r.ok) throw new Error(d?.error||'Could not delete reply')
       setReplies(x=>x.filter(item=>String(item.id)!==String(replyId)))
-    } catch(e:any){ window.alert(e?.message||'Could not delete reply') }
+    } catch(e:any){ setViewerError(e?.message||'Could not delete reply') }
   }
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json(); if(r.ok)setReplies(d.replies||[]) } catch {} }
-  const sendReply = async () => { if(!reply.trim()||replyBusy)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReplies(x=>[...x,d.reply]); setReply(''); setShowReplies(true) } catch(e:any){window.alert(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
+  const sendReply = async () => { if(!reply.trim()||replyBusy)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReplies(x=>[...x,d.reply]); setReply(''); setShowReplies(true) } catch(e:any){setViewerError(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
 
   // Keep the Story viewer above the Android keyboard and make system Back close it.
   useEffect(() => {
@@ -187,13 +188,14 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       onDeleted?.(String(s.id))
       setIdx(null)
     } catch (err: any) {
-      window.alert(err?.message || 'Could not delete story')
+      setViewerError(err?.message || 'Could not delete story')
     } finally {
       setDeleting(false)
     }
   }
 
   return (
+    {viewerError && <div className="absolute top-3 left-3 right-3 z-[90]"><ErrorMessage message={viewerError} action={<button type="button" onClick={() => setViewerError('')} className="text-xs font-bold underline">Dismiss</button>} /></div>}
     <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : "var(--safe-area-inset-bottom, env(safe-area-inset-bottom))" }} onClick={handleTap}>
       <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-stone-800 rounded overflow-hidden relative"><div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} /></div>)}</div>
       <div className="flex items-center justify-between px-4 py-3">
