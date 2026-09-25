@@ -44,6 +44,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   const [managerBusy, setManagerBusy] = useState('')
   const [managerSearch, setManagerSearch] = useState('')
   const [sermonQuery, setSermonQuery] = useState('')
+  const [sermonKind, setSermonKind] = useState<'all' | 'audio' | 'video'>('all')
   const [sermonSort, setSermonSort] = useState<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'topic'>('newest')
   const uploadInput = useRef<HTMLInputElement | null>(null)
 
@@ -87,6 +88,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   const visibleSermons = [...sermons]
     .filter(s => {
       const q = sermonQuery.trim().toLowerCase()
+      if (sermonKind !== 'all' && s.kind !== sermonKind) return false
       if (!q) return true
       return [s.title, s.speaker, s.scripture, s.description].some(v => String(v || '').toLowerCase().includes(q))
     })
@@ -290,7 +292,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
               <button
                 key={kind}
                 type="button"
-                onClick={() => setSermonQuery(kind === 'All' ? '' : kind.toLowerCase())}
+                onClick={() => setSermonKind(kind === 'All' ? 'all' : kind.toLowerCase() as 'audio' | 'video')}
                 className="px-2.5 py-1.5 rounded-xl bg-[#F5EEDF] text-[10px] font-bold text-[#5C554C]"
               >{kind}</button>
             ))}
