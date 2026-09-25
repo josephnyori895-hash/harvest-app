@@ -40,7 +40,7 @@ export async function handleContent(request, env, ctx) {
     const { rows } = await readAll(env)
     const out = {}
     for (const r of rows) out[r.key] = r.value
-    return jsonResponse({ content: out })
+    return jsonResponse({ content: out }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 
   if (path === '/api/content' && request.method === 'PUT') {
