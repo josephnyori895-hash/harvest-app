@@ -369,7 +369,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       </div>
 
       <div className="p-4 space-y-6">
-        {error && <ErrorMessage message={error} />}
+        {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {isAdmin && (
           <div className="p-3 rounded-xl bg-stone-900 border border-stone-800">
