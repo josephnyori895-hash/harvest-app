@@ -4,6 +4,7 @@ import { useAuth } from '../state/auth'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 
 import ErrorMessage from './ErrorMessage'
+import UnreadBadge from './UnreadBadge'
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
 type Presence = { online: boolean; lastSeen: string }
@@ -670,7 +671,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           </div>
           {tab === 'inbox' && (
             <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
-              <button type="button" onClick={() => setChatView('chats')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'chats' ? 'bg-white text-black shadow-sm' : 'bg-stone-900 text-stone-400 border border-stone-800'}`}>Chats{totalUnread > 0 ? ` · ${totalUnread > 99 ? '99+' : totalUnread}` : ''}</button>
+              <button type="button" onClick={() => setChatView('chats')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'chats' ? 'bg-white text-black shadow-sm' : 'bg-stone-900 text-stone-400 border border-stone-800'}`}>Chats{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => onOpenGroups?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-stone-900 text-stone-300 border border-stone-800">Groups</button>
               <button type="button" onClick={() => onOpenDepartments?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-stone-900 text-stone-300 border border-stone-800">Departments</button>
               <button type="button" onClick={() => setChatView('community')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'community' ? 'bg-amber-400 text-black' : 'bg-stone-900 text-stone-300 border border-stone-800'}`}>Community</button>
@@ -714,7 +715,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-stone-500" />
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}</button>
+              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">People</button>
               <span className="ml-auto text-xs text-stone-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
             </div>
@@ -759,7 +760,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                       <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-stone-100 font-semibold' : 'text-stone-400'}`}>
                         {c.last_from === currentUser ? 'You: ' : ''}{preview}
                       </p>
-                      {unread > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-[#ff3040] text-white text-[9px] font-extrabold flex items-center justify-center shadow-sm" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>}
+                      {unread > 0 && <UnreadBadge count={unread} />}
                     </div>
                   </button>
                   <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-stone-500 hover:text-amber-300 hover:bg-stone-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
@@ -817,7 +818,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     <p className="font-semibold text-[15px] text-white">{u.name || u.username}{u.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
                     <p className="text-[13px] text-stone-400 truncate mt-0.5">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
                   </div>
-                  {inInbox && inInbox.unread > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" aria-label={`${inInbox.unread} unread`} />}
+                  {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="w-2.5 min-w-2.5 h-2.5 p-0 border-0 bg-blue-500" />}
                 </button>
               )
             })}
@@ -1011,7 +1012,7 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
           <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
             <div className="relative w-[62px] h-[62px] mx-auto">
               <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
-              {Number(t.unread) > 0 && <span className="absolute -right-1.5 -top-1.5 w-[18px] h-[18px] rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-bold flex items-center justify-center border-2 border-black shadow-sm">{Number(t.unread) > 99 ? '99+' : t.unread}</span>}
+              {Number(t.unread) > 0 && <UnreadBadge count={Number(t.unread)} className="absolute -right-1.5 -top-1.5" />}
             </div>
             <p className="text-[11px] text-stone-200 mt-1 truncate">{t.name}</p>
             <p className="text-[9px] uppercase tracking-wide text-stone-600">{t.kind === 'department' ? 'Department' : 'Group'}</p>
