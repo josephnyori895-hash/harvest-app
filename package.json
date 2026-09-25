@@ -16,7 +16,8 @@
     "test:all": "npm run test:admin && npm run test:security && npm run test:reels",
     "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs",
     "test:reels": "node scripts/test-reels-regression.mjs",
-    "validate:release": "node scripts/validate-release.mjs"
+    "validate:release": "node scripts/validate-release.mjs",
+    "test:e2e:department-profile": "node scripts/e2e-department-profile.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
