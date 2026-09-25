@@ -126,7 +126,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   // Team chat: departments AND small groups — both are server-enforced memberships.
   const [team, setTeam] = useState<TeamChat | null>(null)
   useEffect(() => {
-    if (teamChat) { setActive(null); setTeam(teamChat) } else setTeam(null)
+    if (teamChat) {
+      // A team route is authoritative: never leave a previous DM or Community
+      // view mounted underneath it.
+      setActive(null)
+      setTeam(teamChat)
+      setChatView('chats')
+    } else {
+      setTeam(null)
+    }
   }, [teamChat])
   // 'Pray with Pastor' deep link: jump straight into the 1:1 DM.
   useEffect(() => {
@@ -135,6 +143,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const dir = (users as any[]).find(x => x.username === u)
     setActive({ username: u, name: dmTarget.name || dir?.name || u, verified: dir?.verified, avatar_url: dir?.avatar_url })
     setTeam(null)
+    setChatView('chats')
     onDmOpened?.()
   }, [dmTarget, users, onDmOpened])
 
@@ -661,7 +670,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
       {tab === 'inbox' && chatView === 'community' ? (
         <CommunityHub
-          onOpenTeam={(t) => { setError(''); setTeam(t); setChatView('chats') }}
+          onOpenTeam={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
           onOpenGroups={onOpenGroups}
           onOpenDepartments={onOpenDepartments}
         />
@@ -669,7 +678,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         <>
           {/* Team chats: your departments + groups, always at the top of the inbox. */}
           <TeamChatsRail
-            onOpen={(t) => { setError(''); setTeam(t) }}
+            onOpen={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
             onOpenGroups={onOpenGroups}
             onOpenDepartments={onOpenDepartments}
           />
@@ -695,7 +704,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             </div>
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 ? ` (${totalUnread > 99 ? '99+' : totalUnread})` : ''}</button>
-              <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">Requests</button>
+              <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">People</button>
               <span className="ml-auto text-xs text-stone-500 self-center">{inbox.length} chat{inbox.length === 1 ? '' : 's'}</span>
             </div>
           </section>
