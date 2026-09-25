@@ -1,4 +1,5 @@
 name: Harvest Android APK Release
+# Production verification run after group/pastor hardening.
 
 on:
   push:
