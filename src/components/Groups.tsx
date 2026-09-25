@@ -528,7 +528,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
           <div className="rounded-3xl border border-[#E8DEC9] bg-white px-5 py-10 text-center">
             <div className="mx-auto w-14 h-14 rounded-2xl bg-[#F4E8D0] flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
             <h2 className="mt-4 text-sm font-extrabold text-[#29251F]">No groups yet</h2>
-            <p className="mt-2 text-xs leading-5 text-[#8B8175]">Groups you can join will appear here. isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
+            <p className="mt-2 text-xs leading-5 text-[#8B8175]">Groups you can join will appear here. {isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>
         ) : (
           <div className="space-y-3">{groups.map(g => <GroupRow key={g.id} g={g} />)}</div>
