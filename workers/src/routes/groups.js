@@ -50,19 +50,23 @@ export async function handleGroups(request, env, ctx) {
   // GET /api/groups — all groups with member counts + viewer's role in each,
   // plus per-community counts (each community hosts 3-10 groups).
   if (path === '/api/groups' && method === 'GET') {
-    const fresh = await requireMember(env, user)
+    // Public catalog: signup needs current groups before authentication.
+    // Membership/request fields are populated only for authenticated members.
+    const fresh = user ? await requireMember(env, user) : null
     const { rows } = await query(
       env,
       `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.invite_token, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
          FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
         GROUP BY g.id ORDER BY g.community ASC, g.name ASC`,
     )
-    const mine = await query(env, 'SELECT group_id, role FROM group_members WHERE user_id=?', [fresh.id])
-    const mineMap = new Map(mine.rows.map(r => [r.group_id, r.role]))
-    // Pending join requests surface as "⏳ Requested" in the UI instead of the
-    // button silently doing nothing after tap (join returns 201 but nothing changed).
-    const pending = await query(env, `SELECT DISTINCT group_id FROM group_invites WHERE invited_user_id=? AND status='pending'`, [fresh.id])
-    const pendingSet = new Set(pending.rows.map(r => r.group_id))
+    const mineMap = new Map()
+    const pendingSet = new Set()
+    if (fresh) {
+      const mine = await query(env, 'SELECT group_id, role FROM group_members WHERE user_id=?', [fresh.id])
+      mine.rows.forEach(r => mineMap.set(r.group_id, r.role))
+      const pending = await query(env, `SELECT DISTINCT group_id FROM group_invites WHERE invited_user_id=? AND status='pending'`, [fresh.id])
+      pending.rows.forEach(r => pendingSet.add(r.group_id))
+    }
     const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin', add_only: !!r.invite_only, my_request: pendingSet.has(r.id) ? 'pending' : null }))
     const communities = await communityGroupCounts(env)
     return jsonResponse({ groups: out, communities })
