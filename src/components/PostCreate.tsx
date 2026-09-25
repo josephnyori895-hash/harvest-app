@@ -46,6 +46,7 @@ export default function PostCreate({ onDone }: Props) {
   const [adjusting, setAdjusting] = useState(false)
   const [videoAdjusting, setVideoAdjusting] = useState(false)
   const [videoCover, setVideoCover] = useState<Blob | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
   useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
@@ -98,6 +99,7 @@ export default function PostCreate({ onDone }: Props) {
   const submit = async () => {
     if (busy) return
     if (!canCreate) { setNotice('Your account cannot publish this type of content.'); return }
+    if (caption.trim().length > 2000) { setNotice('Your message is too long. Keep it under 2,000 characters.'); return }
     if (needsFile && !file) { setNotice('Add the media first.'); return }
     if (type === 'music' && !title.trim()) { setNotice('Give the track a title.'); return }
     if (type === 'sermon' && !title.trim()) { setNotice('Give the sermon a title.'); return }
@@ -171,15 +173,16 @@ export default function PostCreate({ onDone }: Props) {
       <header className="sticky top-0 z-10 flex items-center justify-between px-4 h-16 bg-[#FFFBF0]/95 backdrop-blur border-b border-[#E8DEC9]">
         <button onClick={onDone} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Close">×</button>
         <div className="text-center"><p className="text-[11px] uppercase tracking-[0.16em] text-[#766E63]">Harvest Family</p><h1 className="font-extrabold text-base">{isAdmin ? 'Admin studio' : 'Share a moment'}</h1></div>
-        <button disabled={busy} onClick={() => void submit()} className="px-4 py-2 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{busy ? 'Sharing…' : 'Share'}</button>
+        <button disabled={busy || (needsFile && !file)} onClick={() => setShowPreview(true)} className="px-4 py-2 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">Preview</button>
       </header>
+      {showPreview && <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview"><div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-[#E8DEC9]"><strong className="text-sm">Final preview</strong><button onClick={() => setShowPreview(false)} className="w-9 h-9 rounded-full bg-white" aria-label="Close preview">×</button></div><div className="p-4">{previewUrl && file?.type.startsWith('image/') && <img src={previewUrl} alt="Post preview" className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />}{previewUrl && file?.type.startsWith('video/') && <video src={previewUrl} controls className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />}{caption.trim() && <p className="mt-3 text-sm whitespace-pre-wrap">{caption.trim()}</p>}{musicTrack && <p className="mt-2 text-xs text-[#766E63]">🎵 {musicTrack.title} · {musicTrack.artist}</p>}{type === 'music' && <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled track'}{artist.trim() ? ` · ${artist.trim()}` : ''}</p>}{type === 'sermon' && <><p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled sermon'}</p>{artist.trim() && <p className="text-xs text-[#766E63]">{artist.trim()}</p>}{scripture.trim() && <p className="text-xs text-[#766E63]">{scripture.trim()}</p>}</>}<div className="mt-4 flex gap-2"><button onClick={() => setShowPreview(false)} className="flex-1 py-3 rounded-2xl border border-[#E8DEC9] font-bold text-sm">Keep editing</button><button onClick={() => { setShowPreview(false); void submit() }} disabled={busy} className="flex-1 py-3 rounded-2xl bg-[#7C3AED] text-white font-bold text-sm disabled:opacity-50">{busy ? 'Sharing…' : 'Share now'}</button></div></div></div></div>
       <section className="px-4 pt-5 max-w-xl mx-auto">
         {available.length > 1 && (
           <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
             <p className="text-xs font-bold text-[#766E63] mb-3">WHAT ARE YOU SHARING?</p>
             <div className="grid grid-cols-2 gap-2">
               {available.map(item => (
-                <button key={item} onClick={() => { setType(item); setFile(null); setPreviewUrl(null); setMusicTrack(null); setNotice('') }} className={`text-left p-3 rounded-2xl border ${type === item ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>
+                <button key={item} onClick={() => { setType(item); setFile(null); setPreviewUrl(null); setMusicTrack(null); setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setShowPreview(false) }} className={`text-left p-3 rounded-2xl border ${type === item ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>
                   <span className="block text-sm font-bold">{labels[item]}</span>
                   <span className="block text-[11px] text-[#766E63] mt-1">{hints[item]}</span>
                 </button>
@@ -198,7 +201,10 @@ export default function PostCreate({ onDone }: Props) {
           <div className="mt-3 rounded-3xl bg-white border border-[#E8DEC9] overflow-hidden shadow-sm">
             {previewUrl ? (
               <div className="relative bg-[#F5EEDF] aspect-[4/3] flex items-center justify-center">
-                {file?.type.startsWith('video/') ? <video src={previewUrl} controls className="w-full h-full object-cover" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />}
+                {file?.type.startsWith('video/') ? <video src={previewUrl} controls className="w-full h-full object-contain bg-black" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />}
+                {file?.type.startsWith('video/') && (
+                  <button onClick={() => setVideoAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-[#141210]/60 text-white text-xs font-bold" aria-label="Edit video">✎ Edit video</button>
+                )}
                 {file?.type.startsWith('image/') && (
                   <button onClick={() => setAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-[#141210]/60 text-white text-xs font-bold" aria-label="Adjust image">✎ Adjust</button>
                 )}
@@ -231,7 +237,7 @@ export default function PostCreate({ onDone }: Props) {
               <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 200 MB audio / 1 GB video, so full-length services fit. Members will be able to stream it and download the original file.</p>
             </div>
           )}
-          {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
+          {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} maxLength={2000} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
           {type === 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Short description (optional) — what is this teaching about?" className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
           {['post','video','story'].includes(type) && <div className="mt-4 pt-4 border-t border-[#E8DEC9]">
             <div className="flex items-center justify-between"><label className="text-xs font-bold text-[#766E63]">ADD MUSIC (OPTIONAL)</label><button onClick={() => setMusicOpen(v => !v)} className="text-xs font-bold text-[#7C3AED]">{musicOpen ? 'Close' : 'Choose'}</button></div>
