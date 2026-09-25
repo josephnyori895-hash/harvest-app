@@ -29,6 +29,16 @@ const fmtDuration = (s?: number | null) => {
 // Church-wide search: members, groups, departments, reels, sermons and
 // places — one query, filter chips narrow the scope. Lists are fetched once
 // and filtered client-side (each endpoint is small; no worker changes needed).
+
+// Recent searches persist per device so members can re-run common lookups
+// (the pastor's name, their own group) with one tap. Debounced saves only —
+// a query counts as "recent" after 600 ms of typing pause and 2+ characters.
+const RECENT_KEY = 'harvest_recent_searches'
+const RECENT_MAX = 8
+const loadRecent = (): string[] => {
+  try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, RECENT_MAX) : [] } catch { return [] }
+}
+
 export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpenDepartments, onOpenSermons, onOpenReel }: {
   users: any[]
   onView: (u: any) => void
@@ -40,7 +50,8 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
 }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
-  const [recent, setRecent] = useState<any[]>([])
+  const [recentFeed, setRecentFeed] = useState<any[]>([])
+  const [recentSearches, setRecentSearches] = useState<string[]>(loadRecent)
   // Lazy-loaded search corpora. null = not fetched, 'error' = failed (retryable).
   const [groups, setGroups] = useState<any[] | 'error' | null>(null)
   const [departments, setDepartments] = useState<any[] | 'error' | null>(null)
@@ -50,6 +61,34 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
 
   const query = q.trim().toLowerCase()
   const showGrid = query === ''
+
+  // Save a search to recents after a short typing pause (not per keystroke),
+  // newest first, deduplicated case-insensitively, capped at RECENT_MAX.
+  useEffect(() => {
+    const trimmed = q.trim()
+    if (trimmed.length < 2) return
+    const t = window.setTimeout(() => {
+      setRecentSearches(prev => {
+        const next = [trimmed, ...prev.filter(x => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, RECENT_MAX)
+        try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* storage full — recents are best-effort */ }
+        return next
+      })
+    }, 600)
+    return () => window.clearTimeout(t)
+  }, [q])
+
+  const removeRecent = (entry: string) => {
+    setRecentSearches(prev => {
+      const next = prev.filter(x => x !== entry)
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* best-effort */ }
+      return next
+    })
+  }
+
+  const clearRecent = () => {
+    setRecentSearches([])
+    try { localStorage.removeItem(RECENT_KEY) } catch { /* best-effort */ }
+  }
 
   // Everything except members comes from the API — fetch once per session,
   // retryable via the error banner. `bump` in deps drives the retry.
@@ -81,7 +120,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     let cancelled = false
     fetch(`${API}/api/feed?limit=9`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error('no feed'))))
-      .then(d => { if (!cancelled) setRecent(Array.isArray(d.posts) ? d.posts : []) })
+      .then(d => { if (!cancelled) setRecentFeed(Array.isArray(d.posts) ? d.posts : []) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [showGrid])
@@ -199,6 +238,26 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
 
       {showGrid ? (
         <>
+          {recentSearches.length > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs text-[#8B8175] font-bold uppercase tracking-wider">Recent searches</p>
+                <button onClick={clearRecent} className="text-[11px] font-bold text-[#7C3AED] px-2 py-1.5 rounded-full active:bg-[#F4E8D0]" aria-label="Clear recent searches">Clear</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {recentSearches.map(entry => (
+                  <span key={entry} className="flex items-center gap-0.5 pl-1 pr-1 py-1 rounded-full bg-white border border-[#E8DEC9]">
+                    <button
+                      onClick={() => setQ(entry)}
+                      className="pl-2 pr-1 py-1 rounded-full text-xs font-semibold text-[#29251F] active:bg-[#F4E8D0]"
+                      aria-label={`Search for ${entry}`}
+                    >{entry}</button>
+                    <button onClick={() => removeRecent(entry)} className="w-8 h-8 flex items-center justify-center rounded-full text-[#A49A8E] text-xs" aria-label={`Remove ${entry} from recent searches`}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <p className="text-xs text-[#8B8175] px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
           <div className="mt-2 space-y-1">
             {users.slice(0, 5).map(u => (
@@ -209,11 +268,11 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               </button>
             ))}
           </div>
-          {recent.length > 0 && (
+          {recentFeed.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Recent from the community</p>
               <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
-                {recent.map((p, i) => (
+                {recentFeed.map((p, i) => (
                   <button key={p.id || i} onClick={() => openPost(p)} aria-label={`Post by ${p.name || p.username}`} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
                     {p.kind === 'reel'
                       ? p.hls_url
