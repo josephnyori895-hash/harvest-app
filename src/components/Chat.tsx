@@ -764,7 +764,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
                 <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
               </div>
-            ) : (() => { const q = peopleQuery.trim().toLowerCase(); const visibleInbox = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)) : inbox; return [...visibleInbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
+            ) : (() => { const q = peopleQuery.trim().toLowerCase(); const visibleInbox = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)) : inbox; if (visibleInbox.length === 0) return <div className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 p-6 text-center text-sm text-stone-500">No conversations match “{peopleQuery}”.</div>; return [...visibleInbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
