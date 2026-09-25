@@ -227,10 +227,11 @@ function InnerApp() {
     setTab(chatReturnTab || 'home')
   }
   // 'Pray with Pastor': open a 1:1 DM with the pastor's account from Home.
-  const openDm = (username, name) => {
+  const openDm = (user) => {
+    if (!user?.id || !user?.username) return
     setChatReturnTab(tab)
     setTeamChat(null)
-    setDmTarget({ username, name })
+    setDmTarget({ id: String(user.id), username: String(user.username), name: user.name || user.username })
     setTab('chat')
   }
 
