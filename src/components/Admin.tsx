@@ -68,7 +68,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     { key: 'hero_subtitle', label: 'Banner subtitle', hint: 'e.g. Get one saved, keep one saved, get another saved.', max: 300, textarea: true },
     { key: 'verse_text', label: 'This week’s encouragement — verse', hint: 'The quote shown mid-screen', max: 300, textarea: true },
     { key: 'verse_ref', label: 'Verse reference', hint: 'e.g. Hebrews 10:24 · Grow together', max: 120 },
-    { key: 'pastor_username', label: 'Pastor’s username (Pray with Pastor card)', hint: 'The app account the card opens as a chat — leave empty until the pastor joins', max: 60 },
+    { key: 'pastor_usernames', label: 'Pastors’ usernames (Pray with Pastor)', hint: 'One username per line or comma-separated. Leave empty until pastors join.', max: 600, textarea: true },
   ]
   // ── Give section fields ──
   const GIVE_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [
@@ -520,27 +520,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             {CONTENT_FIELDS.map(f => (
               <div key={f.key}>
                 <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
-                {f.key === 'pastor_username' ? (
-                  /* Pick from the real member directory — free text here is how
-                     the 'Pastor has not joined yet' popup fired despite the pastor
-                     having joined (name typed instead of username, case, @, etc). */
+                {f.key === 'pastor_usernames' ? (
                   <div>
-                    <select
-                      id={`ct-${f.key}`}
-                      value={content[f.key] ?? ''}
-                      onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
-                      className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20"
-                    >
-                      <option value="">— Show "Pastor has not joined yet" popup —</option>
-                      {users.map(u => (
-                        <option key={u.username} value={u.username}>{u.name || u.username} (@{u.username})</option>
-                      ))}
-                    </select>
-                    {(() => { const sel = users.find(u => u.username === (content[f.key] || '')); return sel ? (
-                      <p className="text-[10px] text-emerald-700 mt-1">✓ Opens a private chat with {sel.name || sel.username}</p>
-                    ) : content[f.key] ? (
-                      <p className="text-[10px] text-amber-700 mt-1">⚠ "@{content[f.key]}" is not in the member directory — members will see the popup</p>
-                    ) : null })()}
+                    <textarea id={`ct-${f.key}`} value={content[f.key] ?? content.pastor_username ?? ''}
+                      onChange={e => setContent(c => ({ ...c, pastor_usernames: e.target.value.slice(0, f.max) }))}
+                      rows={3} placeholder={f.hint}
+                      className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 resize-y" />
+                    <p className="text-[10px] text-[#766E63] mt-1">Use real usernames, not display names. Multiple pastors are supported.</p>
                   </div>
                 ) : f.textarea ? (
                   <textarea
