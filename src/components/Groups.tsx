@@ -501,7 +501,7 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       </div>
 
       <div className="p-4 space-y-4">
-        {error && <ErrorMessage message={error} />}
+        {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {isAdmin && showCreate && (
           <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-2 shadow-sm">
