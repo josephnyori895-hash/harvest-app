@@ -118,7 +118,7 @@ export default function Comments({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose} role="dialog" aria-label="Comments">
-      <div className="w-full sm:max-w-lg bg-[#FFFBF0] rounded-t-[28px] max-h-[75vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-full sm:max-w-lg bg-[#FFFBF0] rounded-t-[28px] max-h-[min(75dvh,680px)] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-4 pt-3 pb-2 border-b border-[#E8DEC9] flex items-center justify-between shrink-0">
           <div className="w-10 h-1 rounded-full bg-[#E8DEC9] absolute left-1/2 -translate-x-1/2 top-2" />
           <p className="text-sm font-extrabold mx-auto">Comments</p>
@@ -155,7 +155,7 @@ export default function Comments({
         </div>
         {removeError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{removeError}</div>}
         {sendError && <div role="alert" className="mx-3 mb-1 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">{sendError}</div>}
-        <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]">
+        <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + env(safe-area-inset-bottom))` }}>
           <input
             value={text}
             onChange={e => { setText(e.target.value); setSendError('') }}
