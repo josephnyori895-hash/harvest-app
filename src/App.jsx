@@ -378,6 +378,9 @@ function Onboarding({ onAuthSuccess }) {
   const [showLoginPass, setShowLoginPass] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Which kind of auth error is showing: 'network' | 'credentials' | 'server'
+  // — drives the banner styling and the recovery hint per kind.
+  const [loginErrorKind, setLoginErrorKind] = useState('')
 
   // Ask the device for GPS (best effort — permission may be denied).
   const getPosition = () => new Promise(resolve => {
@@ -402,6 +405,20 @@ function Onboarding({ onAuthSuccess }) {
     })
   }
 
+  // Map a fetch failure to a member-useful message: network problems are the
+  // common case on mobile data, and "wrong password" must never be conflated
+  // with "the internet is down" (members otherwise retry forever).
+  const authError = (e, fallback) => {
+    if (e instanceof TypeError || /fetch|network|Failed to fetch/i.test(String(e?.message))) {
+      return { kind: 'network', message: "No connection — check your internet, then try again. Your details haven't been shared with anyone." }
+    }
+    const msg = String(e?.message || '')
+    if (/401|403/.test(msg) || /password|pin|credentials|incorrect|invalid/i.test(msg)) {
+      return { kind: 'credentials', message: fallback }
+    }
+    return { kind: 'server', message: msg || fallback }
+  }
+
   const submitRegister = async () => {
     if (busy) return
     setBusy(true); setError('')
@@ -418,7 +435,7 @@ function Onboarding({ onAuthSuccess }) {
       if (data.assigned_by === 'location' && data.group_name) {
         showToast(`Karibu! You've been placed in your nearest group: ${data.group_name}`, 'success', 4000)
       }
-    } catch (e) { setError(e?.message || 'Registration failed') } finally { setBusy(false) }
+    } catch (e) { setError(authError(e, 'Registration failed — check the details and try again').message) } finally { setBusy(false) }
   }
 
   const submitLogin = async () => {
@@ -429,7 +446,11 @@ function Onboarding({ onAuthSuccess }) {
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.token) throw new Error(data.error || 'Sign in failed')
       onAuthSuccess?.(data)
-    } catch (e) { setError(e?.message || 'Sign in failed') } finally { setBusy(false) }
+    } catch (e) {
+      const kind = authError(e, 'Wrong username or password — try again, or ask a church admin to reset it.')
+      setLoginErrorKind(kind.kind)
+      setError(kind.message)
+    } finally { setBusy(false) }
   }
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -525,7 +546,20 @@ function Onboarding({ onAuthSuccess }) {
                 <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showLoginPass ? '🙈' : '👁'}</button>
               </div>
             </div>
-            {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">{error}</div>}
+            {error && loginErrorKind === 'network' && (
+              <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-sm font-medium text-amber-800 flex items-start gap-2">
+                <span aria-hidden="true" className="text-base leading-5">📶</span>
+                <span>{error}</span>
+              </div>
+            )}
+            {error && loginErrorKind !== 'network' && (
+              <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm font-medium text-rose-700">
+                {error}
+                {loginErrorKind === 'credentials' && (
+                  <p className="text-[11px] text-rose-600 mt-1.5">There's no self-service reset yet — any church admin can reset your password from Admin → Accounts.</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -371,6 +371,18 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     return `${u.username} ${u.name} ${u.group_name}`.toLowerCase().includes(needle)
   })
 
+  // Pagination: render one page of member cards at a time. Rendering the full
+  // directory (each card = 10+ controls) janks past a few hundred members on
+  // low-end phones. Page size 30 keeps scroll weight bounded; search and
+  // pagination compose (page resets to 1 on query change).
+  const ACCOUNTS_PAGE_SIZE = 30
+  const [accountsPage, setAccountsPage] = useState(1)
+  const accountsPages = Math.max(1, Math.ceil(filteredAccounts.length / ACCOUNTS_PAGE_SIZE))
+  const safeAccountsPage = Math.min(accountsPage, accountsPages)
+  const pagedAccounts = filteredAccounts.slice((safeAccountsPage - 1) * ACCOUNTS_PAGE_SIZE, safeAccountsPage * ACCOUNTS_PAGE_SIZE)
+  // Reset to the first page whenever the search query changes.
+  useEffect(() => { setAccountsPage(1) }, [q])
+
   return (
     <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-4">
       <div className="flex items-center gap-3 mb-4">
@@ -694,7 +706,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             </div>
           )}
 
-          {loadingAccounts ? <p className="text-sm text-[#766E63] text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-[#766E63] text-center py-10">No members found.</p> : filteredAccounts.map(u => (
+          {loadingAccounts ? <p className="text-sm text-[#766E63] text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-[#766E63] text-center py-10">No members found.</p> : pagedAccounts.map(u => (
             <div key={u.username} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 mb-2">
               <button onClick={() => setExpanded(expanded === u.username ? null : u.username)} className="w-full flex gap-3 items-center justify-between text-left">
                 <div className="min-w-0">
@@ -747,6 +759,23 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               )}
             </div>
           ))}
+
+          {/* Pager: bounded DOM weight for large congregations */}
+          {!loadingAccounts && filteredAccounts.length > ACCOUNTS_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 mt-3 px-1">
+              <button
+                onClick={() => setAccountsPage(p => Math.max(1, p - 1))}
+                disabled={safeAccountsPage <= 1}
+                className="px-4 py-2 rounded-full bg-white border border-[#E8DEC9] text-xs font-bold text-[#5C554C] disabled:opacity-40"
+              >← Prev</button>
+              <p className="text-xs text-[#766E63] font-semibold">Page {safeAccountsPage} of {accountsPages} · {filteredAccounts.length} members</p>
+              <button
+                onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))}
+                disabled={safeAccountsPage >= accountsPages}
+                className="px-4 py-2 rounded-full bg-white border border-[#E8DEC9] text-xs font-bold text-[#5C554C] disabled:opacity-40"
+              >Next →</button>
+            </div>
+          )}
 
           <div className="mt-4 bg-white border border-[#E8DEC9] rounded-3xl p-4">
             <p className="text-sm font-bold">Restore a deactivated account</p>
