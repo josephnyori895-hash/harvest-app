@@ -39,6 +39,12 @@ jobs:
       # Each gate step emits the tail of its output as an ::error::
       # annotation so the failing command and reason are visible without
       # log-level repository access.
+      - name: Release preflight validation
+        run: |
+          set -euo pipefail
+          npm run validate:release
+          test -f android/app/src/main/AndroidManifest.xml
+
       - name: Release lint
         run: |
           set -o pipefail
@@ -435,6 +441,29 @@ jobs:
           trap - EXIT
           cleanup
           echo "Permanent APK rollback drill passed (rollback to run #$PREVIOUS_RUN verified and restored)."
+      - name: Write release proof
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p release-proof
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
+          cat > release-proof/release.json <<EOF
+{
+  "workflow": "Harvest Android APK Release",
+  "run_number": "$GITHUB_RUN_NUMBER",
+  "run_id": "$GITHUB_RUN_ID",
+  "git_sha": "$GITHUB_SHA",
+  "apk_filename": "$APK_FILENAME",
+  "apk_sha256": "$SHA256",
+  "apk_size": "$(stat -c '%s' "$APK")",
+  "versioned_url": "https://harvestfamily-api.harvestfamily.workers.dev/$APK_FILENAME",
+  "permanent_url": "https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk",
+  "release_proof": "all preceding release gates passed"
+}
+EOF
+          cat release-proof/release.json
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
