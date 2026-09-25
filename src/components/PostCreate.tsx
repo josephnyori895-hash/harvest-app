@@ -176,7 +176,42 @@ export default function PostCreate({ onDone }: Props) {
         <div className="text-center"><p className="text-[11px] uppercase tracking-[0.16em] text-[#766E63]">Harvest Family</p><h1 className="font-extrabold text-base">{isAdmin ? 'Admin studio' : 'Share a moment'}</h1></div>
         <button disabled={busy || (needsFile && !file)} onClick={() => setShowPreview(true)} className="px-4 py-2 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">Preview</button>
       </header>
-      {showPreview && <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview"><div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl"><div className="flex items-center justify-between p-4 border-b border-[#E8DEC9]"><strong className="text-sm">Final preview</strong><button onClick={() => setShowPreview(false)} className="w-9 h-9 rounded-full bg-white" aria-label="Close preview">×</button></div><div className="p-4">{previewUrl && file?.type.startsWith('image/') && <img src={previewUrl} alt="Post preview" className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />}{previewUrl && file?.type.startsWith('video/') && <video src={previewUrl} controls className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />}{caption.trim() && <p className="mt-3 text-sm whitespace-pre-wrap">{caption.trim()}</p>}{musicTrack && <p className="mt-2 text-xs text-[#766E63]">🎵 {musicTrack.title} · {musicTrack.artist}</p>}{type === 'music' && <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled track'}{artist.trim() ? ` · ${artist.trim()}` : ''}</p>}{type === 'sermon' && <><p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled sermon'}</p>{artist.trim() && <p className="text-xs text-[#766E63]">{artist.trim()}</p>}{scripture.trim() && <p className="text-xs text-[#766E63]">{scripture.trim()}</p>}</>}<div className="mt-4 flex gap-2"><button onClick={() => setShowPreview(false)} className="flex-1 py-3 rounded-2xl border border-[#E8DEC9] font-bold text-sm">Keep editing</button><button onClick={() => { setShowPreview(false); void submit() }} disabled={busy} className="flex-1 py-3 rounded-2xl bg-[#7C3AED] text-white font-bold text-sm disabled:opacity-50">{busy ? 'Sharing…' : 'Share now'}</button></div></div></div></div>
+      {showPreview && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview">
+          <div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-[#E8DEC9]">
+              <strong className="text-sm">Final preview</strong>
+              <button onClick={() => setShowPreview(false)} className="w-9 h-9 rounded-full bg-white" aria-label="Close preview">×</button>
+            </div>
+            <div className="p-4">
+              {previewUrl && file?.type.startsWith('image/') && (
+                <img src={previewUrl} alt="Post preview" className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />
+              )}
+              {previewUrl && file?.type.startsWith('video/') && (
+                <video src={previewUrl} controls className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />
+              )}
+              {caption.trim() && <p className="mt-3 text-sm whitespace-pre-wrap">{caption.trim()}</p>}
+              {musicTrack && <p className="mt-2 text-xs text-[#766E63]">🎵 {musicTrack.title} · {musicTrack.artist}</p>}
+              {type === 'music' && (
+                <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled track'}{artist.trim() ? ` · ${artist.trim()}` : ''}</p>
+              )}
+              {type === 'sermon' && (
+                <>
+                  <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled sermon'}</p>
+                  {artist.trim() && <p className="text-xs text-[#766E63]">{artist.trim()}</p>}
+                  {scripture.trim() && <p className="text-xs text-[#766E63]">{scripture.trim()}</p>}
+                </>
+              )}
+              <div className="mt-4 flex gap-2">
+                <button onClick={() => setShowPreview(false)} className="flex-1 py-3 rounded-2xl border border-[#E8DEC9] font-bold text-sm">Keep editing</button>
+                <button onClick={() => { setShowPreview(false); void submit() }} disabled={busy} className="flex-1 py-3 rounded-2xl bg-[#7C3AED] text-white font-bold text-sm disabled:opacity-50">
+                  {busy ? 'Sharing…' : 'Share now'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <section className="px-4 pt-5 max-w-xl mx-auto">
         {available.length > 1 && (
           <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
