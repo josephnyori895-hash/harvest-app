@@ -1,22 +1,19 @@
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
 
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 if (!fs.existsSync(manifestPath)) throw new Error(`Missing ${manifestPath}`);
 const xml = fs.readFileSync(manifestPath, "utf8");
 const checks = [
-  ["no literal escaped newlines", !xml.includes("\\\\n")],
-  ["manifest root exists", /<manifest\\b[^>]*xmlns:android=/.test(xml)],
-  ["MainActivity exists", /<activity\\b[^>]*android:name=\"\\.MainActivity\"/.test(xml)],
-  ["MainActivity exported", /android:exported=\"true\"/.test(xml)],
-  ["adjustResize configured", /android:windowSoftInputMode=\"adjustResize\"/.test(xml)],
+  ["no literal escaped newlines", !xml.includes("\\n")],
+  ["manifest root exists", xml.includes("<manifest") && xml.includes('xmlns:android="http://schemas.android.com/apk/res/android"')],
+  ["MainActivity exists", xml.includes('android:name=".MainActivity"')],
+  ["MainActivity exported", xml.includes('android:exported="true"')],
+  ["adjustResize configured", xml.includes('android:windowSoftInputMode="adjustResize"')],
 ];
+let failed = false;
 for (const [name, ok] of checks) {
   console.log(`${ok ? "PASS" : "FAIL"}: ${name}`);
-  if (!ok) process.exitCode = 1;
+  if (!ok) failed = true;
 }
-if (process.exitCode) process.exit(1);
-
-const result = spawnSync("git", ["status", "--porcelain"], { encoding: "utf8" });
-if (result.status !== 0) process.exit(result.status ?? 1);
-console.log("PASS: repository validation completed");
+if (failed) process.exit(1);
+console.log("PASS: release preflight validation completed");
