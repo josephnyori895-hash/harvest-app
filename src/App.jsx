@@ -247,10 +247,10 @@ function InnerApp() {
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
   return (
-    <div className="min-h-screen bg-[#FFFBF0] flex justify-center">
+    <div className="app-shell bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="w-full bg-[#FFFBF0] min-h-screen flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className={tab === 'chat' ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 overflow-auto pb-[calc(64px+env(safe-area-inset-bottom))]'}>
+      <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : undefined} onSharedReelHandled={clearSharedContent} />}
@@ -841,9 +841,9 @@ function Nav({ tab, setTab }) {
   return (
     // Fixed to the viewport so it can never be scrolled away or mis-tapped.
     // Warm church bar: deep warm-brown with a soft purple glow above the active tab.
-    <div className="fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center min-h-[56px] border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
+    <div className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
       {items.map(([id]) => (
-        <button key={id} type="button" aria-label={`Open ${id}`} onClick={() => setTab(id)} className="p-3 active:opacity-60">
+        <button key={id} type="button" aria-label={`Open ${id}`} onClick={() => setTab(id)} className="active:opacity-60">
           <IgIcon name={id} active={tab === id} />
         </button>
       ))}
