@@ -9,9 +9,12 @@ const DEFAULT_TTL = 900
 
 // Sermon videos and worship tracks are larger than social clips: reels up to
 // 100 MB (~10 min at 720p) and tracks up to 20 MB. Sermons are full services:
-// audio up to 80 MB (~80 min mp3), video up to 500 MB (~60-90 min mp4).
+// audio up to 200 MB (~3.5 h mp3 at 128 kbps) and video up to 1 GB
+// (~60-120 min mp4 at 720p). Large uploads go directly to R2 via presigned
+// PUT — the in-Worker proxy fallback would run out of memory on files this
+// size, so R2 credentials are required for full-length sermon videos.
 // Stories allow short video moments up to 30 MB; photos 10 MB.
-const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, sermon_audio: 80 * 1024 * 1024, sermon_video: 500 * 1024 * 1024 }
+const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, sermon_audio: 200 * 1024 * 1024, sermon_video: 1024 * 1024 * 1024 }
 const ALLOW_CT = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],

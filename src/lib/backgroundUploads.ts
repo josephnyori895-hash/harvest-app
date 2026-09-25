@@ -61,6 +61,19 @@ type QueueRecord = {
 const MAX_ATTEMPTS = 5
 const BACKOFF_MS = [15_000, 60_000, 180_000, 600_000]
 
+// Client-side mirror of the server's MAX_BYTES (workers/src/lib/media.js).
+// Checking before the background queue starts avoids a member waiting on a
+// multi-hour upload that can only fail at presign time.
+export const MAX_UPLOAD_MB: Record<string, number> = {
+  avatar: 5, post: 10, story: 30, reel: 100, track: 20,
+  sermon_audio: 200, sermon_video: 1024,
+}
+export function uploadTooLarge(kind: string, bytes: number): string | null {
+  const maxMb = MAX_UPLOAD_MB[kind]
+  if (!maxMb || bytes <= maxMb * 1024 * 1024) return null
+  return `This file is ${(bytes / (1024 * 1024)).toFixed(0)} MB — the limit for ${kind.startsWith('sermon') ? 'sermons' : kind === 'reel' ? 'videos' : kind === 'track' ? 'music' : 'this content type'} is ${maxMb} MB.`
+}
+
 const states = new Map<string, BgUpload>()
 const records = new Map<string, QueueRecord>()
 const running = new Set<string>()
