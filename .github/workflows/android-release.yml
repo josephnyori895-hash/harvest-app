@@ -109,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: harvest-android-${{ github.run_number }}, path: android}
+        with: {name: harvest-android-${{ github.run_number }}, path: .}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: "21", cache: gradle}
       - name: Restore keystore
@@ -192,6 +192,22 @@ jobs:
           cp apk/app-release.apk workers/public/harvest-family.apk
           cp apk/app-release.apk workers/public/${{ needs.apk-fingerprint.outputs.filename }}
           cp apk/app-release.apk workers/downloads/${{ needs.apk-fingerprint.outputs.filename }}
+
+          # Preserve the previous verified APK in the same deployment so the rollback gate can exercise a real rollback.
+          RUNS_JSON="$(curl --fail --silent --show-error -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
+          PREVIOUS="$(printf "%s" "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" "[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number,id,head_sha}] | sort_by(.run_number) | last | [.run_number,.id,.head_sha] | @tsv")"
+          if [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "null" ]; then
+            PRUN="$(printf "%s" "$PREVIOUS" | cut -f1)"; PID="$(printf "%s" "$PREVIOUS" | cut -f2)"; PSHA="$(printf "%s" "$PREVIOUS" | cut -f3)"
+            PNAME="harvest-family-${PRUN}-${PSHA:0:7}.apk"
+            AID="$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PID/artifacts" | jq -r --arg n "harvest-apk-$PRUN" ".artifacts[] | select(.name == $n and .expired == false) | .id" | head -n1)"
+            if [ -n "$AID" ] && [ "$AID" != "null" ]; then
+              ZIP="$(mktemp)"
+              curl --fail --silent --show-error --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$AID/zip"
+              unzip -p "$ZIP" "*.apk" > "workers/public/$PNAME"
+              rm -f "$ZIP"
+              echo "Previous verified APK staged: $PNAME"
+            fi
+          fi
           test -s workers/public/harvest-family.apk
       - name: Apply D1 migrations
         working-directory: workers
@@ -309,7 +325,7 @@ jobs:
           test -n "$PREV" && test "$PREV" != "null"
           PRUN="$(printf "%s" "$PREV" | cut -f1)"; PID="$(printf "%s" "$PREV" | cut -f2)"; PSHA="$(printf "%s" "$PREV" | cut -f3)"
           PNAME="harvest-family-${PRUN}-${PSHA:0:7}.apk"
-          AID="$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PID/artifacts" | jq -r --arg n "harvest-family-apk-$PRUN" ".artifacts[] | select(.name == $n and .expired == false) | .id" | head -n1)"
+          AID="$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PID/artifacts" | jq -r --arg n "harvest-apk-$PRUN" ".artifacts[] | select(.name == $n and .expired == false) | .id" | head -n1)"
           test -n "$AID" && test "$AID" != "null"
           ZIP="$(mktemp)"; APK="$(mktemp)"; BODY="$(mktemp)"; trap "rm -f $ZIP $APK $BODY" EXIT
           curl --fail --silent --show-error --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$AID/zip"
