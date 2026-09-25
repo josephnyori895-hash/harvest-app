@@ -13,182 +13,186 @@ concurrency:
   group: harvest-android-release
   cancel-in-progress: false
 
+env:
+  API_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+
 jobs:
-  build-deploy:
+  source-integrity:
+    name: "01 Source integrity"
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://harvestfamily-api.harvestfamily.workers.dev/health
-    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: 22
-          cache: npm
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Configure production API URL
-        run: echo "VITE_API_URL=https://harvestfamily-api.harvestfamily.workers.dev" >> "$GITHUB_ENV"
-
-      # Each gate step emits the tail of its output as an ::error::
-      # annotation so the failing command and reason are visible without
-      # log-level repository access.
-      - name: Release preflight validation
-        run: |
+          fetch-depth: 0
+      - run: |
           set -euo pipefail
-          npm run validate:release
-          test -f android/app/src/main/AndroidManifest.xml
+          test "$GITHUB_REF_NAME" = "main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --check
 
-      - name: Release lint
-        run: |
-          set -o pipefail
-          npm run lint 2>&1 | tee /tmp/check-lint.log || { tail -c 1500 /tmp/check-lint.log | tr '\r\n' '  ' | sed 's/^/::error::[lint] /'; exit 1; }
+  release-preflight:
+    name: "02 Release preflight"
+    needs: source-integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: npm run validate:release
 
-      - name: Release typecheck
-        run: |
-          set -o pipefail
-          npm run typecheck 2>&1 | tee /tmp/check-type.log || { tail -c 1500 /tmp/check-type.log | tr '\r\n' '  ' | sed 's/^/::error::[typecheck] /'; exit 1; }
+  frontend-quality:
+    name: "03 Frontend quality"
+    needs: release-preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:all
 
-      - name: Release test:all
-        run: |
-          set -o pipefail
-          npm run test:all 2>&1 | tee /tmp/check-tests.log || { tail -c 1500 /tmp/check-tests.log | tr '\r\n' '  ' | sed 's/^/::error::[test:all] /'; exit 1; }
+  security-audit:
+    name: "04 Security audit"
+    needs: frontend-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: npm audit --audit-level=high
 
-      - name: Release dependency audit
-        run: |
-          set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee /tmp/check-audit.log || { tail -c 1500 /tmp/check-audit.log | tr '\r\n' '  ' | sed 's/^/::error::[audit] /'; exit 1; }
-
-      - name: Release build
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee /tmp/check-build.log || { tail -c 1500 /tmp/check-build.log | tr '\r\n' '  ' | sed 's/^/::error::[build] /'; exit 1; }
-
-      # The Worker hosts the web app too (same origin as the API, APKs and
-      # WhatsApp share landing pages). Stage the fresh build into workers/public
-      # so `wrangler deploy` ships the site together with everything else.
-      - name: Stage web app into Worker assets
-        run: |
-          set -euo pipefail
-          rm -rf workers/public
-          mkdir -p workers/public
-          cp -r dist/. workers/public/
-          rm -f workers/public/_redirects workers/public/_headers
-          cp workers/downloads/harvest-family.apk workers/public/harvest-family.apk
-          echo "Staged web app: $(find workers/public -type f | wc -l) files"
-
-      - name: Setup Java 21
-        uses: actions/setup-java@v4
+  production-build:
+    name: "05 Production build"
+    needs: security-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: echo "VITE_API_URL=$API_BASE_URL" >> "$GITHUB_ENV" && npm run build
+      - run: test -s dist/index.html
+      - uses: actions/upload-artifact@v4
         with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
+          name: harvest-web-${{ github.run_number }}
+          path: dist
+          retention-days: 14
 
-      - name: Set Android version
-        run: |
-          echo "HARVEST_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "HARVEST_VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+  android-prepare:
+    name: "06 Android prepare"
+    needs: production-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: harvest-web-${{ github.run_number }}, path: dist}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21", cache: gradle}
+      - run: npm ci
+      - run: npx cap sync android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harvest-android-${{ github.run_number }}
+          path: android
+          retention-days: 14
 
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Restore Android release keystore
+  signed-apk:
+    name: "07 Signed APK"
+    needs: android-prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: harvest-android-${{ github.run_number }}, path: android}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21", cache: gradle}
+      - name: Restore keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "::error::ANDROID_KEYSTORE_BASE64 is not configured"; exit 1; }
-          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::ANDROID_KEYSTORE_PASSWORD is not configured"; exit 1; }
-          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::ANDROID_KEY_ALIAS is not configured"; exit 1; }
-          test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::ANDROID_KEY_PASSWORD is not configured"; exit 1; }
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/harvest-release.keystore
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf "%s" "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/harvest-release.keystore
           cat > android/keystore.properties <<EOF
           storeFile=$GITHUB_WORKSPACE/android/harvest-release.keystore
           storePassword=$ANDROID_KEYSTORE_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
-
-      - name: Build signed release APK
-        working-directory: android
+      - working-directory: android
         run: ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Verify APK signature and metadata
+      - name: Verify signed APK
         run: |
-          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
-          test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose "$APK"
-          echo "APK SHA256:"
-          sha256sum "$APK"
-          echo "APK size:"
-          stat -c '%s bytes' "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: harvest-apk-${{ github.run_number }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
 
-      - name: Stage versioned APK
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+  apk-fingerprint:
+    name: "08 APK fingerprint"
+    needs: signed-apk
+    runs-on: ubuntu-latest
+    outputs:
+      filename: ${{ steps.fp.outputs.filename }}
+      sha: ${{ steps.fp.outputs.sha }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: harvest-apk-${{ github.run_number }}, path: apk}
+      - id: fp
+        run: |
+          SHA="$(sha256sum apk/app-release.apk | cut -d" " -f1)"
+          NAME="harvest-family-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "filename=$NAME" >> "$GITHUB_OUTPUT"
+          echo "$SHA  $NAME" > fingerprint.txt
+      - uses: actions/upload-artifact@v4
+        with: {name: harvest-fingerprint-${{ github.run_number }}, path: fingerprint.txt, retention-days: 14}
+
+  deploy-production:
+    name: "09 Deploy production"
+    needs: apk-fingerprint
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://harvestfamily-api.harvestfamily.workers.dev/health
+    outputs:
+      filename: ${{ needs.apk-fingerprint.outputs.filename }}
+      sha: ${{ needs.apk-fingerprint.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {name: harvest-web-${{ github.run_number }}, path: dist}
+      - uses: actions/download-artifact@v4
+        with: {name: harvest-apk-${{ github.run_number }}, path: apk}
+      - run: npm ci --prefix workers
+      - name: Stage exact APK and web assets
+        env: {GITHUB_TOKEN: ${{ github.token }}}
         run: |
           set -euo pipefail
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-          APK_FILENAME="harvest-family-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}.apk"
-          APK_PATH="workers/downloads/$APK_FILENAME"
-          cp "$APK" "$APK_PATH"
-          test -s "$APK_PATH"
-
-          # Re-stage the previous successful release's versioned APK so the
-          # current deployment still hosts it. Workers static assets are
-          # replaced wholesale on every deploy and "wrangler versions deploy"
-          # cannot revive an old version's asset manifest, so hosting the
-          # previous APK under the current assets is what makes rollback to
-          # the previous release possible at all.
-          RUNS_JSON="$(curl --fail --silent --show-error --max-time 60 -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
-          PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, id, head_sha}] | sort_by(.run_number) | last | [.run_number, .id, .head_sha] | @tsv')"
-          if [ -n "$PREVIOUS_RELEASE" ] && [ "$PREVIOUS_RELEASE" != "null" ]; then
-            PREVIOUS_RUN="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f1)"
-            PREVIOUS_RUN_ID="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f2)"
-            PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f3)"
-            PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
-            if [ "$PREVIOUS_APK_FILENAME" != "$APK_FILENAME" ] && [ ! -s "workers/downloads/$PREVIOUS_APK_FILENAME" ]; then
-              ARTIFACT_ID="$(curl --fail --silent --show-error --max-time 60 -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
-              if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
-                PREVIOUS_ZIP="$(mktemp)"
-                if curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$PREVIOUS_ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"; then
-                  unzip -p "$PREVIOUS_ZIP" '*.apk' > "workers/downloads/$PREVIOUS_APK_FILENAME"
-                  echo "Re-staged previous release APK: $PREVIOUS_APK_FILENAME ($(stat -c '%s' "workers/downloads/$PREVIOUS_APK_FILENAME") bytes)"
-                else
-                  echo "::warning::Could not download previous release artifact; rollback drill may be unable to verify"
-                fi
-                rm -f "$PREVIOUS_ZIP"
-              else
-                echo "::warning::Previous release artifact harvest-family-apk-$PREVIOUS_RUN not found (expired?); rollback drill may be unable to verify"
-              fi
-            fi
-            echo "PREVIOUS_APK_FILENAME=$PREVIOUS_APK_FILENAME" >> "$GITHUB_ENV"
-          else
-            echo "::warning::No previous successful Android release found; skipping previous APK re-staging"
-          fi
-
-          LOCAL_SHA="$(sha256sum "$APK_PATH" | cut -d' ' -f1)"
-          APK_SIZE="$(stat -c '%s' "$APK_PATH")"
-          echo "APK_FILENAME=$APK_FILENAME" >> "$GITHUB_ENV"
-          echo "LOCAL_SHA=$LOCAL_SHA" >> "$GITHUB_ENV"
-          echo "APK_SIZE=$APK_SIZE" >> "$GITHUB_ENV"
-          echo "Versioned APK: $APK_FILENAME"
-          echo "LOCAL SHA256: $LOCAL_SHA"
-          echo "APK size: $APK_SIZE bytes"
-
-      - name: Install Worker dependencies
-        run: npm ci --prefix workers
-
+          rm -rf workers/public
+          mkdir -p workers/public workers/downloads
+          cp -r dist/. workers/public/
+          cp apk/app-release.apk workers/public/harvest-family.apk
+          cp apk/app-release.apk workers/public/${{ needs.apk-fingerprint.outputs.filename }}
+          cp apk/app-release.apk workers/downloads/${{ needs.apk-fingerprint.outputs.filename }}
+          test -s workers/public/harvest-family.apk
       - name: Apply D1 migrations
         working-directory: workers
         env:
@@ -196,285 +200,135 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ADMIN_PIN_HASHES: ${{ secrets.ADMIN_PIN_HASHES }}
         run: |
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-          test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required before applying the security migration"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID"; test -n "$CLOUDFLARE_API_TOKEN"; test -n "$ADMIN_PIN_HASHES"
           npx wrangler d1 migrations apply DB --remote
-
-      - name: Deploy Worker and versioned APK
+      - name: Deploy exact release
         working-directory: workers
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ADMIN_PIN_HASHES: ${{ secrets.ADMIN_PIN_HASHES }}
-        run: |
-          set -euo pipefail
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
-          test -n "$ADMIN_PIN_HASHES" || { echo "::error::ADMIN_PIN_HASHES is required"; exit 1; }
-          test -n "$APK_FILENAME" || { echo "::error::APK_FILENAME is not set"; exit 1; }
-          test -s "downloads/$APK_FILENAME" || { echo "::error::Versioned APK is missing"; exit 1; }
-          test -s "public/harvest-family.apk" || { echo "::error::Web app assets are missing (workers/public not staged)"; exit 1; }
-          test -s "public/index.html" || { echo "::error::Web app index.html is missing"; exit 1; }
-          # The assets directory is public/ now — bring the staged versioned APKs
-          # (current + previous release for rollback) into it before deploying.
-          cp downloads/harvest-family-*.apk public/ 2>/dev/null || true
-          test -s "public/$APK_FILENAME" || { echo "::error::Versioned APK missing from public assets"; exit 1; }
-          npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
+        run: npx wrangler deploy --var "RELEASE_APK_FILENAME:${{ needs.apk-fingerprint.outputs.filename }}"
 
-      - name: Authenticated production smoke test
-        env:
-          SMOKE_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+  production-smoke:
+    name: "10 Production smoke"
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - env:
+          SMOKE_BASE_URL: ${{ env.API_BASE_URL }}
           SMOKE_USERNAME: ${{ secrets.E2E_USERNAME }}
           SMOKE_PIN: ${{ secrets.E2E_PIN }}
         run: npm run smoke
 
-      - name: Browser E2E — ImageAdjuster aspect ratios
+  browser-e2e:
+    name: "11 Browser E2E"
+    needs: production-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - name: ImageAdjuster E2E
         env:
-          E2E_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
-          E2E_API_URL: https://harvestfamily-api.harvestfamily.workers.dev
+          E2E_BASE_URL: ${{ env.API_BASE_URL }}
+          E2E_API_URL: ${{ env.API_BASE_URL }}
           E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
           E2E_PIN: ${{ secrets.E2E_PIN }}
         run: |
-          set -euo pipefail
           CHROME_PATH="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
-          test -n "$CHROME_PATH" || { echo "::error::No Chromium/Chrome executable found on runner"; exit 1; }
+          test -n "$CHROME_PATH"
           E2E_CHROME_PATH="$CHROME_PATH" npm run test:e2e:image-adjuster
 
-      - name: Verify exact versioned production APK
-        env:
-          APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+  verify-versioned-apk:
+    name: "12 Verify versioned APK"
+    needs: [deploy-production, browser-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          URL: ${{ env.API_BASE_URL }}/${{ needs.deploy-production.outputs.filename }}
+          EXPECTED: ${{ needs.deploy-production.outputs.sha }}
         run: |
           set -euo pipefail
-          VERSIONED_URL="$APK_BASE_URL/$APK_FILENAME"
-          # Assets can briefly 404 - or an edge can serve a stale 200 from the
-          # previous deployment - right after a deploy while Cloudflare
-          # propagates, and curl --retry never retries 404s. Poll until the
-          # versioned APK serves with the exact expected bytes.
-          LIVE_SHA=""
-          BODY_FILE="$(mktemp)"
-          trap 'rm -f "$BODY_FILE"' EXIT
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            STATUS="$(curl --silent --show-error --location --max-time 120 --write-out '%{http_code}' -o "$BODY_FILE" "$VERSIONED_URL" || echo 000)"
-            if [ "$STATUS" = "200" ]; then
-              CANDIDATE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-              if [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
-                LIVE_SHA="$CANDIDATE_SHA"
-                echo "Versioned APK: HTTP 200, SHA matched (attempt $attempt)"
-                break
-              fi
-              echo "Attempt $attempt: HTTP 200 but stale SHA (propagation?); retrying..."
-            else
-              echo "Attempt $attempt: HTTP $STATUS for versioned APK; retrying..."
-            fi
+          B="$(mktemp)"; trap "rm -f $B" EXIT
+          for i in {1..10}; do
+            STATUS="$(curl --silent --show-error --location --max-time 120 --write-out "%{http_code}" -o "$B" "$URL" || true)"
+            [ "$STATUS" = 200 ] && [ "$(sha256sum "$B" | cut -d" " -f1)" = "$EXPECTED" ] && exit 0
             sleep 15
           done
-          test -n "$LIVE_SHA" || { echo "::error::Versioned APK $VERSIONED_URL never returned HTTP 200 after deploy"; exit 1; }
-          echo "LOCAL SHA256: $LOCAL_SHA"
-          echo "LIVE SHA256:  $LIVE_SHA"
-          test "$LOCAL_SHA" = "$LIVE_SHA"
-          echo "Versioned production APK verified: $VERSIONED_URL"
+          echo "::error::Versioned APK SHA mismatch or unavailable"; exit 1
 
-      - name: Verify permanent download URL resolves to exact production APK
-        env:
-          APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
+  verify-permanent-apk:
+    name: "13 Verify permanent APK"
+    needs: [deploy-production, verify-versioned-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          URL: ${{ env.API_BASE_URL }}/harvest-family.apk
+          EXPECTED: ${{ needs.deploy-production.outputs.sha }}
+          FILENAME: ${{ needs.deploy-production.outputs.filename }}
         run: |
           set -euo pipefail
-          PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
-          HEADER_FILE="$(mktemp)"
-          BODY_FILE="$(mktemp)"
-          trap 'rm -f "$HEADER_FILE" "$BODY_FILE"' EXIT
-
-          # A newly deployed Worker can briefly race with the edge that serves
-          # the previous Worker version. A stale HTTP 200 is therefore treated
-          # like a propagation miss rather than an immediate release failure.
-          LIVE_PERMANENT_SHA=""
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            : > "$HEADER_FILE"
-            : > "$BODY_FILE"
-            curl --silent --show-error --max-time 120 -D "$HEADER_FILE" -o "$BODY_FILE" "$PERMANENT_URL" || true
-
-            STATUS_LINE="$(head -n 1 "$HEADER_FILE" | tr -d '\r' | sed 's/[[:space:]]*$//')"
-            CACHE_CONTROL="$(awk 'BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-            CONTENT_DISPOSITION="$(awk 'BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$HEADER_FILE")"
-
-            if [ "$STATUS_LINE" = "HTTP/2 200" ] || [ "$STATUS_LINE" = "HTTP/1.1 200 OK" ]; then
-              CANDIDATE_SHA="$(sha256sum "$BODY_FILE" | cut -d' ' -f1)"
-              echo "Attempt $attempt: $STATUS_LINE; SHA=$CANDIDATE_SHA; disposition=$CONTENT_DISPOSITION"
-
-              if [ "$CACHE_CONTROL" = "no-store, max-age=0" ] &&
-                 [ "$CONTENT_DISPOSITION" = "attachment; filename=\"$APK_FILENAME\"" ] &&
-                 [ "$CANDIDATE_SHA" = "$LOCAL_SHA" ]; then
-                LIVE_PERMANENT_SHA="$CANDIDATE_SHA"
-                echo "Permanent URL: HTTP 200, headers and SHA matched (attempt $attempt)"
-                break
-              fi
-
-              echo "Attempt $attempt: stale/mismatched permanent APK response; retrying..."
-            else
-              echo "Attempt $attempt: $STATUS_LINE (propagation?); retrying..."
-            fi
+          H="$(mktemp)"; B="$(mktemp)"; trap "rm -f $H $B" EXIT
+          for i in {1..10}; do
+            curl --silent --show-error --max-time 120 -D "$H" -o "$B" "$URL" || true
+            CACHE="$(awk "BEGIN{IGNORECASE=1} /^Cache-Control:/ {sub(/^Cache-Control:[[:space:]]*/,""); sub(/\r$/,""); print; exit}" "$H")"
+            DISP="$(awk "BEGIN{IGNORECASE=1} /^Content-Disposition:/ {sub(/^Content-Disposition:[[:space:]]*/,""); sub(/\r$/,""); print; exit}" "$H")"
+            LIVE="$(sha256sum "$B" | cut -d" " -f1)"
+            if grep -q "200" "$H" && [ "$CACHE" = "no-store, max-age=0" ] && [ "$DISP" = "attachment; filename=\"$FILENAME\"" ] && [ "$LIVE" = "$EXPECTED" ]; then exit 0; fi
             sleep 15
           done
+          echo "::error::Permanent APK verification failed"; exit 1
 
-          test -n "$LIVE_PERMANENT_SHA" || {
-            echo "::error::Permanent URL did not serve this release's APK with the expected headers and SHA after propagation window"
-            echo "::error::Expected filename: $APK_FILENAME"
-            echo "::error::Expected SHA256: $LOCAL_SHA"
-            exit 1
-          }
-
-          echo "LOCAL SHA256:          $LOCAL_SHA"
-          echo "PERMANENT LIVE SHA256: $LIVE_PERMANENT_SHA"
-          test "$LOCAL_SHA" = "$LIVE_PERMANENT_SHA"
-          echo "Permanent APK URL verified: $PERMANENT_URL"
-
-      - name: Verify permanent APK rollback to previous verified release
-        working-directory: workers
+  rollback-and-restore:
+    name: "14 Rollback and restore"
+    needs: [deploy-production, verify-permanent-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci --prefix workers
+      - name: Verify previous release, rollback, and restore
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          APK_BASE_URL: https://harvestfamily-api.harvestfamily.workers.dev
           GITHUB_TOKEN: ${{ github.token }}
+          CURRENT: ${{ needs.deploy-production.outputs.filename }}
+          CURRENT_SHA: ${{ needs.deploy-production.outputs.sha }}
+        working-directory: workers
         run: |
           set -euo pipefail
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
+          RUNS="$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20")"
+          PREV="$(printf "%s" "$RUNS" | jq -r --arg w "Harvest Android APK Release" --argjson c "$GITHUB_RUN_NUMBER" "[.workflow_runs[] | select(.name == $w and .run_number < $c) | {run_number,id,head_sha}] | sort_by(.run_number) | last | [.run_number,.id,.head_sha] | @tsv")"
+          test -n "$PREV" && test "$PREV" != "null"
+          PRUN="$(printf "%s" "$PREV" | cut -f1)"; PID="$(printf "%s" "$PREV" | cut -f2)"; PSHA="$(printf "%s" "$PREV" | cut -f3)"
+          PNAME="harvest-family-${PRUN}-${PSHA:0:7}.apk"
+          AID="$(curl --fail --silent --show-error -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PID/artifacts" | jq -r --arg n "harvest-family-apk-$PRUN" ".artifacts[] | select(.name == $n and .expired == false) | .id" | head -n1)"
+          test -n "$AID" && test "$AID" != "null"
+          ZIP="$(mktemp)"; APK="$(mktemp)"; BODY="$(mktemp)"; trap "rm -f $ZIP $APK $BODY" EXIT
+          curl --fail --silent --show-error --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$AID/zip"
+          unzip -p "$ZIP" "*.apk" > "$APK"; PREVSHA="$(sha256sum "$APK" | cut -d" " -f1)"
+          npx wrangler deploy --var "RELEASE_APK_FILENAME:$PNAME"
+          for i in {1..10}; do sleep 10; curl --silent --show-error -o "$BODY" "$API_BASE_URL/harvest-family.apk" || true; [ "$(sha256sum "$BODY" | cut -d" " -f1)" = "$PREVSHA" ] && break; done
+          test "$(sha256sum "$BODY" | cut -d" " -f1)" = "$PREVSHA"
+          npx wrangler deploy --var "RELEASE_APK_FILENAME:$CURRENT"
+          for i in {1..10}; do sleep 10; curl --silent --show-error -o "$BODY" "$API_BASE_URL/harvest-family.apk" || true; [ "$(sha256sum "$BODY" | cut -d" " -f1)" = "$CURRENT_SHA" ] && break; done
+          test "$(sha256sum "$BODY" | cut -d" " -f1)" = "$CURRENT_SHA"
 
-          fetch_json() {
-            # fetch_json <label> <url> [extra curl options...]
-            local label="$1" url="$2"
-            shift 2
-            local output
-            if ! output="$(curl --fail --silent --show-error --max-time 60 "$@" "$url")"; then
-              echo "::error::$label request failed"
-              exit 1
-            fi
-            printf '%s' "$output"
-          }
-
-          RUNS_JSON="$(fetch_json "GitHub Actions runs list" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs?branch=main&status=success&per_page=20" -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN")"
-          PREVIOUS_RELEASE="$(printf '%s' "$RUNS_JSON" | jq -r --arg workflow "Harvest Android APK Release" --argjson current "$GITHUB_RUN_NUMBER" '[.workflow_runs[] | select(.name == $workflow and .run_number < $current) | {run_number, id, head_sha}] | sort_by(.run_number) | last | [.run_number, .id, .head_sha] | @tsv')"
-          test -n "$PREVIOUS_RELEASE" && test "$PREVIOUS_RELEASE" != "null" || { echo "::error::No previous successful Android release found"; exit 1; }
-          PREVIOUS_RUN="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f1)"
-          PREVIOUS_RUN_ID="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f2)"
-          PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f3)"
-          PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
-          PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
-          echo "Previous verified run:   #$PREVIOUS_RUN ($PREVIOUS_APK_FILENAME)"
-
-          # Ground truth: the previous run's uploaded APK artifact. It is
-          # byte-identical to the versioned APK that run deployed, and unlike
-          # the live versioned URL it survives subsequent asset deployments.
-          ARTIFACTS_JSON="$(fetch_json "Previous run artifacts" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" -H "Authorization: Bearer $GITHUB_TOKEN")"
-          ARTIFACT_ID="$(printf '%s' "$ARTIFACTS_JSON" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
-          test -n "$ARTIFACT_ID" && test "$ARTIFACT_ID" != "null" || { echo "::error::Artifact harvest-family-apk-$PREVIOUS_RUN not found (expired or retained <14 days?)"; exit 1; }
-
-          PREVIOUS_ZIP="$(mktemp)"
-          PREVIOUS_BODY="$(mktemp)"
-          ROLLBACK_BODY="$(mktemp)"
-          cleanup() { rm -f "$PREVIOUS_ZIP" "$PREVIOUS_BODY" "$ROLLBACK_BODY"; }
-          trap 'cleanup' EXIT
-
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -o "$PREVIOUS_ZIP" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"
-          unzip -p "$PREVIOUS_ZIP" '*.apk' > "$PREVIOUS_BODY"
-          test -s "$PREVIOUS_BODY" || { echo "::error::Previous APK artifact body is empty"; exit 1; }
-          PREVIOUS_SHA="$(sha256sum "$PREVIOUS_BODY" | cut -d' ' -f1)"
-          echo "Previous verified SHA256: $PREVIOUS_SHA"
-
-          # Cross-check: the current deployment's assets must already host the
-          # re-staged previous APK (see the staging step) with identical bytes.
-          STAGED_STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$APK_BASE_URL/$PREVIOUS_APK_FILENAME" || echo 000)"
-          if [ "$STAGED_STATUS" != "200" ] || [ "$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)" != "$PREVIOUS_SHA" ]; then
-            echo "::error::Previous APK $PREVIOUS_APK_FILENAME is not correctly hosted by the current deployment (HTTP $STAGED_STATUS)"
-            exit 1
-          fi
-          echo "Previous APK re-staged in current assets and byte-verified."
-
-          # Rollback drill, done the way a real rollback works: redeploy the
-          # Worker pointing at the previous release's APK filename. Old Worker
-          # versions cannot revive their asset manifests on workers.dev, so
-          # activating a previous version does NOT restore its APK - but the
-          # previous APK itself is hosted in the current deployment's assets
-          # (re-staged before the deploy), making the filename swap fully
-          # deterministic.
-          echo "Rolling back: redeploying Worker with $PREVIOUS_APK_FILENAME..."
-          npx wrangler deploy --var "RELEASE_APK_FILENAME:$PREVIOUS_APK_FILENAME"
-
-          ROLLBACK_SHA=""
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            sleep 10
-            STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
-            if [ "$STATUS" = "200" ]; then
-              CANDIDATE_SHA="$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)"
-              if [ "$CANDIDATE_SHA" = "$PREVIOUS_SHA" ]; then
-                echo "Rollback permanent URL: HTTP 200, SHA matched (attempt $attempt)"
-                ROLLBACK_SHA="$CANDIDATE_SHA"
-                break
-              fi
-              echo "Attempt $attempt: HTTP 200 but SHA $CANDIDATE_SHA != $PREVIOUS_SHA (propagation?)"
-            else
-              echo "Attempt $attempt: HTTP $STATUS"
-            fi
-          done
-          test -n "$ROLLBACK_SHA" || { echo "::error::Rollback drill failed: permanent URL never served the previous release APK ($PREVIOUS_SHA)"; exit 1; }
-
-          echo "Restoring current release: redeploying Worker with $APK_FILENAME..."
-          npx wrangler deploy --var "RELEASE_APK_FILENAME:$APK_FILENAME"
-
-          RESTORE_SHA=""
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            sleep 10
-            STATUS="$(curl --silent --show-error --max-time 120 --write-out '%{http_code}' -o "$ROLLBACK_BODY" "$PERMANENT_URL" || echo 000)"
-            if [ "$STATUS" = "200" ] && [ "$(sha256sum "$ROLLBACK_BODY" | cut -d' ' -f1)" = "$LOCAL_SHA" ]; then
-              echo "Restore to current: HTTP 200, SHA matched (attempt $attempt)"
-              RESTORE_SHA="$LOCAL_SHA"
-              break
-            fi
-            echo "Attempt $attempt: restore not confirmed (HTTP $STATUS)"
-          done
-          test -n "$RESTORE_SHA" || { echo "::error::Failed to confirm restore of current release ($APK_FILENAME)"; exit 1; }
-
-          trap - EXIT
-          cleanup
-          echo "Permanent APK rollback drill passed (rollback to run #$PREVIOUS_RUN verified and restored)."
-      - name: Write release proof
-        if: success()
-        run: |
-          set -euo pipefail
-          mkdir -p release-proof
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-          SHA256="$(sha256sum "$APK" | cut -d' ' -f1)"
-          cat > release-proof/release.json <<EOF
-{
-  "workflow": "Harvest Android APK Release",
-  "run_number": "$GITHUB_RUN_NUMBER",
-  "run_id": "$GITHUB_RUN_ID",
-  "git_sha": "$GITHUB_SHA",
-  "apk_filename": "$APK_FILENAME",
-  "apk_sha256": "$SHA256",
-  "apk_size": "$(stat -c '%s' "$APK")",
-  "versioned_url": "https://harvestfamily-api.harvestfamily.workers.dev/$APK_FILENAME",
-  "permanent_url": "https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk",
-  "release_proof": "all preceding release gates passed"
-}
-EOF
-          cat release-proof/release.json
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: harvest-family-apk-${{ github.run_number }}
-          path: |
-            android/app/build/outputs/apk/release/app-release.apk
-            release-proof/release.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Cleanup signing material
-        if: always()
-        run: |
-          rm -f android/harvest-release.keystore android/keystore.properties
+  release:
+    name: "RELEASED — all 14 gates passed"
+    needs: [source-integrity, release-preflight, frontend-quality, security-audit, production-build, android-prepare, signed-apk, apk-fingerprint, deploy-production, production-smoke, browser-e2e, verify-versioned-apk, verify-permanent-apk, rollback-and-restore]
+    if: ${{ success() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "HARVEST FAMILY APK RELEASED"
+          echo "Commit: $GITHUB_SHA"
+          echo "Run: #$GITHUB_RUN_NUMBER"
+          echo "All 14 release gates passed."
