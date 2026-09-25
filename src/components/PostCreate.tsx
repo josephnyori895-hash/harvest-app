@@ -170,6 +170,7 @@ export default function PostCreate({ onDone }: Props) {
 
   return (
     <main className="min-h-[calc(100vh-72px)] bg-[#FFFBF0] text-[#29251F] pb-8">
+      <>
       <header className="sticky top-0 z-10 flex items-center justify-between px-4 h-16 bg-[#FFFBF0]/95 backdrop-blur border-b border-[#E8DEC9]">
         <button onClick={onDone} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Close">×</button>
         <div className="text-center"><p className="text-[11px] uppercase tracking-[0.16em] text-[#766E63]">Harvest Family</p><h1 className="font-extrabold text-base">{isAdmin ? 'Admin studio' : 'Share a moment'}</h1></div>
@@ -251,6 +252,7 @@ export default function PostCreate({ onDone }: Props) {
         {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
       </section>
 
+      </>
       {adjusting && file && file.type.startsWith('image/') && (
         <ImageAdjuster
           file={file}
