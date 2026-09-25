@@ -131,6 +131,13 @@ function InnerApp() {
     setBackTarget('search')
     setTab('reels')
   }
+  // Search → Sermons deep link: auto-open the matched sermon.
+  const [searchSermonId, setSearchSermonId] = useState(null)
+  const openSermonFromSearch = (sermonId) => {
+    setSearchSermonId(sermonId)
+    setBackTarget('search')
+    setTab('sermons')
+  }
 
   const handleTab = (t) => {
     if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
@@ -261,7 +268,7 @@ function InnerApp() {
       <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
-          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={() => { setBackTarget('search'); setTab('sermons') }} onOpenReel={openReelFromSearch} />}
+          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
@@ -281,7 +288,7 @@ function InnerApp() {
           )}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
-          {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} />}
+          {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
           {tab === 'give' && <Give />}
           {tab === 'map' && <HarvestMap users={users} />}
           {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} />}

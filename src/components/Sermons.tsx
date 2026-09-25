@@ -22,7 +22,7 @@ function fmtDur(sec: number) {
 
 // Sermons — admin-published audio (mp3) & video (mp4) teachings.
 // Members stream in the app or download the original file.
-export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verified: boolean }) {
+export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isAdmin: boolean; verified: boolean; focusId?: string | null; onFocused?: () => void }) {
   const [sermons, setSermons] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -57,6 +57,15 @@ export default function Sermons({ isAdmin, verified }: { isAdmin: boolean; verif
   }, [])
 
   useEffect(load, [load])
+
+  // Deep link (e.g. from search): auto-open the requested sermon once loaded.
+  useEffect(() => {
+    if (!focusId || loading || sermons.length === 0) return
+    const target = sermons.find((s: any) => String(s.id) === String(focusId))
+    if (target) setPlaying(String(focusId))
+    onFocused?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId, loading, sermons])
 
   useEffect(() => {
     fetch(`${API}/api/me`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).then(d => setCanManageSermons(isAdmin || (d?.grants || []).includes('manage_sermons'))).catch(() => setCanManageSermons(isAdmin))

@@ -35,23 +35,24 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   onOpenUser?: (u: any) => void
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
-  onOpenSermons?: () => void
+  onOpenSermons?: (sermonId: string) => void
   onOpenReel?: (reelId: string) => void
 }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [recent, setRecent] = useState<any[]>([])
-  // Lazy-loaded search corpora (null = not fetched yet).
-  const [groups, setGroups] = useState<any[] | null>(null)
-  const [departments, setDepartments] = useState<any[] | null>(null)
-  const [reels, setReels] = useState<any[] | null>(null)
-  const [sermons, setSermons] = useState<any[] | null>(null)
-  const [loadFailed, setLoadFailed] = useState(false)
+  // Lazy-loaded search corpora. null = not fetched, 'error' = failed (retryable).
+  const [groups, setGroups] = useState<any[] | 'error' | null>(null)
+  const [departments, setDepartments] = useState<any[] | 'error' | null>(null)
+  const [reels, setReels] = useState<any[] | 'error' | null>(null)
+  const [sermons, setSermons] = useState<any[] | 'error' | null>(null)
+  const [bump, setBump] = useState(0) // retry counter for failed corpora
 
   const query = q.trim().toLowerCase()
   const showGrid = query === ''
 
-  // Everything except members comes from the API — fetch when a search starts.
+  // Everything except members comes from the API — fetch once per session,
+  // retryable via the error banner. `bump` in deps drives the retry.
   useEffect(() => {
     if (showGrid) return
     let cancelled = false
@@ -59,15 +60,20 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     const want = filter === 'all' || filter === 'places'
       ? ['groups', 'departments', 'reels', 'sermons']
       : [filter]
-    const missing = want.filter(k => need[k as keyof typeof need] === null)
+    const missing = want.filter(k => need[k as keyof typeof need] === null || need[k as keyof typeof need] === 'error')
     if (!missing.length) return
-    if (missing.includes('groups')) fetch(`${API}/api/groups`, { headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject()).then(d => { if (!cancelled) setGroups(Array.isArray(d.groups) ? d.groups : []) }).catch(() => { if (!cancelled) setLoadFailed(true) })
-    if (missing.includes('departments')) fetch(`${API}/api/departments`, { headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject()).then(d => { if (!cancelled) setDepartments(Array.isArray(d.departments) ? d.departments : []) }).catch(() => { if (!cancelled) setLoadFailed(true) })
-    if (missing.includes('reels')) fetch(`${API}/api/reels?limit=50`, { headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject()).then(d => { if (!cancelled) setReels(Array.isArray(d.reels) ? d.reels : []) }).catch(() => { if (!cancelled) setLoadFailed(true) })
-    if (missing.includes('sermons')) fetch(`${API}/api/sermons?limit=50`, { headers: authHeaders() }).then(r => r.ok ? r.json() : Promise.reject()).then(d => { if (!cancelled) setSermons(Array.isArray(d.sermons) ? d.sermons : []) }).catch(() => { if (!cancelled) setLoadFailed(true) })
+    const get = (key: string, url: string, pick: (d: any) => any, set: (v: any) => void) =>
+      fetch(url, { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+        .then(d => { if (!cancelled) set(pick(d)) })
+        .catch(() => { if (!cancelled) set('error') })
+    if (missing.includes('groups')) get('groups', `${API}/api/groups`, d => Array.isArray(d.groups) ? d.groups : [], setGroups)
+    if (missing.includes('departments')) get('departments', `${API}/api/departments`, d => Array.isArray(d.departments) ? d.departments : [], setDepartments)
+    if (missing.includes('reels')) get('reels', `${API}/api/reels?limit=50`, d => Array.isArray(d.reels) ? d.reels : [], setReels)
+    if (missing.includes('sermons')) get('sermons', `${API}/api/sermons?limit=50`, d => Array.isArray(d.sermons) ? d.sermons : [], setSermons)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showGrid, filter, query])
+  }, [showGrid, filter, query, bump])
 
   // Real "explore" grid: latest approved posts from the community feed.
   useEffect(() => {
@@ -80,36 +86,54 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     return () => { cancelled = true }
   }, [showGrid])
 
+  // Relevance: starts-with > word-start > contains. Keeps "bon" → "Bonkey"
+  // above a member whose bio merely mentions "bonfire".
+  const rank = (text: string): number => {
+    const t = String(text || '').toLowerCase()
+    if (!t) return 3
+    if (t.startsWith(query)) return 0
+    const words = t.split(/[\s_.@-]+/)
+    if (words.some(w => w.startsWith(query))) return 1
+    return t.includes(query) ? 2 : 3
+  }
+  const byRank = (getTexts: (item: any) => string[]) => (a: any, b: any) => {
+    const ra = Math.min(...getTexts(a).map(rank))
+    const rb = Math.min(...getTexts(b).map(rank))
+    return ra - rb
+  }
+
   const memberHits = useMemo(() => query === '' ? [] : users.filter(u =>
     (u.username || '').toLowerCase().includes(query) ||
     (u.name || '').toLowerCase().includes(query) ||
     (u.group_name || u.group || '').toLowerCase().includes(query)
-  ), [users, query])
+  ).sort(byRank(u => [u.name || u.username, u.username])), [users, query])
 
-  const groupHits = useMemo(() => query === '' || !groups ? [] : groups.filter(g =>
+  const groupHits = useMemo(() => query === '' || !Array.isArray(groups) ? [] : groups.filter(g =>
     (g.name || '').toLowerCase().includes(query) ||
     (g.description || '').toLowerCase().includes(query) ||
     (g.community || '').toLowerCase().includes(query)
-  ), [groups, query])
+  ).sort(byRank(g => [g.name, g.community || ''])), [groups, query])
 
-  const departmentHits = useMemo(() => query === '' || !departments ? [] : departments.filter(d =>
+  const departmentHits = useMemo(() => query === '' || !Array.isArray(departments) ? [] : departments.filter(d =>
     (d.name || '').toLowerCase().includes(query) ||
     (d.description || '').toLowerCase().includes(query)
-  ), [departments, query])
+  ).sort(byRank(d => [d.name])), [departments, query])
 
-  const reelHits = useMemo(() => query === '' || !reels ? [] : reels.filter(r =>
+  const reelHits = useMemo(() => query === '' || !Array.isArray(reels) ? [] : reels.filter(r =>
     (r.caption || '').toLowerCase().includes(query) ||
     (r.username || '').toLowerCase().includes(query)
   ), [reels, query])
 
-  const sermonHits = useMemo(() => query === '' || !sermons ? [] : sermons.filter(s =>
+  const sermonHits = useMemo(() => query === '' || !Array.isArray(sermons) ? [] : sermons.filter(s =>
     (s.title || '').toLowerCase().includes(query) ||
     (s.speaker || '').toLowerCase().includes(query) ||
     (s.scripture || '').toLowerCase().includes(query) ||
     (s.description || '').toLowerCase().includes(query)
-  ), [sermons, query])
+  ).sort(byRank(s => [s.title, s.speaker || ''])), [sermons, query])
 
   // Places: members' congregation/location text plus groups' area labels.
+  // NOTE: non-mutual members' exact location is nulled by the server for
+  // privacy — group_name/constituency still match, which is by design.
   const placeHits = useMemo(() => {
     if (query === '') return [] as { kind: 'member' | 'group'; item: any }[]
     const out: { kind: 'member' | 'group'; item: any }[] = []
@@ -118,14 +142,19 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
       (u.group_name || u.group || '').toLowerCase().includes(query) ||
       (u.constituency || '').toLowerCase().includes(query)
     ).forEach(item => out.push({ kind: 'member', item }))
-    ;(groups || []).filter(g =>
+    ;(Array.isArray(groups) ? groups : []).filter(g =>
       (g.location_label || '').toLowerCase().includes(query) ||
       (g.community || '').toLowerCase().includes(query)
     ).forEach(item => out.push({ kind: 'group', item }))
     return out
   }, [users, groups, query])
 
-  const loading = !showGrid && (groups === null || departments === null || reels === null || sermons === null) && !loadFailed
+  const loading = !showGrid && [
+    ['groups', groups], ['departments', departments], ['reels', reels], ['sermons', sermons],
+  ].some(([key, v]) => v === null && (filter === 'all' || filter === 'places' || filter === key))
+  const failedCorpora = [
+    ['groups', groups], ['departments', departments], ['reels', reels], ['sermons', sermons],
+  ].filter(([key, v]) => v === 'error' && (filter === 'all' || filter === 'places' || filter === key))
   const totalHits = memberHits.length + groupHits.length + departmentHits.length + reelHits.length + sermonHits.length
 
   const openPost = (p: any) => { onOpenUser?.({ username: p.username, name: p.name }) }
@@ -146,10 +175,12 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-2 pb-8">
       {/* Search bar */}
       <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 border border-[#E8DEC9] shadow-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8175" strokeWidth="1.7"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-[#A49A8E]" />
-        {q && <button onClick={() => setQ('')} className="w-7 h-7 rounded-full bg-[#F4E8D0] text-[#766E63] text-xs font-bold" aria-label="Clear search">✕</button>}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8175" strokeWidth="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" aria-label="Search the church" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-[#A49A8E]" />
+        {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-[#766E63] text-base" aria-label="Clear search">✕</button>}
       </div>
+      {/* Screen-reader announcement of result counts as the query changes. */}
+      <p aria-live="polite" className="sr-only">{showGrid ? '' : loading ? 'Searching…' : `${totalHits} results found`}</p>
 
       {/* Filter chips */}
       <div className="flex gap-1.5 mt-2.5 overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Search filters">
@@ -183,7 +214,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Recent from the community</p>
               <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
                 {recent.map((p, i) => (
-                  <button key={p.id || i} onClick={() => openPost(p)} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
+                  <button key={p.id || i} onClick={() => openPost(p)} aria-label={`Post by ${p.name || p.username}`} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
                     {p.kind === 'reel'
                       ? p.hls_url
                         ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
@@ -199,7 +230,12 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
       ) : (
         <div className="mt-1">
           {loading && <p className="text-sm text-[#8B8175] text-center py-8">Searching…</p>}
-          {!loading && loadFailed && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700 mt-2">Some results may be missing — the church directory couldn't be reached. Check your connection and search again.</div>}
+          {!loading && failedCorpora.length > 0 && (
+            <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 mt-2 flex items-center gap-3">
+              <span className="flex-1">Some results may be missing ({failedCorpora.map(([k]) => k).join(', ')}) — couldn't reach the directory.</span>
+              <button onClick={() => setBump(b => b + 1)} className="shrink-0 px-3 py-2 rounded-full bg-[#7C3AED] text-white text-xs font-bold">Retry</button>
+            </div>
+          )}
 
           {/* ── Members ── */}
           {(filter === 'all' || filter === 'members') && <SectionTitle count={memberHits.length}>Members</SectionTitle>}
@@ -244,8 +280,8 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               {(filter === 'all' ? reelHits.slice(0, 6) : reelHits).map((r, i) => (
                 <button key={r.id || i} onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })} className="aspect-square bg-[#F4E8D0] overflow-hidden relative">
                   {r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
-                    ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                    : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl">🎥</div>}
+                    ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" aria-label={`Reel by ${r.username}`} />
+                    : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
                   <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
                   <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
                 </button>
@@ -258,7 +294,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'sermons') && (
             <div className="space-y-1">
               {(filter === 'all' ? sermonHits.slice(0, 3) : sermonHits).map(s => (
-                <button key={s.id} onClick={() => onOpenSermons?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
+                <button key={s.id} onClick={() => onOpenSermons?.(String(s.id))} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
                   <div className="w-10 h-10 rounded-2xl bg-[#FEF3C7] flex items-center justify-center text-lg shrink-0">📖</div>
                   <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{s.title}</p><p className="text-xs text-[#766E63] truncate">{[s.speaker, s.scripture, fmtDuration(s.duration_secs)].filter(Boolean).join(' · ') || 'Sermon'}</p></div>
                   <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">Listen</span>
@@ -302,7 +338,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               <p className="text-xs text-[#8B8175] mt-1">Try another spelling, or search All.</p>
             </div>
           )}
-          {!loading && filter === 'all' && totalHits === 0 && !loadFailed && (
+          {!loading && filter === 'all' && totalHits === 0 && failedCorpora.length === 0 && (
             <div className="text-center py-10">
               <div className="text-3xl mb-2">🔍</div>
               <p className="text-sm font-bold">Nothing found for "{q}"</p>
