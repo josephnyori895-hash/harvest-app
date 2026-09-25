@@ -848,7 +848,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
                 <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? '✓' : '✕'}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{h.label}</p>
-                  <p className="text-[10px] text-zinc-400 truncate">{h.status === 'done' ? 'Published' : `Failed — ${h.detail || 'tap Share to try again'}`}</p>
+                  {h.status === 'done'
+                    ? <p className="text-[10px] text-zinc-400 truncate">Published</p>
+                    : <div className="mt-1"><ErrorMessage message={h.detail || 'Upload failed — try sharing again.'} /></div>}
                 </div>
                 <span className="text-[10px] text-zinc-500 shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
