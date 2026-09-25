@@ -117,6 +117,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [inbox, setInbox] = useState<any[]>([])
+  const [inboxLoading, setInboxLoading] = useState(true)
   const totalUnread = useMemo(() => inbox.reduce((sum, c) => sum + (Number(c.unread) || 0), 0), [inbox])
   const [msgs, setMsgs] = useState<Record<string, any[]>>(() => {
     try { return JSON.parse(localStorage.getItem('harvest_msgs') || '{}') } catch { return {} }
@@ -202,7 +203,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   }, [])
 
   const refreshInbox = useCallback(async () => {
-    if (!localStorage.getItem('harvest_token')) return
+    if (!localStorage.getItem('harvest_token')) { setInboxLoading(false); return }
     try {
       const r = await api<{ conversations: any[] }>('/api/chat/conversations')
       const next = r.conversations || []
@@ -220,7 +221,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       }
       inboxRef.current = Object.fromEntries(next.map(c => [c.peer, c.unread || 0]))
       setInbox(next)
-    } catch { /* keep last inbox */ }
+      setInboxLoading(false)
+    } catch { /* keep last inbox */ setInboxLoading(false) }
   }, [currentUser])
 
   const syncPresence = useCallback(async () => {
@@ -709,12 +711,17 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             </div>
           </section>
           <section className="px-3 pb-7">
-            {inbox.length === 0 ? (
-              <div className="mx-3 mt-6 rounded-3xl border border-stone-800 bg-stone-950 px-6 py-14 text-center">
-                <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/20 flex items-center justify-center text-2xl">💬</div>
-                <h2 className="mt-4 text-base font-extrabold text-white">Your conversations</h2>
-                <p className="mt-2 text-sm leading-6 text-stone-500">Private chats with your Harvest church family will appear here.</p>
-                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2 text-xs font-extrabold text-black">Find someone</button>
+            {inboxLoading ? (
+              <div role="status" aria-live="polite" className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 px-5 py-8 text-center">
+                <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
+                <p className="mt-3 text-xs font-semibold text-stone-400">Loading conversations…</p>
+              </div>
+            ) : inbox.length === 0 ? (
+              <div className="mx-3 mt-6 rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">💬</div>
+                <h2 className="mt-4 text-sm font-extrabold text-white">Your conversations</h2>
+                <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
+                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
               </div>
             ) : [...inbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
               const online = Boolean(presence[c.peer]?.online)
