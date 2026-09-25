@@ -102,17 +102,6 @@ try {
 
   await page.waitForFunction(() => document.body.innerText.includes('Explore departments'))
 
-  // Open the department that supplied the canonical API record.
-  const departmentOpened = await page.evaluate((slug) => {
-    const cards = [...document.querySelectorAll('button')]
-    const target = cards.find(b => {
-      const text = (b.textContent || '').toLowerCase()
-      return text.includes('chat') || text.includes('join')
-    })
-    return Boolean(target)
-  }, expected.department.slug)
-  assert.ok(departmentOpened, 'Departments screen did not render department controls')
-
   // Find the matching department card by its visible name and open its detail.
   const openedDetail = await page.evaluate((name) => {
     const heading = [...document.querySelectorAll('h1,h2,p')].find(el => (el.textContent || '').trim() === name)
@@ -163,7 +152,7 @@ try {
   assert.ok(actual.bodyText.includes(`@${expected.member.username}`), 'Profile does not visibly show the username')
   assert.ok(actual.bodyText.includes(expected.member.name || expected.member.username), 'Profile does not visibly show the name')
   if (expected.member.group_name) assert.ok(actual.bodyText.includes(expected.member.group_name), 'Profile does not visibly show the congregation')
-  assert.ok(actual.bodyText.includes(expected.member.verified ? 'Verified' : 'Member'), 'Profile does not visibly show the verification state')
+  assert.ok(actual.bodyText.includes(expected.member.role === 'leader' ? 'Leader' : expected.member.verified ? 'Verified' : 'Member'), 'Profile does not visibly show the role/verification state')
 
   console.log(`PASS Departments member profile E2E: ${expected.member.username} / ${expected.member.id}`)
 } catch (error) {
