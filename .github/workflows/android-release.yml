@@ -152,18 +152,38 @@ jobs:
             PREVIOUS_SHA_COMMIT="$(printf '%s' "$PREVIOUS_RELEASE" | cut -f3)"
             PREVIOUS_APK_FILENAME="harvest-family-${PREVIOUS_RUN}-${PREVIOUS_SHA_COMMIT:0:7}.apk"
             if [ "$PREVIOUS_APK_FILENAME" != "$APK_FILENAME" ] && [ ! -s "workers/downloads/$PREVIOUS_APK_FILENAME" ]; then
-              ARTIFACT_ID="$(curl --fail --silent --show-error --max-time 60 -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
+              # GitHub Actions artifacts are temporary and may expire. They are
+              # useful when available, but an unavailable old artifact must never
+              # block publication of the new release. Prefer the artifact, then
+              # fall back to the previous production versioned APK, which is the
+              # same byte-level rollback input used by the production deployment.
+              ARTIFACTS_JSON="$(curl --silent --show-error --max-time 60 -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" || true)"
+              ARTIFACT_ID="$(printf '%s' "$ARTIFACTS_JSON" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[]? | select(.name == $name and .expired == false) | .id' | head -n1)"
               if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
                 PREVIOUS_ZIP="$(mktemp)"
-                if curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$PREVIOUS_ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"; then
-                  unzip -p "$PREVIOUS_ZIP" '*.apk' > "workers/downloads/$PREVIOUS_APK_FILENAME"
-                  echo "Re-staged previous release APK: $PREVIOUS_APK_FILENAME ($(stat -c '%s' "workers/downloads/$PREVIOUS_APK_FILENAME") bytes)"
+                if curl --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location -H "Authorization: Bearer $GITHUB_TOKEN" -o "$PREVIOUS_ZIP" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"; then
+                  if unzip -p "$PREVIOUS_ZIP" '*.apk' > "workers/downloads/$PREVIOUS_APK_FILENAME" && test -s "workers/downloads/$PREVIOUS_APK_FILENAME"; then
+                    echo "Re-staged previous release APK from Actions artifact: $PREVIOUS_APK_FILENAME ($(stat -c '%s' "workers/downloads/$PREVIOUS_APK_FILENAME") bytes)"
+                  else
+                    echo "::warning::Previous Actions artifact was downloaded but contained no APK; trying production fallback"
+                    rm -f "workers/downloads/$PREVIOUS_APK_FILENAME"
+                  fi
                 else
-                  echo "::warning::Could not download previous release artifact; rollback drill may be unable to verify"
+                  echo "::warning::Could not download previous Actions artifact; trying production fallback"
                 fi
                 rm -f "$PREVIOUS_ZIP"
               else
-                echo "::warning::Previous release artifact harvest-family-apk-$PREVIOUS_RUN not found (expired?); rollback drill may be unable to verify"
+                echo "::warning::Previous Actions artifact harvest-family-apk-$PREVIOUS_RUN is unavailable (expired or missing); trying production fallback"
+              fi
+
+              if [ ! -s "workers/downloads/$PREVIOUS_APK_FILENAME" ]; then
+                PREVIOUS_URL="https://harvestfamily-api.harvestfamily.workers.dev/$PREVIOUS_APK_FILENAME"
+                if curl --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 -o "workers/downloads/$PREVIOUS_APK_FILENAME" "$PREVIOUS_URL" && test -s "workers/downloads/$PREVIOUS_APK_FILENAME"; then
+                  echo "Re-staged previous release APK from production: $PREVIOUS_APK_FILENAME ($(stat -c '%s' "workers/downloads/$PREVIOUS_APK_FILENAME") bytes)"
+                else
+                  rm -f "workers/downloads/$PREVIOUS_APK_FILENAME"
+                  echo "::warning::Previous production APK $PREVIOUS_URL is unavailable; continuing without re-staging it"
+                fi
               fi
             fi
             echo "PREVIOUS_APK_FILENAME=$PREVIOUS_APK_FILENAME" >> "$GITHUB_ENV"
@@ -357,12 +377,13 @@ jobs:
           PERMANENT_URL="$APK_BASE_URL/harvest-family.apk"
           echo "Previous verified run:   #$PREVIOUS_RUN ($PREVIOUS_APK_FILENAME)"
 
-          # Ground truth: the previous run's uploaded APK artifact. It is
-          # byte-identical to the versioned APK that run deployed, and unlike
-          # the live versioned URL it survives subsequent asset deployments.
-          ARTIFACTS_JSON="$(fetch_json "Previous run artifacts" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" -H "Authorization: Bearer $GITHUB_TOKEN")"
-          ARTIFACT_ID="$(printf '%s' "$ARTIFACTS_JSON" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n1)"
-          test -n "$ARTIFACT_ID" && test "$ARTIFACT_ID" != "null" || { echo "::error::Artifact harvest-family-apk-$PREVIOUS_RUN not found (expired or retained <14 days?)"; exit 1; }
+          # Ground truth: prefer the previous run's uploaded APK artifact,
+          # but do not make its 14-day retention window a release blocker. The
+          # staging gate already re-stages the previous production APK when the
+          # Actions artifact is unavailable, so use that hosted copy as the
+          # rollback ground truth in that case.
+          ARTIFACTS_JSON="$(fetch_json "Previous run artifacts" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$PREVIOUS_RUN_ID/artifacts" -H "Authorization: Bearer $GITHUB_TOKEN" || true)"
+          ARTIFACT_ID="$(printf '%s' "$ARTIFACTS_JSON" | jq -r --arg name "harvest-family-apk-$PREVIOUS_RUN" '.artifacts[]? | select(.name == $name and .expired == false) | .id' | head -n1)"
 
           PREVIOUS_ZIP="$(mktemp)"
           PREVIOUS_BODY="$(mktemp)"
@@ -370,12 +391,30 @@ jobs:
           cleanup() { rm -f "$PREVIOUS_ZIP" "$PREVIOUS_BODY" "$ROLLBACK_BODY"; }
           trap 'cleanup' EXIT
 
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -o "$PREVIOUS_ZIP" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip"
-          unzip -p "$PREVIOUS_ZIP" '*.apk' > "$PREVIOUS_BODY"
-          test -s "$PREVIOUS_BODY" || { echo "::error::Previous APK artifact body is empty"; exit 1; }
+          if [ -n "$ARTIFACT_ID" ] && [ "$ARTIFACT_ID" != "null" ]; then
+            if curl --silent --show-error --retry 5 --retry-delay 3 --max-time 300 --location \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -o "$PREVIOUS_ZIP" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" &&
+              unzip -p "$PREVIOUS_ZIP" '*.apk' > "$PREVIOUS_BODY" &&
+              test -s "$PREVIOUS_BODY"; then
+              echo "Previous APK ground truth loaded from Actions artifact."
+            else
+              echo "::warning::Previous Actions artifact could not be downloaded; using the re-staged production APK instead"
+              rm -f "$PREVIOUS_BODY"
+            fi
+          else
+            echo "::warning::Previous Actions artifact is unavailable; using the re-staged production APK instead"
+          fi
+
+          if [ ! -s "$PREVIOUS_BODY" ]; then
+            PREVIOUS_URL="$APK_BASE_URL/$PREVIOUS_APK_FILENAME"
+            curl --fail --silent --show-error --location --retry 5 --retry-delay 3 --max-time 120 \
+              -o "$PREVIOUS_BODY" "$PREVIOUS_URL"
+            test -s "$PREVIOUS_BODY" || { echo "::error::Previous APK is unavailable from both Actions artifacts and production"; exit 1; }
+            echo "Previous APK ground truth loaded from re-staged production APK."
+          fi
+
           PREVIOUS_SHA="$(sha256sum "$PREVIOUS_BODY" | cut -d' ' -f1)"
           echo "Previous verified SHA256: $PREVIOUS_SHA"
 
