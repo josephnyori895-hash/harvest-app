@@ -23,7 +23,7 @@ function authHeaders() {
 
 // Departments (ministry teams): praise & worship, ushering, media, etc.
 // Members join/leave themselves; admins create departments and manage members.
-export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug: string, name: string) => void }) {
+export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDeptChat?: (slug: string, name: string) => void; onOpenUser?: (u: any) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
   const [departments, setDepartments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -312,7 +312,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
               </div>
             )}
             {detail.members.map(u => (
-              <div key={u.username} className="flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800">
+              <button type="button" key={u.username} onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800 text-left active:opacity-70">
                 <div className="w-9 h-9 shrink-0 rounded-full bg-stone-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
@@ -331,6 +331,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
                   </div>
                 )}
               </div>
+              </button>
             ))}
             {detail.members.length === 0 && <p className="text-sm text-stone-500 text-center py-8">No one is serving here yet — be the first to join!</p>}
             {isAdmin && (
