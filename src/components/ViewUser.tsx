@@ -114,7 +114,8 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   const groupName = profile.group_name || profile.group || ''
 
   return (
-    {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
+    <>
+      {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
        <div className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-4 px-4 h-14">
@@ -195,6 +196,6 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
         </div>
       )}
        </div>
-     </>
+    </>
    )
 }
