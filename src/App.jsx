@@ -124,6 +124,14 @@ function InnerApp() {
     } catch {}
   }
 
+  // Search → Reels deep link: reuse the shared-reel jump mechanism.
+  const [searchReelId, setSearchReelId] = useState(null)
+  const openReelFromSearch = (reelId) => {
+    setSearchReelId(reelId)
+    setBackTarget('search')
+    setTab('reels')
+  }
+
   const handleTab = (t) => {
     if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
     if (t === 'chat' && tab !== 'chat') {
@@ -253,8 +261,8 @@ function InnerApp() {
       <div className="app-shell w-full bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {tab === 'home' && <Home setTab={handleTab} users={users} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
-          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} />}
-          {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : undefined} onSharedReelHandled={clearSharedContent} />}
+          {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={() => { setBackTarget('search'); setTab('sermons') }} onOpenReel={openReelFromSearch} />}
+          {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
           {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
