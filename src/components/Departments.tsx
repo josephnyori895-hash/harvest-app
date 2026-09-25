@@ -3,6 +3,7 @@ import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 
 import ErrorMessage from './ErrorMessage'
+import UnreadBadge from './UnreadBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const departmentStyle = (department: any) => {
