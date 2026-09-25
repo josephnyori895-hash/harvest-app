@@ -11,6 +11,7 @@ const index = await readFile(new URL('../workers/src/index.js', import.meta.url)
 const media = await readFile(new URL('../workers/src/lib/media.js', import.meta.url), 'utf8')
 const chat = await readFile(new URL('../workers/src/routes/chat.js', import.meta.url), 'utf8')
 const securityMigration = await readFile(new URL('../workers/migrations/0013_security_hardening.sql', import.meta.url), 'utf8')
+const departments = await readFile(new URL('../workers/src/routes/departments.js', import.meta.url), 'utf8')
 
 // No insecure JWT fallback anywhere in the worker.
 for (const [name, src] of Object.entries({ http, auth, routesAuth, index })) {
@@ -42,6 +43,9 @@ assert.match(media, /if \(!signed\) return errorResponse\('signed media URL requ
 assert.match(media, /x-amz-meta-ownerid/)
 assert.match(chat, /canAccessConversation/)
 assert.doesNotMatch(chat, /conversation_key\.startsWith\('group:'\).*\n.*conversation_key\.startsWith\('department:'/s)
+assert.match(departments, /leaders cannot demote themselves/)
+assert.match(departments, /only the system admin can remove a department leader/)
+assert.match(departments, /cannot remove the only department leader/)
 assert.match(securityMigration, /password_hash = NULL/)
 assert.match(securityMigration, /pin_hash = NULL/)
 
