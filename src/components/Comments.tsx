@@ -118,13 +118,13 @@ export default function Comments({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose} role="dialog" aria-label="Comments">
-      <div className="w-full sm:max-w-lg bg-[#FFFBF0] rounded-t-[28px] max-h-[min(75dvh,680px)] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="comments-sheet w-full sm:max-w-lg bg-[#FFFBF0] rounded-t-[28px] max-h-[min(75dvh,680px)] min-h-0 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-4 pt-3 pb-2 border-b border-[#E8DEC9] flex items-center justify-between shrink-0">
           <div className="w-10 h-1 rounded-full bg-[#E8DEC9] absolute left-1/2 -translate-x-1/2 top-2" />
           <p className="text-sm font-extrabold mx-auto">Comments</p>
           <button onClick={onClose} className="absolute right-4 top-3 w-7 h-7 rounded-full bg-[#F4E8D0] text-[#766E63] text-xs font-bold" aria-label="Close comments">✕</button>
         </div>
-        <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-4">
           {loading && <p className="text-xs text-[#8B8175] text-center py-6">Loading comments…</p>}
           {!loading && !loadError && comments.length === 0 && (
             <div className="text-center py-10">
