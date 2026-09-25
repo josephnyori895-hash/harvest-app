@@ -6,7 +6,6 @@ import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
 const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
-const REG_GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'])
 
 // Kenyan mobile normalization: 07xx/01xx/+2547xx/+2541xx -> +2547xxxxxxxx
 function normalizePhone(raw) {
