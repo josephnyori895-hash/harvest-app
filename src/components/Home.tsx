@@ -110,27 +110,36 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   const heroSubtitle = content.hero_subtitle || 'Get one saved, keep one saved, get another saved.'
   const verseText = content.verse_text || 'Let us consider how we may spur one another on toward love and good deeds.'
   const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
-  // The pastor account the 'Pray with Pastor' card opens (admin sets it in
-  // Admin → Home text as `pastor_username`). Resolved against the member
-  // directory; an empty/unset username means the popup is shown instead.
-  const pastorUsername = String(content.pastor_username || '').trim()
-  // Tolerant match: admins type this by hand, so accept case differences, a
-  // leading @, or the member's display name as well as the exact username.
+  // Pastors are configured explicitly by stable username(s), not inferred from
+  // display names. Legacy `pastor_username` remains supported; admins can
+  // provide multiple accounts in `pastor_usernames` as a comma/newline list.
   const normName = (s: string) => s.trim().toLowerCase().replace(/^@/, '')
-  const wanted = normName(pastorUsername)
-  const configuredPastor = wanted
-    ? (users.find((u: any) => normName(String(u.username || '')) === wanted)
-      ?? users.find((u: any) => normName(String(u.name || '')) === wanted))
-    : null
-  // If the account was created after the home screen was configured, recover
-  // automatically when exactly one directory entry identifies itself as pastor.
-  const pastorMatches = users.filter((u: any) => /(^|[ ._-])pastor([ ._-]|$)/i.test(
-    `${u.name || ''} ${u.username || ''}`,
-  ))
-  const pastorUser = configuredPastor ?? (pastorMatches.length === 1 ? pastorMatches[0] : null)
+  const configuredPastorNames = [
+    String(content.pastor_usernames || ''),
+    String(content.pastor_username || ''),
+  ]
+    .flatMap(value => value.split(/[,
+]+/))
+    .map(normName)
+    .filter(Boolean)
+  const pastorUsers = configuredPastorNames
+    .map(wanted => users.find((u: any) => normName(String(u.username || '')) === wanted))
+    .filter((u: any): u is any => Boolean(u))
+    .filter((u: any, index: number, list: any[]) =>
+      list.findIndex(candidate => normName(String(candidate.username || '')) === normName(String(u.username || ''))) === index
+    )
+  const [showPastorPicker, setShowPastorPicker] = useState(false)
   const openPastorChat = () => {
-    if (pastorUser && onOpenDm) onOpenDm(pastorUser.username, pastorUser.name || pastorUser.username)
-    else setShowNoPastor(true)
+    if (pastorUsers.length === 1 && onOpenDm) {
+      const pastor = pastorUsers[0]
+      onOpenDm(pastor.username, pastor.name || pastor.username)
+      return
+    }
+    if (pastorUsers.length > 1) {
+      setShowPastorPicker(true)
+      return
+    }
+    setShowNoPastor(true)
   }
   // Inline post comments (server-backed) — replaces the old "dump into chats" button.
   const [commentTarget, setCommentTarget] = useState<{ scope: 'post' | 'reel'; id: string; key: string } | null>(null)
@@ -362,6 +371,42 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
 
   return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
+    {showPastorPicker && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowPastorPicker(false)} role="dialog" aria-label="Choose a pastor">
+        <div className="w-full max-w-[360px] bg-white rounded-[24px] p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-stone-400 font-bold">Prayer</p>
+              <h2 className="text-lg font-extrabold text-stone-900">Choose a pastor</h2>
+            </div>
+            <button type="button" onClick={() => setShowPastorPicker(false)} aria-label="Close pastor picker" className="w-9 h-9 rounded-full bg-stone-100 text-stone-600">✕</button>
+          </div>
+          <p className="text-xs text-stone-500 mb-3">Choose who you would like to pray with.</p>
+          <div className="space-y-2">
+            {pastorUsers.map((pastor: any) => (
+              <button
+                key={pastor.username}
+                type="button"
+                onClick={() => {
+                  setShowPastorPicker(false)
+                  onOpenDm?.(pastor.username, pastor.name || pastor.username)
+                }}
+                className="w-full min-h-12 flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-3 text-left active:bg-stone-100"
+              >
+                <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-sm font-extrabold text-stone-700">
+                  {String(pastor.name || pastor.username).split(/[\s_.-]/).filter(Boolean).map((part: string) => part[0]).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-stone-900 truncate">{pastor.name || pastor.username}</p>
+                  <p className="text-[11px] text-stone-500 truncate">@{pastor.username}</p>
+                </div>
+                <span className="text-stone-400" aria-hidden="true">›</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
     {showNoPastor && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowNoPastor(false)} role="dialog" aria-label="Pastor not available">
         <div className="w-full max-w-[340px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
