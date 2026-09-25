@@ -35,7 +35,7 @@ export type BgUpload = {
   id: string
   label: string
   pct: number // 0..100
-  status: 'uploading' | 'waiting'
+  status: 'uploading' | 'waiting' | 'failed'
   attempt: number
   startedAt: number
 }
@@ -96,6 +96,25 @@ export function subscribeUploads(fn: () => void) {
 }
 export function getUploads(): BgUpload[] {
   return [...states.values()].sort((a, b) => a.startedAt - b.startedAt)
+}
+
+export function retryUpload(id: string) {
+  const rec = records.get(id)
+  const st = states.get(id)
+  if (!rec || !st || running.has(id)) return false
+  rec.attempts = 0
+  rec.nextAttemptAt = 0
+  states.set(id, { ...st, status: 'uploading', pct: 0, attempt: 1, startedAt: Date.now() })
+  emit()
+  void runAttempt(id)
+  return true
+}
+
+export async function dismissUpload(id: string) {
+  records.delete(id)
+  states.delete(id)
+  await idbDelete(id)
+  emit()
 }
 
 // --- IndexedDB persistence (queued uploads survive app restarts) ----------
@@ -271,11 +290,12 @@ async function runAttempt(id: string) {
       showToast(`${rec.label} interrupted — will retry automatically`, 'warning', 3500)
       setTimeout(() => { void flushQueue() }, delay + 250)
     } else {
-      showToast(`${rec.label} failed — ${String(e?.message || 'check your connection')}`, 'error', 5000)
-      records.delete(id)
-      states.delete(id)
-      await idbDelete(id)
-      void pushHistory({ id, label: rec.label, status: 'failed', at: Date.now(), detail: String(e?.message || 'check your connection') })
+      const detail = String(e?.message || 'check your connection')
+      rec.nextAttemptAt = 0
+      await idbPut(rec)
+      if (st) { states.set(id, { ...st, status: 'failed', pct: 0, attempt: rec.attempts }); emit() }
+      void pushHistory({ id, label: rec.label, status: 'failed', at: Date.now(), detail })
+      showToast(`${rec.label} failed — tap Retry to try again`, 'error', 5000)
       emit()
     }
   } finally {
@@ -315,7 +335,7 @@ void (async () => {
   for (const rec of saved) {
     if (!rec?.task?.file || records.has(rec.id)) continue
     records.set(rec.id, rec)
-    states.set(rec.id, { id: rec.id, label: rec.label, pct: 0, status: 'waiting', attempt: rec.attempts + 1, startedAt: rec.nextAttemptAt || Date.now() })
+    states.set(rec.id, { id: rec.id, label: rec.label, pct: 0, status: rec.nextAttemptAt ? 'waiting' : 'failed', attempt: rec.attempts || 1, startedAt: rec.nextAttemptAt || Date.now() })
   }
   if (saved.length) {
     emit()
