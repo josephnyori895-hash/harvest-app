@@ -115,6 +115,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       if (!r.ok) throw new Error('failed')
       showToast('Welcome to the team! 🙌')
       load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
       if (openSlug === slug) openDetail(slug)
     } catch { showToast('Could not join — try again') } finally { setBusy('') }
   }
@@ -126,6 +127,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       if (!r.ok) throw new Error('failed')
       showToast('You left the team')
       load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
       if (openSlug === slug) openDetail(slug)
     } catch { showToast('Could not leave — try again') } finally { setBusy('') }
   }
@@ -143,6 +145,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       showToast(`"${newName.trim()}" created`)
       setNewName(''); setNewDesc('')
       load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
     } catch (e: any) { showToast(e?.message || 'Could not create department') } finally { setBusy('') }
   }
 
@@ -168,6 +171,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       showToast('Department updated')
       setEditing(false)
       load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
       await openDetail(detail.department.slug)
     } catch (e: any) { showToast(e?.message || 'Could not update department') } finally { setBusy('') }
   }
@@ -181,6 +185,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       if (!r.ok) throw new Error(d.error || 'Could not delete')
       showToast(`"${name}" deleted`)
       setOpenSlug(null); setDetail(null); load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
     } catch (e: any) { showToast(e?.message || 'Could not delete department') } finally { setBusy('') }
   }
 
@@ -197,6 +202,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       showToast(role === 'leader' ? `${uname} is now a leader` : `${uname} added`)
       setAddUsername('')
       openDetail(slug); load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
     } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }
   }
 
@@ -207,6 +213,7 @@ export default function Departments({ onOpenDeptChat }: { onOpenDeptChat?: (slug
       if (!r.ok) throw new Error('failed')
       showToast(`${uname} removed`)
       openDetail(slug); load()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
     } catch { showToast('Could not remove member') } finally { setBusy('') }
   }
 

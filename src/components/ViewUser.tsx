@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../state/auth'
+import { useCongregations } from '../lib/useCongregations'
 import StoryViewer from './Stories'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -10,7 +11,7 @@ function authHeaders() {
 }
 
 export default function ViewUser({ user, onBack, onEditProfile }: { user: any; onBack: () => void; onEditProfile?: () => void }) {
-  const safeUser = user || { username: '', name: '', role: 'member', verified: false, location: '', group_name: 'Harvest Central' }
+  const safeUser = user || { username: '', name: '', role: 'member', verified: false, location: '', group_name: '' }
   const { isAdmin, username: viewerName } = useAuth()
 
   const [posts, setPosts] = useState<any[]>([])
@@ -99,11 +100,13 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
 
   const toggleVerify = () => adminPatch({ verified: !profile.verified })
   const cycleRole = () => adminPatch({ role: profile.role === 'admin' ? 'member' : 'admin' })
-  const groups = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
+  const { congregations: groups } = useCongregations(isAdmin)
   const addToGroup = (group: string) => adminPatch({ group_name: group })
 
   const displayName = profile.name || profile.username
-  const groupName = profile.group_name || profile.group || 'Harvest Central'
+  // Show the real congregation, or nothing — never fabricate one. A hardcoded
+  // fallback here is how deleted groups kept "existing" on profiles.
+  const groupName = profile.group_name || profile.group || ''
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
@@ -140,7 +143,11 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
         </div>
         <div className="mt-4 space-y-2">
           <div className="flex items-center gap-2 text-sm"><span className="text-xl">📍</span><span className="font-medium">{profile.location || 'Nyeri'}</span></div>
-          <div className="flex items-center gap-2 text-sm"><span className="text-xl">👥</span><span className="font-medium bg-gradient-to-r from-amber-400 to-purple-600 bg-clip-text text-transparent">{groupName}</span></div>
+          {groupName ? (
+            <div className="flex items-center gap-2 text-sm"><span className="text-xl">👥</span><span className="font-medium bg-gradient-to-r from-amber-400 to-purple-600 bg-clip-text text-transparent">{groupName}</span></div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm"><span className="text-xl">👥</span><span className="font-medium text-neutral-400">No congregation yet</span></div>
+          )}
         </div>
         {!isSelf && (
           <button onClick={() => void toggleFollow()} disabled={busy} className={`w-full mt-4 py-2.5 rounded-lg font-semibold transition-all ${followState.following ? 'btn-secondary' : 'btn-primary'}`}>

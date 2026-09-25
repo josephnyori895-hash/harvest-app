@@ -3,6 +3,6 @@
   "appName": "Harvest Family Church",
   "webDir": "dist",
   "android": {
-    "adjustMarginsForEdgeToEdge": "auto"
+    "adjustMarginsForEdgeToEdge": "force"
   }
 }

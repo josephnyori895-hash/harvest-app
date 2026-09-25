@@ -113,7 +113,14 @@ export default function Home({ setTab, users, onDeleteStory, refreshKey, onSwitc
   // Admin → Home text as `pastor_username`). Resolved against the member
   // directory; an empty/unset username means the popup is shown instead.
   const pastorUsername = String(content.pastor_username || '').trim()
-  const pastorUser = pastorUsername ? users.find((u: any) => u.username === pastorUsername) : null
+  // Tolerant match: admins type this by hand, so accept case differences, a
+  // leading @, or the member's display name as well as the exact username.
+  const normName = (s: string) => s.trim().toLowerCase().replace(/^@/, '')
+  const wanted = normName(pastorUsername)
+  const pastorUser = wanted
+    ? (users.find((u: any) => normName(String(u.username || '')) === wanted)
+      ?? users.find((u: any) => normName(String(u.name || '')) === wanted))
+    : null
   const openPastorChat = () => {
     if (pastorUser && onOpenDm) onOpenDm(pastorUser.username, pastorUser.name || pastorUser.username)
     else setShowNoPastor(true)

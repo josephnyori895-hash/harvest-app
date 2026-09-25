@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../state/auth'
+import { useCongregations } from '../lib/useCongregations'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-const groups = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
 function headers(){const token=localStorage.getItem('harvest_token')||'';return {Authorization:token?`Bearer ${token}`:'','Content-Type':'application/json'}}
 async function request(path:string,init:RequestInit={}){const r=await fetch(`${API}${path}`,{...init,headers:{...headers(),...(init.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`Request failed (${r.status})`);return d}
 
-function AdminPanel({onClose}:{onClose:()=>void}){
+function AdminPanel({onClose}:{onClose:()=>void}){const { congregations: groups } = useCongregations();
  const {isAdmin,username}=useAuth(); const [tab,setTab]=useState<'users'|'moderation'|'giving'|'audit'>('users'); const [q,setQ]=useState(''); const [users,setUsers]=useState<any[]>([]); const [pending,setPending]=useState<any[]>([]); const [giving,setGiving]=useState<any|null>(null); const [audit,setAudit]=useState<any[]>([]); const [edit,setEdit]=useState<any|null>(null); const [busy,setBusy]=useState(false); const [loading,setLoading]=useState(false); const [message,setMessage]=useState(''); const [error,setError]=useState('')
  const run=async(fn:()=>Promise<void>)=>{setLoading(true);setError('');try{await fn()}catch(e:any){setError(e.message||'Something went wrong')}finally{setLoading(false)}}
  const loadUsers=async()=>{const d=await request(`/api/users?q=${encodeURIComponent(q||'al')}`);setUsers(d.users||[])}

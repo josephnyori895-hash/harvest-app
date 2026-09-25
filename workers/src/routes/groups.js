@@ -403,13 +403,28 @@ export async function handleGroups(request, env, ctx) {
   }
 
   // DELETE /api/groups/:slug — system admin, or "manage_communities" leader.
+  // Cascade: memberships, invites and every user's group_name must not keep
+  // referencing a group that no longer exists (ghost groups on profiles).
   if (!sub && method === 'DELETE') {
     const fresh = await requireMember(env, user)
     if (fresh.role !== 'admin' && !hasCap(fresh, 'manage_communities')) return errorResponse('community management is granted by the admin', 403)
     const g = await getGroup(env, slug)
     if (!g) return errorResponse('group not found', 404)
+    const fallback = 'Harvest Central'
+    await query(env, 'DELETE FROM group_members WHERE group_id=?', [g.id])
+    await query(env, 'DELETE FROM group_invites WHERE group_id=?', [g.id])
+    // Move members whose profile congregation was this group to the fallback
+    // congregation (if it exists), else clear to empty.
+    try {
+      const fb = await query(env, 'SELECT id FROM groups WHERE name=?', [fallback])
+      if (fb.rows[0] && fb.rows[0].id !== g.id) {
+        await query(env, 'UPDATE users SET group_name=? WHERE group_name=?', [fallback, g.name])
+      } else {
+        await query(env, 'UPDATE users SET group_name=\'\' WHERE group_name=?', [g.name])
+      }
+    } catch { /* group_name column issue must not block the delete */ }
     await query(env, 'DELETE FROM groups WHERE id=?', [g.id])
-    await audit(env, fresh, 'group_deleted', g.id, { slug: g.slug })
+    await audit(env, fresh, 'group_deleted', g.id, { slug: g.slug, name: g.name })
     return jsonResponse({ ok: true, deleted: g.slug })
   }
 

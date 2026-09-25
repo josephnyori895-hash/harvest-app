@@ -7,9 +7,16 @@ import { ALL_CAPS, parseGrants } from '../lib/capabilities.js'
 import { nearestCommunity } from '../lib/geo.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 
-const GROUPS = new Set(['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'])
 const ROLES = new Set(['member', 'admin'])
 const PROFILE_FIELDS = new Set(['name', 'phone', 'location', 'constituency', 'faith'])
+
+// Group names are validated against the LIVE groups table (admin-editable,
+// deletable) — a hardcoded list resurrects deleted congregations as ghosts.
+async function groupExists(env, name) {
+  if (!name) return false
+  const r = await query(env, 'SELECT 1 FROM groups WHERE name=? LIMIT 1', [name])
+  return !!r.rows[0]
+}
 
 function cleanString(value, max = 120) {
   if (value === null) return null
@@ -102,7 +109,7 @@ export async function handleUsers(request, env, ctx, params) {
     if (!uname || uname.length < 2) return errorResponse('valid username required', 400)
     if (!/^\d{4,6}$/.test(p)) return errorResponse('PIN must be 4-6 digits', 400)
     if (!ROLES.has(role)) return errorResponse('role must be member or admin', 400)
-    if (!GROUPS.has(groupName)) return errorResponse('invalid group', 400)
+    if (!await groupExists(env, groupName)) return errorResponse('invalid group', 400)
     if (typeof verified !== 'boolean') return errorResponse('verified must be boolean', 400)
     const exists = await query(env, 'SELECT 1 FROM users WHERE username=?', [uname])
     if (exists.rows[0]) return errorResponse('username already exists', 409)
@@ -162,7 +169,7 @@ export async function handleUsers(request, env, ctx, params) {
     const { role, verified, group_name: groupName } = body
     if (!username) return errorResponse('username required', 400)
     if (role !== undefined && !ROLES.has(role)) return errorResponse('role must be member or admin', 400)
-    if (groupName !== undefined && groupName !== null && !GROUPS.has(groupName)) return errorResponse('invalid group', 400)
+    if (groupName !== undefined && groupName !== null && !await groupExists(env, groupName)) return errorResponse('invalid group', 400)
     if (verified !== undefined && typeof verified !== 'boolean') return errorResponse('verified must be boolean', 400)
 
     const target = await query(env, `SELECT id, username, name, phone, location, constituency, faith, role, verified, group_name, active FROM users WHERE username=?`, [username])
@@ -390,7 +397,7 @@ export async function handleUsers(request, env, ctx, params) {
       updates.phone_normalized = null
     }
     if (body.group_name !== undefined) {
-      if (!GROUPS.has(body.group_name)) return errorResponse('invalid group', 400)
+      if (!await groupExists(env, body.group_name)) return errorResponse('invalid group', 400)
       updates.group_name = body.group_name
     }
     if (body.lat !== undefined && body.lng !== undefined) {

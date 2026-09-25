@@ -40,13 +40,31 @@ export async function handleAuth(request, env, ctx) {
       // Location-based auto-assignment: if the device shares GPS at signup,
       // the member joins the nearest congregation group automatically.
       // Priority: admin-set group locations (D1) → built-in centroids → member's choice.
+      // A chosen/nearest name is only used if that group actually EXISTS —
+      // deleted congregations must never come back as profile ghosts.
       let near = null
       try {
         const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
         near = nearestFromRows(located.rows, Number(lat), Number(lng))
       } catch { /* groups table may be empty — fall through */ }
       if (!near) near = nearestCommunity(Number(lat), Number(lng))
-      const group = near || (REG_GROUPS.has(groupName) ? groupName : 'Harvest Central')
+      const exists = async (name) => {
+        if (!name) return false
+        try {
+          const r = await query(env, 'SELECT id FROM groups WHERE name=? LIMIT 1', [name])
+          return !!r.rows[0]
+        } catch { return false }
+      }
+      let group = null
+      if (await exists(near)) group = near
+      else if (await exists(groupName)) group = groupName
+      else {
+        // Fall back to the first existing congregation group, else no group.
+        try {
+          const r = await query(env, "SELECT name FROM groups WHERE slug LIKE 'harvest_%' ORDER BY slug LIMIT 1")
+          group = r.rows[0]?.name || ''
+        } catch { group = '' }
+      }
 
       const dup = await query(env, 'SELECT username, phone_normalized FROM users WHERE username=? OR phone_normalized=? LIMIT 2', [uname, normPhone])
       if (dup.rows.some(row => row.username === uname)) return errorResponse('that username is already taken', 409)

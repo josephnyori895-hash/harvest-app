@@ -826,9 +826,15 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
       if (live) setTeams(out)
     }
     void load()
-    const refresh = () => void load()
-    window.addEventListener('harvest:groups-changed', refresh)
-    return () => { live = false; window.removeEventListener('harvest:groups-changed', refresh) }
+    // Groups/departments can be created, joined or deleted in their own tabs —
+    // reload this hub so "Your spaces" never goes stale.
+    window.addEventListener('harvest:groups-changed', load)
+    window.addEventListener('harvest:departments-updated', load)
+    return () => {
+      live = false
+      window.removeEventListener('harvest:groups-changed', load)
+      window.removeEventListener('harvest:departments-updated', load)
+    }
   }, [])
 
   return (
@@ -939,10 +945,15 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
     refreshVisible()
     const timer = window.setInterval(refreshVisible, 3000)
     document.addEventListener('visibilitychange', refreshVisible)
+    // Join/leave + create/delete in other tabs must update this rail too.
+    window.addEventListener('harvest:groups-changed', refresh)
+    window.addEventListener('harvest:departments-updated', refresh)
     return () => {
       live = false
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', refreshVisible)
+      window.removeEventListener('harvest:groups-changed', refresh)
+      window.removeEventListener('harvest:departments-updated', refresh)
     }
   }, [])
   return (

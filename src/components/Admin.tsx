@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMedia from './AdminMedia'
+import { useCongregations } from '../lib/useCongregations'
 import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -7,7 +8,6 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // disabled this whole screen in production builds.
 const USE_API = true
 
-const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
 type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat'
 
 type Props = {
@@ -20,6 +20,7 @@ type Props = {
 }
 
 export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons }: Props) {
+  const { congregations: GROUPS } = useCongregations()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -210,6 +211,14 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     if (tab === 'chat') void loadChatMessages()
     if (tab === 'audit') void loadAudit()
   }, [tab, loadDashboard, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit])
+
+  // Dashboard counts go stale when a group is created/deleted elsewhere —
+  // re-pull whenever the groups table changes.
+  useEffect(() => {
+    const onGroupsChanged = () => { if (tab === 'dashboard') void loadDashboard() }
+    window.addEventListener('harvest:groups-changed', onGroupsChanged)
+    return () => window.removeEventListener('harvest:groups-changed', onGroupsChanged)
+  }, [tab, loadDashboard])
 
   const moderate = async (id: string, action: 'approve' | 'reject') => {
     if (busy) return
@@ -498,7 +507,29 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             {CONTENT_FIELDS.map(f => (
               <div key={f.key}>
                 <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
-                {f.textarea ? (
+                {f.key === 'pastor_username' ? (
+                  /* Pick from the real member directory — free text here is how
+                     the 'Pastor has not joined yet' popup fired despite the pastor
+                     having joined (name typed instead of username, case, @, etc). */
+                  <div>
+                    <select
+                      id={`ct-${f.key}`}
+                      value={content[f.key] ?? ''}
+                      onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
+                      className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20"
+                    >
+                      <option value="">— Show "Pastor has not joined yet" popup —</option>
+                      {users.map(u => (
+                        <option key={u.username} value={u.username}>{u.name || u.username} (@{u.username})</option>
+                      ))}
+                    </select>
+                    {(() => { const sel = users.find(u => u.username === (content[f.key] || '')); return sel ? (
+                      <p className="text-[10px] text-emerald-700 mt-1">✓ Opens a private chat with {sel.name || sel.username}</p>
+                    ) : content[f.key] ? (
+                      <p className="text-[10px] text-amber-700 mt-1">⚠ "@{content[f.key]}" is not in the member directory — members will see the popup</p>
+                    ) : null })()}
+                  </div>
+                ) : f.textarea ? (
                   <textarea
                     id={`ct-${f.key}`}
                     value={content[f.key] ?? ''}

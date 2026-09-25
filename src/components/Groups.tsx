@@ -89,6 +89,13 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
 
   useEffect(() => { load() }, [load])
 
+  // Keep this screen in sync when groups change elsewhere (admin studio,
+  // other tabs, settings saved in another instance).
+  useEffect(() => {
+    window.addEventListener('harvest:groups-changed', load)
+    return () => window.removeEventListener('harvest:groups-changed', load)
+  }, [load])
+
   const openDetail = async (slug: string) => {
     setBusy(`open_${slug}`)
     try {
@@ -124,6 +131,8 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       if (!r.ok) throw new Error(d.error || 'Could not request to join')
       showToast(d.status === 'requested' ? 'Join request sent ⏳' : 'Welcome to the group! 🎉')
       load()
+      // Chat rails read /api/groups/mine — tell them membership changed.
+      window.dispatchEvent(new Event('harvest:groups-changed'))
       if (openSlug === slug) void openDetail(slug)
     } catch (e: any) { showToast(e?.message || 'Could not join') } finally { setBusy('') }
   }
@@ -214,6 +223,9 @@ export default function Groups({ onOpenChat }: { onOpenChat?: (slug: string, nam
       showToast('Group settings saved ✓')
       setShowSettings(false); notifyGroupsChanged()
       void openDetail(openSlug || '')
+      load()
+      // Renames/description changes must reach every group picker.
+      window.dispatchEvent(new Event('harvest:groups-changed'))
     } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false); setBusy('') }
   }
 

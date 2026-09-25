@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import { AuthProvider, useAuth } from './state/auth'
+import { useCongregations } from './lib/useCongregations'
 import Home from './components/Home'
 import Reels from './components/Reels'
 import Search from './components/Search'
@@ -308,6 +309,7 @@ export default function App() {
 
 function Onboarding({ onAuthSuccess }) {
   const [mode, setMode] = useState('register') // 'register' | 'login'
+  const { congregations: REG_GROUP_OPTIONS } = useCongregations()
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', group_name: 'Harvest Central' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
@@ -409,7 +411,7 @@ function Onboarding({ onAuthSuccess }) {
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
               <div className="relative">
                 <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100">
-                  {['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo'].map(g => <option key={g} value={g}>{g}</option>)}
+                  {REG_GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
                 <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-base">▾</span>
               </div>

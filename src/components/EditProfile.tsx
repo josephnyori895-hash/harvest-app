@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchMe, updateProfile } from '../lib/api'
 import { getUploads, startBackgroundUpload, subscribeUploads } from '../lib/backgroundUploads'
-
-const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest Ruringu', 'Harvest Majengo']
+import { useCongregations } from '../lib/useCongregations'
 
 // EditProfile — self-service profile editing (name, photo, phone, location,
 // faith, congregation). The avatar uploads through the background manager
@@ -11,6 +10,7 @@ const GROUPS = ['Harvest Central', 'Harvest Skuta', 'Harvest Kamakwa', 'Harvest 
 // canonical user, which we propagate to the rest of the app via
 // 'harvest:profile-updated'.
 export default function EditProfile({ onDone }: { onDone: () => void }) {
+  const { congregations: GROUPS } = useCongregations()
   const [me, setMe] = useState<any | null>(null)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
