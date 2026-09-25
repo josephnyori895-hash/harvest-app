@@ -37,7 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: 22, cache: npm}
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
       - run: npm run validate:release
 
@@ -89,11 +91,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: harvest-web-${{ github.run_number }}, path: dist}
+        with:
+          name: harvest-web-${{ github.run_number }}
+          path: dist
       - uses: actions/setup-node@v4
         with: {node-version: 22, cache: npm}
       - uses: actions/setup-java@v4
-        with: {distribution: temurin, java-version: "21", cache: gradle}
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
       - run: npm ci
       - run: npx cap sync android
       - uses: actions/upload-artifact@v4
@@ -109,7 +116,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: {name: harvest-android-${{ github.run_number }}, path: .}
+        with:
+          name: harvest-android-${{ github.run_number }}
+          path: .
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: "21", cache: gradle}
       - name: Restore keystore
@@ -154,7 +163,9 @@ jobs:
       sha: ${{ steps.fp.outputs.sha }}
     steps:
       - uses: actions/download-artifact@v4
-        with: {name: harvest-apk-${{ github.run_number }}, path: apk}
+        with:
+          name: harvest-apk-${{ github.run_number }}
+          path: apk
       - id: fp
         run: |
           SHA="$(sha256sum apk/app-release.apk | cut -d" " -f1)"
@@ -163,7 +174,10 @@ jobs:
           echo "filename=$NAME" >> "$GITHUB_OUTPUT"
           echo "$SHA  $NAME" > fingerprint.txt
       - uses: actions/upload-artifact@v4
-        with: {name: harvest-fingerprint-${{ github.run_number }}, path: fingerprint.txt, retention-days: 14}
+        with:
+          name: harvest-fingerprint-${{ github.run_number }}
+          path: fingerprint.txt
+          retention-days: 14
 
   deploy-production:
     name: "09 Deploy production"
@@ -183,7 +197,8 @@ jobs:
         with: {name: harvest-apk-${{ github.run_number }}, path: apk}
       - run: npm ci --prefix workers
       - name: Stage exact APK and web assets
-        env: {GITHUB_TOKEN: ${{ github.token }}}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           rm -rf workers/public
@@ -340,7 +355,7 @@ jobs:
   release:
     name: "RELEASED — all 14 gates passed"
     needs: [source-integrity, release-preflight, frontend-quality, security-audit, production-build, android-prepare, signed-apk, apk-fingerprint, deploy-production, production-smoke, browser-e2e, verify-versioned-apk, verify-permanent-apk, rollback-and-restore]
-    if: ${{ success() }}
+    if: success()
     runs-on: ubuntu-latest
     steps:
       - run: |
