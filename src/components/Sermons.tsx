@@ -293,7 +293,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
                 key={kind}
                 type="button"
                 onClick={() => setSermonKind(kind === 'All' ? 'all' : kind.toLowerCase() as 'audio' | 'video')}
-                className="px-2.5 py-1.5 rounded-xl bg-[#F5EEDF] text-[10px] font-bold text-[#5C554C]"
+                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold ${((kind === 'All' && sermonKind === 'all') || kind.toLowerCase() === sermonKind) ? 'bg-[#7C3AED] text-white' : 'bg-[#F5EEDF] text-[#5C554C]'}`} aria-pressed={(kind === 'All' && sermonKind === 'all') || kind.toLowerCase() === sermonKind}
               >{kind}</button>
             ))}
             <span className="ml-auto self-center text-[10px] text-[#8B8175]">{visibleSermons.length} of {sermons.length}</span>
@@ -368,7 +368,15 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
               <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`py-2.5 rounded-xl text-xs font-bold border ${uploadKind === 'audio' ? 'bg-[#F3E8FF] border-[#7C3AED] text-[#5B21B6]' : 'border-[#E8DEC9]'}`}>🎧 MP3 audio</button>
               <button onClick={() => { setUploadKind('video'); setUploadFile(null) }} className={`py-2.5 rounded-xl text-xs font-bold border ${uploadKind === 'video' ? 'bg-[#F3E8FF] border-[#7C3AED] text-[#5B21B6]' : 'border-[#E8DEC9]'}`}>🎬 MP4 video</button>
             </div>
-            <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg,audio/mp3'} onChange={e => setUploadFile(e.target.files?.[0] || null)} className="hidden" />
+            <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg,audio/mp3'} onChange={e => {
+              const f = e.target.files?.[0] || null
+              if (!f) return
+              const max = uploadKind === 'video' ? 1024 * 1024 * 1024 : 200 * 1024 * 1024
+              const valid = uploadKind === 'video' ? f.type === 'video/mp4' : f.type === 'audio/mpeg' || f.type === 'audio/mp3'
+              if (!valid) { showToast(uploadKind === 'video' ? 'Choose an MP4 video.' : 'Choose an MP3 audio file.', 'error'); e.target.value = ''; return }
+              if (f.size > max) { showToast(uploadKind === 'video' ? 'Video is limited to 1 GB.' : 'Audio is limited to 200 MB.', 'error'); e.target.value = ''; return }
+              setUploadFile(f)
+            }} className="hidden" />
             <button onClick={() => uploadInput.current?.click()} className="w-full py-3 rounded-xl border border-dashed border-[#CFC3B2] bg-[#FFFBF0] text-sm font-bold">{uploadFile ? uploadFile.name : 'Choose file'}</button>
             <input value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} placeholder="Sermon title *" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
             <input value={uploadSpeaker} onChange={e => setUploadSpeaker(e.target.value)} placeholder="Speaker / preacher" className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm" />
