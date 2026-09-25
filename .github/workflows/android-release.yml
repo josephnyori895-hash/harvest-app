@@ -468,7 +468,9 @@ EOF
         uses: actions/upload-artifact@v4
         with:
           name: harvest-family-apk-${{ github.run_number }}
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            release-proof/release.json
           if-no-files-found: error
           retention-days: 14
 
