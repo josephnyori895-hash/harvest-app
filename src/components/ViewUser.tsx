@@ -3,6 +3,7 @@ import { useAuth } from '../state/auth'
 import { useCongregations } from '../lib/useCongregations'
 import StoryViewer from './Stories'
 
+import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function authHeaders() {
@@ -20,6 +21,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   const [profile, setProfile] = useState(safeUser)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
   const [storyIdx, setStoryIdx] = useState<number | null>(null)
   const [postIdx, setPostIdx] = useState<number | null>(null)
@@ -98,7 +100,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       if (d.user) setProfile((p: any) => ({ ...p, ...d.user, group: d.user.group_name }))
       window.dispatchEvent(new Event('harvest:verified'))
     } catch (e: any) {
-      alert(e?.message || 'Could not update this member')
+      setError(e?.message || 'Could not update this member')
     } finally { setBusy(false) }
   }
 
@@ -112,6 +114,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   const groupName = profile.group_name || profile.group || ''
 
   return (
+    {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-4 px-4 h-14">
