@@ -34,6 +34,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
   const [unreadByGroup, setUnreadByGroup] = useState<Record<string, number>>({})
+  const [groupQuery, setGroupQuery] = useState('')
 
   // Android hardware back should close an open group detail/settings screen
   // before the app-level navigator changes tabs.
@@ -264,6 +265,8 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 997
     return tints[h % tints.length]
   }
+
+  const filteredGroups = groups.filter(g => `${g.name || ''} ${g.description || ''} ${g.community || ''}`.toLowerCase().includes(groupQuery.trim().toLowerCase()))
 
   const GroupRow = ({ g }: { g: any }) => (
     <div className="w-full p-4 rounded-[22px] bg-white border border-[#E8DEC9] shadow-sm hover:shadow-md transition">
@@ -534,7 +537,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             <p className="mt-2 text-xs leading-5 text-[#8B8175]">Groups you can join will appear here. {isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>
         ) : (
-          <div className="space-y-3">{groups.map(g => <GroupRow key={g.id} g={g} />)}</div>
+          <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-[#E8DEC9] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-[#E8DEC9] bg-white p-6 text-center text-sm text-[#766E63]">No matching groups.</div>}</div>
         )}
       </div>
     </div>
