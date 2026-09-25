@@ -59,8 +59,9 @@ export default function ImageAdjuster({
 
   const activeRatio = PRESETS.find(p => p.id === aspect)?.ratio ?? null
 
-  // Fit the image inside the crop viewport ("cover"): scale ≥ 1 so there are
-  // never empty bars. Used as the base on load, rotate, and aspect change.
+  // Fit the entire picked image inside the editor at the default zoom.
+  // Do not force a portrait flyer/photo to "cover" the viewport: users must be
+  // able to see the full media and deliberately zoom in when they want a crop.
   const clampTransform = useCallback((t: Transform): Transform => {
     if (!imgSize) return t
     const { vw, vh } = viewportSize()
@@ -70,11 +71,10 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const cover = Math.max(vw / iw, vh / ih)
-    const minScale = cover > 1 ? cover : 1
-    // The displayed image is iw*minScale x ih*minScale (≥ viewport in both axes
-    // when cover ≥ 1; when minScale is 1 the image may be smaller than the
-    // viewport in one axis — then center it and allow no pan on that axis).
+    const fit = Math.min(vw / iw, vh / ih)
+    const minScale = fit > 0 ? fit : 1
+    // At the minimum zoom the complete image is visible; panning is only allowed
+    // after zooming far enough that the image exceeds the viewport.
     const dw = iw * minScale * t.scale
     const dh = ih * minScale * t.scale
     const maxX = Math.max((dw - vw) / 2, 0)
@@ -96,7 +96,7 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    return Math.max(vw / iw, vh / ih, 1)
+    return Math.min(vw / iw, vh / ih) || 1
   }, [imgSize, transform.rotation, viewportSize])
 
   useEffect(() => { setZoom(transform.scale) }, [transform.scale])
@@ -156,7 +156,7 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const minScale = Math.max(vw / iw, vh / ih, 1)
+    const minScale = Math.min(vw / iw, vh / ih) || 1
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
 
