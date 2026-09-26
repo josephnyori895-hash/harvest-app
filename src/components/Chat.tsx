@@ -80,8 +80,10 @@ function dayLabel(iso: string) {
 
 function Ticks({ status, mine }: { status: string; mine: boolean }) {
   if (!mine) return null
+  if (status === 'sending') return <span className="text-white/55" aria-label="Sending">◷</span>
+  if (status === 'failed') return <span className="text-rose-200" aria-label="Failed to send">!</span>
   const seen = status === 'seen'
-  return <span className={seen ? 'text-sky-300' : 'text-white/70'}>{seen || status === 'delivered' ? '✓✓' : '✓'}</span>
+  return <span className={seen ? 'text-sky-300' : 'text-white/70'} aria-label={seen ? 'Seen' : status === 'delivered' ? 'Delivered' : 'Sent'}>{seen || status === 'delivered' ? '✓✓' : '✓'}</span>
 }
 
 // Instagram-style compact list timestamps: h:mm / weekday / date.
@@ -192,6 +194,21 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   }
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  // Android IME can resize the WebView viewport without reliably updating 100dvh.
+  // Track the visual viewport so the composer remains inside the visible area.
+  const [chatViewportHeight, setChatViewportHeight] = useState<number | null>(null)
+  useEffect(() => {
+    const viewport = window.visualViewport
+    if (!viewport) return
+    const syncViewport = () => setChatViewportHeight(Math.max(320, Math.round(viewport.height)))
+    syncViewport()
+    viewport.addEventListener('resize', syncViewport)
+    viewport.addEventListener('scroll', syncViewport)
+    return () => {
+      viewport.removeEventListener('resize', syncViewport)
+      viewport.removeEventListener('scroll', syncViewport)
+    }
+  }, [])
   const pressTimer = useRef<number | null>(null)
   const swipeStartY = useRef<number | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
@@ -355,7 +372,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const tempId = `tmp_${Date.now()}`
     const optimistic: any = {
       id: tempId, from: currentUser, to: team ? null : active.username,
-      text: attach && !body ? '📷' : body, status: 'sent',
+      text: attach && !body ? '📷' : body, status: 'sending',
       created_at: new Date().toISOString(),
       at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       reply_to_id: replyTo?.id || null,
@@ -403,14 +420,34 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined,
         }),
       })
-      saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [result.message]) }))
-      cursorRef.current[conversationKey] = result.message.created_at || cursorRef.current[conversationKey]
+      const confirmed = { ...result.message, status: result.message?.status === 'seen' ? 'seen' : 'sent' }
+      saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [confirmed]) }))
+      cursorRef.current[conversationKey] = confirmed.created_at || cursorRef.current[conversationKey]
       void refreshInbox()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Message could not be sent')
-      saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== tempId) }))
+      const messageError = e instanceof Error ? e.message : 'Message could not be sent'
+      setError(messageError)
+      // Keep the failed bubble in place so the user can retry without losing text.
+      saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).map(m => String(m.id) === tempId ? { ...m, status: 'failed', error: messageError } : m) }))
       setText(body)
     } finally { setSending(false) }
+  }
+
+  const retryMessage = async (message: any) => {
+    if (sending || !message || String(message.id).startsWith('tmp_') === false) return
+    const body = String(message.text || '').trim()
+    if (!body) {
+      setError('This message needs to be sent again from the composer.')
+      return
+    }
+    // Reuse the normal send path so auth, limits, replies and server handling stay consistent.
+    saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
+    setText(body)
+    setReplyTo(null)
+    setError('')
+    window.setTimeout(() => {
+      void send()
+    }, 0)
   }
 
   const react = async (msg: any, emoji: string) => {
@@ -539,7 +576,10 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
     const isTeam = Boolean(team)
     return (
-      <main className="chat-screen h-[100dvh] max-h-[100dvh] min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden">
+      <main
+        className="chat-screen min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden"
+        style={{ height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
+      >
         <header className="h-[72px] shrink-0 border-b border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-stone-950/20">
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
           <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/90 to-[#A855F7]/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
@@ -611,6 +651,18 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                       {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
                       <div className={`text-[10px] mt-1.5 flex items-center justify-end gap-1 ${mine ? 'text-white/65' : 'text-stone-500'}`}>
                         <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
+                        {mine && m.status === 'sending' && <span className="text-white/60">Sending…</span>}
+                        {mine && m.status === 'failed' && (
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); void retryMessage(m) }}
+                            disabled={sending}
+                            className="font-extrabold text-rose-200 underline underline-offset-2 disabled:opacity-50"
+                            aria-label="Retry sending message"
+                          >
+                            Retry
+                          </button>
+                        )}
                         <Ticks status={m.status} mine={mine} />
                       </div>
                     </div>
@@ -643,7 +695,10 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
         {error ? <div className="px-4 py-2 shrink-0"><ErrorMessage message={error} /></div> : notice ? <div className="px-4 py-2 text-xs shrink-0 bg-stone-900 text-amber-300">{notice}</div> : null}
 
-        <div className="chat-composer border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]">
+        <div
+          className="chat-composer relative z-40 border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
+          style={{ paddingBottom: `max(0.65rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}
+        >
           {replyTo && (
             <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-stone-900 rounded-r-xl py-1.5 pr-2">
               <div className="min-w-0 flex-1 text-xs text-stone-300">
