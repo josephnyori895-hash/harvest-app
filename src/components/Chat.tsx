@@ -12,6 +12,20 @@ type Presence = { online: boolean; lastSeen: string }
 const API = import.meta.env.VITE_API_URL || ''
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '🔥'] as const
 
+function VerifiedBadge({ size = 'sm', className = '' }: { size?: 'sm' | 'md'; className?: string }) {
+  const sizeClasses = size === 'md' ? 'h-5 w-5 text-[12px]' : 'h-[18px] w-[18px] text-[10px]'
+  return (
+    <span
+      role="img"
+      aria-label="Verified account"
+      title="Verified account"
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-blue-500 text-white font-black leading-none ring-2 ring-blue-500/15 shadow-sm ${sizeClasses} ${className}`}
+    >
+      ✓
+    </span>
+  )
+}
+
 const sectionMeta: Record<Section, { label: string; icon: string; description: string }> = {
   personal: { label: 'Personal', icon: '💬', description: 'Private conversations with your church family' },
   groups: { label: 'Groups', icon: '👥', description: 'Chat with people in your Harvest group' },
@@ -830,7 +844,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                   </div>
                   <button type="button" onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
-                      <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-stone-200'}`}>{c.peer_name}{c.peer_verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+                      <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-stone-200'}`}>{c.peer_name}{c.peer_verified && <VerifiedBadge />}</p>
                       <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-stone-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
@@ -892,7 +906,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[15px] text-white">{u.name || u.username}{u.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
+                    <p className="font-semibold text-[15px] text-white">{u.name || u.username}{u.verified && <VerifiedBadge />}</p>
                     <p className="text-[13px] text-stone-400 truncate mt-0.5">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
                   </div>
                   {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="w-2.5 min-w-2.5 h-2.5 p-0 border-0 bg-blue-500" />}
