@@ -19,7 +19,7 @@ function VerifiedBadge({ size = 'sm', className = '' }: { size?: 'sm' | 'md'; cl
       role="img"
       aria-label="Verified account"
       title="Verified account"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-blue-500 text-white font-black leading-none ring-2 ring-blue-500/15 shadow-sm ${sizeClasses} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-blue-500 text-white font-black leading-none ring-2 ring-blue-500/15 shadow-sm ${sizeClasses} ${className}`} style={{ verticalAlign: 'middle' }}
     >
       ✓
     </span>
@@ -845,7 +845,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                   <button type="button" onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
                       <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-stone-200'}`}>{c.peer_name}{c.peer_verified && <VerifiedBadge />}</p>
-                      <span className={`ml-auto shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-stone-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
+                      <span className={`ml-2 shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-stone-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
                       <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-stone-100 font-semibold' : 'text-stone-400'}`}>
@@ -906,7 +906,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-[15px] text-white">{u.name || u.username}{u.verified && <VerifiedBadge />}</p>
+                    <div className="flex min-w-0 items-center gap-1.5 font-semibold text-[15px] text-white">\n                      <span className="truncate">{u.name || u.username}</span>\n                      {u.verified && <VerifiedBadge />}\n                    </div>
                     <p className="text-[13px] text-stone-400 truncate mt-0.5">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
                   </div>
                   {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="w-2.5 min-w-2.5 h-2.5 p-0 border-0 bg-blue-500" />}
