@@ -363,8 +363,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
 
-  const send = async () => {
-    const body = text.trim()
+  const send = async (bodyOverride?: string) => {
+    const body = (bodyOverride ?? text).trim()
     if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
     if (!localStorage.getItem('harvest_token')) { setError('Your session has expired. Please sign in again.'); return }
@@ -442,12 +442,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
     // Reuse the normal send path so auth, limits, replies and server handling stay consistent.
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
-    setText(body)
     setReplyTo(null)
     setError('')
-    window.setTimeout(() => {
-      void send()
-    }, 0)
+    void send(body)
   }
 
   const react = async (msg: any, emoji: string) => {
