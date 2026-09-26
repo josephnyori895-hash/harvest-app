@@ -18,7 +18,8 @@
     "test:reels": "node scripts/test-reels-regression.mjs",
     "validate:release": "node scripts/validate-release.mjs",
     "test:e2e:department-profile": "node scripts/e2e-department-profile.mjs",
-    "test:posting": "node scripts/test-posting-hardening.mjs"
+    "test:posting": "node scripts/test-posting-hardening.mjs",
+    "test:chat-responsive": "node --test scripts/test-chat-responsive.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
