@@ -4,6 +4,39 @@ import { useCongregations } from '../lib/useCongregations'
 import StoryViewer from './Stories'
 
 import ErrorMessage from './ErrorMessage'
+
+type VerifiedBadgeProps = {
+  size?: 'sm' | 'md'
+  className?: string
+}
+
+function VerifiedBadge({ size = 'sm', className = '' }: VerifiedBadgeProps) {
+  const sizeClasses =
+    size === 'md'
+      ? 'h-5 w-5 text-[12px]'
+      : 'h-[18px] w-[18px] text-[10px]'
+
+  return (
+    <span
+      role="img"
+      aria-label="Verified account"
+      title="Verified account"
+      className={[
+        'inline-flex shrink-0 items-center justify-center',
+        'rounded-full bg-blue-500 text-white',
+        'font-black leading-none',
+        'ring-2 ring-blue-500/15',
+        'shadow-sm',
+        sizeClasses,
+        className,
+      ].join(' ')}
+      style={{ verticalAlign: 'middle' }}
+    >
+      ✓
+    </span>
+  )
+}
+
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 function authHeaders() {
@@ -118,10 +151,24 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
        <div data-profile-user-id={profile.id || ''} data-profile-username={profile.username || ''} data-profile-name={displayName} data-profile-congregation={groupName} data-profile-verified={profile.verified ? 'true' : 'false'} data-profile-role={profile.role || 'member'} className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-4 px-4 h-14">
-        <button onClick={onBack} className="text-2xl hover:opacity-70 transition">‹</button>
-        <h1 className="font-bold text-lg truncate">{displayName}</h1>
-        {profile.verified ? <span className="ml-auto text-sm badge-verified shrink-0">✓ Verified</span> : <span className="ml-auto text-xs text-neutral-500 shrink-0">{followState.follows_you ? 'Follows you' : ''}</span>}
+      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-3 px-4 h-14">
+        <button onClick={onBack} aria-label="Back" className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-2xl hover:bg-neutral-100 active:scale-95 transition">‹</button>
+        <div className="min-w-0 flex-1 flex items-center gap-1.5">
+          <h1 className="min-w-0 truncate font-bold text-lg leading-6">{displayName}</h1>
+          {profile.verified && <VerifiedBadge size="md" />}
+        </div>
+        <div className="shrink-0 flex items-center justify-end gap-2">
+          {!isSelf && (
+            <span className="text-xs text-neutral-500 whitespace-nowrap">
+              {followState.follows_you ? 'Follows you' : ''}
+            </span>
+          )}
+          {isSelf && onEditProfile && (
+            <button onClick={() => onEditProfile()} aria-label="Edit profile" className="shrink-0 h-9 px-3 rounded-full bg-neutral-100 text-sm font-semibold text-neutral-800 hover:bg-neutral-200 active:scale-95 transition">
+              Edit
+            </button>
+          )}
+        </div>
       </div>
       <div className="px-4 py-6 bg-white/50">
         <div className="flex gap-4 items-start">
