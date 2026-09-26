@@ -16,6 +16,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      - name: Narrow Android chat responsive check
+        run: npm run test:chat-responsive
       - name: Typecheck (catches undefined-variable crashes before they ship)
         run: npm run typecheck
       - run: npm run test:admin
