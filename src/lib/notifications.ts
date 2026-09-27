@@ -74,7 +74,7 @@ export async function initNotifications(): Promise<void> {
 }
 
 
-/** Schedule a small set of local project reminders after participation. */
+/** Schedule local project reminders when a member still has a commitment outstanding. */
 export async function scheduleProjectReminders(project: { id: string; name: string; deadline?: string | null }, remainingKes: number): Promise<void> {
   const ln = await plugin()
   if (!ln || !project.deadline || remainingKes <= 0) return
@@ -83,17 +83,22 @@ export async function scheduleProjectReminders(project: { id: string; name: stri
     if (current.display !== 'granted') return
     const deadline = new Date(project.deadline).getTime()
     const now = Date.now()
-    const reminders = [7, 1].map((days, index) => {
-      const at = new Date(deadline - days * 86400000)
-      return at.getTime() > now ? {
+    const days = [7, 1]
+    const notifications = days.map((day, index) => {
+      const at = new Date(deadline - day * 86400000)
+      if (at.getTime() <= now) return null
+      return {
         id: 700000000 + Math.abs(hashCode(project.id)) % 1000000 + index,
         title: project.name,
-        body: days === 1 ? `Your project commitment has 1 day left (KES ${remainingKes.toLocaleString()} remaining).` : `Your project commitment is due soon (KES ${remainingKes.toLocaleString()} remaining).`,
+        body: day === 1
+          ? `Your project commitment has 1 day left (KES ${remainingKes.toLocaleString()} remaining).`
+          : `Your project commitment is due soon (KES ${remainingKes.toLocaleString()} remaining).`,
         channelId: NOTIF_CHANNEL,
         smallIcon: 'ic_launcher',
-      } : null
+        schedule: { at },
+      }
     }).filter(Boolean) as any[]
-    if (reminders.length) await ln.schedule({ notifications: reminders.map(x => ({ ...x, schedule: { at: new Date(x.body ? deadline - ([7,1][reminders.indexOf(x)] * 86400000) : deadline) } })) })
+    if (notifications.length) await ln.schedule({ notifications })
   } catch { /* reminders are best-effort and never block participation */ }
 }
 
