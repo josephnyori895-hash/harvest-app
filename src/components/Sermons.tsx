@@ -162,6 +162,11 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
 
   const uploadSermon = async () => {
     if (!uploadFile || !uploadTitle.trim() || uploading) return
+    const maxBytes = uploadKind === 'video' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
+    if (uploadFile.size > maxBytes) {
+      showToast(uploadKind === 'video' ? 'Video is limited to 5 GB.' : 'Audio is limited to 2 GB.', 'error')
+      return
+    }
     setUploading(true)
     try {
       const token = localStorage.getItem('harvest_token') || ''
@@ -371,10 +376,10 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
             <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg,audio/mp3'} onChange={e => {
               const f = e.target.files?.[0] || null
               if (!f) return
-              const max = uploadKind === 'video' ? 1024 * 1024 * 1024 : 200 * 1024 * 1024
+              const max = uploadKind === 'video' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
               const valid = uploadKind === 'video' ? f.type === 'video/mp4' : f.type === 'audio/mpeg' || f.type === 'audio/mp3'
               if (!valid) { showToast(uploadKind === 'video' ? 'Choose an MP4 video.' : 'Choose an MP3 audio file.', 'error'); e.target.value = ''; return }
-              if (f.size > max) { showToast(uploadKind === 'video' ? 'Video is limited to 1 GB.' : 'Audio is limited to 200 MB.', 'error'); e.target.value = ''; return }
+              if (f.size > max) { showToast(uploadKind === 'video' ? 'Video is limited to 5 GB.' : 'Audio is limited to 2 GB.', 'error'); e.target.value = ''; return }
               setUploadFile(f)
             }} className="hidden" />
             <button onClick={() => uploadInput.current?.click()} className="w-full py-3 rounded-xl border border-dashed border-[#CFC3B2] bg-[#FFFBF0] text-sm font-bold">{uploadFile ? uploadFile.name : 'Choose file'}</button>
