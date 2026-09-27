@@ -421,6 +421,20 @@ function InnerApp() {
     <div className="app-shell bg-[#FFFBF0] flex justify-center">
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+        <button
+          type="button"
+          onClick={() => setShowNotifications(true)}
+          aria-label={`Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
+          className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-[#E8DEC9] bg-[#FFFBF0]/95 text-lg shadow-sm backdrop-blur focus:outline-none focus-visible:ring-2"
+          style={{ top: 'calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 8px)' }}
+        >
+          <span aria-hidden="true">🔔</span>
+          {notifications.some(n => !n.read_at) && (
+            <span className="absolute -right-0.5 -top-0.5 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+              {notifications.filter(n => !n.read_at).length > 99 ? '99+' : notifications.filter(n => !n.read_at).length}
+            </span>
+          )}
+        </button>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           {showNotifications && (
             <NotificationsScreen
