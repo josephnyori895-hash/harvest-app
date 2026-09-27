@@ -29,7 +29,7 @@ called healthy. The APK-level release record lives in `release-ledger.md`.
 | Give (UI/API) | 🟢 | typecheck green; M-Pesa contract tests pass | `9c5ce42` merge repair |
 | M-Pesa live STK | 🟡 | Contract tests only — one controlled transaction pending (procedure below) | — |
 | Admin | 🟢 | `test-admin-controls`; `requireAdmin` server-side on all admin routes | — |
-| Notifications (registration) | 🟢 | `notifications.js` lifecycle E2E: register/rotate/disable/delete/owner-scope | `e25515b` |
+| Notifications (registration) | 🟢 | Server lifecycle E2E (register/rotate/disable/delete/owner-scope) + client layer `src/lib/push.ts` wired to sign-in/sign-out | `1c204e9` client layer |
 | Notifications (delivery) | 🟡 | `lib/fcm.js` + 5 contract tests; **live send needs Firebase secrets + device** | `e25515b` |
 | Database / migrations | 🟢 | 30 migrations apply clean; single-source DDL | `5d52636` dedupe |
 | Android / Release | 🟢 | Releases #519/#520: sign, verify, rollback drill, prod URL+SHA | device QA pending |
@@ -40,17 +40,24 @@ called healthy. The APK-level release record lives in `release-ledger.md`.
 
 ### Gate 1 — FCM live send (needs Firebase credentials)
 
+**Engineering prerequisites — COMPLETE:**
+- [x] Server delivery engine, dedupe, delivery log, cron GC (`e25515b`)
+- [x] Client registration layer: token acquisition, sign-in registration, sign-out disable, tap routing (`1c204e9`)
+- [x] `POST_NOTIFICATIONS` permission in manifest; conditional google-services plugin
+
+**Remaining (human steps):**
 1. Firebase console → project settings → service accounts → generate key JSON.
-2. `npx wrangler secret put FCM_SERVICE_ACCOUNT` (paste JSON);
+2. Place `google-services.json` at `android/app/google-services.json` (gitignored — never commit it).
+3. `npx wrangler secret put FCM_SERVICE_ACCOUNT` (paste JSON);
    `npx wrangler secret put FCM_PROJECT_ID` (or rely on the JSON's project_id).
-3. Enable: `npx wrangler secret put FCM_ENABLED` → `1` (kill switch stays off until then).
-4. Deploy → install latest APK → sign in (auto-registers device) →
+4. Enable: `npx wrangler secret put FCM_ENABLED` → `1` (kill switch stays off until then).
+5. Deploy → install latest APK → sign in → accept the notification permission prompt →
    `POST /api/notifications/devices/test` → expect lockscreen notification.
-5. Send a real DM from another account → notification tap must deep-link into
+6. Send a real DM from another account → notification tap must deep-link into
    that conversation; `GET /api/notifications/deliveries` shows `ok:1`.
-6. Uninstall+reinstall app → resend → dead token is removed automatically
+7. Uninstall+reinstall app → resend → dead token is removed automatically
    (`invalid_tokens_removed: 1`) and the new token receives the push.
-7. Record evidence: run number, test-send timestamp, delivery-log row.
+8. Record evidence: run number, test-send timestamp, delivery-log row.
 
 ### Gate 2 — Physical Android QA (matrix in `android-qa-matrix.md`)
 
@@ -74,3 +81,25 @@ build/run number and pass/fail per row. No redesign during QA — fixes only.
 
 Original agreed scope complete → production behavior verified (gates 1–3) →
 release artifact verified (`release-ledger.md`) → only then extras.
+
+## Baseline rule for every subsequent release
+
+This checklist is the **verification baseline**. It does not stay green by
+assumption — any change **reopens exactly the gates it touches**:
+
+| Change touches… | Gates/rows that must be re-verified before release |
+|---|---|
+| Any file under `src/` (UI) | Typecheck/lint/build + the matching QA-matrix sections on device |
+| Chat, notifications, push | Row "Chat", "Notifications (registration/delivery)" + QA §3, §10 (tap routing) |
+| Groups / signup | Rows "Signup", "Groups data", "Groups API" (`test-groups`) + QA §2, §7 |
+| Media (posts/stories/reels/sermons) | Matching regression tests + QA §4–§6 |
+| Give / M-Pesa | Giving contract tests + **Gate 3 replay check re-run** + QA §9 |
+| Workers `routes/*` or `lib/*` | Full worker suite + affected row(s) |
+| Migrations | Fresh-DB apply + prod migration step + "Database" row |
+| Auth / session | Auth row + QA §2.5 (no cross-account leakage) |
+| Android manifest / gradle / plugins | QA §1 (install-over-previous, signing continuity) |
+| CI workflows | Observing one green run per workflow is not enough — verify the changed step actually executes |
+
+A green CI run alone re-verifies nothing human-gated: device rows and the
+M-Pesa replay check are only invalidated by changes that can affect them, but
+they are only ever marked green by an actual recorded run.
