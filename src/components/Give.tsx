@@ -106,11 +106,15 @@ export default function Give() {
       } catch { /* keep polling silently */ }
     }, 4000)
     const stop = window.setTimeout(() => setPollingId(null), 120_000)
-    const openProject = (project: any) => {
+    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
+  }, [pollingId])
+
+  const openProject = (project: any) => {
     setSelectedProject(project)
     setProjectCommitment(project?.mine?.commitment_kes || '')
     setProjectReminder(project?.mine?.reminder_enabled !== false)
   }
+
   const saveParticipation = async () => {
     if (!selectedProject || projectBusy) return
     const value = Number(projectCommitment)
@@ -135,8 +139,6 @@ export default function Give() {
       {p.deadline && <p className="mt-1 text-[10px] text-[#8B8175]">Deadline {new Date(p.deadline).toLocaleDateString()}</p>}
     </button>
   }
-  return () => { window.clearInterval(timer); window.clearTimeout(stop) }
-  }, [pollingId])
 
   const pay = async () => {
     if (!apiEnabled) { showToast('Giving requires the server API in production', 'error'); return }
