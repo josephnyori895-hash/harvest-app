@@ -16,6 +16,7 @@ import { handleSermons } from './routes/sermons.js'
 import { handleSocial } from './routes/social.js'
 import { handleAdminAudit } from './routes/adminAudit.js'
 import { handleShare } from './routes/share.js'
+import { handleNotifications } from './routes/notifications.js'
 import { Realtime } from './realtime.js'
 
 export { Realtime }
@@ -119,7 +120,7 @@ export default {
       const user = await authenticate(env, request)
       const ctx2 = { user }
 
-      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit]
+      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit, handleNotifications]
       for (const handler of handlers) {
         const res = await handler(request, env, ctx2, extractParams(url))
         if (res) return withCors(res, env, request)
