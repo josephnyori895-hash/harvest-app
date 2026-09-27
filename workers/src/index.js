@@ -9,6 +9,7 @@ import { handleMedia } from './routes/media.js'
 import { handleChat } from './routes/chat.js'
 import { handlePending, runScheduledCleanup } from './routes/pending.js'
 import { handleGiving } from './routes/giving.js'
+import { handleProjects } from './routes/projects.js'
 import { handleDepartments } from './routes/departments.js'
 import { handleGroups } from './routes/groups.js'
 import { handleContent } from './routes/content.js'
@@ -120,7 +121,7 @@ export default {
       const user = await authenticate(env, request)
       const ctx2 = { user }
 
-      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit, handleNotifications]
+      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit, handleNotifications]
       for (const handler of handlers) {
         const res = await handler(request, env, ctx2, extractParams(url))
         if (res) return withCors(res, env, request)
