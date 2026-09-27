@@ -568,7 +568,52 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“{verseText}”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">{verseRef}</p></div></section>
 
       {feedLoadFailed && <div className="mt-5"><ErrorMessage message="We couldn’t load the latest community updates." action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} className="text-xs font-bold underline">Retry</button>} /></div>}
-      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Give with purpose</p><h2 className="text-lg font-extrabold">Active projects</h2><p className="text-xs text-[#766E63] mt-1">Join a shared goal and follow your participation from Give.</p></div><div className="space-y-3">{liveProjects.map((p: any) => { const pct=p.project?.goal_kes ? Math.min(100, Math.round((p.project.raised_kes/p.project.goal_kes)*100)) : 0; return <button key={p.id} type="button" onClick={() => setTab('give')} className="w-full text-left rounded-2xl bg-white border border-[#E8DEC9] p-4 shadow-sm"><div className="flex items-start gap-3"><span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-xl">{p.project?.icon || '🤲'}</span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="font-extrabold truncate">{p.project?.name || p.name}</p><span className="text-[10px] font-bold text-[#7C3AED] shrink-0">PROJECT</span></div><p className="mt-1 text-xs text-[#6B6257] line-clamp-2">{p.project?.description || p.caption}</p></div></div><div className="mt-3 h-2 rounded-full bg-[#F4E8D0] overflow-hidden"><div className="h-full rounded-full bg-[#7C3AED]" style={{width:`${pct}%`}} /></div><div className="mt-2 flex justify-between text-[11px] font-semibold"><span>KES {Number(p.project?.raised_kes||0).toLocaleString()} raised</span><span>{pct}% · {p.project?.participants||0} participating</span></div></button> })}</div></section>
+      <section className="mt-7">
+        <div className="mb-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Featured in your feed</p>
+          <h2 className="text-lg font-extrabold">Church projects</h2>
+          <p className="text-xs text-[#766E63] mt-1">Sponsored community projects from Harvest Family.</p>
+        </div>
+        <div className="space-y-3">
+          {liveProjects.map((p: any) => {
+            const project = p.project || p
+            const pct = project.goal_kes ? Math.min(100, Math.round((Number(project.raised_kes || 0) / Number(project.goal_kes)) * 100)) : 0
+            return <article key={p.id} className="relative overflow-hidden rounded-[24px] border border-[#D8C7F5] bg-gradient-to-br from-[#FBF8FF] via-white to-[#FFF9ED] shadow-sm">
+              <button type="button" onClick={() => setTab('give')} className="block w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-[#7C3AED] focus:ring-inset" aria-label={`Open sponsored project: ${project.name || p.name}`}>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EDE9FE] px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#5B21B6]">Sponsored · Church project</span>
+                  <span className="text-[11px] font-bold text-[#7C3AED] shrink-0">Learn more →</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="w-12 h-12 shrink-0 rounded-2xl bg-white border border-[#E8DEC9] flex items-center justify-center text-2xl shadow-sm">{project.icon || '🤲'}</span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-extrabold text-[16px] leading-5 truncate">{project.name || p.name}</h3>
+                    <p className="mt-1 text-xs leading-5 text-[#5F564B] line-clamp-2">{project.description || p.caption}</p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-2xl bg-white/80 border border-[#E8DEC9] p-3">
+                  <div className="flex items-center justify-between gap-3 text-[11px] font-bold">
+                    <span>KES {Number(project.raised_kes || 0).toLocaleString()} raised</span>
+                    <span>{pct}% of goal</span>
+                  </div>
+                  <div className="mt-2 h-2.5 rounded-full bg-[#F0E9DC] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#766E63]">
+                    <span>{Number(project.participants || 0)} participating</span>
+                    {project.deadline ? <span>Ends {new Date(project.deadline).toLocaleDateString()}</span> : <span>Open participation</span>}
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="text-[10px] text-[#8B8175]">Support a shared church goal</span>
+                  <span className="inline-flex items-center justify-center rounded-full bg-[#5B21B6] px-4 py-2 text-xs font-extrabold text-white shadow-sm">View project</span>
+                </div>
+              </button>
+            </article>
+          })}
+          {liveProjects.length === 0 && <div className="rounded-2xl border border-dashed border-[#D9CEBC] bg-[#FFFCF6] p-4 text-sm text-[#8B8175]">No featured projects right now.</div>}
+        </div>
+      </section>
 
       <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="shrink-0 px-3 py-1.5 rounded-full border border-[#E8DEC9] bg-white text-[10px] font-extrabold text-[#5B21B6] disabled:opacity-40">↻ Refresh</button></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return <article data-post-id={String(p.id ?? key)} key={key} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm"><div className="p-4 flex items-center justify-between"><div className="flex items-center gap-3"><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="flex items-center gap-3" aria-label={`View ${p.user}'s profile`}><div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</div></button><button onClick={() => onOpenUser?.({ username: p.username, name: p.name || p.user, verified: p.verified, group_name: p.group_name })} className="text-left" aria-label={`View ${p.user}'s profile`}><p className="text-sm font-extrabold">{p.user}{p.verified && <span className="ml-1 text-[#0F766E]">✓</span>}</p><p className="text-[11px] text-[#8B8175]">{p.loc} · {p.time}</p></button></div><button onClick={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })} className="w-8 h-8 rounded-xl bg-[#FAF6EC] text-[#766E63] font-bold" aria-label="More options">•••</button></div>{p.video ? <MediaPreview src={p.video} poster={p.img} /> : p.img ? <MediaThumbnail src={p.img} alt="" className="w-full aspect-[4/3] object-cover" fallbackIcon="🖼️" /> : <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>}<div className="p-4"><span className="inline-flex px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#5B21B6] text-[10px] font-extrabold">{p.kind || 'Community'}</span><p className="mt-3 text-sm leading-6 text-[#4B433A]"><strong className="text-[#29251F]">{p.user}</strong> {p.caption}</p><div className="mt-4 flex items-center gap-2"><button onClick={() => toggleLike(key)} className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${liked ? 'bg-[#FCE7F3] border-[#F9A8D4] text-[#9D174D]' : 'bg-[#FAF6EC] border-[#E8DEC9] text-[#5B21B6]'}`}>{liked ? '♥ Grateful' : '♡ Appreciate'} · {displayLikes.toLocaleString()}</button><button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="px-3 py-2 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6]">💬 Comments{Number(p.comments) > 0 ? ` · ${p.comments}` : ''}</button><button onClick={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.kind === 'reel' ? 'reel' : 'post' })} className="px-3 py-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/40 text-xs font-extrabold text-[#128C4A]" aria-label="Share to WhatsApp" title="Share to WhatsApp">↗ Share on WhatsApp</button></div>{p.music && <div className="mt-3 flex items-center gap-2 rounded-xl bg-purple-50 p-2"><span>🎵</span><span className="text-[11px] font-bold truncate">{p.music.title} · {p.music.artist}</span></div>}{p.comments > 0 && <button onClick={() => setCommentTarget({ scope: p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })} className="mt-3 text-[11px] font-semibold text-[#8B8175]">{p.comments} people are talking about this — join them</button>}</div></article> })}</div></section>
 
