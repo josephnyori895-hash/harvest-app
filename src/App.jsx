@@ -479,7 +479,7 @@ function InnerApp() {
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
           {tab === 'give' && <Give />}
-          {tab === 'map' && <HarvestMap users={users} />}
+          {tab === 'map' && <HarvestMap users={users} onOpenUser={openProfile} />}
           {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} onOpenUser={openProfile} />}
           {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} onOpenUser={openProfile} />}
           {tab === 'admin' && (
