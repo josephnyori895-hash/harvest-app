@@ -10,7 +10,8 @@
     "db:migrate:status": "wrangler d1 migrations list DB --remote",
     "cf:provision": "node scripts/provision.mjs",
     "tail": "wrangler tail",
-    "test:media": "node scripts/test-media-upload.mjs"
+    "test:media": "node scripts/test-media-upload.mjs",
+    "test:notifications": "node --test scripts/test-notifications.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3"

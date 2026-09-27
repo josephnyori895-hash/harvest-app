@@ -119,7 +119,9 @@ export default {
 
     try {
       const user = await authenticate(env, request)
-      const ctx2 = { user }
+      // waitUntil passes background work (FCM fan-out) to the runtime without
+      // blocking the response.
+      const ctx2 = { user, waitUntil: (p) => { try { ctx.waitUntil(p) } catch { /* already returned */ } } }
 
       const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit, handleNotifications]
       for (const handler of handlers) {

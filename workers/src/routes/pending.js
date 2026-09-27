@@ -52,7 +52,11 @@ export async function runScheduledCleanup(env) {
   // login_attempts GC (>7d) + media_upload_attempts GC (>1d)
   await query(env, `DELETE FROM login_attempts WHERE created_at < ?`, [new Date(Date.now() - 7 * 24 * 3600_000).toISOString()]).catch(() => {})
   await query(env, `DELETE FROM media_upload_attempts WHERE created_at < ?`, [new Date(Date.now() - 24 * 3600_000).toISOString()]).catch(() => {})
-  return { cleanup, stories_purged: expired.rows.length }
+  // notification GC: delivery log 14d, sent-keys 7d, disabled devices 90d
+  const deliveriesGc = await query(env, `DELETE FROM notification_deliveries WHERE created_at < ?`, [new Date(Date.now() - 14 * 24 * 3600_000).toISOString()]).catch(() => ({ meta: {} }))
+  await query(env, `DELETE FROM notification_sent_keys WHERE created_at < ?`, [new Date(Date.now() - 7 * 24 * 3600_000).toISOString()]).catch(() => {})
+  await query(env, `DELETE FROM notification_devices WHERE enabled = 0 AND updated_at < ?`, [new Date(Date.now() - 90 * 24 * 3600_000).toISOString()]).catch(() => {})
+  return { cleanup, stories_purged: expired.rows.length, notification_deliveries_purged: deliveriesGc?.meta?.changes ?? 0 }
 }
 
 export async function handlePending(request, env, ctx) {

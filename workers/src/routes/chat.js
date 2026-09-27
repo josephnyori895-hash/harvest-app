@@ -1,5 +1,6 @@
 // Port of server/src/routes/chat.js (pg → D1). All timestamps ISO strings.
 import { query } from '../lib/db.js'
+import { sendFanOut } from '../lib/fcm.js'
 import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
 import { mediaUrlOrNull } from '../lib/media.js'
@@ -148,6 +149,31 @@ export async function handleChat(request, env, ctx) {
        VALUES (?,?,?,?,?,?,?,?,?, 'sent', ?,?,?,?,?)`,
       [id, conv.kind, conv.key, fresh.id, fresh.username, conv.recipientId || null, conv.recipientUsername || null, conv.groupId || null, text || (mediaType === 'image' ? '📷' : ''), now, replyToId, replyPreview, mediaKey, mediaType],
     )
+
+    // Push fan-out (FCM delivery batch): never blocks or breaks the send.
+    // Recipients are membership-resolved and authorization-checked inside the
+    // fan-out; the sender is excluded; results land in notification_deliveries.
+    try {
+      let recipients = []
+      if (conv.kind === 'dm' && conv.recipientId) recipients = [conv.recipientId]
+      else if (conv.groupId) recipients = (await query(env, 'SELECT user_id FROM group_members WHERE group_id=?', [conv.groupId])).rows.map(r => r.user_id)
+      else if (conv.groupSlug) recipients = (await query(env, 'SELECT user_id FROM department_members WHERE department_id=(SELECT id FROM departments WHERE slug=?)', [conv.groupSlug])).rows.map(r => r.user_id)
+      recipients = recipients.filter(pid => pid && pid !== fresh.id)
+      if (recipients.length) {
+        const preview = (text || (mediaType === 'image' ? '📷 Photo' : '📎 Media')).slice(0, 200)
+        const task = sendFanOut(env, {
+          recipients,
+          title: `@${fresh.username}`,
+          body: preview,
+          data: { kind: 'chat', type: conv.kind, conversation_key: conv.key, slug: conv.groupSlug || '', peer: conv.recipientUsername || '', message_id: id },
+          collapseKey: `chat:${conv.key}`,
+          requestKey: `chatmsg:${id}`,
+          actor: fresh.username,
+        })
+        if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(task)
+        else task.catch(() => {})
+      }
+    } catch { /* push must never break chat */ }
     return jsonResponse(
       { message: { id, kind: conv.kind, conversation_key: conv.key, from: fresh.username, to: conv.recipientUsername || null, text: text || (mediaType === 'image' ? '📷' : ''), status: 'sent', created_at: now, at: now.slice(11, 16), reply_to_id: replyToId, reply_preview: replyPreview, media_key: mediaKey, media_type: mediaType, reaction: null } },
       201,

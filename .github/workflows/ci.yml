@@ -43,6 +43,8 @@ jobs:
         run: node --check workers/src/index.js && find workers/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Test media presigned upload contract
         run: npm run test:media --prefix workers
+      - name: Test FCM delivery contract
+        run: npm run test:notifications --prefix workers
       - name: Worker dependency audit
         run: npm audit --prefix workers --audit-level=high
       - name: Validate wrangler config + dry-run build (no deploy)
