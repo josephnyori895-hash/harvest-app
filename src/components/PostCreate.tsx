@@ -250,7 +250,7 @@ export default function PostCreate({ onDone }: Props) {
               <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center hover:bg-[#FFFBF0]">
                 <span className="w-14 h-14 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-2xl">＋</span>
                 <strong className="mt-3 text-sm">{type === 'music' ? 'Choose an audio file' : type === 'video' ? 'Choose a video' : 'Choose a photo or video'}</strong>
-                <span className="text-xs text-[#766E63] mt-1">{type === 'video' ? 'Up to 100 MB' : type === 'music' ? 'Up to 20 MB' : type === 'sermon' ? 'Audio up to 200 MB · video up to 1 GB' : 'Up to 10 MB'}</span>
+                <span className="text-xs text-[#766E63] mt-1">{type === 'video' ? 'Up to 100 MB' : type === 'music' ? 'Up to 20 MB' : type === 'sermon' ? 'Audio up to 2 GB · video up to 5 GB' : 'Up to 10 MB'}</span>
               </button>
             )}
             <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
@@ -270,7 +270,7 @@ export default function PostCreate({ onDone }: Props) {
               <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Sermon title (e.g. The Power of Persistence)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
               <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Speaker / preacher (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
               <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-              <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 200 MB audio / 1 GB video, so full-length services fit. Members will be able to stream it and download the original file.</p>
+              <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 2 GB audio / 5 GB video, suitable for full-length services. Members will be able to stream it and download the original file.</p>
             </div>
           )}
           {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} maxLength={2000} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
