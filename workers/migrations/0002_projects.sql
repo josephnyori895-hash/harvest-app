@@ -1,16 +1,6 @@
-CREATE TABLE IF NOT EXISTS notification_devices (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  platform TEXT NOT NULL,
-  fcm_token TEXT NOT NULL UNIQUE,
-  installation_id TEXT NOT NULL,
-  app_version TEXT,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  last_seen_at TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_notification_devices_user ON notification_devices(user_id, enabled, updated_at DESC);
+-- notification_devices lives in 0023_notification_devices.sql (single source
+-- of truth); do not redefine it here — duplicate DDL made fresh databases
+-- diverge from production depending on which file ran first.
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
