@@ -66,7 +66,7 @@ const BACKOFF_MS = [15_000, 60_000, 180_000, 600_000]
 // multi-hour upload that can only fail at presign time.
 export const MAX_UPLOAD_MB: Record<string, number> = {
   avatar: 5, post: 10, story: 30, reel: 100, track: 20,
-  sermon_audio: 200, sermon_video: 1024,
+  sermon_audio: 2048, sermon_video: 5120,
 }
 export function uploadTooLarge(kind: string, bytes: number): string | null {
   const maxMb = MAX_UPLOAD_MB[kind]
