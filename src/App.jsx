@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
@@ -23,6 +23,7 @@ import Admin from './components/Admin'
 import { showToast } from './components/Toast'
 import UploadPill from './components/UploadPill'
 import ErrorMessage from './components/ErrorMessage'
+import NotificationsScreen from './components/NotificationsScreen'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 
 // Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
@@ -152,6 +153,16 @@ function InnerApp() {
   const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const [notificationFilter, setNotificationFilter] = useState('all')
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [notificationsRefreshing, setNotificationsRefreshing] = useState(false)
+  const [notificationsError, setNotificationsError] = useState(null)
+  const [notificationActionError, setNotificationActionError] = useState(null)
+  const [notificationPendingIds, setNotificationPendingIds] = useState(() => new Set())
+  const [notificationMarkAllPending, setNotificationMarkAllPending] = useState(false)
+  const notificationMutationQueueRef = useRef(Promise.resolve())
   const [sharedContent, setSharedContent] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search)
@@ -226,6 +237,89 @@ function InnerApp() {
     setTeamChat(null)
     setTab(chatReturnTab || 'home')
   }
+  const enqueueNotificationMutation = (task) => {
+    const run = notificationMutationQueueRef.current.then(() => task(), () => task())
+    notificationMutationQueueRef.current = run.catch(() => {})
+    return run
+  }
+
+  const markNotificationRead = async (notificationId) => {
+    const previous = notifications.find(n => n.id === notificationId)
+    if (!previous || previous.read_at) return true
+    const optimisticReadAt = new Date().toISOString()
+    setNotifications(current => current.map(n => n.id === notificationId ? { ...n, read_at: optimisticReadAt } : n))
+    setNotificationPendingIds(current => new Set(current).add(notificationId))
+    setNotificationActionError(null)
+    return enqueueNotificationMutation(async () => {
+      try {
+        const r = await fetch(`${API}/api/notifications/${encodeURIComponent(notificationId)}/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        })
+        if (!r.ok) throw new Error('read failed')
+        return true
+      } catch {
+        setNotifications(current => current.map(n => n.id === notificationId && n.read_at === optimisticReadAt ? previous : n))
+        setNotificationActionError('Couldn’t mark notification as read. Please try again.')
+        return false
+      } finally {
+        setNotificationPendingIds(current => {
+          const next = new Set(current)
+          next.delete(notificationId)
+          return next
+        })
+      }
+    })
+  }
+
+  const markAllNotificationsRead = async () => {
+    if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
+    const previous = notifications
+    const optimisticReadAt = new Date().toISOString()
+    setNotifications(current => current.map(n => n.read_at ? n : { ...n, read_at: optimisticReadAt }))
+    setNotificationMarkAllPending(true)
+    setNotificationActionError(null)
+    return enqueueNotificationMutation(async () => {
+      try {
+        const r = await fetch(`${API}/api/notifications/read-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        })
+        if (!r.ok) throw new Error('mark all failed')
+        return true
+      } catch {
+        setNotifications(current => current.map(n => {
+          if (n.read_at !== optimisticReadAt) return n
+          return previous.find(p => p.id === n.id) || n
+        }))
+        setNotificationActionError('Couldn’t mark all notifications as read. Please try again.')
+        return false
+      } finally {
+        setNotificationMarkAllPending(false)
+      }
+    })
+  }
+
+  const handleNotificationPress = (notification) => {
+    if (!notification) return
+    if (!notification.read_at) void markNotificationRead(notification.id)
+    const target = notification.target || {}
+    if (target.type === 'chat' && target.user_id) {
+      openDm({ id: target.user_id, username: target.peer_username || target.username, name: target.peer_name || target.name })
+    } else if (target.type === 'group_chat') {
+      openTeamChat('group', target.slug || target.group_id, target.name || 'Group')
+    } else if (target.type === 'department_chat') {
+      openTeamChat('department', target.slug || target.department_id, target.name || 'Department')
+    } else if (notification.type === 'reel' && target.id) {
+      setSearchReelId(String(target.id))
+      setTab('reels')
+    } else if (notification.type === 'sermon' && target.id) {
+      setSearchSermonId(String(target.id))
+      setTab('sermons')
+    }
+    setShowNotifications(false)
+  }
+
   // 'Pray with Pastor': open a 1:1 DM with the pastor's account from Home.
   const openDm = (user) => {
     if (!user?.id || !user?.username) return
@@ -328,6 +422,25 @@ function InnerApp() {
       {/* Fluid width: fills the phone screen (no more 390px demo column) */}
       <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
+          {showNotifications && (
+            <NotificationsScreen
+              notifications={notifications}
+              filter={notificationFilter}
+              loading={notificationsLoading}
+              refreshing={notificationsRefreshing}
+              error={notificationsError}
+              actionError={notificationActionError}
+              unreadCount={notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0)}
+              pendingNotificationIds={notificationPendingIds}
+              markAllPending={notificationMarkAllPending}
+              onFilterChange={setNotificationFilter}
+              onNotificationPress={handleNotificationPress}
+              onRetry={() => {}}
+              onMarkAllRead={markAllNotificationsRead}
+              onDismissActionError={() => setNotificationActionError(null)}
+              onBack={() => setShowNotifications(false)}
+            />
+          )}
           {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
