@@ -1,3 +1,17 @@
+CREATE TABLE IF NOT EXISTS notification_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  fcm_token TEXT NOT NULL UNIQUE,
+  installation_id TEXT NOT NULL,
+  app_version TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notification_devices_user ON notification_devices(user_id, enabled, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
