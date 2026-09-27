@@ -72,15 +72,15 @@ export async function handleUsers(request, env, ctx, params) {
   if (path === '/api/users/map' && method === 'GET') {
     const fresh = await requireMember(env, user)
     const isAdmin = fresh.role === 'admin'
-    const groupCentroids = {
-      'Harvest Central': [-0.4197, 36.9475], 'Harvest Ruringu': [-0.432, 36.95],
-      'Harvest Skuta': [-0.41, 36.94], 'Harvest Majengo': [-0.425, 36.945],
-      'Harvest Kamakwa': [-0.415, 36.955], 'Harvest Nyeri': [-0.4197, 36.9475],
-    }
+    // Read congregation locations live from D1. These are the same coordinates
+    // used by signup nearest-group matching; the map must not drift to a second
+    // hard-coded set of locations.
+    const { rows: groupRows } = await query(env, 'SELECT name, lat, lng, location_label FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
+    const groupCentroids = Object.fromEntries(groupRows.map(g => [g.name, [Number(g.lat), Number(g.lng), g.location_label || '']]))
     // Phone numbers are admin-only: members never receive other people's numbers.
     const { rows } = await query(
       env,
-      `SELECT id, username, name, group_name, location, verified, role, lat, lng, avatar_key${isAdmin ? ', phone, phone_normalized, grants' : ''} FROM users WHERE active=1 ORDER BY group_name, username LIMIT 500`,
+      `SELECT id, username, name, group_name, location, verified, role, lat, lng, location_updated_at, avatar_key${isAdmin ? ', phone, phone_normalized, grants' : ''} FROM users WHERE active=1 ORDER BY group_name, username LIMIT 500`,
     )
     const { rows: follows } = await query(env, `SELECT followee_id FROM follows WHERE follower_id=?`, [fresh.id])
     const followsSet = new Set(follows.map(r => r.followee_id))
@@ -91,9 +91,20 @@ export async function handleUsers(request, env, ctx, params) {
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === fresh.id
       const avatar_url = await mediaUrlOrNull(env, u.avatar_key, 3600)
       if (mutual) return { ...u, ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
-      const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475]
-      const [al, ag] = [gc[0] + (Math.random() - 0.5) * 0.008, gc[1] + (Math.random() - 0.5) * 0.008]
-      return { id: u.id, username: u.username, name: u.name, group_name: u.group_name, location: null, verified: u.verified, role: undefined, lat: al, lng: ag, hidden: true, approx: true, avatar_url }
+      const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475, '']
+      // Deterministic jitter keeps an approximate member marker stable across
+      // refreshes; Math.random() made members appear to move every 30 seconds.
+      let seed = 0
+      for (let i = 0; i < String(u.id).length; i++) seed = (seed * 31 + String(u.id).charCodeAt(i)) >>> 0
+      const jitterLat = ((seed % 1000) / 999 - 0.5) * 0.004
+      const jitterLng = ((((seed / 1000) | 0) % 1000) / 999 - 0.5) * 0.004
+      return {
+        id: u.id, username: u.username, name: u.name, group_name: u.group_name,
+        location: null, verified: u.verified, role: undefined,
+        lat: gc[0] + jitterLat, lng: gc[1] + jitterLng,
+        location_updated_at: null, hidden: true, approx: true,
+        location_label: gc[2] || null, avatar_url
+      }
     }))
     return jsonResponse({ users: out, viewer: fresh.username, isAdmin })
   }
@@ -407,6 +418,7 @@ export async function handleUsers(request, env, ctx, params) {
       }
       updates.lat = lat
       updates.lng = lng
+      updates.location_updated_at = new Date().toISOString()
     }
     // Avatar: must reference an avatar upload owned by this account.
     if (body.avatar_key !== undefined) {
@@ -430,7 +442,7 @@ export async function handleUsers(request, env, ctx, params) {
         await audit(env, fresh, 'profile_self_update', fresh.id, { fields: fields.filter(f => f !== 'lat' && f !== 'lng') })
       }
     }
-    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, avatar_key FROM users WHERE id=?', [fresh.id])
+    const { rows } = await query(env, 'SELECT id, username, name, phone, location, group_name, constituency, faith, verified, role, lat, lng, location_updated_at, avatar_key FROM users WHERE id=?', [fresh.id])
     const me = bool(rows[0], 'verified')
     return jsonResponse({ user: { ...me, avatar_url: await mediaUrlOrNull(env, me?.avatar_key, 86_400) } })
   }
