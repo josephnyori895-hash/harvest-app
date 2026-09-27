@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGivingAdmin, fetchMyGiving, startGiving, useApi } from '../lib/api'
+import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, useApi } from '../lib/api'
 import { showToast } from './Toast'
 
 const FUNDS = [
@@ -38,6 +38,11 @@ export default function Give() {
   const [pollingId, setPollingId] = useState<string | null>(null)
   // Admin-editable content (funds, amounts, headline, paybill) with defaults.
   const [content, setContent] = useState<Record<string, string>>({})
+  const [projects, setProjects] = useState<any[]>([])
+  const [selectedProject, setSelectedProject] = useState<any | null>(null)
+  const [projectCommitment, setProjectCommitment] = useState<number | ''>('')
+  const [projectReminder, setProjectReminder] = useState(true)
+  const [projectBusy, setProjectBusy] = useState(false)
   const apiEnabled = useApi()
   const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
   const isAdmin = currentRole === 'admin'
@@ -63,6 +68,7 @@ export default function Give() {
     fetch(`${API}/api/giving/config`)
       .then(r => r.json()).then(d => { setMpesaEnabled(!!d.mpesa_enabled); setPaybill(d.paybill || '') }).catch(() => setMpesaEnabled(false))
     fetchMyGiving().then(setTransactions).catch(() => {})
+    fetchProjects().then(d => setProjects(Array.isArray(d?.projects) ? d.projects : [])).catch(() => setProjects([]))
     if (isAdmin) fetchGivingAdmin().then(setAdminData).catch(() => {})
   }, [apiEnabled, isAdmin])
 
@@ -87,7 +93,35 @@ export default function Give() {
       } catch { /* keep polling silently */ }
     }, 4000)
     const stop = window.setTimeout(() => setPollingId(null), 120_000)
-    return () => { window.clearInterval(timer); window.clearTimeout(stop) }
+    const openProject = (project: any) => {
+    setSelectedProject(project)
+    setProjectCommitment(project?.mine?.commitment_kes || '')
+    setProjectReminder(project?.mine?.reminder_enabled !== false)
+  }
+  const saveParticipation = async () => {
+    if (!selectedProject || projectBusy) return
+    const value = Number(projectCommitment)
+    if (!Number.isFinite(value) || value < 0) { showToast('Enter a valid commitment amount', 'error'); return }
+    setProjectBusy(true)
+    try {
+      const d = await participateInProject(String(selectedProject.id), value, projectReminder)
+      setProjects(prev => prev.map(p => p.id === d.project.id ? d.project : p))
+      setSelectedProject(d.project)
+      showToast(value > 0 ? 'Project participation saved' : 'Project participation removed', 'success')
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Could not save participation', 'error') }
+    finally { setProjectBusy(false) }
+  }
+  const projectCard = (p: any) => {
+    const pct = p.goal_kes > 0 ? Math.min(100, Math.round((p.raised_kes / p.goal_kes) * 100)) : 0
+    return <button key={p.id} type="button" onClick={() => openProject(p)} className="w-full text-left rounded-2xl bg-white border border-[#E8DEC9] p-4 shadow-sm active:scale-[0.99] transition-transform">
+      <div className="flex items-start gap-3"><span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-xl">{p.icon || '🤲'}</span><div className="min-w-0 flex-1"><div className="flex justify-between gap-2"><p className="font-extrabold truncate">{p.name}</p><span className="text-[10px] font-bold capitalize text-[#7C3AED] shrink-0">{p.status}</span></div><p className="mt-1 text-xs text-[#6B6257] line-clamp-2">{p.description || 'Give with purpose and help us move this project forward.'}</p></div></div>
+      <div className="mt-3 h-2 rounded-full bg-[#F4E8D0] overflow-hidden"><div className="h-full bg-[#7C3AED] rounded-full" style={{width:`${pct}%`}} /></div>
+      <div className="mt-2 flex justify-between gap-3 text-[11px] font-semibold"><span>KES {Number(p.raised_kes).toLocaleString()} raised</span><span>{pct}% · {p.participants} participating</span></div>
+      {p.mine && <p className="mt-2 text-[11px] text-[#5B21B6] font-bold">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</p>}
+      {p.deadline && <p className="mt-1 text-[10px] text-[#8B8175]">Deadline {new Date(p.deadline).toLocaleDateString()}</p>}
+    </button>
+  }
+  return () => { window.clearInterval(timer); window.clearTimeout(stop) }
   }, [pollingId])
 
   const pay = async () => {
@@ -102,7 +136,7 @@ export default function Give() {
     if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
     setBusy(true); setMessage('')
     try {
-      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose })
+      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, ...(selectedProject?.id ? { project_id: String(selectedProject.id) } : {}) })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
       showToast('M-Pesa prompt sent — check your phone', 'success')
       setPollingId(result.transactionId || null)
@@ -135,6 +169,8 @@ export default function Give() {
           <h1 className="text-2xl font-extrabold mt-1">{content.giving_title || 'Give with purpose'}</h1>
           <p className="text-sm text-[#6B6257] mt-1">{content.giving_subtitle || 'Secure M-Pesa giving for Harvest Family Church.'}</p>
         </div>
+
+        {projects.length > 0 && <section className="mb-7"><div className="mb-3"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[#B45309]">Projects</p><h2 className="text-lg font-extrabold">Give with purpose</h2><p className="text-xs text-[#6B6257] mt-1">Take part, track your progress, and help complete a shared goal.</p></div><div className="space-y-3">{projects.filter(p => ['active','upcoming'].includes(p.status)).map(projectCard)}</div></section>}
 
         <div className="grid grid-cols-2 gap-3 mb-6">
           {funds.map((f: any) => <button key={f.id} onClick={() => setFund(f.id)} className={`text-left p-4 rounded-2xl border transition ${fund===f.id?'bg-[#F3E8FF] border-[#7C3AED]':'bg-white border-[#E8DEC9]'}`}>
@@ -172,6 +208,8 @@ export default function Give() {
           </div>)}
         </div>
       </>))}
+
+      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}<label className="block mt-4 text-xs font-bold">My commitment (KES)<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label><label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label><button type="button" disabled={projectBusy} onClick={() => void saveParticipation()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : 'Save participation'}</button><button type="button" onClick={() => { setSelectedProject({...selectedProject}); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>
