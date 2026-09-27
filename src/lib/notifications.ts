@@ -72,3 +72,33 @@ export async function initNotifications(): Promise<void> {
   await ensureNotificationChannel()
   await requestNotificationPermission()
 }
+
+
+/** Schedule a small set of local project reminders after participation. */
+export async function scheduleProjectReminders(project: { id: string; name: string; deadline?: string | null }, remainingKes: number): Promise<void> {
+  const ln = await plugin()
+  if (!ln || !project.deadline || remainingKes <= 0) return
+  try {
+    const current = await ln.checkPermissions()
+    if (current.display !== 'granted') return
+    const deadline = new Date(project.deadline).getTime()
+    const now = Date.now()
+    const reminders = [7, 1].map((days, index) => {
+      const at = new Date(deadline - days * 86400000)
+      return at.getTime() > now ? {
+        id: 700000000 + Math.abs(hashCode(project.id)) % 1000000 + index,
+        title: project.name,
+        body: days === 1 ? `Your project commitment has 1 day left (KES ${remainingKes.toLocaleString()} remaining).` : `Your project commitment is due soon (KES ${remainingKes.toLocaleString()} remaining).`,
+        channelId: NOTIF_CHANNEL,
+        smallIcon: 'ic_launcher',
+      } : null
+    }).filter(Boolean) as any[]
+    if (reminders.length) await ln.schedule({ notifications: reminders.map(x => ({ ...x, schedule: { at: new Date(x.body ? deadline - ([7,1][reminders.indexOf(x)] * 86400000) : deadline) } })) })
+  } catch { /* reminders are best-effort and never block participation */ }
+}
+
+function hashCode(value: string): number {
+  let h = 0
+  for (let i = 0; i < value.length; i++) h = ((h << 5) - h + value.charCodeAt(i)) | 0
+  return h
+}
