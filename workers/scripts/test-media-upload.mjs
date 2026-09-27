@@ -28,4 +28,33 @@ await assert.rejects(
   /bytes/
 )
 
+
+const TWO_GB = 2 * 1024 * 1024 * 1024
+const FIVE_GB = 5 * 1024 * 1024 * 1024
+
+const sermonAudio = await presignedPost(env, {
+  type: 'sermon_audio',
+  contentType: 'audio/mpeg',
+  bytes: TWO_GB,
+  ownerId: 'user-123',
+})
+assert.equal(sermonAudio.maxBytes, TWO_GB)
+
+const sermonVideo = await presignedPost(env, {
+  type: 'sermon_video',
+  contentType: 'video/mp4',
+  bytes: FIVE_GB,
+  ownerId: 'user-123',
+})
+assert.equal(sermonVideo.maxBytes, FIVE_GB)
+
+await assert.rejects(
+  () => presignedPost(env, { type: 'sermon_audio', contentType: 'audio/mpeg', bytes: TWO_GB + 1, ownerId: 'user-123' }),
+  /bytes/,
+)
+await assert.rejects(
+  () => presignedPost(env, { type: 'sermon_video', contentType: 'video/mp4', bytes: FIVE_GB + 1, ownerId: 'user-123' }),
+  /bytes/,
+)
+
 console.log('Media presigned PUT contract tests passed.')
