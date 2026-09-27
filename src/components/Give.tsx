@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, useApi } from '../lib/api'
 import { showToast } from './Toast'
+import { scheduleProjectReminders } from '../lib/notifications'
 
 const FUNDS = [
   { id:'tithe', label:'Tithe', sub:'First fruits', icon:'💰' },
@@ -23,6 +24,17 @@ export function normalizeMpesaPhone(raw: string): string | null {
   return null
 }
 
+function ProjectAdminForm({ onCreated }: { onCreated: (p:any) => void }) {
+  const [name,setName]=useState('')
+  const [description,setDescription]=useState('')
+  const [goal,setGoal]=useState<number | ''>('')
+  const [deadline,setDeadline]=useState('')
+  const [auto,setAuto]=useState(true)
+  const [busy,setBusy]=useState(false)
+  const submit=async()=>{ const n=name.trim(), g=Number(goal); if(!n||!Number.isFinite(g)||g<=0){showToast('Enter a project name and positive goal','error');return}; setBusy(true); try { const d=await (await import('../lib/api')).createGivingProject({name:n,description,goal_kes:g,deadline:deadline?new Date(deadline).toISOString():null,auto_advertise:auto}); onCreated(d.project); setName('');setDescription('');setGoal('');setDeadline('');showToast('Project created','success') } catch(e){showToast(e instanceof Error?e.message:'Could not create project','error')} finally{setBusy(false)} }
+  return <div className="mt-3 space-y-2"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Project name" className="input-premium" /><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="What are we working toward?" className="input-premium min-h-20" /><div className="grid grid-cols-2 gap-2"><input inputMode="numeric" value={goal} onChange={e=>setGoal(e.target.value===''?'':Number(e.target.value))} placeholder="Goal KES" className="input-premium" /><input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} className="input-premium" /></div><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} /> Auto advertise in Home feed</label><button type="button" disabled={busy} onClick={() => void submit()} className="btn-primary-lg w-full disabled:opacity-60">{busy?'Creating…':'Create project'}</button></div>
+}
+
 export default function Give() {
   const [fund, setFund] = useState('tithe')
   const [amount, setAmount] = useState<number | ''>(500)
@@ -40,6 +52,7 @@ export default function Give() {
   const [content, setContent] = useState<Record<string, string>>({})
   const [projects, setProjects] = useState<any[]>([])
   const [selectedProject, setSelectedProject] = useState<any | null>(null)
+  const [givingProject, setGivingProject] = useState<any | null>(null)
   const [projectCommitment, setProjectCommitment] = useState<number | ''>('')
   const [projectReminder, setProjectReminder] = useState(true)
   const [projectBusy, setProjectBusy] = useState(false)
@@ -107,6 +120,7 @@ export default function Give() {
       const d = await participateInProject(String(selectedProject.id), value, projectReminder)
       setProjects(prev => prev.map(p => p.id === d.project.id ? d.project : p))
       setSelectedProject(d.project)
+      if (projectReminder) void scheduleProjectReminders(d.project, Number(d.project?.mine?.remaining_kes) || 0)
       showToast(value > 0 ? 'Project participation saved' : 'Project participation removed', 'success')
     } catch (e) { showToast(e instanceof Error ? e.message : 'Could not save participation', 'error') }
     finally { setProjectBusy(false) }
@@ -136,10 +150,11 @@ export default function Give() {
     if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
     setBusy(true); setMessage('')
     try {
-      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, ...(selectedProject?.id ? { project_id: String(selectedProject.id) } : {}) })
+      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
       showToast('M-Pesa prompt sent — check your phone', 'success')
       setPollingId(result.transactionId || null)
+      setGivingProject(null)
       const latest = await fetchMyGiving()
       setTransactions(latest)
     } catch (error) {
@@ -196,6 +211,7 @@ export default function Give() {
             <p className="text-[11px] text-[#92400E] mt-2">Your gift is recorded by the church treasurer. Automatic receipts activate when online giving is switched on.</p>
           </div>
         )}
+        {givingProject && <div className="mb-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] p-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-[10px] uppercase tracking-wide font-extrabold text-[#5B21B6]">Giving toward</p><p className="text-sm font-extrabold truncate">{givingProject.name}</p></div><button type="button" onClick={() => setGivingProject(null)} className="text-xs font-bold text-[#6B6257]">Clear</button></div>}
         <button disabled={busy} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{busy?'Sending M-Pesa prompt…':`Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
         {pollingId && <div className="mb-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-4 text-sm text-[#1E40AF] flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-[#3B82F6] animate-pulse" />Waiting for you to enter your M-Pesa PIN…</div>}
         {message && <div className="mb-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] p-4 text-sm text-[#065F46]">{message}</div>}
@@ -209,10 +225,10 @@ export default function Give() {
         </div>
       </>))}
 
-      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}<label className="block mt-4 text-xs font-bold">My commitment (KES)<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label><label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label><button type="button" disabled={projectBusy} onClick={() => void saveParticipation()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : 'Save participation'}</button><button type="button" onClick={() => { setSelectedProject({...selectedProject}); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
+      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}<label className="block mt-4 text-xs font-bold">My commitment (KES)<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label><label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label><button type="button" disabled={projectBusy} onClick={() => void saveParticipation()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : 'Save participation'}</button><button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Create project</h2><p className="text-xs text-[#6B6257] mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
         <div className="grid grid-cols-2 gap-3"><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><p className="text-xs text-[#6B6257]">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><p className="text-xs text-[#6B6257]">Pending</p><p className="text-xl font-extrabold">{adminData?.totals?.pending_count||0}</p></div></div>
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">{(adminData?.transactions||[]).map(t => <div key={t.id} className="py-3 border-b last:border-0 border-[#F1E9DA]"><div className="flex justify-between gap-3"><p className="font-semibold">KES {Number(t.amount_kes).toLocaleString()} · {t.purpose}</p><span className="text-xs font-bold capitalize">{t.status}</span></div><p className="text-xs text-[#6B6257]">{t.username || 'member'} · {t.receipt_number || 'No receipt yet'}</p></div>)}</div>
       </div>}
