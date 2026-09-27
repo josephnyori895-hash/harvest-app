@@ -179,9 +179,14 @@ export async function handleGiving(request, env, ctx) {
           `UPDATE giving_transactions SET status='completed', receipt_number=?, provider_result_code=?, provider_result_description=?, metadata=?, completed_at=? WHERE id=? AND status='pending'`,
           [receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata), new Date().toISOString(), tx.id],
         )
-        const completed = await query(env, 'SELECT project_id, user_id, amount_kes FROM giving_transactions WHERE id=?', [tx.id])
+        // Contribute ONLY on a real pending→completed transition. A replayed
+        // success payload after the transaction was marked failed must not
+        // create an orphan contribution; the UNIQUE(giving_transaction_id)
+        // constraint plus INSERT OR IGNORE additionally caps contributions at
+        // exactly one per transaction under concurrent duplicate callbacks.
+        const completed = await query(env, 'SELECT project_id, user_id, amount_kes, status FROM giving_transactions WHERE id=?', [tx.id])
         const projectId = completed.rows[0]?.project_id
-        if (projectId) {
+        if (projectId && completed.rows[0]?.status === 'completed') {
           await query(env, `INSERT OR IGNORE INTO project_contributions(id,project_id,user_id,giving_transaction_id,amount_kes) VALUES(?,?,?,?,?)`, [uuid(), projectId, completed.rows[0].user_id, tx.id, Number(completed.rows[0].amount_kes)])
         }
       } else {

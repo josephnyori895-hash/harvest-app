@@ -40,6 +40,27 @@ L.Icon.Default.mergeOptions({
 })
 
 import { initNotifications } from './lib/notifications'
+import { registerPush, disablePushOnLogout } from './lib/push'
+// Push tap routing: a notification tap emits harvest:push-tap with a
+// normalized deep link; route it through the app's existing navigation
+// (DM → openDm, group/department → teamChat), everything else → tab switch.
+function usePushTapRouting(openDm, setTab, setTeamChat) {
+  useEffect(() => {
+    const onTap = (e) => {
+      const tap = (e && e.detail) || null
+      if (!tap) return
+      if (tap.tab === 'chat') {
+        if (tap.kind === 'dm' && tap.dm) { openDm(tap.dm); setTab('chat') }
+        else if (tap.kind === 'group' && tap.slug) { setTeamChat({ kind: 'group', slug: tap.slug, name: tap.name || tap.slug }); setTab('chat') }
+        else if (tap.kind === 'department' && tap.slug) { setTeamChat({ kind: 'department', slug: tap.slug, name: tap.name || tap.slug }); setTab('chat') }
+        else setTab('chat')
+      } else if (tap.tab && tap.tab !== 'home') setTab(tap.tab)
+      else setTab('home')
+    }
+    window.addEventListener('harvest:push-tap', onTap)
+    return () => window.removeEventListener('harvest:push-tap', onTap)
+  }, [openDm, setTab, setTeamChat])
+}
 import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } from './lib/backgroundUploads'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -329,6 +350,9 @@ function InnerApp() {
     setTab('chat')
   }
 
+  // Route notification taps (DM / group / department / tab deep links).
+  usePushTapRouting(openDm, setTab, setTeamChat)
+
   const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded)
 
   const [userList, setUserList] = useState(null)
@@ -345,9 +369,14 @@ function InnerApp() {
     // Ask for notification permission right after sign-in — the OS prompt is
     // allowed only in direct response to a user action, which this is.
     void initNotifications()
+    // FCM: acquire + register this device for push (fail-soft; native only).
+    void registerPush()
   }
 
   const signOut = () => {
+    // Disable push delivery for this installation before clearing the session
+    // (the API call needs the token, so fire it first — fail-soft inside).
+    void disablePushOnLogout()
     localStorage.removeItem('harvest_token')
     localStorage.removeItem('harvest_username')
     localStorage.removeItem('harvest_role')

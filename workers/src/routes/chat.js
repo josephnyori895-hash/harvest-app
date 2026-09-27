@@ -165,7 +165,7 @@ export async function handleChat(request, env, ctx) {
           recipients,
           title: `@${fresh.username}`,
           body: preview,
-          data: { kind: 'chat', type: conv.kind, conversation_key: conv.key, slug: conv.groupSlug || '', peer: conv.recipientUsername || '', message_id: id },
+          data: { kind: 'chat', type: conv.kind === 'dm' ? 'dm' : (conv.groupId ? 'group' : 'department'), conversation_key: conv.key, slug: conv.groupSlug || '', peer: conv.recipientUsername || '', peer_user_id: conv.recipientId || '', peer_name: conv.recipientUsername || '', message_id: id },
           collapseKey: `chat:${conv.key}`,
           requestKey: `chatmsg:${id}`,
           actor: fresh.username,
