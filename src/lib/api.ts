@@ -89,6 +89,10 @@ export async function participateInProject(projectId:string, commitment_kes:numb
   return apiJson(`/api/projects/${encodeURIComponent(projectId)}/participate`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ commitment_kes, reminder_enabled }) }) as Promise<{ project:any }>
 }
 
+export async function createGivingProject(body:any) {
+  return apiJson('/api/projects/admin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }) as Promise<{ project:any }>
+}
+
 export async function fetchMusic() {
   return apiJson('/api/music') as Promise<{ tracks: any[] }>
 }
