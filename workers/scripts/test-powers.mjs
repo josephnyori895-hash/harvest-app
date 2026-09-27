@@ -27,7 +27,10 @@ const main = async () => {
   // Ruringu centroid ~(-0.432, 36.95)
   const geo = await j('POST', '/api/auth/register', null, { username: `geo${stamp}`, name: 'Geo Member', phone: `073${stamp}1`, password: 'password123', group_name: 'Harvest Central', lat: -0.4325, lng: 36.9505 })
   check('register with GPS succeeds', geo.status === 201 || geo.status === 200, geo.data.error || '')
-  check('auto-assigned to nearest group (Ruringu)', geo.data.group_name === 'Harvest Ruringu' && geo.data.assigned_by === 'location', `got ${geo.data.group_name} via ${geo.data.assigned_by}`)
+  // Since e3844f6 an explicitly chosen congregation always wins over GPS
+  // auto-assignment (a member's hand-pick must never be silently overridden);
+  // the response still reports how the group was decided via assigned_by.
+  check('hand-picked group honored over GPS (choice wins)', geo.data.group_name === 'Harvest Central' && geo.data.assigned_by === 'choice', `got ${geo.data.group_name} via ${geo.data.assigned_by}`)
 
   // Non-GPS registration still works with chosen group.
   const plain = await j('POST', '/api/auth/register', null, { username: `plain${stamp}`, name: 'Plain Member', phone: `074${stamp}2`, password: 'password123', group_name: 'Harvest Skuta' })
