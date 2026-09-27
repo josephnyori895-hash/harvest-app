@@ -114,7 +114,7 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
-export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments }: {
+export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser }: {
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
@@ -123,6 +123,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   onCloseTeam?: () => void
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
+  onOpenUser?: (user: any) => void
 }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
@@ -847,12 +848,17 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               const preview = c.last_text || 'Say hello'
               return (
                 <div key={c.conversation_key} className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-1 transition ${unread > 0 ? 'bg-stone-900/80' : 'hover:bg-stone-900/50'}`}>
-                  <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified })}
+                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                    aria-label={`View ${c.peer_name || c.peer}'s profile`}
+                  >
                     <div className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-stone-300 ${unread > 0 ? 'bg-gradient-to-br from-purple-600 to-fuchsia-600 p-[2px]' : 'bg-stone-800'}`}>
                       <div className={`w-full h-full rounded-full flex items-center justify-center ${unread > 0 ? 'bg-stone-900' : 'bg-stone-800'}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
                     </div>
                     {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
-                  </div>
+                  </button>
                   <button type="button" onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
                       <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-stone-200'}`}>{c.peer_name}{c.peer_verified && <VerifiedBadge />}</p>
@@ -894,12 +900,12 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="text-[11px] text-stone-400 mt-1 truncate">Your note</p>
               </div>
               {usersForSection.filter((u: any) => presence[u.username]?.online).slice(0, 12).map((u: any) => (
-                <div key={`note_${u.username}`} className="shrink-0 w-[68px] text-center">
+                <button key={`note_${u.username}`} type="button" onClick={() => onOpenUser?.(u)} className="shrink-0 w-[68px] text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded-xl" aria-label={`View ${u.name || u.username}'s profile`}>
                   <div className="p-[2.5px] rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
                     <div className="w-[58px] h-[58px] rounded-full bg-stone-800 border-2 border-black flex items-center justify-center font-extrabold text-lg text-stone-300">{(u.username?.[0] || '?').toUpperCase()}</div>
                   </div>
                   <p className="text-[11px] text-stone-400 mt-1 truncate">{u.username}</p>
-                </div>
+                </button>
               ))}
             </div>
           </section>
