@@ -51,12 +51,28 @@ export async function handleFeed(request, env, ctx) {
          FROM reels r JOIN users u ON u.id = r.user_id
         WHERE r.approved_at IS NOT NULL`,
     )
+    const projectRows = await query(env, `SELECT p.id,p.name,p.description,p.goal_kes,p.deadline,p.status,p.icon,p.created_at,
+      COALESCE((SELECT SUM(pc.amount_kes) FROM project_contributions pc WHERE pc.project_id=p.id),0) AS raised_kes,
+      COALESCE((SELECT SUM(pp.commitment_kes) FROM project_participants pp WHERE pp.project_id=p.id),0) AS committed_kes,
+      (SELECT COUNT(*) FROM project_participants pp WHERE pp.project_id=p.id) AS participants
+      FROM projects p
+      WHERE p.status='active' AND p.auto_advertise=1
+        AND (p.advertise_from IS NULL OR p.advertise_from <= ?)
+        AND (p.advertise_until IS NULL OR p.advertise_until >= ?)
+      ORDER BY p.updated_at DESC LIMIT 3`, [new Date().toISOString(), new Date().toISOString()])
+
     const items = await Promise.all([...posts.rows, ...reels.rows].map(async r => {
       const normalized = bool(r, 'verified', 'is_pinned')
       const liked = user?.id
         ? Boolean((await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [user.id, r.kind, r.id])).rows[0])
         : false
       return { ...normalized, liked }
+    }))
+    const projects = projectRows.rows.map(p => ({
+      id: p.id, kind: 'project', username: 'harvest_family', name: p.name, verified: true,
+      caption: p.description || 'Give with purpose and help us complete this project.',
+      created_at: p.created_at, likes: 0, comments: 0, group_name: 'Harvest Family Church',
+      project: { id:p.id, name:p.name, description:p.description || '', goal_kes:Number(p.goal_kes)||0, raised_kes:Number(p.raised_kes)||0, committed_kes:Number(p.committed_kes)||0, participants:Number(p.participants)||0, deadline:p.deadline, status:p.status, icon:p.icon || '🤲' }
     }))
     const maxEngRaw = Math.max(...items.map(i => Math.log(1 + (i.likes || 0) + (i.comments || 0) * 3)), 0)
     const ranked = items
@@ -95,7 +111,7 @@ export async function handleFeed(request, env, ctx) {
       stories = await Promise.all(s.rows.map(async x => ({ ...x, music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
     const nextOffset = offset + limit
-    return jsonResponse({ posts: enriched, stories, nextOffset, hasMore: enriched.length === limit })
+    return jsonResponse({ posts: enriched, projects, stories, nextOffset, hasMore: enriched.length === limit })
   }
 
   // GET /api/stories
