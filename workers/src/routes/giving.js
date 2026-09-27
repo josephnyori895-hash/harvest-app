@@ -64,6 +64,12 @@ export async function handleGiving(request, env, ctx) {
       const amount = Number(body.amount)
       const phone = normalizePhone(body.phone)
       const purpose = String(body.purpose || 'General Giving').trim().slice(0, 120) || 'General Giving'
+      const projectId = body.project_id ? String(body.project_id).slice(0, 64) : null
+      if (projectId) {
+        const project = await query(env, 'SELECT id,status FROM projects WHERE id=?', [projectId])
+        if (!project.rows[0]) return errorResponse('project not found', 404)
+        if (project.rows[0].status !== 'active') return errorResponse('project is not accepting gifts', 409)
+      }
       // M-Pesa STK push takes whole shillings only — reject fractions instead
       // of silently rounding a member's gift to a different amount.
       if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 1 || amount > 1000000) return errorResponse('amount must be a whole number between KES 1 and 1,000,000', 400)
@@ -80,9 +86,9 @@ export async function handleGiving(request, env, ctx) {
       const now = new Date().toISOString()
       await query(
         env,
-        `INSERT INTO giving_transactions (id, user_id, phone, amount_kes, purpose, provider, status, metadata, created_at)
-         VALUES (?,?,?,?,?,'mpesa','pending',?,?)`,
-        [id, fresh.id, phone, amountRounded, purpose, JSON.stringify({ requestedBy: fresh.username }), now],
+        `INSERT INTO giving_transactions (id, user_id, phone, amount_kes, purpose, provider, status, metadata, created_at, project_id)
+         VALUES (?,?,?,?,?,'mpesa','pending',?,?,?)`,
+        [id, fresh.id, phone, amountRounded, purpose, JSON.stringify({ requestedBy: fresh.username }), now, projectId],
       )
 
       const res = await postJson(
@@ -173,6 +179,11 @@ export async function handleGiving(request, env, ctx) {
           `UPDATE giving_transactions SET status='completed', receipt_number=?, provider_result_code=?, provider_result_description=?, metadata=?, completed_at=? WHERE id=? AND status='pending'`,
           [receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata), new Date().toISOString(), tx.id],
         )
+        const completed = await query(env, 'SELECT project_id, user_id, amount_kes FROM giving_transactions WHERE id=?', [tx.id])
+        const projectId = completed.rows[0]?.project_id
+        if (projectId) {
+          await query(env, `INSERT OR IGNORE INTO project_contributions(id,project_id,user_id,giving_transaction_id,amount_kes) VALUES(?,?,?,?,?)`, [uuid(), projectId, completed.rows[0].user_id, tx.id, Number(completed.rows[0].amount_kes)])
+        }
       } else {
         await query(
           env,
