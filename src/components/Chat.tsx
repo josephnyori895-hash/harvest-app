@@ -206,6 +206,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       return next
     })
   }
+  // Derived in the component body (not a JSX inline IIFE): the search box filters the
+  // inbox, then pinned conversations sort to the top.
+  const inboxQuery = peopleQuery.trim().toLowerCase()
+  const visibleInbox = inboxQuery
+    ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(inboxQuery))
+    : inbox
+  const sortedInbox = [...visibleInbox].sort((a, b) =>
+    Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key)),
+  )
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
   // Android IME can resize the WebView viewport without reliably updating 100dvh.
@@ -806,7 +815,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">People</button>
-              <span className="ml-auto text-xs text-stone-500 self-center">{(() => { const q = peopleQuery.trim().toLowerCase(); const n = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)).length : inbox.length; return `${n} chat${n === 1 ? '' : 's'}` })()}</span>
+              <span className="ml-auto text-xs text-stone-500 self-center">{visibleInbox.length} chat{visibleInbox.length === 1 ? '' : 's'}</span>
             </div>
           </section>
           <section className="px-3 pb-7">
@@ -830,7 +839,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
                 <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
               </div>
-            ) : (() => { const q = peopleQuery.trim().toLowerCase(); const visibleInbox = q ? inbox.filter(c => `${c.peer_name || ''} ${c.peer || ''} ${c.last_text || ''}`.toLowerCase().includes(q)) : inbox; if (visibleInbox.length === 0) return <div className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 p-6 text-center text-sm text-stone-500">No conversations match “{peopleQuery}”.</div>; return [...visibleInbox].sort((a, b) => Number(pinnedChats.includes(b.conversation_key)) - Number(pinnedChats.includes(a.conversation_key))).map(c => {
+            ) : visibleInbox.length === 0 ? (
+              <div className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 p-6 text-center text-sm text-stone-500">No conversations match “{peopleQuery}”.</div>
+            ) : sortedInbox.map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
@@ -857,7 +868,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                   <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-stone-500 hover:text-amber-300 hover:bg-stone-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
                 </div>
               )
-            })()}
+            })}
           </section>
         </>
       ) : (
