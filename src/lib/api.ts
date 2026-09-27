@@ -77,8 +77,16 @@ export async function fetchFeed(offset=0, limit=20) {
   return apiJson(`/api/feed?offset=${offset}&limit=${limit}`) as Promise<{posts:any[],stories:any[],nextOffset:number,hasMore:boolean}>
 }
 
-export async function startGiving(params: {amount:number,phone:string,purpose:string}) {
+export async function startGiving(params: {amount:number,phone:string,purpose:string,project_id?:string}) {
   return apiJson('/api/giving/mpesa/stkpush', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{transactionId:string,checkoutRequestId:string,message:string}>
+}
+
+export async function fetchProjects() {
+  return apiJson('/api/projects') as Promise<{ projects: any[] }>
+}
+
+export async function participateInProject(projectId:string, commitment_kes:number, reminder_enabled=true) {
+  return apiJson(`/api/projects/${encodeURIComponent(projectId)}/participate`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ commitment_kes, reminder_enabled }) }) as Promise<{ project:any }>
 }
 
 export async function fetchMusic() {
