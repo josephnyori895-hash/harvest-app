@@ -472,6 +472,7 @@ function InnerApp() {
               onCloseTeam={closeTeamChat}
               onOpenGroups={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('groups') }}
               onOpenDepartments={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('departments') }}
+              onOpenUser={openProfile}
             />
           )}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
