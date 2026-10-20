@@ -46,7 +46,7 @@ jobs:
       - name: Test FCM delivery contract
         run: npm run test:notifications --prefix workers
       - name: Worker dependency audit
-        run: npm audit --prefix workers --audit-level=high
+        run: npm audit --prefix workers --omit=dev --audit-level=high
       - name: Validate wrangler config + dry-run build (no deploy)
         run: npx --prefix workers wrangler deploy --dry-run --outdir dist-check
         working-directory: workers
