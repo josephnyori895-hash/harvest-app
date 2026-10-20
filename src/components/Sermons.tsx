@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
+import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 
 import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -48,8 +49,18 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   const [sermonSort, setSermonSort] = useState<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'topic'>('newest')
   const uploadInput = useRef<HTMLInputElement | null>(null)
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Audio sermons are routed through the global player singleton
+  // (lib/audioPlayer) so leaving this screen — or switching tabs — does not
+  // stop playback. Only video needs a local element in the card.
+  const [player, setPlayer] = useState<PlayerState>({ track: null, playing: false, currentTime: 0, duration: 0, error: null })
+  useEffect(() => subscribePlayer(setPlayer), [])
+  const playingAudioId: string | null = (() => {
+    const t: PlayerTrack | null = player.track
+    if (!t || !player.playing || !t.id.startsWith('sermon:')) return null
+    return t.id.slice('sermon:'.length)
+  })()
 
   const load = useCallback(() => {
     setLoading(true)
@@ -63,10 +74,18 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   useEffect(load, [load])
 
   // Deep link (e.g. from search): auto-open the requested sermon once loaded.
+  // Audio sermons start straight in the global player; videos open inline.
   useEffect(() => {
     if (!focusId || loading || sermons.length === 0) return
     const target = sermons.find((s: any) => String(s.id) === String(focusId))
-    if (target) setPlaying(String(focusId))
+    if (target) {
+      setPlaying(String(focusId))
+      if (target.kind !== 'video' && target.media_url) {
+        void playTrack({ id: `sermon:${focusId}`, title: target.title || 'Sermon', artist: target.speaker || 'Harvest Family Church', url: target.media_url, artwork: null, origin: 'sermons' }).then(ok => { if (!ok) showToast('Tap ▶ to start the sermon', 'info') })
+      } else if (target.kind === 'video') {
+        setPlayerReady(prev => ({ ...prev, [String(focusId)]: true }))
+      }
+    }
     onFocused?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId, loading, sermons])
@@ -122,21 +141,27 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
   }
 
   const play = async (s: any) => {
+    const audioActive = playingAudioId === String(s.id)
     if (playing === s.id) {
-      audioRef.current?.pause(); videoRef.current?.pause()
-      if (audioRef.current) audioRef.current.src = ''
-      if (videoRef.current) videoRef.current.src = ''
-      setPlaying(null)
-      setPlayerReady(prev => ({ ...prev, [s.id]: false }))
+      // Audio: pause/resume in the global player. Video: native element.
+      if (s.kind === 'video') { videoRef.current?.pause(); setPlayerReady(prev => ({ ...prev, [s.id]: false })) }
+      else void togglePlayGlobal()
+      if (!audioActive) setPlaying(null)
       return
     }
     if (!s.media_url) {
       showToast('Sermon media is unavailable', 'error')
       return
     }
-    audioRef.current?.pause(); videoRef.current?.pause()
+    pausePlayer()
+    videoRef.current?.pause()
+    if (s.kind === 'audio') {
+      const ok = await playTrack({ id: `sermon:${s.id}`, title: s.title || 'Sermon', artist: s.speaker || 'Harvest Family Church', url: s.media_url, artwork: null, origin: 'sermons' })
+      if (!ok) { showToast(player.error || 'Tap again to allow audio', 'error'); return }
+    } else {
+      setPlayerReady(prev => ({ ...prev, [s.id]: true }))
+    }
     setPlaying(s.id)
-    setPlayerReady(prev => ({ ...prev, [s.id]: true }))
     fetch(`${API}/api/sermons/${s.id}/play`, { method: 'POST', headers: authHeaders() }).catch(() => {})
   }
 
@@ -329,20 +354,40 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
               </div>
               {s.description && <p className="text-xs text-[#4B433A] mt-2 leading-5">{s.description}</p>}
 
-              {/* inline player */}
-              {playing === s.id && playerReady[s.id] && (
+              {/* inline player — video stays native; audio runs in the
+                  global player, this strip mirrors it */}
+              {playing === s.id && s.kind === 'video' && playerReady[s.id] && (
                 <div className="mt-3">
-                  {s.kind === 'video' ? (
-                    <video ref={videoRef} key={s.id} src={s.media_url} controls autoPlay playsInline className="w-full rounded-2xl bg-black" />
-                  ) : (
-                    <audio ref={audioRef} key={s.id} src={s.media_url} controls autoPlay className="w-full" />
-                  )}
+                  <video ref={videoRef} key={s.id} src={s.media_url} controls autoPlay playsInline className="w-full rounded-2xl bg-black" />
+                </div>
+              )}
+              {playing === s.id && s.kind !== 'video' && playing === s.id && playingAudioId === String(s.id) && (
+                <div className="mt-3 rounded-2xl bg-white border border-[#E8DEC9] p-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button onClick={() => void togglePlayGlobal()} className="w-10 h-10 shrink-0 rounded-full bg-[#7C3AED] text-white flex items-center justify-center font-bold" aria-label={player.playing ? 'Pause sermon' : 'Play sermon'}>{player.playing ? '⏸' : '▶'}</button>
+                    <div className="flex-1 min-w-0">
+                      <div
+                        role="slider"
+                        aria-label="Seek sermon"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={player.duration > 0 ? Math.round((player.currentTime / player.duration) * 100) : 0}
+                        onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seekToFraction((e.clientX - r.left) / r.width) }}
+                        className="h-1.5 rounded-full bg-[#E8DEC9] overflow-hidden cursor-pointer"
+                      >
+                        <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: player.duration > 0 ? `${(player.currentTime / player.duration) * 100}%` : '0%' }} />
+                      </div>
+                      <p className="text-[10px] text-[#8B8175] mt-1 font-mono">{fmtDur(player.currentTime)} / {fmtDur(player.duration)}{player.error ? ` · ${player.error}` : ''}</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
               <div className="flex gap-2 mt-3">
                 <button onClick={() => void play(s)} className={`flex-1 py-2.5 rounded-2xl text-xs font-extrabold ${playing === s.id ? 'bg-[#29251F] text-white' : 'bg-[#7C3AED] text-white'}`}>
-                  {playing === s.id ? '⏸ Hide player' : s.kind === 'video' ? '▶ Watch' : '▶ Listen'}
+                  {playing === s.id
+                    ? (s.kind === 'video' ? '⏸ Hide player' : playingAudioId === String(s.id) && player.playing ? '⏸ Pause' : '▶ Resume')
+                    : s.kind === 'video' ? '▶ Watch' : '▶ Listen'}
                 </button>
                 <button onClick={() => void download(s)} disabled={busy === s.id} className="px-4 py-2.5 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] text-xs font-extrabold text-[#5B21B6] disabled:opacity-50">
                   {busy === s.id ? '…' : `📥 Download ${s.kind === 'video' ? 'MP4' : 'MP3'}`}

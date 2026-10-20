@@ -22,6 +22,7 @@ import UserListModal from './components/UserListModal'
 import Admin from './components/Admin'
 import { showToast } from './components/Toast'
 import UploadPill from './components/UploadPill'
+import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
@@ -526,6 +527,7 @@ function InnerApp() {
         </div>
         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
         <UploadPill />
+        <NowPlayingBar onOpen={t => setTab(t)} />
         {tab !== 'chat' && <Nav tab={tab} setTab={handleTab} />}
       </div>
     </div>

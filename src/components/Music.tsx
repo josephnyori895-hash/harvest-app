@@ -4,6 +4,7 @@ import { showToast } from './Toast'
 import { fetchMusic, useApi } from '../lib/api'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
+import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, closePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 
 // Worship room: the church library (admin uploads) + online search with
 // 30-second previews (Apple iTunes Search API — no key required, free).
@@ -43,12 +44,22 @@ export default function Music() {
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState<Track[]>([])
-  const [playingId, setPlayingId] = useState<string | null>(null)
-  const [progress, setProgress] = useState({ id: null as string | null, seconds: 0, duration: 0 })
   const [downloading, setDownloading] = useState('')
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const useServer = useApi()
   const { isAdmin } = useAuth()
+
+  // Audio lives in the global player (lib/audioPlayer) so backing out of this
+  // screen — or even switching tabs — never stops whatever the member is
+  // hearing. This screen just mirrors the player state.
+  const [player, setPlayer] = useState<PlayerState>({ track: null, playing: false, currentTime: 0, duration: 0, error: null })
+  useEffect(() => subscribePlayer(setPlayer), [])
+
+  // Derived playhead state — the single source of truth is the global player.
+  const activeTrack = player.track as (PlayerTrack & { seconds?: number }) | null
+  const playingId: string | null = activeTrack && player.playing ? activeTrack.id : null
+  const progress = activeTrack
+    ? { id: activeTrack.id, seconds: player.currentTime, duration: player.duration || 0 }
+    : { id: null as string | null, seconds: 0, duration: 0 }
 
   // ── Admin upload console state ──
   const [showUpload, setShowUpload] = useState(false)
@@ -210,29 +221,14 @@ export default function Music() {
     } finally { setSearching(false) }
   }
 
-  // Single shared audio element; cleaned up on unmount.
-  useEffect(() => () => { audioRef.current?.pause(); audioRef.current = null }, [])
-
-  const [nowPlaying, setNowPlaying] = useState<Track | null>(null)
+  // Nothing to clean up here — the global player keeps playing after this
+  // screen unmounts. That is the entire point.
   const togglePlay = (track: Track) => {
     setError('')
-    if (!track.url) { showToast('This track has no audio source yet'); return }
-    if (playingId === track.id) { audioRef.current?.pause(); setPlayingId(null); return }
-    audioRef.current?.pause()
-    const audio = new Audio(track.url)
-    audio.onended = () => { setPlayingId(null); setProgress(p => ({ ...p, id: null, seconds: 0 })) }
-    audio.ontimeupdate = () => setProgress({ id: track.id, seconds: audio.currentTime, duration: audio.duration || 0 })
-    audio.onerror = () => { setPlayingId(null); setError(`Unable to play "${track.title}". Try another track.`) }
-    audio.play().then(() => { audioRef.current = audio; setPlayingId(track.id); setNowPlaying(track) }).catch(() => showToast('Tap again to allow audio playback'))
+    void playTrack({ id: track.id, title: track.title, artist: track.artist, url: track.url || null, artwork: track.artwork || null, origin: 'music' })
   }
-  const seek = (fraction: number) => {
-    const a = audioRef.current
-    if (a && Number.isFinite(a.duration) && a.duration > 0) a.currentTime = Math.min(Math.max(fraction * a.duration, 0), a.duration)
-  }
-  const stopAndClosePlayer = () => {
-    audioRef.current?.pause()
-    setPlayingId(null); setNowPlaying(null); setProgress({ id: null, seconds: 0, duration: 0 })
-  }
+  const seek = (fraction: number) => seekToFraction(fraction)
+  const stopAndClosePlayer = () => closePlayer()
 
   const doDownload = async (track: Track) => {
     if (!track.url) { showToast('No audio source for this track'); return }
@@ -371,20 +367,21 @@ export default function Music() {
           {tab === 'online' && <button onClick={() => void searchOnline(q)} disabled={searching} className="px-4 rounded-xl bg-purple-600 text-white text-xs font-bold disabled:opacity-50">{searching ? '…' : 'Search'}</button>}
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-      {nowPlaying && (
+      {activeTrack && (
         <div className="sticky top-[calc(100vh-140px)] z-20 mx-4 mt-4 mb-1">
           <div className="rounded-2xl bg-neutral-900 text-white shadow-2xl border border-neutral-700 px-3 py-2.5">
             <div className="flex items-center gap-3">
-              {nowPlaying.artwork
-                ? <img src={nowPlaying.artwork} alt="" className="w-10 h-10 rounded-lg object-cover" />
+              {activeTrack.artwork
+                ? <img src={activeTrack.artwork} alt="" className="w-10 h-10 rounded-lg object-cover" />
                 : <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center">🎵</div>}
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold truncate">{nowPlaying.title}</p>
-                <p className="text-[10px] text-neutral-400 truncate">{nowPlaying.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
+                <p className="text-xs font-bold truncate">{activeTrack.title}</p>
+                <p className="text-[10px] text-neutral-400 truncate">{activeTrack.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
               </div>
-              <button onClick={() => togglePlay(nowPlaying)} className="w-9 h-9 rounded-full bg-white text-neutral-900 flex items-center justify-center font-bold shrink-0" aria-label={playingId ? 'Pause' : 'Play'}>{playingId ? '⏸' : '▶'}</button>
+              <button onClick={() => void togglePlayGlobal()} className="w-9 h-9 rounded-full bg-white text-neutral-900 flex items-center justify-center font-bold shrink-0" aria-label={player.playing ? 'Pause' : 'Play'}>{player.playing ? '⏸' : '▶'}</button>
               <button onClick={stopAndClosePlayer} className="w-7 h-7 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-xs shrink-0" aria-label="Close player">✕</button>
             </div>
+            {player.error && <p className="text-[10px] text-amber-400 mt-1">{player.error}</p>}
             <div
               role="slider"
               aria-label="Seek"
