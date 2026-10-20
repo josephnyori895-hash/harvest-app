@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, createGivingProject, updateGivingProject, deleteGivingProject, useApi } from '../lib/api'
+import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, useApi } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 
@@ -58,6 +58,16 @@ export default function Give() {
   const [projectBusy, setProjectBusy] = useState(false)
   const [editingProject, setEditingProject] = useState<any | null>(null)
 
+  // Take modes: an individual commitment (project_participants) or a team
+  // take under a group / department / community (project_takes + helpers).
+  // Other members may opt to HELP under any existing take.
+  type TakeKind = 'individual' | 'group' | 'department' | 'community'
+  const [takeKind, setTakeKind] = useState<TakeKind>('individual')
+  const [takeEntity, setTakeEntity] = useState<string>('')
+  const [takeJoinId, setTakeJoinId] = useState<string>('')
+  const [takeNote, setTakeNote] = useState('')
+  const [entityOptions, setEntityOptions] = useState<{ group: string[]; department: string[]; community: string[] }>({ group: [], department: [], community: [] })
+
   const changeProjectStatus = async (p: any, status: string) => {
     try {
       const d = await updateGivingProject(String(p.id), { status })
@@ -81,6 +91,24 @@ export default function Give() {
   const apiEnabled = useApi()
   const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
   const isAdmin = currentRole === 'admin'
+
+  // Group / department / community directories for take pickers.
+  useEffect(() => {
+    if (!apiEnabled) return
+    let cancelled = false
+    void (async () => {
+      const [g, d] = await Promise.all([
+        fetchGroupDirectory().catch(() => null),
+        fetchDepartmentDirectory().catch(() => null),
+      ])
+      if (cancelled || !g) return
+      const communities = Object.keys(g.communities || {}).filter(Boolean)
+      const groups = (g.groups || []).map((x: any) => x.name || x.slug).filter(Boolean)
+      const departments = (Array.isArray(d?.departments) ? d.departments : []).map((x: any) => x.name || x.slug).filter(Boolean)
+      setEntityOptions({ group: groups, department: departments, community: communities })
+    })()
+    return () => { cancelled = true }
+  }, [apiEnabled])
 
   const funds = useMemo<any[]>(() => {
     try { const f = JSON.parse(content.giving_funds || '[]'); if (Array.isArray(f) && f.length) return f } catch { /* default below */ }
@@ -135,6 +163,27 @@ export default function Give() {
     setSelectedProject(project)
     setProjectCommitment(project?.mine?.commitment_kes || '')
     setProjectReminder(project?.mine?.reminder_enabled !== false)
+    setTakeKind(project?.mine_take ? project.mine_take.kind : 'individual')
+    setTakeEntity(project?.mine_take ? project.mine_take.name : '')
+    setTakeJoinId(project?.mine_take ? String(project.mine_take.take_id) : '')
+    setTakeNote('')
+  }
+
+  const saveTeamTake = async () => {
+    if (!selectedProject || projectBusy) return
+    const value = Number(projectCommitment)
+    if (!Number.isFinite(value) || value < 0) { showToast('Enter a valid pledge amount', 'error'); return }
+    if (!takeJoinId && !takeEntity) { showToast('Pick a group, department or community — or an existing take to help', 'error'); return }
+    setProjectBusy(true)
+    try {
+      const take: any = takeJoinId ? { take_id: takeJoinId } : { kind: takeKind === 'individual' ? 'group' : takeKind, name: takeEntity, ...(takeNote.trim() ? { note: takeNote.trim() } : {}) }
+      const d = await participateByTake(String(selectedProject.id), take, value)
+      setProjects(prev => prev.map(p => p.id === d.project.id ? d.project : p))
+      setSelectedProject(d.project)
+      setTakeJoinId(takeJoinId || d.helper?.take_id || '')
+      showToast(takeJoinId ? 'Helping recorded — thank you!' : `Take recorded — ${takeEntity} is in. Others can now help.`, 'success')
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Could not save take', 'error') }
+    finally { setProjectBusy(false) }
   }
 
   const saveParticipation = async () => {
@@ -249,7 +298,13 @@ export default function Give() {
         </div>
       </>))}
 
-      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}<label className="block mt-4 text-xs font-bold">My commitment (KES)<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label><label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label><button type="button" disabled={projectBusy} onClick={() => void saveParticipation()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : 'Save participation'}</button><button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
+      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}
+          {(selectedProject.takes || []).length > 0 && <div className="mt-3"><p className="text-xs font-extrabold text-[#7C3AED]">Team takes on this project</p>{selectedProject.takes.map((t: any) => <div key={t.id} className="mt-2 rounded-2xl bg-white border border-[#E8DEC9] p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold truncate">{t.kind === 'group' ? '👥' : t.kind === 'department' ? '🏛' : '🏘'} {t.name}</p><p className="text-[11px] text-[#6B6257] mt-0.5">{t.taken_by ? `Taken by ${t.taken_by.name || t.taken_by.username}` : 'Open'} · {t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()} pledged</p></div><button type="button" onClick={() => { setTakeKind(t.kind); setTakeJoinId(t.id); setTakeEntity(t.name); setProjectCommitment(t.mine_helper ? Number(t.mine_helper.commitment_kes) : '') }} className="shrink-0 px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">{t.mine_helper ? 'Update' : 'Help'}</button></div></div>)}</div>}
+          <div className="mt-4"><p className="text-xs font-extrabold text-[#7C3AED]">How do you want to take this?</p><div className="mt-2 grid grid-cols-4 gap-1.5">{(['individual','group','department','community'] as const).map(k => <button key={k} type="button" onClick={() => { setTakeKind(k); setTakeJoinId(''); setTakeEntity(k === 'individual' ? '' : takeEntity) }} className={`py-2 rounded-xl text-[11px] font-extrabold border ${takeKind === k ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'bg-white border-[#E8DEC9] text-[#5B5146]'}`}>{k === 'individual' ? '👤 Me' : k === 'group' ? '👥 Group' : k === 'department' ? '🏛 Dept' : '🏘 Community'}</button>)}</div></div>
+          {takeKind !== 'individual' && <div className="mt-3 rounded-2xl bg-white border border-[#E8DEC9] p-3"><p className="text-xs font-bold">{takeKind === 'group' ? '👥 As a group' : takeKind === 'department' ? '🏛 As a department' : '🏘 As a community'}</p>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).length > 0 && <select value={takeJoinId} onChange={e => { const id = e.target.value; setTakeJoinId(id); const t = (selectedProject.takes || []).find((x: any) => x.id === id); setTakeEntity(t?.name || ''); if (t?.mine_helper) setProjectCommitment(Number(t.mine_helper.commitment_kes)) }} className="input-premium mt-2"><option value="">— Help an existing take —</option>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).map((t: any) => <option key={t.id} value={t.id}>{t.name} · KES {Number(t.total_committed_kes).toLocaleString()}</option>)}</select>}<select value={takeJoinId ? '' : takeEntity} onChange={e => setTakeEntity(e.target.value)} disabled={!!takeJoinId} className="input-premium mt-2"><option value="">{takeJoinId ? 'Helping an existing take' : `— Start a new ${takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community'} take —`}</option>{(takeKind === 'group' ? entityOptions.group : takeKind === 'department' ? entityOptions.department : entityOptions.community).filter((n: string) => !(selectedProject.takes || []).some((t: any) => t.kind === takeKind && t.name === n)).map((n: string) => <option key={n} value={n}>{n}</option>)}</select></div>}
+          <label className="block mt-4 text-xs font-bold">{takeKind === 'individual' ? 'My commitment (KES)' : takeJoinId ? 'My pledge to help (KES, 0 = helping by hand)' : 'Pledge on behalf (KES)'}<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label>
+          {takeKind === 'individual' && <label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label>}
+          <button type="button" disabled={projectBusy} onClick={() => takeKind === 'individual' ? void saveParticipation() : void saveTeamTake()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : takeKind === 'individual' ? 'Save participation' : takeJoinId ? 'Save my help' : 'Take as ' + (takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community')}</button><button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>

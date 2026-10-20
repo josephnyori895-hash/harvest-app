@@ -101,6 +101,24 @@ export async function deleteGivingProject(projectId:string) {
   return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}`, { method:'DELETE' }) as Promise<{ deleted:boolean; id:string }>
 }
 
+export type ProjectTake = { kind:'group'|'department'|'community'; name?: string; take_id?: string; note?: string }
+
+/** Pledge/help under a collective take (group, department or community). */
+export async function participateByTake(projectId:string, take:ProjectTake, commitment_kes:number) {
+  return apiJson(`/api/projects/${encodeURIComponent(projectId)}/participate`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ take, commitment_kes }),
+  }) as Promise<{ project:any; take:any; helper:{ take_id:string; commitment_kes:number } }>
+}
+
+export async function fetchGroupDirectory() {
+  return apiJson('/api/groups') as Promise<{ communities: Record<string, number>; groups: any[] }>
+}
+
+export async function fetchDepartmentDirectory() {
+  return apiJson('/api/departments') as Promise<{ departments: any[] }>
+}
+
 export async function fetchMusic() {
   return apiJson('/api/music') as Promise<{ tracks: any[] }>
 }

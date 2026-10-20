@@ -2,7 +2,7 @@ import { query, uuid } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 
-function projectRow(row, mine = null) {
+function projectRow(row, mine = null, takes = [], mineTake = null) {
   return {
     id: String(row.id),
     name: row.name,
@@ -17,6 +17,8 @@ function projectRow(row, mine = null) {
     auto_advertise: Boolean(row.auto_advertise),
     icon: row.icon || '🤲',
     created_at: row.created_at,
+    takes,
+    mine_take: mineTake,
     mine: mine ? {
       commitment_kes: Number(mine.commitment_kes) || 0,
       paid_kes: Number(mine.paid_kes) || 0,
@@ -24,6 +26,37 @@ function projectRow(row, mine = null) {
       reminder_enabled: Boolean(mine.reminder_enabled),
     } : null,
   }
+}
+
+const KINDS = ['group','department','community']
+
+async function takesForProjects(env, projectIds) {
+  const map = new Map(projectIds.map(id => [String(id), []]))
+  if (!projectIds.length) return map
+  const placeholders = projectIds.map(() => '?').join(',')
+  const { rows } = await query(env, `SELECT t.id, t.project_id, t.kind, t.name, t.taken_by,
+      u.username AS taken_by_username, u.name AS taken_by_name, t.created_at,
+      (SELECT COUNT(*) FROM project_take_helpers h WHERE h.take_id=t.id) AS helpers_count,
+      COALESCE((SELECT SUM(h.commitment_kes) FROM project_take_helpers h WHERE h.take_id=t.id),0) AS helpers_committed_kes
+    FROM project_takes t LEFT JOIN users u ON u.id=t.taken_by
+    WHERE t.project_id IN (${placeholders}) ORDER BY t.created_at ASC`, [...projectIds])
+  for (const r of rows) {
+    // The taker is themselves recorded as a helper on first pledge, so the
+    // running total is the helper sum — the take row's committed_kes is the
+    // taker's original pledge, already inside the helpers table.
+    const helpers = Number(r.helpers_committed_kes) || 0
+    map.get(String(r.project_id))?.push({
+      id: String(r.id),
+      kind: r.kind,
+      name: r.name,
+      taken_by: r.taken_by ? { username: r.taken_by_username, name: r.taken_by_name } : null,
+      created_at: r.created_at,
+      helpers_count: Number(r.helpers_count) || 0,
+      helpers_committed_kes: helpers,
+      total_committed_kes: helpers,
+    })
+  }
+  return map
 }
 
 async function baseProjects(env, userId = null) {
@@ -39,7 +72,18 @@ async function baseProjects(env, userId = null) {
       FROM project_participants pp WHERE pp.user_id=?`, [userId])
     mine = new Map(m.map(x => [String(x.project_id), x]))
   }
-  return rows.map(r => projectRow(r, mine.get(String(r.id)) || null))
+  const takeMap = await takesForProjects(env, rows.map(r => r.id))
+  let takeMine = new Map()
+  if (userId) {
+    const { rows: tm } = await query(env, `SELECT h.take_id, h.commitment_kes FROM project_take_helpers h WHERE h.user_id=?`, [userId])
+    takeMine = new Map(tm.map(x => [String(x.take_id), { commitment_kes: Number(x.commitment_kes) || 0 }]))
+  }
+  return rows.map(r => {
+    const takes = (takeMap.get(String(r.id)) || []).map(t => ({ ...t, mine_helper: takeMine.get(t.id) || null }))
+    const mineTakeRow = takes.find(t => t.mine_helper)
+    const mineTake = mineTakeRow ? { take_id: mineTakeRow.id, kind: mineTakeRow.kind, name: mineTakeRow.name, commitment_kes: mineTakeRow.mine_helper.commitment_kes } : null
+    return projectRow(r, mine.get(String(r.id)) || null, takes, mineTake)
+  })
 }
 
 export async function handleProjects(request, env, ctx) {
@@ -66,10 +110,49 @@ export async function handleProjects(request, env, ctx) {
     const p = (await query(env, 'SELECT id,status,deadline FROM projects WHERE id=?', [id])).rows[0]
     if (!p) return errorResponse('project not found', 404)
     if (!['active','upcoming'].includes(p.status)) return errorResponse('project is not accepting participation', 409)
+    const now = new Date().toISOString()
+
+    // Collective take/help: the commitment lands on a group, department or
+    // community ("take"). Helping again updates, never duplicates: the row
+    // is upserted on (take, user). A brand-new entity names this member as
+    // the one who took it (taken_by).
+    const take = body.take
+    if (take && (take.take_id || take.kind)) {
+      let takeRow = null
+      const kind = String(take.kind || '')
+      const name = String(take.name || '').trim().slice(0,120)
+      if (take.take_id) {
+        takeRow = (await query(env, 'SELECT id,project_id FROM project_takes WHERE id=? AND project_id=?', [String(take.take_id), id])).rows[0]
+        if (!takeRow) return errorResponse('take not found for this project', 404)
+      } else {
+        if (!KINDS.includes(kind)) return errorResponse('take kind must be group, department or community', 400)
+        if (!name) return errorResponse('a group, department or community must be picked', 400)
+        takeRow = (await query(env, 'SELECT id,project_id FROM project_takes WHERE project_id=? AND kind=? AND name=?', [id, kind, name])).rows[0]
+      }
+      const commitment = Number(body.commitment_kes)
+      if (!Number.isFinite(commitment) || commitment < 0 || commitment > 100000000) return errorResponse('commitment must be between KES 0 and KES 100,000,000', 400)
+      const note = String(body.note || take.note || '').trim().slice(0, 200)
+      if (!takeRow) {
+        takeRow = (await query(env, `INSERT INTO project_takes(id,project_id,kind,name,taken_by,committed_kes,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?)
+          ON CONFLICT(project_id,kind,name) DO NOTHING
+          RETURNING id,project_id`,
+          [uuid(), id, kind, name, fresh.id, commitment, now, now])).rows?.[0]
+        if (!takeRow) takeRow = (await query(env, 'SELECT id,project_id FROM project_takes WHERE project_id=? AND kind=? AND name=?', [id, kind, name])).rows[0]
+      }
+      await query(env, `INSERT INTO project_take_helpers(take_id,user_id,commitment_kes,note,created_at,updated_at)
+        VALUES(?,?,?,?,?,?)
+        ON CONFLICT(take_id,user_id) DO UPDATE SET commitment_kes=excluded.commitment_kes, note=excluded.note, updated_at=excluded.updated_at`,
+        [takeRow.id, fresh.id, commitment, note, now, now])
+      const all = await baseProjects(env, fresh.id)
+      const project = all.find(x => x.id === id)
+      const takeOut = project?.takes?.find(t => t.id === String(takeRow.id))
+      return jsonResponse({ project, take: takeOut, helper: { take_id: String(takeRow.id), commitment_kes: commitment } })
+    }
+
     const commitment = Number(body.commitment_kes)
     if (!Number.isFinite(commitment) || commitment < 0 || commitment > 100000000) return errorResponse('commitment must be between KES 0 and KES 100,000,000', 400)
     const reminder = body.reminder_enabled === false ? 0 : 1
-    const now = new Date().toISOString()
     await query(env, `INSERT INTO project_participants(project_id,user_id,commitment_kes,reminder_enabled,created_at,updated_at)
       VALUES(?,?,?,?,?,?)
       ON CONFLICT(project_id,user_id) DO UPDATE SET commitment_kes=excluded.commitment_kes, reminder_enabled=excluded.reminder_enabled, updated_at=excluded.updated_at`,
@@ -133,6 +216,7 @@ export async function handleProjects(request, env, ctx) {
     const id = adminProject[1]
     const existing = (await query(env, 'SELECT id FROM projects WHERE id=?', [id])).rows[0]
     if (!existing) return errorResponse('project not found', 404)
+    await query(env, 'DELETE FROM project_takes WHERE project_id=?', [id])
     await query(env, 'DELETE FROM project_participants WHERE project_id=?', [id])
     // Participation rows follow the project out; contribution rows are kept
     // as the audit trail for money already moved against this project.
