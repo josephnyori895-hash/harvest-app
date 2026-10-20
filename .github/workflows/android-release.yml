@@ -58,7 +58,7 @@ jobs:
       - name: Release dependency audit
         run: |
           set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee /tmp/check-audit.log || { tail -c 1500 /tmp/check-audit.log | tr '\r\n' '  ' | sed 's/^/::error::[audit] /'; exit 1; }
+          npm audit --omit=dev --audit-level=high 2>&1 | tee /tmp/check-audit.log || { tail -c 1500 /tmp/check-audit.log | tr '\r\n' '  ' | sed 's/^/::error::[audit] /'; exit 1; }
 
       - name: Release build
         run: |

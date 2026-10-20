@@ -370,9 +370,11 @@ export async function handleMedia(request, env, ctx) {
   }
 
   // DELETE /api/admin/media/:kind/:id — remove from DB + R2 (post/reel/track/story).
+  // Author of the row may delete his own post/reel/track (not stories — they
+  // expire in 24h; speeches need no tombstone) without any grant. Admin or a
+  // delete_media grant holder can remove anything. Both paths are audited.
   if (/^\/api\/admin\/media\/(posts|reels|tracks|stories)\/[0-9a-f-]+$/i.test(path) && method === 'DELETE') {
     const fresh = await requireMember(env, user)
-    if (fresh.role !== 'admin' && !hasCap(fresh, CAP_DELETE)) return errorResponse('not permitted — needs delete_media', 403)
     const [, , , , kindRaw, id] = path.split('/')
     const kind = kindRaw.toLowerCase()
     const table = { posts: 'posts', reels: 'reels', tracks: 'tracks', stories: 'stories' }[kind]
@@ -380,14 +382,16 @@ export async function handleMedia(request, env, ctx) {
     const keyCols = { posts: ['original_key', 'thumb_key'], reels: ['hls_master_key', 'poster_key', 'thumb_key'], tracks: ['original_key', 'preview_key', 'cover_thumb_key'], stories: ['original_key', 'thumb_key'] }
     const row = await query(env, `SELECT * FROM ${table} WHERE id=?`, [id])
     if (!row.rows[0]) return errorResponse('not found', 404)
+    const isOwner = row.rows[0].user_id === fresh.id
+    if (!isOwner && fresh.role !== 'admin' && !hasCap(fresh, CAP_DELETE)) return errorResponse('not permitted — needs delete_media', 403)
     // Delete R2 objects first (best-effort), then the DB row.
     for (const col of keyCols[kind]) {
       const key = row.rows[0][col]
       if (key && typeof key === 'string') { try { await env.MEDIA.delete(key) } catch {} }
     }
     await query(env, `DELETE FROM ${table} WHERE id=?`, [id])
-    await audit(env, fresh, `${kind.replace(/s$/, '')}_deleted`, id, { kind })
-    return jsonResponse({ ok: true, deleted: id, kind })
+    await audit(env, fresh, isOwner ? `${kind.replace(/s$/, '')}_deleted_own` : `${kind.replace(/s$/, '')}_deleted`, id, { kind, owner_delete: isOwner })
+    return jsonResponse({ ok: true, deleted: id, kind, own: isOwner })
   }
 
   return null

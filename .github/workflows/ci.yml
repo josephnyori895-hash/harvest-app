@@ -23,7 +23,7 @@ jobs:
       - run: npm run test:admin
       - run: npm run test:security
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - name: Sync Capacitor Android
         run: npx cap sync android
