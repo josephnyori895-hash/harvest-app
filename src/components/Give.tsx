@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, useApi } from '../lib/api'
+import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, createGivingProject, updateGivingProject, deleteGivingProject, useApi } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 
@@ -24,15 +24,15 @@ export function normalizeMpesaPhone(raw: string): string | null {
   return null
 }
 
-function ProjectAdminForm({ onCreated }: { onCreated: (p:any) => void }) {
-  const [name,setName]=useState('')
-  const [description,setDescription]=useState('')
-  const [goal,setGoal]=useState<number | ''>('')
-  const [deadline,setDeadline]=useState('')
-  const [auto,setAuto]=useState(true)
+function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; onCreated?: (p:any) => void; onUpdated?: (p:any) => void }) {
+  const [name,setName]=useState<string>(initial?.name !== undefined ? initial.name : '')
+  const [description,setDescription]=useState<string>(initial?.description !== undefined ? initial.description : '')
+  const [goal,setGoal]=useState<number | ''>(initial?.goal_kes !== undefined ? initial.goal_kes : '')
+  const [deadline,setDeadline]=useState<string>(initial?.deadline ? String(initial.deadline).slice(0,10) : '')
+  const [auto,setAuto]=useState<boolean>(initial?.auto_advertise !== false)
   const [busy,setBusy]=useState(false)
-  const submit=async()=>{ const n=name.trim(), g=Number(goal); if(!n||!Number.isFinite(g)||g<=0){showToast('Enter a project name and positive goal','error');return}; setBusy(true); try { const d=await (await import('../lib/api')).createGivingProject({name:n,description,goal_kes:g,deadline:deadline?new Date(deadline).toISOString():null,auto_advertise:auto}); onCreated(d.project); setName('');setDescription('');setGoal('');setDeadline('');showToast('Project created','success') } catch(e){showToast(e instanceof Error?e.message:'Could not create project','error')} finally{setBusy(false)} }
-  return <div className="mt-3 space-y-2"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Project name" className="input-premium" /><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="What are we working toward?" className="input-premium min-h-20" /><div className="grid grid-cols-2 gap-2"><input inputMode="numeric" value={goal} onChange={e=>setGoal(e.target.value===''?'':Number(e.target.value))} placeholder="Goal KES" className="input-premium" /><input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} className="input-premium" /></div><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} /> Auto advertise in Home feed</label><button type="button" disabled={busy} onClick={() => void submit()} className="btn-primary-lg w-full disabled:opacity-60">{busy?'Creating…':'Create project'}</button></div>
+  const submit=async()=>{ const n=name.trim(), g=Number(goal); if(!n||!Number.isFinite(g)||g<=0){showToast('Enter a project name and positive goal','error');return}; setBusy(true); try { const payload={name:n,description,goal_kes:g,deadline:deadline?new Date(deadline).toISOString():null,auto_advertise:auto}; if (initial?.id) { const d=await updateGivingProject(String(initial.id),payload); onUpdated?.(d.project); showToast('Project updated','success') } else { const d=await createGivingProject(payload); onCreated?.(d.project); setName('');setDescription('');setGoal('');setDeadline(''); showToast('Project created','success') } } catch(e){showToast(e instanceof Error?e.message:'Could not save project','error')} finally{setBusy(false)} }
+  return <div className="mt-3 space-y-2"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Project name" className="input-premium" /><textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="What are we working toward?" className="input-premium min-h-20" /><div className="grid grid-cols-2 gap-2"><input inputMode="numeric" value={goal} onChange={e=>setGoal(e.target.value===''?'':Number(e.target.value))} placeholder="Goal KES" className="input-premium" /><input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} className="input-premium" /></div><label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} /> Auto advertise in Home feed</label><button type="button" disabled={busy} onClick={() => void submit()} className="btn-primary-lg w-full disabled:opacity-60">{initial?.id ? (busy?'Saving…':'Save changes') : (busy?'Creating…':'Create project')}</button></div>
 }
 
 export default function Give() {
@@ -56,6 +56,28 @@ export default function Give() {
   const [projectCommitment, setProjectCommitment] = useState<number | ''>('')
   const [projectReminder, setProjectReminder] = useState(true)
   const [projectBusy, setProjectBusy] = useState(false)
+  const [editingProject, setEditingProject] = useState<any | null>(null)
+
+  const changeProjectStatus = async (p: any, status: string) => {
+    try {
+      const d = await updateGivingProject(String(p.id), { status })
+      setProjects(prev => prev.map(x => x.id === d.project.id ? d.project : x))
+      setSelectedProject(prev => prev?.id === d.project.id ? d.project : prev)
+      setEditingProject(prev => prev?.id === d.project.id ? d.project : prev)
+      showToast(`Project marked ${status}`, 'success')
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Could not update project', 'error') }
+  }
+
+  const removeProject = async (p: any) => {
+    if (!window.confirm(`Delete "${p.name}"? Participation is removed; contributions already recorded stay in the ledger.`)) return
+    try {
+      await deleteGivingProject(String(p.id))
+      setProjects(prev => prev.filter(x => x.id !== p.id))
+      setSelectedProject(prev => prev?.id === p.id ? null : prev)
+      setEditingProject(prev => prev?.id === p.id ? null : prev)
+      showToast('Project deleted', 'success')
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Could not delete project', 'error') }
+  }
   const apiEnabled = useApi()
   const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
   const isAdmin = currentRole === 'admin'
@@ -230,7 +252,10 @@ export default function Give() {
       {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}<label className="block mt-4 text-xs font-bold">My commitment (KES)<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label><label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label><button type="button" disabled={projectBusy} onClick={() => void saveParticipation()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : 'Save participation'}</button><button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-[#E8DEC9] bg-white text-sm font-extrabold">Give toward this project</button></div></div>}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Create project</h2><p className="text-xs text-[#6B6257] mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>
+        <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Manage projects</h2><p className="text-xs text-[#6B6257] mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projects.length === 0 && <p className="text-xs text-[#6B6257] mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-[#F1E9DA]"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-[#7C3AED] ml-1">{p.status}</span></p><p className="text-xs text-[#6B6257] mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
+        <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Create project</h2><p className="text-xs text-[#6B6257] mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
+        {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}
         <div className="grid grid-cols-2 gap-3"><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><p className="text-xs text-[#6B6257]">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><p className="text-xs text-[#6B6257]">Pending</p><p className="text-xl font-extrabold">{adminData?.totals?.pending_count||0}</p></div></div>
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">{(adminData?.transactions||[]).map(t => <div key={t.id} className="py-3 border-b last:border-0 border-[#F1E9DA]"><div className="flex justify-between gap-3"><p className="font-semibold">KES {Number(t.amount_kes).toLocaleString()} · {t.purpose}</p><span className="text-xs font-bold capitalize">{t.status}</span></div><p className="text-xs text-[#6B6257]">{t.username || 'member'} · {t.receipt_number || 'No receipt yet'}</p></div>)}</div>
       </div>}

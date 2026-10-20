@@ -94,5 +94,51 @@ export async function handleProjects(request, env, ctx) {
     return jsonResponse({ project: (await baseProjects(env, fresh.id)).find(x => x.id === id) }, 201)
   }
 
+  const adminProject = path.match(/^\/api\/projects\/admin\/([^/]+)$/)
+  const PROJECT_STATUSES = ['upcoming','active','paused','completed','closed']
+  if (adminProject && request.method === 'PATCH') {
+    const fresh = await requireAdmin(env, user)
+    const id = adminProject[1]
+    const existing = (await query(env, 'SELECT id FROM projects WHERE id=?', [id])).rows[0]
+    if (!existing) return errorResponse('project not found', 404)
+    const body = await readJson(request)
+    const updates = {}
+    if (body.name !== undefined) {
+      const name = String(body.name).trim().slice(0,120)
+      if (!name) return errorResponse('name required', 400)
+      updates.name = name
+    }
+    if (body.description !== undefined) updates.description = String(body.description).trim().slice(0,1000)
+    if (body.goal_kes !== undefined) {
+      const goal = Number(body.goal_kes)
+      if (!Number.isFinite(goal) || goal <= 0) return errorResponse('goal must be a positive amount', 400)
+      updates.goal_kes = goal
+    }
+    if (body.deadline !== undefined) updates.deadline = body.deadline || null
+    if (body.status !== undefined) {
+      if (!PROJECT_STATUSES.includes(body.status)) return errorResponse('invalid status', 400)
+      updates.status = body.status
+    }
+    if (body.auto_advertise !== undefined) updates.auto_advertise = body.auto_advertise === false ? 0 : 1
+    if (body.advertise_frequency_days !== undefined) updates.advertise_frequency_days = Math.max(1, Math.min(30, Number(body.advertise_frequency_days) || 3))
+    if (body.icon !== undefined) updates.icon = String(body.icon || '').slice(0,8) || '🤲'
+    if (!Object.keys(updates).length) return errorResponse('no changes to apply', 400)
+    const now = new Date().toISOString()
+    const keys = Object.keys(updates)
+    await query(env, `UPDATE projects SET ${keys.map(k => `${k}=?`).join(',')}, updated_at=? WHERE id=?`, [...keys.map(k => updates[k]), now, id])
+    return jsonResponse({ project: (await baseProjects(env, fresh.id)).find(x => x.id === id) })
+  }
+  if (adminProject && request.method === 'DELETE') {
+    const fresh = await requireAdmin(env, user)
+    const id = adminProject[1]
+    const existing = (await query(env, 'SELECT id FROM projects WHERE id=?', [id])).rows[0]
+    if (!existing) return errorResponse('project not found', 404)
+    await query(env, 'DELETE FROM project_participants WHERE project_id=?', [id])
+    // Participation rows follow the project out; contribution rows are kept
+    // as the audit trail for money already moved against this project.
+    await query(env, 'DELETE FROM projects WHERE id=?', [id])
+    return jsonResponse({ deleted: true, id })
+  }
+
   return null
 }

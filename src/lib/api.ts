@@ -93,6 +93,14 @@ export async function createGivingProject(body:any) {
   return apiJson('/api/projects/admin', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }) as Promise<{ project:any }>
 }
 
+export async function updateGivingProject(projectId:string, body:any) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }) as Promise<{ project:any }>
+}
+
+export async function deleteGivingProject(projectId:string) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}`, { method:'DELETE' }) as Promise<{ deleted:boolean; id:string }>
+}
+
 export async function fetchMusic() {
   return apiJson('/api/music') as Promise<{ tracks: any[] }>
 }
