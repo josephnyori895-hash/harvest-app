@@ -183,15 +183,21 @@ export async function handleGroups(request, env, ctx) {
       return errorResponse('this group is add-only — ask the admin to add you', 403)
     }
     // Reuse the pending-requests table: an approved request = membership.
-    const existing = await query(env, `SELECT id, status FROM group_invites WHERE group_id=? AND invited_user_id=? ORDER BY created_at DESC LIMIT 1`, [g.id, fresh.id])
-    if (existing.rows[0]?.status === 'pending') return jsonResponse({ status: 'pending', invite_id: existing.rows[0].id })
-    const id = uuid()
-    await query(
-      env,
-      `INSERT INTO group_invites (id, group_id, invited_username, invited_user_id, inviter_id, status, created_at) VALUES (?,?,?,?,?,'pending',?)`,
-      [id, g.id, fresh.username, fresh.id, fresh.id, new Date().toISOString()],
-    )
-    return jsonResponse({ status: 'pending', invite_id: id }, 201)
+    // PASTOR POWER: the admin joins straight through — approval queues are
+    // for members; nothing queues him for his own decision.
+    if (fresh.role !== 'admin') {
+      const existing = await query(env, `SELECT id, status FROM group_invites WHERE group_id=? AND invited_user_id=? ORDER BY created_at DESC LIMIT 1`, [g.id, fresh.id])
+      if (existing.rows[0]?.status === 'pending') return jsonResponse({ status: 'pending', invite_id: existing.rows[0].id })
+      const id = uuid()
+      await query(
+        env,
+        `INSERT INTO group_invites (id, group_id, invited_username, invited_user_id, inviter_id, status, created_at) VALUES (?,?,?,?,?,'pending',?)`,
+        [id, g.id, fresh.username, fresh.id, fresh.id, new Date().toISOString()],
+      )
+      return jsonResponse({ status: 'pending', invite_id: id }, 201)
+    }
+    await query(env, "INSERT INTO group_members (group_id, user_id, role) VALUES (?,?,'admin') ON CONFLICT(group_id, user_id) DO NOTHING", [g.id, fresh.id])
+    return jsonResponse({ status: 'joined' }, 201)
   }
 
   // GET /api/groups/:slug/requests — pending join requests (group admin only).

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, useApi } from '../lib/api'
+import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, overrideGivingPledge, removeGivenParticipant, renameGivingTake, removeFromTake, useApi } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 
@@ -67,6 +67,46 @@ export default function Give() {
   const [takeJoinId, setTakeJoinId] = useState<string>('')
   const [takeNote, setTakeNote] = useState('')
   const [entityOptions, setEntityOptions] = useState<{ group: string[]; department: string[]; community: string[] }>({ group: [], department: [], community: [] })
+  const [adminAmts, setAdminAmts] = useState<Record<string, string>>({})
+
+  const refreshProject = async () => {
+    try {
+      const d = await fetchProjects()
+      const list = Array.isArray(d?.projects) ? d.projects : []
+      setProjects(list)
+      setSelectedProject(prev => prev ? (list.find(x => x.id === prev.id) || prev) : prev)
+    } catch { /* keep current view */ }
+  }
+
+  const adminSetPledge = async (username: string, key: string) => {
+    if (!selectedProject) return
+    const value = Number(adminAmts[key])
+    if (!Number.isFinite(value) || value < 0) { showToast('Enter a valid amount', 'error'); return }
+    try { await overrideGivingPledge(String(selectedProject.id), username, value); setAdminAmts(prev => ({ ...prev, [key]: '' })); showToast(`Pledge set for ${username}`, 'success'); void refreshProject() }
+    catch (e) { showToast(e instanceof Error ? e.message : 'Could not override pledge', 'error') }
+  }
+
+  const adminRemoveMember = async (username: string) => {
+    if (!selectedProject) return
+    if (!window.confirm(`Remove ${username} from this project (individual + helper)?`)) return
+    try { await removeGivenParticipant(String(selectedProject.id), username); showToast(`${username} removed`, 'success'); void refreshProject() }
+    catch (e) { showToast(e instanceof Error ? e.message : 'Could not remove member', 'error') }
+  }
+
+  const adminRemoveTake = async (take: any) => {
+    if (!selectedProject) return
+    if (!window.confirm(`Delete take "${take.name}"? Its helper pledges are removed with it.`)) return
+    try { await removeFromTake(String(selectedProject.id), String(take.id)); showToast('Take removed', 'success'); void refreshProject() }
+    catch (e) { showToast(e instanceof Error ? e.message : 'Could not remove take', 'error') }
+  }
+
+  const adminRenameTake = async (take: any) => {
+    if (!selectedProject) return
+    const name = window.prompt('New name for this take:', take.name)
+    if (name === null) return
+    try { await renameGivingTake(String(selectedProject.id), String(take.id), { name: name.trim() }); showToast('Take renamed', 'success'); void refreshProject() }
+    catch (e) { showToast(e instanceof Error ? e.message : 'Could not rename take', 'error') }
+  }
 
   const changeProjectStatus = async (p: any, status: string) => {
     try {
@@ -300,6 +340,7 @@ export default function Give() {
 
       {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><p className="mt-3 text-sm text-[#5B5146] leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-[#E8DEC9] p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-[#F4E8D0]"><div className="h-full rounded-full bg-[#7C3AED]" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-[#6B6257]"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-[#F3E8FF] p-4"><p className="text-xs font-extrabold text-[#5B21B6]">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}
           {(selectedProject.takes || []).length > 0 && <div className="mt-3"><p className="text-xs font-extrabold text-[#7C3AED]">Team takes on this project</p>{selectedProject.takes.map((t: any) => <div key={t.id} className="mt-2 rounded-2xl bg-white border border-[#E8DEC9] p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold truncate">{t.kind === 'group' ? '👥' : t.kind === 'department' ? '🏛' : '🏘'} {t.name}</p><p className="text-[11px] text-[#6B6257] mt-0.5">{t.taken_by ? `Taken by ${t.taken_by.name || t.taken_by.username}` : 'Open'} · {t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()} pledged</p></div><button type="button" onClick={() => { setTakeKind(t.kind); setTakeJoinId(t.id); setTakeEntity(t.name); setProjectCommitment(t.mine_helper ? Number(t.mine_helper.commitment_kes) : '') }} className="shrink-0 px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">{t.mine_helper ? 'Update' : 'Help'}</button></div></div>)}</div>}
+          {isAdmin && <div className="mt-3 rounded-2xl bg-white border border-[#E8DEC9] p-3"><p className="text-xs font-extrabold text-[#7C3AED]">Admin controls</p>{(selectedProject.participants_list || []).length === 0 && (selectedProject.takes || []).length === 0 && <p className="text-xs text-[#6B6257] mt-1">No members have taken or contributed to this project yet.</p>}{(selectedProject.participants_list || []).map((u: any) => <div key={`ind-${u.username}`} className="mt-2"><p className="text-[11px] font-bold truncate">{u.name || u.username} <span className="text-[#8B8175]">@{u.username}</span> · KES {Number(u.commitment_kes).toLocaleString()}</p><div className="flex gap-1.5 mt-1"><input inputMode="numeric" value={adminAmts[`ind:${u.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`ind:${u.username}`]: e.target.value }))} placeholder="New pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(u.username, `ind:${u.username}`)} className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">Set</button><button type="button" onClick={() => void adminRemoveMember(u.username)} className="px-3 py-1.5 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-[11px] font-extrabold">✕</button></div></div>)}{(selectedProject.takes || []).map((t: any) => <div key={t.id} className="mt-3"><div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold truncate">{t.kind === 'group' ? '👥' : t.kind === 'department' ? '🏛' : '🏘'} {t.name} · {t.helpers_detail?.length || t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()}</p><div className="flex gap-1"><button type="button" onClick={() => void adminRenameTake(t)} className="px-2 py-1 rounded-lg bg-[#F3E8FF] text-[#5B21B6] text-[10px] font-extrabold">Rename</button><button type="button" onClick={() => void adminRemoveTake(t)} className="px-2 py-1 rounded-lg bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-[10px] font-extrabold">Remove</button></div></div>{(t.helpers_detail || []).map((h: any) => <div key={`h-${t.id}-${h.username}`} className="mt-1.5"><p className="text-[10px] text-[#6B6257] truncate">{h.name || h.username} · KES {Number(h.commitment_kes).toLocaleString()}{h.note ? ` · "${h.note}"` : ''}</p><div className="flex gap-1.5"><input inputMode="numeric" value={adminAmts[`helper:${t.id}:${h.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`helper:${t.id}:${h.username}`]: e.target.value }))} placeholder="Set pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(h.username, `helper:${t.id}:${h.username}`)} className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">Set</button></div></div>)}</div>)}</div>}
           <div className="mt-4"><p className="text-xs font-extrabold text-[#7C3AED]">How do you want to take this?</p><div className="mt-2 grid grid-cols-4 gap-1.5">{(['individual','group','department','community'] as const).map(k => <button key={k} type="button" onClick={() => { setTakeKind(k); setTakeJoinId(''); setTakeEntity(k === 'individual' ? '' : takeEntity) }} className={`py-2 rounded-xl text-[11px] font-extrabold border ${takeKind === k ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'bg-white border-[#E8DEC9] text-[#5B5146]'}`}>{k === 'individual' ? '👤 Me' : k === 'group' ? '👥 Group' : k === 'department' ? '🏛 Dept' : '🏘 Community'}</button>)}</div></div>
           {takeKind !== 'individual' && <div className="mt-3 rounded-2xl bg-white border border-[#E8DEC9] p-3"><p className="text-xs font-bold">{takeKind === 'group' ? '👥 As a group' : takeKind === 'department' ? '🏛 As a department' : '🏘 As a community'}</p>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).length > 0 && <select value={takeJoinId} onChange={e => { const id = e.target.value; setTakeJoinId(id); const t = (selectedProject.takes || []).find((x: any) => x.id === id); setTakeEntity(t?.name || ''); if (t?.mine_helper) setProjectCommitment(Number(t.mine_helper.commitment_kes)) }} className="input-premium mt-2"><option value="">— Help an existing take —</option>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).map((t: any) => <option key={t.id} value={t.id}>{t.name} · KES {Number(t.total_committed_kes).toLocaleString()}</option>)}</select>}<select value={takeJoinId ? '' : takeEntity} onChange={e => setTakeEntity(e.target.value)} disabled={!!takeJoinId} className="input-premium mt-2"><option value="">{takeJoinId ? 'Helping an existing take' : `— Start a new ${takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community'} take —`}</option>{(takeKind === 'group' ? entityOptions.group : takeKind === 'department' ? entityOptions.department : entityOptions.community).filter((n: string) => !(selectedProject.takes || []).some((t: any) => t.kind === takeKind && t.name === n)).map((n: string) => <option key={n} value={n}>{n}</option>)}</select></div>}
           <label className="block mt-4 text-xs font-bold">{takeKind === 'individual' ? 'My commitment (KES)' : takeJoinId ? 'My pledge to help (KES, 0 = helping by hand)' : 'Pledge on behalf (KES)'}<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label>

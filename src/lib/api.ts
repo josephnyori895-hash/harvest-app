@@ -119,6 +119,27 @@ export async function fetchDepartmentDirectory() {
   return apiJson('/api/departments') as Promise<{ departments: any[] }>
 }
 
+// ── Admin override power (requireAdmin server-side; audit-logged) ──
+export async function overrideGivingPledge(projectId:string, username:string, commitment_kes:number) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}/participants/${encodeURIComponent(username)}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ commitment_kes }),
+  }) as Promise<{ updated:boolean; individual:boolean; helper:boolean }>
+}
+
+export async function removeGivenParticipant(projectId:string, username:string) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}/participants/${encodeURIComponent(username)}`, { method:'DELETE' }) as Promise<{ removed:boolean }>
+}
+
+export async function renameGivingTake(projectId:string, takeId:string, body:{ name?: string; taken_by_username?: string }) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}/takes/${encodeURIComponent(takeId)}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
+  }) as Promise<{ updated:boolean }>
+}
+
+export async function removeFromTake(projectId:string, takeId:string) {
+  return apiJson(`/api/projects/admin/${encodeURIComponent(projectId)}/takes/${encodeURIComponent(takeId)}`, { method:'DELETE' }) as Promise<{ removed:boolean }>
+}
+
 export async function fetchMusic() {
   return apiJson('/api/music') as Promise<{ tracks: any[] }>
 }

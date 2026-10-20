@@ -2,6 +2,14 @@ import { query, uuid } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 
+async function auditLog(env, actor, action, targetId, meta = {}) {
+  await query(
+    env,
+    `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,?,?,'project',?,?,?)`,
+    [actor.id, actor.role, action, targetId, JSON.stringify(meta), new Date().toISOString()],
+  ).catch(() => {})
+}
+
 function projectRow(row, mine = null, takes = [], mineTake = null) {
   return {
     id: String(row.id),
@@ -30,7 +38,7 @@ function projectRow(row, mine = null, takes = [], mineTake = null) {
 
 const KINDS = ['group','department','community']
 
-async function takesForProjects(env, projectIds) {
+async function takesForProjects(env, projectIds, { details = false } = {}) {
   const map = new Map(projectIds.map(id => [String(id), []]))
   if (!projectIds.length) return map
   const placeholders = projectIds.map(() => '?').join(',')
@@ -40,6 +48,18 @@ async function takesForProjects(env, projectIds) {
       COALESCE((SELECT SUM(h.commitment_kes) FROM project_take_helpers h WHERE h.take_id=t.id),0) AS helpers_committed_kes
     FROM project_takes t LEFT JOIN users u ON u.id=t.taken_by
     WHERE t.project_id IN (${placeholders}) ORDER BY t.created_at ASC`, [...projectIds])
+  let helperDetail = new Map()
+  if (details && rows.length) {
+    const tIds = rows.map(r => r.id)
+    const ph = tIds.map(() => '?').join(',')
+    const { rows: hd } = await query(env, `SELECT h.take_id, h.commitment_kes, h.note, u.username, u.name
+      FROM project_take_helpers h LEFT JOIN users u ON u.id=h.user_id WHERE h.take_id IN (${ph}) ORDER BY h.created_at ASC`, tIds)
+    for (const r of hd) {
+      const list = helperDetail.get(String(r.take_id)) || []
+      list.push({ username: r.username, name: r.name, commitment_kes: Number(r.commitment_kes) || 0, note: r.note || '' })
+      helperDetail.set(String(r.take_id), list)
+    }
+  }
   for (const r of rows) {
     // The taker is themselves recorded as a helper on first pledge, so the
     // running total is the helper sum — the take row's committed_kes is the
@@ -54,12 +74,13 @@ async function takesForProjects(env, projectIds) {
       helpers_count: Number(r.helpers_count) || 0,
       helpers_committed_kes: helpers,
       total_committed_kes: helpers,
+      ...(details ? { helpers_detail: helperDetail.get(String(r.id)) || [] } : {}),
     })
   }
   return map
 }
 
-async function baseProjects(env, userId = null) {
+async function baseProjects(env, userId = null, { includeMembers = false } = {}) {
   const { rows } = await query(env, `SELECT p.*,
     COALESCE((SELECT SUM(pc.amount_kes) FROM project_contributions pc WHERE pc.project_id=p.id),0) AS raised_kes,
     COALESCE((SELECT SUM(pp.commitment_kes) FROM project_participants pp WHERE pp.project_id=p.id),0) AS committed_kes,
@@ -72,17 +93,30 @@ async function baseProjects(env, userId = null) {
       FROM project_participants pp WHERE pp.user_id=?`, [userId])
     mine = new Map(m.map(x => [String(x.project_id), x]))
   }
-  const takeMap = await takesForProjects(env, rows.map(r => r.id))
+  const takeMap = await takesForProjects(env, rows.map(r => r.id), { details: includeMembers })
   let takeMine = new Map()
   if (userId) {
     const { rows: tm } = await query(env, `SELECT h.take_id, h.commitment_kes FROM project_take_helpers h WHERE h.user_id=?`, [userId])
     takeMine = new Map(tm.map(x => [String(x.take_id), { commitment_kes: Number(x.commitment_kes) || 0 }]))
   }
+  let memberLists = new Map()
+  if (includeMembers && rows.length) {
+    const placeholders = rows.map(() => '?').join(',')
+    const { rows: mm } = await query(env, `SELECT pp.project_id, pp.commitment_kes, pp.user_id, u.username, u.name
+      FROM project_participants pp LEFT JOIN users u ON u.id=pp.user_id WHERE pp.project_id IN (${placeholders})`, rows.map(r => r.id))
+    for (const r of mm) {
+      const list = memberLists.get(String(r.project_id)) || []
+      list.push({ username: r.username, name: r.name, commitment_kes: Number(r.commitment_kes) || 0 })
+      memberLists.set(String(r.project_id), list)
+    }
+  }
   return rows.map(r => {
     const takes = (takeMap.get(String(r.id)) || []).map(t => ({ ...t, mine_helper: takeMine.get(t.id) || null }))
     const mineTakeRow = takes.find(t => t.mine_helper)
     const mineTake = mineTakeRow ? { take_id: mineTakeRow.id, kind: mineTakeRow.kind, name: mineTakeRow.name, commitment_kes: mineTakeRow.mine_helper.commitment_kes } : null
-    return projectRow(r, mine.get(String(r.id)) || null, takes, mineTake)
+    const out = projectRow(r, mine.get(String(r.id)) || null, takes, mineTake)
+    if (includeMembers) out.participants_list = memberLists.get(String(r.id)) || []
+    return out
   })
 }
 
@@ -97,9 +131,75 @@ export async function handleProjects(request, env, ctx) {
   const match = path.match(/^\/api\/projects\/([^/]+)$/)
   if (match && request.method === 'GET') {
     const fresh = await requireMember(env, user)
-    const all = await baseProjects(env, fresh.id)
+    const all = await baseProjects(env, fresh.id, { includeMembers: fresh.role === 'admin' })
     const p = all.find(x => x.id === match[1])
     return p ? jsonResponse({ project: p }) : errorResponse('project not found', 404)
+  }
+
+  // ── Admin override endpoints: the admin runs the app, so he can correct
+  // any pledge, rename/reassign a take, and remove anyone from anything.
+  // Money already moved stays untouched (project_contributions) — only
+  // pledges are overridable, with the audit protecting the real cash.
+  const overrideParticipant = path.match(/^\/api\/projects\/admin\/([^/]+)\/participants\/([^/]+)$/)
+  if (overrideParticipant && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    const fresh = await requireAdmin(env, user)
+    const projectId = overrideParticipant[1]
+    const target = overrideParticipant[2]
+    if (request.method === 'DELETE') {
+      await query(env, `DELETE FROM project_participants WHERE project_id=? AND user_id IN (SELECT id FROM users WHERE username=?)`, [projectId, target])
+      // helpers too — removing a member removes him from team takes
+      await query(env, `DELETE FROM project_take_helpers WHERE user_id IN (SELECT id FROM users WHERE username=?) AND take_id IN (SELECT id FROM project_takes WHERE project_id=?)`, [target, projectId])
+      return jsonResponse({ removed: true, project_id: projectId, user: target })
+    }
+    const body = await readJson(request)
+    const commitment = Number(body.commitment_kes)
+    if (!Number.isFinite(commitment) || commitment < 0 || commitment > 100000000) return errorResponse('commitment must be between KES 0 and KES 100,000,000', 400)
+    const ind = (await query(env, `SELECT pp.rowid AS rid, pp.user_id, pp.commitment_kes FROM project_participants pp
+      LEFT JOIN users u ON u.id=pp.user_id WHERE pp.project_id=? AND u.username=?`, [projectId, String(target)])).rows[0]
+    const helper = (await query(env, `SELECT h.rowid AS rid, h.commitment_kes FROM project_take_helpers h
+      LEFT JOIN users u ON u.id=h.user_id WHERE u.username=?
+        AND h.take_id IN (SELECT id FROM project_takes WHERE project_id=?)`, [String(target), projectId])).rows[0]
+    if (!ind && !helper) return errorResponse('participant not found', 404)
+    if (ind) {
+      await query(env, 'UPDATE project_participants SET commitment_kes=?, updated_at=? WHERE rowid=?', [commitment, new Date().toISOString(), ind.rid])
+      await auditLog(env, fresh, 'project_pledge_override', projectId, { user: target, before: Number(ind.commitment_kes), after: commitment })
+    }
+    if (helper) {
+      await query(env, 'UPDATE project_take_helpers SET commitment_kes=?, updated_at=? WHERE rowid=?', [commitment, new Date().toISOString(), helper.rid])
+      await auditLog(env, fresh, 'project_take_pledge_override', projectId, { user: target, before: Number(helper.commitment_kes), after: commitment })
+    }
+    return jsonResponse({ updated: true, commitment_kes: commitment, individual: !!ind, helper: !!helper })
+  }
+
+  const overrideTake = path.match(/^\/api\/projects\/admin\/([^/]+)\/takes\/([^/]+)$/)
+  if (overrideTake && request.method === 'DELETE') {
+    const fresh = await requireAdmin(env, user)
+    const projectId = overrideTake[1]
+    const t = (await query(env, 'SELECT id FROM project_takes WHERE id=? AND project_id=?', [overrideTake[2], projectId])).rows[0]
+    if (!t) return errorResponse('take not found', 404)
+    await query(env, 'DELETE FROM project_takes WHERE id=?', [t.id])
+    return jsonResponse({ removed: true, take_id: t.id })
+  }
+  if (overrideTake && request.method === 'PATCH') {
+    const fresh = await requireAdmin(env, user)
+    const projectId = overrideTake[1]
+    const body = await readJson(request)
+    const t = (await query(env, 'SELECT id, kind, name, taken_by FROM project_takes WHERE id=? AND project_id=?', [overrideTake[2], projectId])).rows[0]
+    if (!t) return errorResponse('take not found', 404)
+    const sets = [], vals = []
+    if (body.name !== undefined) {
+      const name = String(body.name).trim().slice(0,120)
+      if (!name) return errorResponse('name required', 400)
+      sets.push('name=?'); vals.push(name)
+    }
+    if (body.taken_by_username !== undefined) {
+      const owner = (await query(env, 'SELECT id FROM users WHERE username=?', [String(body.taken_by_username)])).rows[0]
+      if (!owner) return errorResponse('member not found', 404)
+      sets.push('taken_by=?'); vals.push(owner.id)
+    }
+    if (!sets.length) return errorResponse('no changes to apply', 400)
+    await query(env, `UPDATE project_takes SET ${sets.join(',')}, updated_at=? WHERE id=?`, [...vals, new Date().toISOString(), t.id])
+    return jsonResponse({ updated: true, take_id: t.id })
   }
 
   const participate = path.match(/^\/api\/projects\/([^/]+)\/participate$/)
