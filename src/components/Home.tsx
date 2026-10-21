@@ -539,7 +539,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     <header className="sticky top-0 z-20 bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#E8DEC9]">
       <div className="px-4 py-3 flex items-center justify-between">
         <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher"><img src="/logo.png" alt="" className="w-10 h-10 rounded-2xl object-contain bg-[#F5F1E8] shadow-sm" /><span><span className="block text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</span><span className="block text-[17px] font-extrabold text-[#29251F] leading-tight">Nyeri</span></span></button>
-        <div className="flex items-center gap-2"><button onClick={() => setTab('activity')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Activity">🔔</button><button onClick={() => setTab('chat')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Messages">💬</button>{isAdmin && <button onClick={clearCache} className="w-10 h-10 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9]" aria-label="Clear local cache">🧹</button>}</div>
+        <div className="flex items-center gap-2"><button onClick={() => setTab('chat')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Messages">💬</button>{isAdmin && <button onClick={clearCache} className="w-10 h-10 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9]" aria-label="Clear local cache">🧹</button>}</div>
       </div>
     </header>
 
