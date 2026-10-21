@@ -56,6 +56,8 @@ type QueueRecord = {
   task: UploadTask
   attempts: number // completed attempts so far
   nextAttemptAt: number
+  /** Account the upload was started under — queue never crosses accounts. */
+  owner: string
 }
 
 const MAX_ATTEMPTS = 5
@@ -263,6 +265,15 @@ function isRetryable(e: any): boolean {
 async function runAttempt(id: string) {
   const rec = records.get(id)
   if (!rec || running.has(id)) return
+  if (rec.owner !== undefined && rec.owner !== currentOwner()) {
+    // Account changed since this upload was queued — never send another
+    // member's media under this account. Purge silently.
+    records.delete(id)
+    states.delete(id)
+    await idbDelete(id)
+    emit()
+    return
+  }
   running.add(id)
   states.set(id, { ...(states.get(id)!), status: 'uploading', pct: 0, attempt: rec.attempts + 1 })
   emit()
@@ -306,9 +317,11 @@ async function runAttempt(id: string) {
 // Hand a task to the background manager. Resolves when the transfer finishes
 // (success or final give-up); failures are surfaced by toast, so callers
 // typically attach .catch(() => {}).
+const currentOwner = () => localStorage.getItem('harvest_username') || ''
+
 export function startBackgroundUpload(opts: { label: string; successMsg: string; task: UploadTask }): Promise<void> {
   const id = `up_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task: opts.task, attempts: 0, nextAttemptAt: 0 })
+  records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task: opts.task, attempts: 0, nextAttemptAt: 0, owner: currentOwner() })
   states.set(id, { id, label: opts.label, pct: 0, status: 'uploading', attempt: 1, startedAt: Date.now() })
   emit()
   const promise = runAttempt(id)
@@ -332,16 +345,20 @@ export async function flushQueue() {
 // Restore queued uploads from a previous session (IndexedDB).
 void (async () => {
   const saved = await idbAll()
+  let old = 0
   for (const rec of saved) {
     if (!rec?.task?.file || records.has(rec.id)) continue
+    if (rec.owner !== undefined && rec.owner !== currentOwner()) { void idbDelete(rec.id); old++; continue }
     records.set(rec.id, rec)
     states.set(rec.id, { id: rec.id, label: rec.label, pct: 0, status: rec.nextAttemptAt ? 'waiting' : 'failed', attempt: rec.attempts || 1, startedAt: rec.nextAttemptAt || Date.now() })
   }
-  if (saved.length) {
+  const resumed = Object.keys(records).length
+  if (resumed) {
     emit()
-    showToast(`${saved.length} upload${saved.length > 1 ? 's' : ''} resumed from last time`, 'info', 3000)
-    if (typeof navigator === 'undefined' || navigator.onLine !== false) setTimeout(() => { void flushQueue() }, 4000)
+    showToast(`${resumed} upload${resumed > 1 ? 's' : ''} resumed from last time`, 'info', 3000)
   }
+  void old // foreign-owner records purged silently
+  if (saved.length && typeof navigator !== 'undefined' && navigator.onLine !== false) setTimeout(() => { void flushQueue() }, 4000)
 })()
 
 export function clearUploadHistory() {
