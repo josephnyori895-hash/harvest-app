@@ -577,7 +577,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         <div className="space-y-3">
           {liveProjects.map((p: any) => {
             const project = p.project || p
-            const pct = project.goal_kes ? Math.min(100, Math.round((Number(project.raised_kes || 0) / Number(project.goal_kes)) * 100)) : 0
+            const raised = Number(project.raised_kes || 0)
+            const pct = project.goal_kes ? Math.min(100, Math.round((raised / Number(project.goal_kes)) * 100)) : 0
+            // Bar is a hairline at true 1–3% — floor the visual to 4% so early
+            // progress is visible (the exact figure is printed beside it).
+            const barW = pct > 0 ? Math.max(4, pct) : 0
+            const daysLeft = project.deadline ? Math.ceil((new Date(project.deadline).getTime() - Date.now()) / 86400000) : null
+            const urgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 14
             return <article key={p.id} className="relative overflow-hidden rounded-[24px] border border-[#D8C7F5] bg-gradient-to-br from-[#FBF8FF] via-white to-[#FFF9ED] shadow-sm">
               <button type="button" onClick={() => setTab('give')} className="block w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-[#7C3AED] focus:ring-inset" aria-label={`Open sponsored project: ${project.name || p.name}`}>
                 <div className="flex items-center justify-between gap-3 mb-3">
@@ -593,15 +599,15 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                 </div>
                 <div className="mt-4 rounded-2xl bg-white/80 border border-[#E8DEC9] p-3">
                   <div className="flex items-center justify-between gap-3 text-[11px] font-bold">
-                    <span>KES {Number(project.raised_kes || 0).toLocaleString()} raised</span>
+                    <span>KES {raised.toLocaleString()} raised</span>
                     <span>{pct}% of goal</span>
                   </div>
                   <div className="mt-2 h-2.5 rounded-full bg-[#F0E9DC] overflow-hidden">
-                    <div className="h-full rounded-full bg-[#7C3AED]" style={{ width: `${pct}%` }} />
+                    <div className={`h-full rounded-full ${urgent && pct < 100 ? 'bg-gradient-to-r from-[#F59E0B] to-[#B45309]' : 'bg-[#7C3AED]'}`} style={{ width: `${barW}%` }} />
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#766E63]">
                     <span>{Number(project.participants || 0)} participating</span>
-                    {project.deadline ? <span>Ends {new Date(project.deadline).toLocaleDateString()}</span> : <span>Open participation</span>}
+                    {project.deadline ? <span className={urgent ? 'font-bold text-[#B45309]' : ''}>{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? `⏳ ${daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : `Ends ${new Date(project.deadline).toLocaleDateString()}`}</span> : <span>Open participation</span>}
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">

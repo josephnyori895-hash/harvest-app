@@ -14,12 +14,18 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [videoState, setVideoState] = useState<'loading' | 'playing' | 'blocked' | 'error'>('loading')
+  // Stories start WITH sound (WhatsApp-status behaviour). The story opens on a
+  // real tap, so the WebView's user-gesture requirement is satisfied. If the
+  // device still refuses unmuted autoplay we retry muted once and surface a
+  // speaker toggle so nobody gets a silent video with no explanation.
+  const [storyMuted, setStoryMuted] = useState(false)
   const [mediaRetryKey, setMediaRetryKey] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [reply, setReply] = useState('')
   const [replies, setReplies] = useState<any[]>([])
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
+  const [replySent, setReplySent] = useState(false)
   const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
@@ -46,7 +52,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     } catch(e:any){ setViewerError(e?.message||'Could not delete reply') }
   }
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json(); if(r.ok)setReplies(d.replies||[]) } catch {} }
-  const sendReply = async () => { if(!reply.trim()||replyBusy)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReplies(x=>[...x,d.reply]); setReply(''); setShowReplies(true) } catch(e:any){setViewerError(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
+  // Replying to a story is WhatsApp behaviour: it lands in the author's DMs,
+  // never on this screen. Replying to your OWN story is meaningless — the
+  // input is hidden for the author, who gets the replies review instead.
+  const sendReply = async () => { if(!reply.trim()||replyBusy||!s?.username)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/,''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/chat/messages',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},body:JSON.stringify({peer:s.username,body:reply.trim()})}); const d=await r.json(); if(!r.ok)throw new Error(d.error||'Could not send reply'); setReply(''); setReplySent(true); setTimeout(()=>setReplySent(false),2500) } catch(e:any){setViewerError(e.message||'Could not send reply')} finally{setReplyBusy(false)} }
 
   // Keep the Story viewer above the Android keyboard and make system Back close it.
   useEffect(() => {
@@ -106,8 +115,12 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     const v = videoRef.current
     if (!v) return
     v.currentTime = 0
+    v.muted = storyMuted
     const tryPlay = () => {
-      v.play().then(() => setVideoState('playing')).catch(() => setVideoState('blocked'))
+      v.play().then(() => setVideoState('playing')).catch(() => {
+        if (!v.muted) { v.muted = true; setStoryMuted(true); v.play().then(() => setVideoState('playing')).catch(() => setVideoState('blocked')) }
+        else setVideoState('blocked')
+      })
     }
     if (v.readyState >= 2) tryPlay()
     else {
@@ -118,7 +131,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       return () => { v.removeEventListener('canplay', onCan); v.removeEventListener('error', onFail) }
     }
     return undefined
-  }, [idx, s, isVideo, mediaRetryKey])
+  }, [idx, s, isVideo, mediaRetryKey, storyMuted])
 
   // Pause/play sync for videos.
   useEffect(() => {
@@ -201,7 +214,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-stone-800 rounded overflow-hidden relative"><div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} /></div>)}</div>
       <div className="flex items-center justify-between px-4 py-3">
         <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div></div><div><p className="text-sm font-semibold text-white">{s.name}</p>{users.find((u: any) => u.username === s.name)?.role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-stone-700 text-stone-300'}`}>{users.find((u: any) => u.username === s.name)?.role || 'member'}</span>}</div></button>
-        <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50 flex items-center justify-center" aria-label="Delete story" title="Delete story">{deleting ? '…' : '🗑'}</button>}{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">⏸</button>}<button onClick={(e) => { e.stopPropagation(); shareStoryToWhatsApp({ author: s.name, caption: s.caption, id: String(s.id) }) }} className="min-w-11 min-h-11 px-2 text-[#25D366] flex items-center justify-center" aria-label="Share story to WhatsApp" title="Share to WhatsApp">↗ WhatsApp</button><button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">✕</button></div>
+        <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50 flex items-center justify-center" aria-label="Delete story" title="Delete story">{deleting ? '…' : '🗑'}</button>}{isVideo && <button onClick={(e) => { e.stopPropagation(); const v = videoRef.current; if (v) { v.muted = !v.muted; setStoryMuted(v.muted); if (!v.paused) void v.play().catch(() => {}) } }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center" aria-label={storyMuted ? 'Turn story sound on' : 'Turn story sound off'}>{storyMuted ? '🔇' : '🔊'}</button>}{!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); setIsPaused(!isPaused) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">⏸</button>}<button onClick={(e) => { e.stopPropagation(); shareStoryToWhatsApp({ author: s.name, caption: s.caption, id: String(s.id) }) }} className="min-w-11 min-h-11 px-2 text-[#25D366] flex items-center justify-center" aria-label="Share story to WhatsApp" title="Share to WhatsApp">↗ WhatsApp</button><button onClick={(e) => { e.stopPropagation(); setIdx(null) }} className="min-w-11 min-h-11 px-2 text-white flex items-center justify-center">✕</button></div>
       </div>
       <div className="flex-1 flex items-center justify-center relative overflow-hidden">
         {/* object-contain: the whole photo/video stays visible and centered
@@ -227,7 +240,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             <video
               ref={videoRef}
               src={s.video}
-              muted
+              muted={storyMuted}
               playsInline
               preload="auto"
               onEnded={goNext}
@@ -263,7 +276,15 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             const canRemove = isAdmin || isStoryAuthor || (r.username && r.username === me)
             return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={()=>void deleteReply(String(r.id))} className="min-w-11 min-h-11 shrink-0 text-stone-300 hover:text-white" aria-label="Delete reply">×</button>}</div>
           }) : <p className="text-xs text-stone-400">No replies yet.</p>}</div>}
-      <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : "calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 3rem)" }}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full bg-white/95 text-black px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400" /><button onClick={()=>void sendReply()} disabled={replyBusy} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':'Send'}</button><button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button></div>
+      <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : "calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 3rem)" }}>
+        {isStoryAuthor ? (<>
+          <span className="flex-1 min-h-11 flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/15 text-white/70 text-sm">{showReplies ? 'Written replies are listed above' : 'Replies to your story land here'}</span>
+          <button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button>
+        </>) : (<>
+          <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full bg-white/95 text-black px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400" />
+          <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':(replySent?'✓ Sent':'Send')}</button>
+        </>)}
+      </div>
       {canEdit && <button onClick={e=>{e.stopPropagation();setEditing(true)}} className="absolute top-14 right-16 min-h-11 text-white text-xs bg-black/50 px-3 py-2 rounded-full">✎ Edit</button>}
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-stone-500">{isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Tap to forward'}</div>
