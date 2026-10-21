@@ -219,12 +219,15 @@ export async function handleMedia(request, env, ctx) {
       return jsonResponse({ id, status: 'published', kind, key }, 201)
     }
 
-    if (isAdmin) {
+    // Direct publication: admin, verified members (option 2 policy — trusted
+    // badge means instant visibility) or post_media grant holders. Everyone
+    // else who passed the gate above queues for admin approval.
+    if (isAdmin || fresh.verified || hasCap(fresh, 'post_media')) {
       const id = uuid()
       if (type === 'post') {
         await query(
           env,
-          `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
           [id, userId, caption || '', key, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'reel') {
@@ -233,7 +236,7 @@ export async function handleMedia(request, env, ctx) {
         const posterKey = validatedPosterKey
         await query(
           env,
-          `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO reels (id, user_id, caption, music_track_id, hls_master_key, poster_key, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
           [id, userId, caption || '', musicTrackId || null, key, posterKey, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'track') {
