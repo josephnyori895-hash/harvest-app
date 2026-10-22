@@ -26,7 +26,10 @@ export async function handleFeed(request, env, ctx) {
   const user = ctx.user
 
   // GET /api/feed?offset=&limit=
+  // Members-only: this endpoint carries member names + captions; the app has
+  // no guest mode, so anonymous reads here are pure data exposure.
   if (path === '/api/feed' && request.method === 'GET') {
+    await requireMember(env, user)
     const limit = Math.min(parseInt(qp.limit || '20', 10), 50)
     const offset = parseInt(qp.offset || '0', 10)
     let viewer = null

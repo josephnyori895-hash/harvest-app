@@ -2,7 +2,7 @@
 import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
-import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute } from '../lib/auth.js'
+import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute, registerRateLimit, recordRegister } from '../lib/auth.js'
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
 const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
@@ -25,6 +25,9 @@ export async function handleAuth(request, env, ctx) {
     try {
       const body = await readJson(request)
       identity = await loginRateLimit(env, request, body.username)
+      // Throttle signup itself (login rate limit only guards password
+      // guessing; without this, POST /register farms accounts en masse).
+      await recordRegister(env, await registerRateLimit(env, request))
       const { username, name, phone, password, group_name: groupName, lat, lng } = body
       const uname = String(username || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 32)
       const fullName = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 120)

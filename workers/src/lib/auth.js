@@ -124,3 +124,31 @@ export async function recordLoginAttempt(env, ip, username, success) {
     new Date().toISOString(),
   ]).catch(() => {})
 }
+
+// ── Register rate limiting: same table under a sentinel username ──
+// Account farming was the last unthrottled auth path: 30 signups/hour per IP
+// is far above any real congregation rush (a family on one NAT) but far
+// below what a bot needs. Every register call counts, valid or not.
+
+export async function registerRateLimit(env, request) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown'
+  const marker = `reg:${ip}`
+  const { rows } = await query(
+    env,
+    `SELECT COUNT(*) AS count FROM login_attempts WHERE ip = ? AND username = ? AND created_at > ?`,
+    [ip, marker, isoMinutesAgo(60)],
+  )
+  if (Number(rows[0]?.count || 0) >= 30) {
+    throw httpError(429, 'too many signups from this network — try again later')
+  }
+  return { ip, marker }
+}
+
+export async function recordRegister(env, identity) {
+  if (!identity) return
+  await query(
+    env,
+    'INSERT INTO login_attempts (ip, username, success, created_at) VALUES (?, ?, 0, ?)',
+    [identity.ip, identity.marker, new Date().toISOString()],
+  ).catch(() => {})
+}
