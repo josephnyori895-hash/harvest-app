@@ -54,16 +54,30 @@ const main = async () => {
   const mine0 = await j('GET', '/api/groups/mine', AT)
   check('creator not a member (participation none)', !mine0.data.groups?.some(g => g.slug === slug))
 
-  // ── Join request flow (creator requests, group admin approves) ──
+  // ── Join request flow ──
+  // System admins join straight through (no queue — by design). Assert that.
   const jr = await j('POST', `/api/groups/${slug}/join`, AT)
-  check('system admin can request to join', jr.status === 201 || jr.status === 200, jr.data.error || '')
+  check('system admin joins directly (no queue)', (jr.status === 201 || jr.status === 200) && jr.data.status === 'joined', JSON.stringify(jr.data))
+
+  // A regular member must queue for the group admin's approval.
+  const reqReg = await j('POST', '/api/auth/register', null, {
+    username: `gtest2${stamp}`, name: 'Second Tester', phone: `07${stamp}34`, password: 'password123',
+  })
+  const RT = reqReg.data.token || (await j('POST', '/api/auth/login', null, { username: `gtest2${stamp}`, password: 'password123' })).data.token
+  check('second member registered', !!RT)
+  // New groups are add-only by design; the group admin opens the join queue.
+  const openJoin = await j('PATCH', `/api/groups/${slug}/settings`, MT, { invite_only: false })
+  check('group admin opens join queue (invite_only off)', openJoin.status === 200, openJoin.data.error || '')
+  const jr2 = await j('POST', `/api/groups/${slug}/join`, RT)
+  check('member join request queues as pending', jr2.status === 201 && jr2.data.status === 'pending', jr2.data.error || '')
+
   const reqs = await j('GET', `/api/groups/${slug}/requests`, MT)
   check('group admin sees pending requests', reqs.status === 200 && reqs.data.requests?.length >= 1, reqs.data.error || '')
   const rid = reqs.data.requests?.[0]?.id
   const ap = await j('POST', `/api/groups/${slug}/requests/${rid}/approve`, MT, { approve: true })
   check('group admin approves request', ap.status === 200 && ap.data.status === 'approved', ap.data.error || '')
   const det = await j('GET', `/api/groups/${slug}`, AT)
-  check('approver + requester both now members', det.data.members?.some(m => m.username === 'harvest') && det.data.members?.some(m => m.username === `gtest${stamp}`))
+  check('approver + requester both now members', det.data.members?.some(m => m.username === 'harvest') && det.data.members?.some(m => m.username === `gtest2${stamp}`))
 
   // ── Participation variants: stay as member ──
   const created2 = await j('POST', '/api/groups', AT, {
@@ -84,11 +98,13 @@ const main = async () => {
   check('only group admin cannot leave (guard)', leaveGA.status === 400, leaveGA.data.error || '')
   const leaveMem = await j('POST', `/api/groups/${slug}/leave`, AT)
   check('normal member can leave', leaveMem.status === 200, leaveMem.data.error || '')
-  const rejoin = await j('POST', `/api/groups/${slug}/join`, AT)
-  check('can re-request after leaving', rejoin.status === 200 || rejoin.status === 201)
+  const leaveSecond = await j('POST', `/api/groups/${slug}/leave`, RT)
+  check('approved member can leave', leaveSecond.status === 200, leaveSecond.data.error || '')
+  const rejoin = await j('POST', `/api/groups/${slug}/join`, RT)
+  check('can re-request after leaving', rejoin.status === 200 || rejoin.status === 201, JSON.stringify(rejoin.data))
   const reqs2 = await j('GET', `/api/groups/${slug}/requests`, MT)
   const ap2 = await j('POST', `/api/groups/${slug}/requests/${reqs2.data.requests?.[0]?.id}/approve`, MT, { approve: true })
-  check('group admin re-approves', ap2.status === 200)
+  check('group admin re-approves', ap2.status === 200, ap2.data.error || '')
 
   // ── Guards ──
   const noauth = await j('POST', `/api/groups/${slug}/role`, null, { username: 'x', role: 'admin' })

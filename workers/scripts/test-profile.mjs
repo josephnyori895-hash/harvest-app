@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // E2E check for profile editing + avatar upload against a local wrangler dev server.
-const API = (process.argv[2] || 'http://localhost:8799').replace(/\/$/, '')
+const API = (process.argv[2] || 'http://localhost:8787').replace(/\/$/, '')
 let failures = 0
 const check = (name, cond, extra = '') => {
   console.log(`${cond ? '✅' : '❌'} ${name}${extra ? ` — ${extra}` : ''}`)

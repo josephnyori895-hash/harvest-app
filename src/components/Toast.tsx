@@ -12,9 +12,12 @@ interface Toast {
 let toastId = 0
 const toastSubscribers: Set<(toast: Toast) => void> = new Set()
 
-export function showToast(message: string, type: ToastType = 'info', duration = 3000) {
+export function showToast(message: string, type: ToastType = 'info', duration?: number) {
   const id = `toast-${++toastId}`
-  const toast: Toast = { id, message, type, duration }
+  // Errors carry more text the member must read than confirmations do —
+  // give failures the longer screen time (audit #16).
+  const dur = duration ?? ((type === 'error' || type === 'warning') ? 4500 : 3000)
+  const toast: Toast = { id, message, type, duration: dur }
   toastSubscribers.forEach(sub => sub(toast))
 }
 
