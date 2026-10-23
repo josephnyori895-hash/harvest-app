@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 
-// HoverPreviewTile — IG-style browse tile: hovering (desktop) or focusing
-// (keyboard) plays a muted, looping preview of the actual reel/video. On
-// touch devices it stays the poster/first frame — tap opens the reel.
+// PreviewTile — IG-style browse tile: a muted looping preview of the actual
+// reel. One video element per tile, mounted once (remounting stalls and
+// flashes black on slow networks). Plays automatically while the tile is in
+// view (touch and desktop both), pauses when it scrolls out, and hovering
+// forces play on desktop.
 function HoverPreviewTile({ videoSrc, fallback, ariaLabel, onClick, overlay }: {
   videoSrc?: string
   fallback: React.ReactNode
@@ -11,14 +13,33 @@ function HoverPreviewTile({ videoSrc, fallback, ariaLabel, onClick, overlay }: {
   overlay: React.ReactNode
 }) {
   const [hot, setHot] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const btnRef = useRef<HTMLButtonElement | null>(null)
+  const vidRef = useRef<HTMLVideoElement | null>(null)
   const timer = useRef<number | null>(null)
   const enter = () => { if (timer.current) return; timer.current = window.setTimeout(() => setHot(true), 180) }
   const leave = () => { if (timer.current) { window.clearTimeout(timer.current); timer.current = null } setHot(false) }
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+  // Track whether the tile is comfortably on screen.
+  useEffect(() => {
+    if (!videoSrc) return
+    const btn = btnRef.current
+    if (!btn || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting && e.intersectionRatio >= 0.55), { threshold: [0, 0.55, 1] })
+    io.observe(btn)
+    return () => io.disconnect()
+  }, [videoSrc])
+  // One play/pause authority: in view OR hovered → play; otherwise pause.
+  useEffect(() => {
+    const v = vidRef.current
+    if (!v) return
+    if (visible || hot) { v.muted = true; if (v.paused) v.play().catch(() => {}) }
+    else if (!v.paused) v.pause()
+  }, [visible, hot])
   return (
-    <button onClick={onClick} onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave} aria-label={ariaLabel} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
-      {hot && videoSrc
-        ? <video src={videoSrc} className="w-full h-full object-cover" autoPlay muted loop playsInline preload="metadata" />
+    <button ref={btnRef} onClick={onClick} onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave} aria-label={ariaLabel} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
+      {videoSrc
+        ? <video ref={vidRef} src={videoSrc} className="w-full h-full object-cover" muted loop playsInline preload="metadata" />
         : fallback}
       {overlay}
     </button>

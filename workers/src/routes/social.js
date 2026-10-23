@@ -59,15 +59,46 @@ export async function handleSocial(request, env, ctx) {
     if (!row.rows[0]) return errorResponse('not found', 404)
     if (row.rows[0].user_id !== fresh.id && fresh.role !== 'admin') return errorResponse('forbidden', 403)
     const body = await readJson(request)
-    const caption = clean(body.caption, 2000)
-    const trackId = body.music_track_id ? clean(body.music_track_id, 128) : null
+    const hasCaption = Object.prototype.hasOwnProperty.call(body, 'caption')
+    const caption = hasCaption ? clean(body.caption, 2000) : undefined
+    const trackId = Object.prototype.hasOwnProperty.call(body, 'music_track_id') ? clean(body.music_track_id, 128) : undefined
     if (trackId) {
       const track = await query(env, 'SELECT id FROM tracks WHERE id=?', [trackId])
       if (!track.rows[0]) return errorResponse('music track not found', 404)
     }
-    if (table === 'posts') await query(env, 'UPDATE posts SET caption=?, music_track_id=? WHERE id=?', [caption, trackId, id])
-    else if (table === 'reels') await query(env, 'UPDATE reels SET caption=?, music_track_id=? WHERE id=?', [caption, trackId, id])
-    else await query(env, 'UPDATE stories SET caption=?, music_track_id=? WHERE id=?', [caption, trackId, id])
+    // Reels may backfill a poster (client-captured first frame). Same validation
+    // rules as /api/media/confirm: key shape, exists in R2, owned by the caller
+    // (admins may backfill any reel's poster).
+    let posterUpdate = null
+    if (table === 'reels' && Object.prototype.hasOwnProperty.call(body, 'poster_key')) {
+      const pk = String(body.poster_key || '').trim()
+      if (!pk) {
+        posterUpdate = null
+      } else {
+        if (!/^originals\/(post|reel)\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(pk)) return errorResponse('invalid poster key', 400)
+        const pobj = await env.MEDIA.head(pk)
+        if (!pobj) return errorResponse('poster not found in storage', 404)
+        const pOwner = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
+        if (pOwner !== String(fresh.id) && fresh.role !== 'admin') return errorResponse('poster does not belong to this account', 403)
+        posterUpdate = pk
+      }
+    }
+    if (table === 'posts') {
+      const sets = []
+      const vals = []
+      if (hasCaption) { sets.push('caption=?'); vals.push(caption) }
+      if (Object.prototype.hasOwnProperty.call(body, 'music_track_id')) { sets.push('music_track_id=?'); vals.push(trackId ?? null) }
+      if (sets.length) { vals.push(id); await query(env, `UPDATE posts SET ${sets.join(', ')} WHERE id=?`, vals) }
+    }
+    else if (table === 'reels') {
+      const sets = []
+      const vals = []
+      if (hasCaption) { sets.push('caption=?'); vals.push(caption) }
+      if (Object.prototype.hasOwnProperty.call(body, 'music_track_id')) { sets.push('music_track_id=?'); vals.push(trackId ?? null) }
+      if (Object.prototype.hasOwnProperty.call(body, 'poster_key')) { sets.push('poster_key=?'); vals.push(posterUpdate ?? null) }
+      if (sets.length) { vals.push(id); await query(env, `UPDATE reels SET ${sets.join(', ')} WHERE id=?`, vals) }
+    }
+    else await query(env, 'UPDATE stories SET caption=?, music_track_id=? WHERE id=?', [caption ?? '', trackId ?? null, id])
     await query(env, 'INSERT INTO audit_log (actor_id,actor_role,action,target_type,target_id,meta) VALUES (?,?,?,?,?,?)',
       [fresh.id,fresh.role,'content_edited',table,id,JSON.stringify({music_track_id:trackId})])
     return jsonResponse({ ok:true, id, kind:table, caption, music_track_id:trackId })

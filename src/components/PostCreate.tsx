@@ -177,8 +177,8 @@ export default function PostCreate({ onDone }: Props) {
         <button disabled={busy || (needsFile && !file)} onClick={() => setShowPreview(true)} className="px-4 py-2 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">Preview</button>
       </header>
       {showPreview && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview">
-          <div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview" onClick={() => setShowPreview(false)}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-[#E8DEC9]">
               <strong className="text-sm">Final preview</strong>
               <button onClick={() => setShowPreview(false)} className="w-9 h-9 rounded-full bg-white" aria-label="Close preview">×</button>

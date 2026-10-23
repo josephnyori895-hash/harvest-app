@@ -453,8 +453,9 @@ function InnerApp() {
       <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <button
           type="button"
-          onClick={() => setShowNotifications(true)}
-          aria-label={`Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
+          onClick={() => setShowNotifications(v => !v)}
+          aria-pressed={showNotifications}
+          aria-label={showNotifications ? 'Close notifications' : `Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
           className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-[#E8DEC9] bg-[#FFFBF0]/95 text-lg shadow-sm backdrop-blur focus:outline-none focus-visible:ring-2"
           style={{ top: 'calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 8px)' }}
         >
@@ -486,6 +487,7 @@ function InnerApp() {
             />
           )}
           {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
+          <div className={showNotifications ? 'hidden' : 'contents'}>
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
@@ -524,6 +526,7 @@ function InnerApp() {
               />
             </RequireRole>
           )}
+          </div>
         </div>
         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
         <UploadPill />

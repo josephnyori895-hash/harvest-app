@@ -58,6 +58,19 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
 
   const [storyIdx, setStoryIdx] = useState<number | null>(null)
   const [postIdx, setPostIdx] = useState<number | null>(null)
+  const [viewerRatio, setViewerRatio] = useState<number | null>(null)
+  // IG viewer geometry: measure the media's natural ratio, clamp 4:5…1.91:1.
+  useEffect(() => {
+    setViewerRatio(null)
+    const post = postIdx !== null ? posts[postIdx] : null
+    const t = post?.thumb_url
+    if (!t) return
+    let cancelled = false
+    const img = new Image()
+    img.onload = () => { if (!cancelled && img.naturalWidth && img.naturalHeight) setViewerRatio(img.naturalWidth / img.naturalHeight) }
+    img.src = t
+    return () => { cancelled = true; img.onload = null }
+  }, [postIdx, posts])
 
   const isSelf = Boolean(viewerName) && viewerName === safeUser.username
 
@@ -234,10 +247,10 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       {postIdx !== null && posts[postIdx] && (
         <div className="fixed inset-0 bg-[#141210]/90 z-50 flex flex-col" onClick={() => setPostIdx(null)}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-700"><p className="font-bold text-sm text-white">{profile.username} • {postIdx + 1}/{posts.length}</p><button onClick={() => setPostIdx(null)} className="text-white text-2xl hover:opacity-70">✕</button></div>
-          <div className="flex-1 flex items-center justify-center p-4 relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setPostIdx(i => i! > 0 ? i! - 1 : null)} className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition">‹</button>
-            <div className="w-full max-w-[390px]">{posts[postIdx].hls_url ? <video src={posts[postIdx].hls_url} controls playsInline className="w-full aspect-square object-cover bg-[#141210] rounded-xl" poster={posts[postIdx].thumb_url} /> : posts[postIdx].thumb_url ? <img src={posts[postIdx].thumb_url} alt="" className="w-full aspect-square object-cover rounded-xl" /> : <div className="w-full aspect-square bg-neutral-800 rounded-xl flex items-center justify-center text-4xl">🙏</div>}<p className="text-sm mt-3 px-2 text-white"><span className="font-semibold">{profile.username}</span> {posts[postIdx].caption}</p></div>
-            <button onClick={() => setPostIdx(i => i! < posts.length - 1 ? i! + 1 : null)} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition">›</button>
+          <div className="flex-1 flex items-center justify-center p-4 relative" onClick={() => setPostIdx(null)}>
+            <button onClick={e => { e.stopPropagation(); setPostIdx(i => i! > 0 ? i! - 1 : null) }} className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition">‹</button>
+            <div className="w-full max-w-[390px]" onClick={e => e.stopPropagation()}>{posts[postIdx].hls_url ? <video src={posts[postIdx].hls_url} controls playsInline className="w-full rounded-xl object-cover" style={{ aspectRatio: viewerRatio ? String(Math.min(Math.max(viewerRatio, 4 / 5), 1.91)) : '1' }} poster={posts[postIdx].thumb_url} /> : posts[postIdx].thumb_url ? <img src={posts[postIdx].thumb_url} alt="" className="w-full rounded-xl object-cover" style={{ aspectRatio: viewerRatio ? String(Math.min(Math.max(viewerRatio, 4 / 5), 1.91)) : '1' }} /> : <div className="w-full bg-neutral-800 rounded-xl flex items-center justify-center text-4xl" style={{ aspectRatio: '1' }}>🙏</div>}<p className="text-sm mt-3 px-2 text-white"><span className="font-semibold">{profile.username}</span> {posts[postIdx].caption}</p></div>
+            <button onClick={e => { e.stopPropagation(); setPostIdx(i => i! < posts.length - 1 ? i! + 1 : null) }} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition">›</button>
           </div>
           <p className="text-xs text-neutral-400 text-center py-2">Tap outside to close • {postIdx + 1}/{posts.length}</p>
         </div>
