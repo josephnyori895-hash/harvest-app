@@ -291,7 +291,7 @@ export default function Give() {
 
       {tab === 'give' && (!contentLoaded ? (
         <div className="mb-6 p-4 rounded-2xl bg-white border border-[#E8DEC9] animate-pulse"><div className="h-4 w-1/3 bg-[#F4E8D0] rounded mb-3" /><div className="h-3 w-2/3 bg-[#F4E8D0] rounded" /></div>
-      ) : (<>)
+      ) : (<>
         <div className="mb-6">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Harvest Giving</p>
           <h1 className="text-2xl font-extrabold mt-1">{content.giving_title || 'Give with purpose'}</h1>

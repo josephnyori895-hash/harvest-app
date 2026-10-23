@@ -337,7 +337,7 @@ export default function Music() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-49px)] bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
+    <div className="min-h-[calc(100vh-49px)] bg-[#FFFBF0] text-[#29251F]">
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3 gap-3">
           <div className="flex items-center gap-3 min-w-0">

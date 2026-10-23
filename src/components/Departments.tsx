@@ -229,22 +229,22 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
     return (
-    <div className="group relative w-full overflow-hidden rounded-3xl border border-white/10 bg-stone-900/90 shadow-xl shadow-black/20 transition hover:border-white/20">
+    <div className="group relative w-full overflow-hidden rounded-3xl border border-[#E8DEC9] bg-white shadow-sm transition hover:border-[#7C3AED]/40">
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.tint}`} />
       <div className="relative p-4">
       <div className="flex items-start justify-between gap-3">
         <button onClick={() => openDetail(d.slug)} className="min-w-0 flex flex-1 gap-3 text-left active:opacity-70">
-          <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-white/10 flex items-center justify-center text-2xl shadow-inner`}>
+          <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-[#E8DEC9] flex items-center justify-center text-2xl`}>
             {style.icon}
           </div>
           <div className="min-w-0 pt-0.5">
-          <p className="text-sm font-bold text-white flex items-center gap-2 truncate">
+          <p className="text-sm font-bold text-[#29251F] flex items-center gap-2 truncate">
             <span className="truncate">{d.name}</span>
             {d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">LEADER</span>}
             {d.joined && !d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-600 text-white font-extrabold">JOINED</span>}
           </p>
-          {d.description && <p className="text-[11px] text-stone-400 mt-1 line-clamp-2">{d.description}</p>}
-          <p className="text-[10px] text-stone-500 mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
+          {d.description && <p className="text-[11px] text-[#6B6257] mt-1 line-clamp-2">{d.description}</p>}
+          <p className="text-[10px] text-[#766E63] mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
           </div>
         </button>
         <div className="shrink-0 flex flex-col items-end gap-2">
@@ -258,7 +258,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             type="button"
             aria-label={d.joined ? `Leave ${d.name}` : `Join ${d.name}`}
             onClick={() => d.joined ? void leave(d.slug) : void join(d.slug)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-stone-700 text-stone-300' : d.joined ? 'bg-stone-800 text-stone-300 border border-stone-700' : 'bg-[#7C3AED] text-white'}`}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-[#F5F1E8] text-[#766E63]' : d.joined ? 'bg-[#F5F1E8] text-[#6B6257] border border-[#E8DEC9]' : 'bg-[#7C3AED] text-white'}`}
           >
             {d.joined ? 'Leave' : 'Join'}
           </button>
@@ -346,8 +346,8 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   }
 
   return (
-    <div className="bg-[#141210] text-white min-h-[70vh] pb-8">
-      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-white/10 bg-gradient-to-br from-[#21123e] via-[#110d20] to-black">
+    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] pb-8">
+      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-[#E8DEC9] bg-gradient-to-br from-[#7C3AED] via-[#5B2DBF] to-[#3B1E86]">
         <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-fuchsia-500/20 blur-3xl" />
         <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-violet-500/15 blur-3xl" />
         <div className="relative">
@@ -355,9 +355,9 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
           <h1 className="text-3xl font-black tracking-tight mt-1">Departments</h1>
           <p className="text-sm text-stone-300 mt-2 max-w-sm">Find your place, build your team, and keep the conversation moving.</p>
           <div className="flex gap-2 mt-5">
-            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{departments.length}</p><p className="text-[9px] uppercase tracking-wide text-stone-300 mt-1">Teams</p></div>
-            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{mine.length}</p><p className="text-[9px] uppercase tracking-wide text-stone-300 mt-1">Your teams</p></div>
-            <div className="rounded-2xl bg-white/10 border border-white/10 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">💬</p><p className="text-[9px] uppercase tracking-wide text-stone-300 mt-1">Team chat</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{departments.length}</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Teams</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{mine.length}</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Your teams</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">💬</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Team chat</p></div>
           </div>
         </div>
       </div>
@@ -366,32 +366,32 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {isAdmin && (
-          <div className="p-3 rounded-xl bg-stone-900 border border-stone-800">
-            <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — NEW DEPARTMENT</p>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Department name (e.g. Transport)" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
-            <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
+          <div className="p-3 rounded-xl bg-white border border-[#E8DEC9]">
+            <p className="text-[10px] font-bold text-[#B45309] mb-2">ADMIN — NEW DEPARTMENT</p>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Department name (e.g. Transport)" className="w-full bg-[#F5F1E8] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm text-[#29251F] outline-none mb-2 placeholder:text-[#9C948A]" />
+            <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-[#F5F1E8] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm text-[#29251F] outline-none placeholder:text-[#9C948A] mb-2" />
             <button disabled={busy === 'create' || !newName.trim()} onClick={() => void createDepartment()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Create department</button>
           </div>
         )}
 
         {filteredMine.length > 0 && (
           <section>
-            <h2 className="text-sm font-black text-white mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
+            <h2 className="text-sm font-black text-[#29251F] mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
             <div className="space-y-2">{filteredMine.map(d => <DeptCard key={d.id} d={d} />)}</div>
           </section>
         )}
 
         <section>
-          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-white">Explore departments</h2><span className="text-[10px] text-stone-500">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-stone-950 border border-stone-800 px-3 py-2.5 text-sm text-white outline-none focus:border-purple-500 placeholder:text-stone-600" />
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-[#29251F]">Explore departments</h2><span className="text-[10px] text-[#766E63]">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-[#F5F1E8] border border-[#E8DEC9] px-3 py-2.5 text-sm text-[#29251F] outline-none focus:border-[#7C3AED] placeholder:text-[#9C948A]" />
           {loading ? (
-            <div role="status" aria-live="polite" className="rounded-2xl border border-stone-800 bg-stone-950 px-4 py-6 text-center">
+            <div role="status" aria-live="polite" className="rounded-2xl border border-[#E8DEC9] bg-[#F5F1E8] px-4 py-6 text-center">
               <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
               <p className="mt-3 text-xs font-semibold text-stone-400">Loading departments…</p>
             </div>
           ) : availableDepartments.length === 0 ? (
-            <div className="rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
+            <div className="rounded-3xl border border-[#E8DEC9] bg-[#F5F1E8] px-5 py-10 text-center">
               <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">🏛️</div>
-              <h2 className="mt-4 text-sm font-extrabold text-white">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
+              <h2 className="mt-4 text-sm font-extrabold text-[#29251F]">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
               <p className="mt-2 text-xs leading-5 text-stone-500">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
             </div>
           ) : (

@@ -85,6 +85,15 @@ const loadRecent = (): string[] => {
   try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, RECENT_MAX) : [] } catch { return [] }
 }
 
+// Tile image that degrades to the gradient/emoji fallback if the object is
+// missing or corrupt instead of showing the browser's broken-image glyph.
+function TileImg({ src, className = 'w-full h-full object-cover' }: { src?: string | null; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [src])
+  if (!src || failed) return null
+  return <img src={src} alt="" loading="lazy" className={className} onError={() => setFailed(true)} />
+}
+
 export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpenDepartments, onOpenSermons, onOpenReel }: {
   users: any[]
   onView: (u: any) => void
@@ -315,9 +324,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                       videoSrc={r.hls_url || undefined}
                       ariaLabel={`Reel by ${r.username}`}
                       onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
-                      fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
-                        ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                        : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
+                      fallback={<>{r.thumb_url ? <TileImg src={r.thumb_url} /> : null}{!r.thumb_url && r.hls_url ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : null}{!r.thumb_url && !r.hls_url && <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}</>}
                       overlay={<span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
                     />
                   ))}
@@ -348,11 +355,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                     videoSrc={p.kind === 'reel' && p.hls_url ? p.hls_url : undefined}
                     ariaLabel={`Post by ${p.name || p.username}`}
                     onClick={() => openPost(p)}
-                    fallback={p.kind === 'reel'
-                      ? p.hls_url
-                        ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                        : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl">🎥</div>
-                      : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🙏</div>}
+                    fallback={<>{p.thumb_url ? <TileImg src={p.thumb_url} /> : <div className="w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]" aria-hidden="true">🙏</div>}</>}
                     overlay={p.kind === 'reel' ? <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span> : null}
                   />
                 ))}

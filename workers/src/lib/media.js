@@ -61,8 +61,7 @@ export async function signMediaKey(env, key, ttlSeconds = DEFAULT_TTL) {
   const { expires, signature } = await signMediaKey(env, key, ttlSeconds)
   const base = String(env.PUBLIC_BASE_URL || '').replace(/\/$/, '')
   const dl = opts.download ? `&dl=${encodeURIComponent(opts.download)}` : ''
-  return `${base}/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}${dl}
-`
+  return `${base}/api/media/${encodeURIComponent(key)}?expires=${expires}&signature=${signature}${dl}`
 }
 
 export async function mediaUrlOrNull(env, key, ttlSeconds, opts = {}) {
@@ -203,6 +202,27 @@ export async function presignedPost(env, { type, contentType, bytes, ext, ownerI
 }
 
 // GET /api/media/* — signed reads from R2.
+// Range handling is explicit: parse the header ourselves and pass a proper
+// {offset, length} to R2. Forwarding raw request headers used to make the
+// binding report a range even for plain GETs, answering 206 to <img> requests
+// and breaking every decoded image.
+function parseRangeHeader(value, size) {
+  if (!value) return undefined
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(value).trim())
+  if (!m || (m[1] === undefined && m[2] === undefined)) return undefined
+  if (m[1] === undefined) {
+    const suffix = Number(m[2])
+    if (suffix <= 0) return undefined
+    return { suffix: Math.min(suffix, size) }
+  }
+  const offset = Number(m[1])
+  if (offset >= size) return undefined
+  if (m[2] === undefined) return { offset, length: size - offset }
+  const length = Number(m[2]) - offset + 1
+  if (length <= 0) return undefined
+  return { offset, length: Math.min(length, size - offset) }
+}
+
 export async function handleMediaRead(request, env, ctx) {
   const url = new URL(request.url)
   const key = decodeURIComponent(url.pathname.replace(/^\/api\/media\//, ''))
@@ -211,8 +231,28 @@ export async function handleMediaRead(request, env, ctx) {
   const signed = await verifyMediaSignature(env, key, url.searchParams.get('expires'), url.searchParams.get('signature'))
   if (!signed) return errorResponse('signed media URL required', 401)
 
-  const obj = await env.MEDIA.get(key, { range: request.headers })
+  if (request.method === 'HEAD') {
+    const meta = await env.MEDIA.head(key)
+    if (!meta) return errorResponse('not found', 404)
+    const headers = new Headers()
+    headers.set('Content-Type', contentTypeForKey(key, meta.httpMetadata?.contentType))
+    headers.set('Content-Length', String(meta.size))
+    headers.set('Accept-Ranges', 'bytes')
+    headers.set('Access-Control-Allow-Origin', '*')
+    return new Response(null, { status: 200, headers })
+  }
+
+  const rangeHeader = request.headers.get('Range')
+  let range = undefined
+  if (rangeHeader) {
+    const meta = await env.MEDIA.head(key)
+    if (!meta) return errorResponse('not found', 404)
+    range = parseRangeHeader(rangeHeader, Number(meta.size))
+    if (!range) range = undefined
+  }
+  const obj = await env.MEDIA.get(key, range ? { range } : undefined)
   if (!obj) return errorResponse('not found', 404)
+  const ranged = range && obj.range && typeof obj.range.offset === 'number' && typeof obj.range.length === 'number' && obj.range.length !== obj.size
   const headers = new Headers()
   headers.set('Content-Type', contentTypeForKey(key, obj.httpMetadata?.contentType))
   headers.set('Cache-Control', 'private, max-age=300')
@@ -222,7 +262,7 @@ export async function handleMediaRead(request, env, ctx) {
   headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
   headers.set('Access-Control-Allow-Headers', 'Range, Content-Type')
   headers.set('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Length, Content-Range, ETag')
-  if (obj.range && typeof obj.range.offset === 'number' && typeof obj.range.length === 'number') {
+  if (ranged) {
     const start = obj.range.offset
     const end = Math.min(start + obj.range.length - 1, obj.size - 1)
     headers.set('Content-Range', 'bytes ' + start + '-' + end + '/' + obj.size)
@@ -237,7 +277,6 @@ export async function handleMediaRead(request, env, ctx) {
     headers.set('Content-Disposition', `attachment; filename="${dl}"`)
     headers.set('Content-Length', String(obj.size))
   }
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
-  const status = obj.range && typeof obj.range.offset === 'number' && typeof obj.range.length === 'number' ? 206 : 200
+  const status = ranged ? 206 : 200
   return new Response(obj.body, { status, headers })
 }

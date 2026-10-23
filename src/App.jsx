@@ -811,13 +811,13 @@ function Activity() {
 
   const Avatar = ({ name }) => (
     <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px] shrink-0">
-      <div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold text-white">
+      <div className="w-full h-full rounded-full bg-[#F5F1E8] flex items-center justify-center text-xs font-bold text-[#29251F]">
         {String(name || '?').split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
       </div>
     </div>
   )
   const Row = ({ children, keyi }) => (
-    <div key={keyi} className="flex gap-3 items-center bg-zinc-900 border border-zinc-800 rounded-2xl p-3">{children}</div>
+    <div key={keyi} className="flex gap-3 items-center bg-white border border-[#E8DEC9] rounded-2xl p-3">{children}</div>
   )
   const timeAgo = iso => {
     if (!iso || !clock) return ''
@@ -830,51 +830,51 @@ function Activity() {
   }
 
   return (
-    <div className="bg-black text-white min-h-[70vh]">
-      <div className="px-4 pt-5 pb-3 border-b border-zinc-800">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
+    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh]">
+      <div className="px-4 pt-5 pb-3 border-b border-[#E8DEC9]">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</p>
         <h1 className="text-2xl font-extrabold">Activity</h1>
       </div>
       <div className="p-4 space-y-6">
-        {error && <div role="alert" className="p-3 rounded-xl bg-rose-950 border border-rose-900 text-sm text-rose-300">{error}</div>}
-        {!data && !error && <p className="text-zinc-500 text-sm">Loading…</p>}
+        {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
+        {!data && !error && <p className="text-[#766E63] text-sm">Loading…</p>}
         {data && (
           <>
             <section>
-              <h2 className="text-sm font-bold text-amber-400 mb-2">New members</h2>
+              <h2 className="text-sm font-bold text-[#B45309] mb-2">New members</h2>
               <div className="space-y-2">
                 {(data.new_members || []).length === 0 && <p className="text-xs text-zinc-500">No new members yet.</p>}
                 {(data.new_members || []).map((u, i) => (
                   <Row keyi={`nm_${u.username}_${i}`}>
                     <Avatar name={u.name || u.username} />
                     <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> joined {u.group_name || 'the family'}</p>
-                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
                   </Row>
                 ))}
               </div>
             </section>
             <section>
-              <h2 className="text-sm font-bold text-blue-400 mb-2">Following you</h2>
+              <h2 className="text-sm font-bold text-[#7C3AED] mb-2">Following you</h2>
               <div className="space-y-2">
-                {(data.follows_in || []).length === 0 && <p className="text-xs text-zinc-500">No followers yet — connect with others on the Map.</p>}
+                {(data.follows_in || []).length === 0 && <p className="text-xs text-[#766E63]">No followers yet — connect with others on the Map.</p>}
                 {(data.follows_in || []).map((u, i) => (
                   <Row keyi={`fi_${u.username}_${i}`}>
                     <Avatar name={u.name || u.username} />
                     <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> started following you</p>
-                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
                   </Row>
                 ))}
               </div>
             </section>
             <section>
-              <h2 className="text-sm font-bold text-zinc-400 mb-2">You follow</h2>
+              <h2 className="text-sm font-bold text-[#766E63] mb-2">You follow</h2>
               <div className="space-y-2">
-                {(data.follows_out || []).length === 0 && <p className="text-xs text-zinc-500">Tap a member on the Map to follow them.</p>}
+                {(data.follows_out || []).length === 0 && <p className="text-xs text-[#766E63]">Tap a member on the Map to follow them.</p>}
                 {(data.follows_out || []).map((u, i) => (
                   <Row keyi={`fo_${u.username}_${i}`}>
                     <Avatar name={u.name || u.username} />
                     <p className="text-[13px] flex-1">You follow <b>{u.name || u.username}</b></p>
-                    <span className="text-[11px] text-zinc-500">{timeAgo(u.created_at)}</span>
+                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
                   </Row>
                 ))}
               </div>
@@ -956,13 +956,13 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   const displayName = me?.name || username || 'Member'
 
   return (
-    <div className="bg-black text-white pb-8">
-      <div className="px-4 pt-5 pb-3 border-b border-zinc-800 flex justify-between items-center">
+    <div className="bg-[#FFFBF0] text-[#29251F] pb-8">
+      <div className="px-4 pt-5 pb-3 border-b border-[#E8DEC9] flex justify-between items-center">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold">Harvest Family</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#766E63] font-bold">Harvest Family</p>
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-[#7C3AED] text-white' : 'bg-zinc-700 text-zinc-300'}`}>
+        <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-[#7C3AED] text-white' : 'bg-[#F4E8D0] text-[#6B6257]'}`}>
           {role === 'admin' ? '★ Admin' : me?.verified ? '✓ Verified' : 'Member'}
         </span>
       </div>
@@ -970,118 +970,118 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
       <div className="px-4 mt-4 flex gap-4 items-center">
         <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
           {me?.avatar_url ? (
-            <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-black" />
+            <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-[#FFFBF0]" />
           ) : (
-            <div className="w-full h-full rounded-full bg-black flex items-center justify-center font-bold border-[3px] border-black text-xl">
+            <div className="w-full h-full rounded-full bg-[#F5F1E8] text-[#29251F] flex items-center justify-center font-bold border-[3px] border-[#FFFBF0] text-xl">
               {displayName.split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
             </div>
           )}
         </div>
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
-          <p className="text-zinc-400 text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
-          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-bold text-white active:opacity-70">✏️ Edit profile</button>
+          <p className="text-[#6B6257] text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
+          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-[#F5F1E8] border border-[#E8DEC9] text-xs font-bold text-[#29251F] active:opacity-70">✏️ Edit profile</button>
         </div>
       </div>
 
       <div className="px-4 mt-3">
         <div className="mt-2 flex flex-wrap gap-2">
-          <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
+          <span className="text-xs bg-[#F5F1E8] px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
           <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group_name || 'Harvest Nyeri'}</span>
-          {me?.phone && <span className="text-xs bg-zinc-800 px-2 py-1 rounded-full">📱 {me.phone}</span>}
+          {me?.phone && <span className="text-xs bg-[#F5F1E8] px-2 py-1 rounded-full">📱 {me.phone}</span>}
         </div>
       </div>
 
       {isAdmin && (
-        <div className="mt-4 border-t border-zinc-800 pt-3 px-4">
+        <div className="mt-4 border-t border-[#E8DEC9] pt-3 px-4">
           <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold">🛡 Open moderation queue</button>
-          <p className="text-[11px] text-zinc-500 text-center mt-2">Review posts, stories and reels submitted by members</p>
+          <p className="text-[11px] text-[#766E63] text-center mt-2">Review posts, stories and reels submitted by members</p>
         </div>
       )}
 
       {isAdmin && (
-        <div className="mt-4 border-t border-zinc-800 pt-3">
-          <h3 className="text-sm font-bold px-4 text-blue-400 mb-2">✓ Verified Accounts</h3>
+        <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+          <h3 className="text-sm font-bold px-4 text-[#7C3AED] mb-2">✓ Verified Accounts</h3>
           <div className="space-y-2 px-4">
             {users.filter(u => u.verified).map(u => (
-              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-zinc-900 border border-zinc-800">
+              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E8DEC9]">
                 <div className="flex gap-2 items-center">
-                  <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
+                  <div className="w-8 h-8 rounded-full bg-[#F4E8D0] flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
                   <p className="text-xs font-semibold">{u.name || u.username}</p>
                 </div>
                 <button disabled={busy} onClick={() => void toggleVerified(u)} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
               </div>
             ))}
-            {users.filter(u => u.verified).length === 0 && <p className="text-xs text-zinc-500">No verified accounts yet.</p>}
+            {users.filter(u => u.verified).length === 0 && <p className="text-xs text-[#766E63]">No verified accounts yet.</p>}
           </div>
         </div>
       )}
 
-      <div className="mt-4 border-t border-zinc-800 pt-3">
+      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
         <div className="px-4 mb-2">
-          <h3 className="text-sm font-bold text-white">My Groups</h3>
-          <p className="text-[11px] text-zinc-500">Live membership from the Groups service</p>
+          <h3 className="text-sm font-bold text-[#29251F]">My Groups</h3>
+          <p className="text-[11px] text-[#766E63]">Live membership from the Groups service</p>
         </div>
         <div className="space-y-2 px-4">
           {memberGroups.map(g => (
-            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-              <div className="min-w-0"><p className="text-sm font-semibold text-white truncate">{g.name}</p><p className="text-xs text-zinc-400">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
+            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-white border border-[#E8DEC9]">
+              <div className="min-w-0"><p className="text-sm font-semibold text-[#29251F] truncate">{g.name}</p><p className="text-xs text-[#6B6257]">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
               <span className="text-xs bg-white text-black px-3 py-1 rounded-full">👥</span>
             </div>
           ))}
-          {memberGroups.length === 0 && <p className="text-xs text-zinc-500 px-4">You are not in any groups.</p>}
+          {memberGroups.length === 0 && <p className="text-xs text-[#766E63] px-4">You are not in any groups.</p>}
         </div>
       </div>
 
       {/* Uploads: live transfers + recent history */}
-      <div className="mt-4 border-t border-zinc-800 pt-3">
-        <h3 className="text-sm font-bold px-4 text-white mb-2">My uploads</h3>
+      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+        <h3 className="text-sm font-bold px-4 text-[#29251F] mb-2">My uploads</h3>
         {uploads.length > 0 && (
           <div className="space-y-2 px-4 mb-3">
             {uploads.map(u => (
-              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-zinc-700 flex items-center justify-center text-[10px] font-bold text-white" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #27272a 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-[#E8DEC9]">
+                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-[#E8DEC9] flex items-center justify-center text-[10px] font-bold text-[#29251F]" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{u.label}</p>
-                  <p className="text-[10px] text-zinc-400">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
+                  <p className="text-[10px] text-[#6B6257]">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
                 </div>
               </div>
             ))}
           </div>
         )}
         {history.length === 0 && uploads.length === 0 && (
-          <p className="text-xs text-zinc-500 px-4">No uploads yet — share a story, post or video and it shows here.</p>
+          <p className="text-xs text-[#766E63] px-4">No uploads yet — share a story, post or video and it shows here.</p>
         )}
         {history.length > 0 && (
           <div className="space-y-2 px-4">
             {history.slice(0, 8).map(h => (
-              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900 border border-zinc-800">
+              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-[#E8DEC9]">
                 <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? '✓' : '✕'}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{h.label}</p>
                   {h.status === 'done'
-                    ? <p className="text-[10px] text-zinc-400 truncate">Published</p>
+                    ? <p className="text-[10px] text-[#6B6257] truncate">Published</p>
                     : <div className="mt-1"><ErrorMessage message={h.detail || 'Upload failed — try sharing again.'} /></div>}
                 </div>
-                <span className="text-[10px] text-zinc-500 shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span className="text-[10px] text-[#766E63] shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             ))}
-            <button onClick={() => clearUploadHistory()} className="text-[10px] text-zinc-500 underline px-1">Clear history</button>
+            <button onClick={() => clearUploadHistory()} className="text-[10px] text-[#766E63] underline px-1">Clear history</button>
           </div>
         )}
       </div>
 
-      <div className="mt-4 border-t border-zinc-800 pt-3">
+      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
         <div className="px-4 flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-white">🔖 Saved Videos</h3>
-          <span className="text-[10px] text-zinc-500">Saved on every device</span>
+          <h3 className="text-sm font-bold text-[#29251F]">🔖 Saved Videos</h3>
+          <span className="text-[10px] text-[#766E63]">Saved on every device</span>
         </div>
-        {savedReelsLoading && <p className="text-xs text-zinc-500 px-4 py-2">Loading saved videos…</p>}
+        {savedReelsLoading && <p className="text-xs text-[#766E63] px-4 py-2">Loading saved videos…</p>}
         {savedReelsError && <p className="text-xs text-rose-400 px-4 py-2">{savedReelsError}</p>}
         {!savedReelsLoading && !savedReelsError && savedReels.length === 0 && (
-          <div className="mx-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+          <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
             <p className="text-xs font-semibold">Nothing saved yet.</p>
-            <p className="text-[11px] text-zinc-500 mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
+            <p className="text-[11px] text-[#766E63] mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
           </div>
         )}
         {savedReels.length > 0 && (() => {
@@ -1110,9 +1110,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
                     value={savedReelSearch}
                     onChange={e => setSavedReelSearch(e.target.value)}
                     placeholder="Search creator or caption"
-                    className="w-full min-h-11 rounded-xl bg-zinc-900 border border-zinc-800 px-3 pl-9 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-zinc-600"
+                    className="w-full min-h-11 rounded-xl bg-white border border-[#E8DEC9] px-3 pl-9 text-xs text-[#29251F] placeholder:text-[#9C948A] outline-none focus:border-[#D9CDB4]"
                   />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm" aria-hidden>⌕</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#766E63] text-sm" aria-hidden>⌕</span>
                 </label>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5">
                   {[
@@ -1125,7 +1125,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
                       key={value}
                       type="button"
                       onClick={() => setSavedReelDateFilter(value)}
-                      className={`min-h-9 shrink-0 rounded-full px-3 text-[11px] font-semibold border ${savedReelDateFilter === value ? 'bg-white text-zinc-900 border-white' : 'bg-zinc-900 text-zinc-400 border-zinc-800'}`}
+                      className={`min-h-9 shrink-0 rounded-full px-3 text-[11px] font-semibold border ${savedReelDateFilter === value ? 'bg-[#29251F] text-white border-[#29251F]' : 'bg-white text-[#6B6257] border-[#E8DEC9]'}`}
                     >
                       {label}
                     </button>
@@ -1137,7 +1137,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
                   {filtered.map(r => (
                     <button key={r.id} type="button"
                       onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
-                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-zinc-900 border border-zinc-800 text-left active:scale-[0.98] transition-transform">
+                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-white border border-[#E8DEC9] text-left active:scale-[0.98] transition-transform">
                       {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
                         <p className="text-[11px] font-bold truncate">{r.username}</p>
@@ -1147,9 +1147,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
                   ))}
                 </div>
               ) : (
-                <div className="mx-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800">
+                <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
                   <p className="text-xs font-semibold">No saved videos match.</p>
-                  <p className="text-[11px] text-zinc-500 mt-1">Try a different creator, caption, or saved-date filter.</p>
+                  <p className="text-[11px] text-[#766E63] mt-1">Try a different creator, caption, or saved-date filter.</p>
                 </div>
               )}
             </>
@@ -1158,7 +1158,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
       </div>
 
       <div className="px-4 mt-5">
-        <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-zinc-700 text-zinc-300 text-xs font-semibold">Sign out</button>
+        <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-[#E8DEC9] text-[#6B6257] text-xs font-semibold">Sign out</button>
       </div>
     </div>
   )

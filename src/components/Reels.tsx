@@ -90,6 +90,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }, [useServer, reelsLoadKey])
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
+
   const flash = useCallback((text: string) => {
     setNotice(text)
     window.setTimeout(() => setNotice(''), 1800)
@@ -156,6 +157,40 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   // which previously crashed this screen with "Cannot read properties of undefined".
   const cur = allVideos[Math.min(idx, Math.max(allVideos.length - 1, 0))]
   const key = cur ? `${cur.user}-${cur.id ?? idx}` : ''
+
+  // Admin/owner poster backfill: capture the currently-played frame and PATCH
+  // it as the reel's poster — grids and feed cards stop showing black tiles.
+  const [posterBusy, setPosterBusy] = useState(false)
+  const saveFrameAsPoster = useCallback(async () => {
+    const curId = cur?.id
+    if (!useServer || posterBusy || !cur || !curId || !cur.video) return
+    setPosterBusy(true)
+    try {
+      const blob = cur.img ? null : await captureVideoFrame(cur.video, videoRef.current?.currentTime || 0)
+      if (blob) {
+        const file = new File([blob], 'poster.jpg', { type: 'image/jpeg' })
+        const pre = await presign({ type: 'post', contentType: file.type, bytes: file.size, ext: 'jpg' })
+        await uploadToMinio(pre.url, pre.fields || {}, file)
+        const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+        const token = localStorage.getItem('harvest_token') || ''
+        const r = await fetch(`${API}/api/reels/${encodeURIComponent(String(curId))}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ poster_key: pre.key }),
+        })
+        if (!r.ok) throw new Error(`save failed (${r.status})`)
+        setGeneratedPoster('')
+        setPosterFailed(false)
+        setServerReels(rs => rs.map(x => String(x.id) === String(curId) ? { ...x, img: URL.createObjectURL(blob) } : x))
+        flash('Poster saved — feed and grids show this frame now')
+      }
+    } catch (e: any) {
+      flash(e?.message || 'Could not save poster')
+    } finally {
+      setPosterBusy(false)
+    }
+  }, [cur, posterBusy, useServer])
+
   const retryVideo = () => {
     setVideoError(false)
     setVideoReady(false)
@@ -478,6 +513,14 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             <button onClick={(e) => { e.stopPropagation(); if (window.confirm('Delete this video? This cannot be undone.')) void deleteReel(String(cur.id)) }} disabled={deleting}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 disabled:opacity-50"
               aria-label="Delete video" title="Delete video">{deleting ? '…' : '🗑'}</button>
+          )}
+          {(cur.user === me || isAdmin) && !cur.img && cur.video && (
+            <button onClick={(e) => { e.stopPropagation(); void saveFrameAsPoster() }} disabled={posterBusy}
+              className="flex flex-col items-center gap-0.5"
+              aria-label="Save this frame as the poster thumbnail" title="Pick the poster frame everyone sees before playing">
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[17px] leading-none shadow-sm transition-transform active:scale-95 ${posterBusy ? 'animate-spin opacity-70' : ''}`}>🖼</span>
+              <span className="text-[9px] leading-tight font-semibold text-white/85 drop-shadow text-center">Set<br />poster</span>
+            </button>
           )}
 
           <div className="flex flex-col items-center gap-0.5">
