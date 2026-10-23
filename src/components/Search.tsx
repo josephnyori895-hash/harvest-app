@@ -1,4 +1,29 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+
+// HoverPreviewTile — IG-style browse tile: hovering (desktop) or focusing
+// (keyboard) plays a muted, looping preview of the actual reel/video. On
+// touch devices it stays the poster/first frame — tap opens the reel.
+function HoverPreviewTile({ videoSrc, fallback, ariaLabel, onClick, overlay }: {
+  videoSrc?: string
+  fallback: React.ReactNode
+  ariaLabel: string
+  onClick: () => void
+  overlay: React.ReactNode
+}) {
+  const [hot, setHot] = useState(false)
+  const timer = useRef<number | null>(null)
+  const enter = () => { if (timer.current) return; timer.current = window.setTimeout(() => setHot(true), 180) }
+  const leave = () => { if (timer.current) { window.clearTimeout(timer.current); timer.current = null } setHot(false) }
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+  return (
+    <button onClick={onClick} onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave} aria-label={ariaLabel} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
+      {hot && videoSrc
+        ? <video src={videoSrc} className="w-full h-full object-cover" autoPlay muted loop playsInline preload="metadata" />
+        : fallback}
+      {overlay}
+    </button>
+  )
+}
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -273,14 +298,18 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Recent from the community</p>
               <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
                 {recentFeed.map((p, i) => (
-                  <button key={p.id || i} onClick={() => openPost(p)} aria-label={`Post by ${p.name || p.username}`} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
-                    {p.kind === 'reel'
+                  <HoverPreviewTile
+                    key={p.id || i}
+                    videoSrc={p.kind === 'reel' && p.hls_url ? p.hls_url : undefined}
+                    ariaLabel={`Post by ${p.name || p.username}`}
+                    onClick={() => openPost(p)}
+                    fallback={p.kind === 'reel'
                       ? p.hls_url
                         ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                         : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl">🎥</div>
                       : p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">🙏</div>}
-                    {p.kind === 'reel' && <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
-                  </button>
+                    overlay={p.kind === 'reel' ? <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span> : null}
+                  />
                 ))}
               </div>
             </div>
@@ -337,13 +366,19 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'reels') && reelHits.length > 0 && (
             <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden mt-1">
               {(filter === 'all' ? reelHits.slice(0, 6) : reelHits).map((r, i) => (
-                <button key={r.id || i} onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })} className="aspect-square bg-[#F4E8D0] overflow-hidden relative">
-                  {r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
-                    ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" aria-label={`Reel by ${r.username}`} />
+                <HoverPreviewTile
+                  key={r.id || i}
+                  videoSrc={r.hls_url || undefined}
+                  ariaLabel={`Reel by ${r.username}`}
+                  onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
+                  fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
+                    ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                     : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
-                  <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
-                  <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
-                </button>
+                  overlay={<>
+                    <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
+                    <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
+                  </>}
+                />
               ))}
             </div>
           )}

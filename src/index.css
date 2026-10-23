@@ -93,6 +93,13 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
 }
 
 
+/* Music chip equalizer bars (playing state on feed posts + worship room). */
+@keyframes eqbar {
+  0%, 100% { transform: scaleY(0.45); }
+  35% { transform: scaleY(1); }
+  65% { transform: scaleY(0.7); }
+}
+
 /* Harvest Family creation flow — directional screen motion and state feedback. */
 @keyframes hfCreateForward {
   from { opacity: 0; transform: translate3d(24px, 0, 0); }

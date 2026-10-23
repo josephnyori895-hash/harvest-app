@@ -16,7 +16,7 @@ export type PlayerTrack = {
   url?: string | null
   artwork?: string | null
   /** Which screen owns the track — the NowPlayingBar deep-links back here. */
-  origin?: 'music' | 'sermons'
+  origin?: 'music' | 'sermons' | 'feed'
 }
 
 export type PlayerState = {
@@ -30,6 +30,11 @@ export type PlayerState = {
 const listeners = new Set<(s: PlayerState) => void>()
 let audio: HTMLAudioElement | null = null
 let state: PlayerState = { track: null, playing: false, currentTime: 0, duration: 0, error: null }
+// Browsers (and the Android WebView) refuse sound-producing autoplay until the
+// member has interacted with audio at least once. Feed posts with a song track
+// use this to decide between auto-start (IG-style) and tap-to-play.
+let audioUnlocked = false
+export const audioAutoplayReady = (): boolean => audioUnlocked
 
 const emit = () => { listeners.forEach(l => l(state)) }
 const patch = (p: Partial<PlayerState>) => { state = { ...state, ...p }; emit() }
@@ -110,6 +115,7 @@ export async function playTrack(track: PlayerTrack): Promise<boolean> {
   setMediaSession(track)
   try {
     await a.play()
+    audioUnlocked = true
     patch({ playing: true })
     try {
       const ms = (navigator as any).mediaSession
@@ -126,7 +132,7 @@ export async function playTrack(track: PlayerTrack): Promise<boolean> {
 export async function togglePlay(): Promise<void> {
   if (!state.track || !audio) return
   if (audio.paused) {
-    try { await audio.play() } catch { patch({ error: 'Tap play again to allow audio' }) }
+    try { await audio.play(); audioUnlocked = true } catch { patch({ error: 'Tap play again to allow audio' }) }
   } else {
     audio.pause()
   }

@@ -71,7 +71,9 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const fit = Math.min(vw / iw, vh / ih)
+    // Cover the viewport at minimum zoom (IG-style): the crop can never show
+    // the black export canvas, so posts can't get baked-in letterbox bars.
+    const fit = Math.max(vw / iw, vh / ih)
     const minScale = fit > 0 ? fit : 1
     // At the minimum zoom the complete image is visible; panning is only allowed
     // after zooming far enough that the image exceeds the viewport.
@@ -96,7 +98,7 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    return Math.min(vw / iw, vh / ih) || 1
+    return Math.max(vw / iw, vh / ih) || 1
   }, [imgSize, transform.rotation, viewportSize])
 
   useEffect(() => { setZoom(transform.scale) }, [transform.scale])
@@ -163,7 +165,7 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const minScale = Math.min(vw / iw, vh / ih) || 1
+    const minScale = Math.max(vw / iw, vh / ih) || 1
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
 
@@ -228,7 +230,7 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.min(vw / iw, vh / ih) || 1
+                  const minScale = Math.max(vw / iw, vh / ih) || 1
                   return iw * minScale * transform.scale
                 })(),
                 height: (() => {
