@@ -1,6 +1,7 @@
 import { query, uuid } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 
 async function auditLog(env, actor, action, targetId, meta = {}) {
   await query(
@@ -257,6 +258,28 @@ export async function handleProjects(request, env, ctx) {
       VALUES(?,?,?,?,?,?)
       ON CONFLICT(project_id,user_id) DO UPDATE SET commitment_kes=excluded.commitment_kes, reminder_enabled=excluded.reminder_enabled, updated_at=excluded.updated_at`,
       [id, fresh.id, commitment, reminder, now, now])
+    // Notify the project creator + existing participants that someone joined.
+    const proj = (await query(env, 'SELECT name, created_by FROM projects WHERE id=?', [id])).rows[0]
+    if (proj) {
+      const watchers = new Set([
+        ...(await query(env, 'SELECT user_id FROM project_participants WHERE project_id=?', [id])).rows.map(r => r.user_id),
+        proj.created_by,
+      ].filter(Boolean))
+      watchers.delete(fresh.id)
+      if (watchers.size) {
+        const rec = recordNotificationsSafe(env, [...watchers].map(uid => ({
+          userId: uid,
+          type: 'project',
+          category: 'all',
+          title: `${fresh.name || '@' + fresh.username} joined ${proj.name}`,
+          body: Number(body.commitment_kes) > 0 ? `Pledged KES ${Number(body.commitment_kes).toLocaleString()} toward ${proj.name}.` : 'Committed to helping complete this project.',
+          preview: 'Church project',
+          target: { type: 'project', id, actor_user_id: fresh.id },
+        })))
+        if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(rec)
+        else rec.catch(() => {})
+      }
+    }
     const all = await baseProjects(env, fresh.id)
     return jsonResponse({ project: all.find(x => x.id === id) })
   }

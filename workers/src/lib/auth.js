@@ -38,13 +38,13 @@ export async function requireRole(env, user, ...allowed) {
   if (!user) throw httpError(401, 'auth required — POST /api/auth/login {password, username} to get JWT')
   if (user.id === GUEST_ID || user.role === 'guest') throw httpError(403, 'account authentication required')
 
-  const { rows } = await query(env, 'SELECT id, username, role, verified, active, grants FROM users WHERE id = ?', [user.id])
+  const { rows } = await query(env, 'SELECT id, username, name, role, verified, active, grants FROM users WHERE id = ?', [user.id])
   const current = rows[0]
   if (!current) throw httpError(401, 'account no longer exists')
   if (!current.active) throw httpError(403, 'account is deactivated')
   if (!['admin', 'member'].includes(current.role)) throw httpError(403, 'account role is invalid')
 
-  const fresh = { ...user, id: current.id, username: current.username, role: current.role, verified: !!current.verified, grants: current.grants || '' }
+  const fresh = { ...user, id: current.id, username: current.username, name: current.name, role: current.role, verified: !!current.verified, grants: current.grants || '' }
   const role = current.role
   if (set.has(role)) return fresh
   const needRank = Math.min(...[...set].map(r => RANK[r] ?? 99))

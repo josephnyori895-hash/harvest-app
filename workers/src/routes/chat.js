@@ -1,6 +1,7 @@
 // Port of server/src/routes/chat.js (pg → D1). All timestamps ISO strings.
 import { query } from '../lib/db.js'
 import { sendFanOut } from '../lib/fcm.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
 import { mediaUrlOrNull } from '../lib/media.js'
@@ -172,6 +173,21 @@ export async function handleChat(request, env, ctx) {
         })
         if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(task)
         else task.catch(() => {})
+        // Bell-panel records: same recipients, same tap-routing target.
+        const kind = conv.kind === 'dm' ? 'chat' : (conv.groupId ? 'group_chat' : 'department_chat')
+        const recCategory = conv.kind === 'dm' ? 'messages' : (conv.groupId ? 'groups' : 'departments')
+        const records = recipients.map(pid => ({
+          userId: pid,
+          type: kind,
+          category: recCategory,
+          title: `@${fresh.username}`,
+          body: preview,
+          preview: conv.kind === 'dm' ? `Direct message · ${fresh.username}` : (conv.groupSlug ? `Team chat · ${conv.groupSlug}` : 'Team chat'),
+          target: { type: kind, user_id: conv.kind === 'dm' ? fresh.id : undefined, peer_username: fresh.username, peer_name: fresh.name || fresh.username, actor_user_id: fresh.id, conversation_key: conv.key, slug: conv.groupSlug || '', group_id: conv.groupId || undefined, department_slug: conv.groupSlug || undefined },
+        }))
+        const rec = recordNotificationsSafe(env, records)
+        if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(rec)
+        else rec.catch(() => {})
       }
     } catch { /* push must never break chat */ }
     return jsonResponse(

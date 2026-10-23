@@ -10,6 +10,7 @@ import { query, uuid, nowIso } from '../lib/db.js'
 import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
 import { sendFanOut } from '../lib/fcm.js'
+import { mediaUrlOrNull } from '../lib/media.js'
 
 const PLATFORMS = new Set(['android', 'ios', 'web'])
 
@@ -50,9 +51,67 @@ export async function handleNotifications(request, env, ctx) {
     '/api/notifications/devices/test',
     '/api/notifications/deliveries',
   ])
-  if (!NOTIFICATION_PATHS.has(path)) return null
+  // In-app record routes: GET list, POST mark one read, POST mark all read.
+  const listMatch = path === '/api/notifications' || path === '/api/notifications/read-all' || path.match(/^\/api\/notifications\/([^/]+)\/read$/)
+  if (!NOTIFICATION_PATHS.has(path) && !listMatch) return null
 
   const fresh = await requireMember(env, ctx.user)
+
+  // ── POST /api/notifications/read-all — mark everything read for caller ──
+  if (path === '/api/notifications/read-all' && request.method === 'POST') {
+    await query(env, 'UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL', [nowIso(), fresh.id])
+    return jsonResponse({ ok: true })
+  }
+
+  // ── POST /api/notifications/:id/read — owner-only mark-read ──
+  if (listMatch && listMatch[1] && request.method === 'POST') {
+    const { rows } = await query(env, 'UPDATE notifications SET read_at=? WHERE id=? AND user_id=? AND read_at IS NULL', [nowIso(), listMatch[1], fresh.id])
+    const changed = Number(rows?.meta?.changes ?? 0) > 0
+    if (!changed && !(await query(env, 'SELECT 1 FROM notifications WHERE id=? AND user_id=?', [listMatch[1], fresh.id])).rows[0]) return errorResponse('not found', 404)
+    return jsonResponse({ ok: true })
+  }
+
+  // ── GET /api/notifications — newest records for caller ──
+  if (path === '/api/notifications' && request.method === 'GET') {
+    const url = new URL(request.url)
+    const limitRaw = Number(url.searchParams.get('limit') || 60)
+    const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60, 1), 200)
+    const offsetRaw = Number(url.searchParams.get('offset') || 0)
+    const offset = Math.max(Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0, 0)
+    const { rows } = await query(
+      env,
+      `SELECT id, category, type, title, body, preview, target, created_at, read_at
+       FROM notifications WHERE user_id=?
+       ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      [fresh.id, limit, offset],
+    )
+    const out = await Promise.all(rows.map(async r => {
+      let target = null
+      try { target = r.target ? JSON.parse(r.target) : null } catch { target = null }
+      // Resolve the acting member so the panel can show a real avatar.
+      let actor = null
+      if (target?.actor_user_id) {
+        const u = (await query(env, 'SELECT username, name, avatar_key FROM users WHERE id=?', [String(target.actor_user_id)])).rows[0]
+        if (u) {
+          const avatarUrl = u.avatar_key ? await mediaUrlOrNull(env, u.avatar_key, 900) : null
+          actor = { name: u.name || u.username, avatar_url: avatarUrl || undefined }
+        }
+      }
+      return {
+        id: r.id,
+        category: r.category,
+        type: r.type,
+        title: r.title,
+        body: r.body,
+        preview: r.preview || undefined,
+        target: { ...(target || {}), type: target?.type || r.type, id: target?.id },
+        actor: actor || (r.title ? { name: r.title } : { name: 'Harvest Family' }),
+        created_at: r.created_at,
+        read_at: r.read_at || null,
+      }
+    }))
+    return jsonResponse({ notifications: out, nextOffset: offset + out.length, hasMore: out.length === limit })
+  }
 
   // ── POST /api/notifications/devices — register or refresh ──
   if (path === '/api/notifications/devices' && request.method === 'POST') {

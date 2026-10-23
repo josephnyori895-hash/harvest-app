@@ -294,6 +294,33 @@ function InnerApp() {
     })
   }
 
+  // Fetch the notification list. Called once after sign-in and whenever the
+  // bell panel opens, so the badge and the panel reflect fresh records.
+  const [notificationsLoadedOnce, setNotificationsLoadedOnce] = useState(false)
+  useEffect(() => {
+    if (!onboarded) return
+    let cancelled = false
+    setNotificationsLoading(true)
+    fetch(`${API}/api/notifications`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => { if (!cancelled) setNotifications(Array.isArray(d?.notifications) ? d.notifications : []) })
+      .catch(() => { if (!cancelled) setNotificationsError('Notifications are unavailable right now.') })
+      .finally(() => { if (!cancelled) { setNotificationsLoading(false); setNotificationsLoadedOnce(true) } })
+    return () => { cancelled = true }
+  }, [onboarded])
+
+  const refreshNotifications = async () => {
+    setNotificationsRefreshing(true)
+    try {
+      const r = await fetch(`${API}/api/notifications`, { headers: authHeaders() })
+      if (r.ok) {
+        const d = await r.json()
+        setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+      }
+    } catch { /* keep the last good list */ }
+    setNotificationsRefreshing(false)
+  }
+
   const markAllNotificationsRead = async () => {
     if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
     const previous = notifications
@@ -335,6 +362,9 @@ function InnerApp() {
     } else if (notification.type === 'reel' && target.id) {
       setSearchReelId(String(target.id))
       setTab('reels')
+    } else if (notification.type === 'project' && target.id) {
+      setBackTarget(tab)
+      setTab('give')
     } else if (notification.type === 'sermon' && target.id) {
       setSearchSermonId(String(target.id))
       setTab('sermons')
@@ -453,7 +483,7 @@ function InnerApp() {
       <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <button
           type="button"
-          onClick={() => setShowNotifications(v => !v)}
+          onClick={() => setShowNotifications(v => { const next = !v; if (next) void refreshNotifications(); return next })}
           aria-pressed={showNotifications}
           aria-label={showNotifications ? 'Close notifications' : `Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
           className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-[#E8DEC9] bg-[#FFFBF0]/95 text-lg shadow-sm backdrop-blur focus:outline-none focus-visible:ring-2"
@@ -486,8 +516,8 @@ function InnerApp() {
               onBack={() => setShowNotifications(false)}
             />
           )}
-          {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           <div className={showNotifications ? 'hidden' : 'contents'}>
+          {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
