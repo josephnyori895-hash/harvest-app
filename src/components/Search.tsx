@@ -118,7 +118,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   // Everything except members comes from the API — fetch once per session,
   // retryable via the error banner. `bump` in deps drives the retry.
   useEffect(() => {
-    if (showGrid) return
+    if (showGrid && filter !== 'reels') return
     let cancelled = false
     const need = { groups, departments, reels, sermons }
     const want = filter === 'all' || filter === 'places'
@@ -183,10 +183,10 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     (d.description || '').toLowerCase().includes(query)
   ).sort(byRank(d => [d.name])), [departments, query])
 
-  const reelHits = useMemo(() => query === '' || !Array.isArray(reels) ? [] : reels.filter(r =>
+  const reelHits = useMemo(() => !Array.isArray(reels) ? [] : (query === '' ? reels : reels.filter(r =>
     (r.caption || '').toLowerCase().includes(query) ||
     (r.username || '').toLowerCase().includes(query)
-  ), [reels, query])
+  )), [reels, query])
 
   const sermonHits = useMemo(() => query === '' || !Array.isArray(sermons) ? [] : sermons.filter(s =>
     (s.title || '').toLowerCase().includes(query) ||
@@ -237,8 +237,8 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
 
   return (
     <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-2 pb-8">
-      {/* Search bar */}
-      <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 border border-[#E8DEC9] shadow-sm">
+      {/* Search bar — pr-14 keeps clear of the fixed notifications bell */}
+      <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 pr-0 mr-14 border border-[#E8DEC9] shadow-sm">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8175" strokeWidth="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" aria-label="Search the church" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-[#A49A8E]" />
         {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-[#766E63] text-base" aria-label="Clear search">✕</button>}
@@ -283,7 +283,31 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               </div>
             </div>
           )}
-          <p className="text-xs text-[#8B8175] px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
+          {filter === 'reels' ? (
+            <div className="mt-4">
+              <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Reels • {reelHits.length}</p>
+              {reelHits.length > 0 ? (
+                <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
+                  {reelHits.map((r, i) => (
+                    <HoverPreviewTile
+                      key={r.id || i}
+                      videoSrc={r.hls_url || undefined}
+                      ariaLabel={`Reel by ${r.username}`}
+                      onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
+                      fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
+                        ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                        : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
+                      overlay={<span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-[#8B8175] py-6 text-center">No reels yet — be the first to share one.</p>
+              )}
+            </div>
+          ) : (
+          <>
+                    <p className="text-xs text-[#8B8175] px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
           <div className="mt-2 space-y-1">
             {users.slice(0, 5).map(u => (
               <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-2 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
@@ -313,6 +337,8 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                 ))}
               </div>
             </div>
+          )}
+          </>
           )}
         </>
       ) : (

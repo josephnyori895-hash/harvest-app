@@ -790,8 +790,6 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           {/* Team chats: your departments + groups, always at the top of the inbox. */}
           <TeamChatsRail
             onOpen={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
-            onOpenGroups={onOpenGroups}
-            onOpenDepartments={onOpenDepartments}
           />
           {/* Instagram-style avatar rail */}
           <section className="px-4 pt-4 pb-1 border-b border-stone-800">
@@ -1037,12 +1035,11 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
 
 // Team chats rail: every department + small group the viewer belongs to.
 // Departments act like groups (client's request) — both get real chat rooms.
-function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
+function TeamChatsRail({ onOpen }: {
   onOpen: (t: TeamChat) => void
-  onOpenGroups?: () => void
-  onOpenDepartments?: () => void
 }) {
   const [teams, setTeams] = useState<TeamChat[]>([])
+  const [teamsLoaded, setTeamsLoaded] = useState(false)
   useEffect(() => {
     let live = true
     const refresh = async () => {
@@ -1078,7 +1075,7 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
           }))
         }
       } catch { /* offline */ }
-      if (live) setTeams(out)
+      if (live) { setTeams(out); setTeamsLoaded(true) }
     }
     const refreshVisible = () => {
       if (document.visibilityState === 'visible') void refresh()
@@ -1099,21 +1096,7 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
   }, [])
   return (
     <section className="px-4 pt-4 pb-1 border-b border-stone-800">
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500 font-bold">Your community</p>
-        <div className="flex items-center gap-1.5">
-          {onOpenGroups && (
-            <button type="button" onClick={onOpenGroups} className="px-2.5 py-1.5 rounded-full bg-stone-900 border border-stone-700 text-[10px] font-bold text-stone-200 active:bg-stone-800">
-              Groups
-            </button>
-          )}
-          {onOpenDepartments && (
-            <button type="button" onClick={onOpenDepartments} className="px-2.5 py-1.5 rounded-full bg-stone-900 border border-stone-700 text-[10px] font-bold text-stone-200 active:bg-stone-800">
-              Departments
-            </button>
-          )}
-        </div>
-      </div>
+      <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500 font-bold mb-2">Your community</p>
       {teams.length > 0 && (
         <div className="flex gap-4 overflow-x-auto pb-3">
           {teams.map(t => (
@@ -1128,8 +1111,8 @@ function TeamChatsRail({ onOpen, onOpenGroups, onOpenDepartments }: {
           ))}
         </div>
       )}
-      {teams.length === 0 && (
-        <p className="text-[11px] text-stone-500 pb-3">No groups or departments yet. Use the buttons above to browse them.</p>
+      {teamsLoaded && teams.length === 0 && (
+        <p className="text-[11px] text-stone-500 pb-3">No groups or departments you belong to yet — browse Groups or Departments in the tabs above.</p>
       )}
     </section>
   )

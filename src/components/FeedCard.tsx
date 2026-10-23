@@ -134,7 +134,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
       <div className="px-3 pt-2 pb-2.5">
         <p className={`text-[12.5px] leading-5 text-[#4B433A] ${expanded ? '' : 'line-clamp-2'}`}>
           <strong className="text-[#29251F] font-extrabold">{p.user}</strong>{' '}
-          {(p.caption || '').split(/(\s+)/).map((w, i) => /#([\p{L}\p{N}_]+)/u.test(w) ? <span key={i} className="text-[#7C3AED]">{w}</span> : w)}
+          {(p.caption || '').split(/(\s+)/).map((w, i) => /#([\p{L}\p{N}_]+)/u.test(w) ? <span key={i} className="text-[#7C3AED]">{w}</span> : <span key={i}>{w}</span>)}
         </p>
         {(p.caption || '').length > 120 && (
           <button type="button" onClick={() => setExpanded(x => !x)} className="text-[11px] font-bold text-[#8B8175] mt-0.5" aria-label={expanded ? 'Show less' : 'Show more'}>
