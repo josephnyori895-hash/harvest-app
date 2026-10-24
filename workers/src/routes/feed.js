@@ -238,9 +238,10 @@ export async function handleFeed(request, env, ctx) {
   }
 
   // ── Comments ──────────────────────────────────────────────
-  // GET /api/comments?scope=post|reel&id=<id> — newest last.
+  // GET /api/comments?scope=post|reel&id=<id> — parents ASC with their replies
+  // nested right after. Per-viewer likes come from comment_likes.
   if (path === '/api/comments' && request.method === 'GET') {
-    await requireMember(env, user)
+    const fresh = await requireMember(env, user)
     const scope = qp.scope === 'reel' ? 'reel' : 'post'
     const id = String(qp.id || '').slice(0, 64)
     if (!id) return errorResponse('id required', 400)
@@ -250,16 +251,19 @@ export async function handleFeed(request, env, ctx) {
     if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
     const { rows } = await query(
       env,
-      `SELECT c.id, c.username, c.body, c.created_at, u.verified
+      `SELECT c.id, c.username, c.body, c.created_at, c.parent_id,
+              (SELECT COUNT(*) FROM comment_likes l WHERE l.comment_id = c.id) AS likes,
+              EXISTS(SELECT 1 FROM comment_likes l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked,
+              u.verified
          FROM post_comments c LEFT JOIN users u ON u.username = c.username
-        WHERE c.scope=? AND c.post_id=? ORDER BY c.created_at ASC LIMIT 200`,
-      [scope, id],
+        WHERE c.scope=? AND c.post_id=? ORDER BY c.created_at ASC LIMIT 300`,
+      [fresh.id, scope, id],
     )
-    rows.forEach(r => { r.verified = !!r.verified })
+    rows.forEach(r => { r.verified = !!r.verified; r.likes = Number(r.likes) || 0; r.liked = !!r.liked })
     return jsonResponse({ comments: rows })
   }
 
-  // POST /api/comments { scope, id, body }
+  // POST /api/comments { scope, id, body, parent_id? } — replies nest one level.
   if (path === '/api/comments' && request.method === 'POST') {
     const fresh = await requireMember(env, user)
     const body = await readJson(request)
@@ -271,18 +275,42 @@ export async function handleFeed(request, env, ctx) {
       ? await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [targetId])
       : await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [targetId])
     if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
+    let parentId = null
+    if (body.parent_id) {
+      const p = await query(env, 'SELECT id, post_id, scope, parent_id FROM post_comments WHERE id=?', [String(body.parent_id).slice(0, 64)])
+      const prow = p.rows[0]
+      if (!prow || prow.post_id !== targetId || prow.scope !== scope || prow.parent_id) return errorResponse('invalid parent comment', 400)
+      parentId = prow.id
+    }
     const cid = crypto.randomUUID()
     await query(
       env,
-      `INSERT INTO post_comments (id, post_id, scope, user_id, username, body) VALUES (?,?,?,?,?,?)`,
-      [cid, targetId, scope, fresh.id, fresh.username, text],
+      `INSERT INTO post_comments (id, post_id, scope, user_id, username, body, parent_id) VALUES (?,?,?,?,?,?,?)`,
+      [cid, targetId, scope, fresh.id, fresh.username, text, parentId],
     )
     const col = scope === 'reel' ? 'reels' : 'posts'
     await query(env, `UPDATE ${col} SET comments = comments + 1 WHERE id=?`, [targetId])
-    return jsonResponse({ comment: { id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(), verified: !!fresh.verified } }, 201)
+    return jsonResponse({ comment: { id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(), verified: !!fresh.verified, likes: 0, liked: false, parent_id: parentId } }, 201)
   }
 
-  // DELETE /api/comments/:id — author or admin.
+  // POST /api/comments/:id/like — toggle; returns the fresh state.
+  if (/^\/api\/comments\/[^/]+\/like$/.test(path) && request.method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const cid = path.split('/')[3]
+    const c = await query(env, 'SELECT id FROM post_comments WHERE id=?', [cid])
+    if (!c.rows[0]) return errorResponse('not found', 404)
+    const existing = await query(env, 'SELECT 1 AS one FROM comment_likes WHERE comment_id=? AND user_id=?', [cid, fresh.id])
+    if (existing.rows[0]) {
+      await query(env, 'DELETE FROM comment_likes WHERE comment_id=? AND user_id=?', [cid, fresh.id])
+    } else {
+      await query(env, 'INSERT OR IGNORE INTO comment_likes (comment_id, user_id) VALUES (?,?)', [cid, fresh.id])
+    }
+    const total = await query(env, 'SELECT COUNT(*) AS likes FROM comment_likes WHERE comment_id=?', [cid])
+    return jsonResponse({ liked: !existing.rows[0], likes: Number(total.rows[0]?.likes) || 0 })
+  }
+
+  // DELETE /api/comments/:id — author, content author or admin. Replies go with
+  // the parent; like rows are swept too, and the post counter follows the total.
   if (/^\/api\/comments\/[^/]+$/.test(path) && request.method === 'DELETE') {
     const fresh = await requireMember(env, user)
     const cid = path.split('/')[3]
@@ -293,9 +321,12 @@ export async function handleFeed(request, env, ctx) {
     const content = await query(env, `SELECT user_id FROM ${contentTable} WHERE id=?`, [c.rows[0].post_id])
     const isContentAuthor = content.rows[0]?.user_id === fresh.id
     if (!ownsComment && !isContentAuthor && fresh.role !== 'admin') return errorResponse('forbidden', 403)
-    await query(env, 'DELETE FROM post_comments WHERE id=?', [cid])
+    const replies = await query(env, 'SELECT id FROM post_comments WHERE parent_id=?', [cid])
+    for (const r of replies.rows) await query(env, 'DELETE FROM comment_likes WHERE comment_id=?', [r.id])
+    await query(env, 'DELETE FROM comment_likes WHERE comment_id=?', [cid])
+    await query(env, 'DELETE FROM post_comments WHERE id=? OR parent_id=?', [cid, cid])
     const col = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
-    await query(env, `UPDATE ${col} SET comments = MAX(comments - 1, 0) WHERE id=?`, [c.rows[0].post_id])
+    await query(env, `UPDATE ${col} SET comments = MAX(comments - ?, 0) WHERE id=?`, [1 + (replies.rows.length || 0), c.rows[0].post_id])
     return jsonResponse({ ok: true })
   }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TouchEvent } from 'react'
 import { useAuth } from '../state/auth'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
+import { onSocket, emitSocket, connectSocket, realtimeEnabled } from '../lib/realtime'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -249,6 +250,55 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     : active ? keyFor(currentUser, active.username) : ''
   const thread = conversationKey ? (msgs[conversationKey] || []) : []
 
+  // Typing indicator over the realtime socket. The server already validates
+  // access per conversation kind (DM/group/department) and stops fanout after
+  // 3s of silence — the client just mirrors it here.
+  const [typingPeers, setTypingPeers] = useState<Record<string, Record<string, number>>>({})
+  const typingSentRef = useRef<{ key: string; at: number } | null>(null)
+  useEffect(() => {
+    if (!realtimeEnabled()) return
+    connectSocket()
+    const off = onSocket('typing', (data: any) => {
+      const ck = String(data?.conversation_key || '')
+      const uname = String(data?.username || '')
+      if (!ck || !uname) return
+      setTypingPeers(c => {
+        const row = { ...(c[ck] || {}) }
+        if (data?.typing) row[uname] = Date.now()
+        else delete row[uname]
+        if (!Object.keys(row).length) { const n = { ...c }; delete n[ck]; return n }
+        return { ...c, [ck]: row }
+      })
+    })
+    const prune = window.setInterval(() => {
+      setTypingPeers(c => {
+        let changed = false
+        const next: Record<string, Record<string, number>> = {}
+        for (const [ck, row] of Object.entries(c)) {
+          const nr: Record<string, number> = {}
+          for (const [u, at] of Object.entries(row)) if (Date.now() - (Number(at) || 0) < 5500) nr[u] = Number(at); else changed = true
+          if (Object.keys(nr).length) next[ck] = nr; else changed = true
+        }
+        return changed ? next : c
+      })
+    }, 3000)
+    return () => { off(); clearInterval(prune) }
+  }, [])
+  const sendTyping = useCallback((typing: boolean) => {
+    if (!conversationKey) return
+    if (typing) {
+      const now = Date.now()
+      const last = typingSentRef.current
+      if (last && last.key === conversationKey && now - last.at < 1800) return
+      typingSentRef.current = { key: conversationKey, at: now }
+      emitSocket('typing:start', { conversation_key: conversationKey })
+    } else {
+      if (typingSentRef.current?.key !== conversationKey) return
+      typingSentRef.current = null
+      emitSocket('typing:stop', { conversation_key: conversationKey })
+    }
+  }, [conversationKey])
+
   const saveMessages = useCallback((updater: Record<string, any[]> | ((c: Record<string, any[]>) => Record<string, any[]>)) => {
     setMsgs(current => {
       const next = typeof updater === 'function' ? updater(current) : updater
@@ -405,6 +455,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
     saveMessages(c => ({ ...c, [conversationKey]: [...(c[conversationKey] || []), optimistic] }))
     const sentReply = replyTo; setText(''); setReplyTo(null); setAttach(null); setSending(true); setError('')
+    sendTyping(false)
 
     try {
       let media_key: string | undefined
@@ -735,12 +786,25 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <button type="button" onClick={() => setAttach(null)} className="ml-auto text-stone-400" aria-label="Remove attachment">✕</button>
             </div>
           )}
+          {(() => {
+            const typingRow = Object.keys(typingPeers[conversationKey] || {}).filter(u => u && u !== currentUser)
+            if (!typingRow.length) return null
+            const label = team
+              ? `${typingRow.length === 1 ? typingRow[0] : `${typingRow.length} teammates are`} typing…`
+              : `${(active?.name || active?.username || typingRow[0]).trim().split(/\s+/)[0]} is typing…`
+            return (
+              <div className="max-w-3xl w-full mx-auto px-2 pb-1 text-[11px] text-white/60 flex items-center gap-1.5" aria-live="polite">
+                <span className="flex gap-0.5" aria-hidden>{[0, 1, 2].map(i => <span key={i} className="w-1.5 h-1.5 rounded-full bg-white/50" style={{ animation: 'harvest-typing 1.2s infinite', animationDelay: `${i * 0.18}s` }} />)}</span>
+                <span>{label}</span>
+              </div>
+            )
+          })()}
           <div className="max-w-3xl w-full min-w-0 mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
             <label className="w-10 h-10 rounded-full text-stone-300 hover:text-white hover:bg-white/10 flex items-center justify-center text-lg cursor-pointer shrink-0" title="Send a photo">
               📷
               <input type="file" accept="image/*" className="hidden" onChange={e => setAttach(e.target.files?.[0] || null)} />
             </label>
-            <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => setText(e.target.value)}
+            <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
               rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
               className="flex-1 min-w-0 resize-none min-h-11 max-h-24 overflow-y-auto bg-stone-900/90 border border-stone-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-stone-500 transition" />

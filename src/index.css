@@ -83,6 +83,12 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   img,video,iframe { max-width: 100%; }
 }
 
+/* Typing indicator: three dots blink in sequence while someone composes. */
+@keyframes harvest-typing {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+
 /* Reels double-tap encourage: heart pops at the tap point, scales up and fades. */
 @keyframes heartpop {
   0% { transform: scale(0.2); opacity: 0; }
