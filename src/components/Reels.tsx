@@ -27,6 +27,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [muted, setMuted] = useState(false)
   const [paused, setPaused] = useState(false)
   const [saved, setSaved] = useState<Record<string, boolean>>({})
+  const [reelProgress, setReelProgress] = useState(0)
   const [showMore, setShowMore] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
   const [posterFailed, setPosterFailed] = useState(false)
@@ -219,6 +220,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     setPosterFailed(false)
     setVideoReady(false)
     setVideoError(false)
+    setReelProgress(0)
     if (!cur?.video || cur.img) return () => { active = false }
     captureVideoFrame(cur.video, 0.1).then(blob => {
       if (!active || !blob) return
@@ -463,6 +465,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             onWaiting={() => { /* Keep the current frame visible during brief network stalls. */ }}
             onPlaying={() => { setVideoReady(true); setPaused(false) }}
             onPause={() => setPaused(true)}
+            onTimeUpdate={e => { const el = e.currentTarget; if (el.duration > 0) setReelProgress((el.currentTime / el.duration) * 100) }}
             onError={() => { setVideoReady(false); setVideoError(true) }}
           />
         </> : (
@@ -564,6 +567,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         </div>
         <button onClick={(e) => { e.stopPropagation(); prev() }} className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Previous video">↑</button>
         <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Next video">↓</button>
+        {cur?.video && (
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15 z-10 pointer-events-none" aria-hidden>
+            <div className="h-full bg-amber-300/90 transition-[width] duration-150 ease-linear" style={{ width: `${reelProgress}%` }} />
+          </div>
+        )}
       </section>
     </div>
   )

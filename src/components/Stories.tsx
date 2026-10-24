@@ -26,6 +26,9 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
   const [replySent, setReplySent] = useState(false)
+  const [views, setViews] = useState<any[]>([])
+  const [viewCount, setViewCount] = useState(0)
+  const [showViews, setShowViews] = useState(false)
   const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
@@ -182,6 +185,42 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   }, [s?.id, onViewed])
 
   useEffect(() => { if (s?.id) { setReplies([]); setReply(''); void loadReplies() } }, [s?.id])
+  // Seen-by: only the story author (or an admin) may fetch the viewer list.
+  const loadViews = async () => {
+    try {
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const t = localStorage.getItem('harvest_token') || ''
+      const r2 = await fetch(API + '/api/stories/' + encodeURIComponent(String(s.id)) + '/views', { headers: t ? { Authorization: 'Bearer ' + t } : undefined })
+      const d2 = await r2.json().catch(() => ({}))
+      if (!r2.ok) throw new Error(d2?.error || 'Could not load viewers')
+      setViews(d2.views || [])
+      setViewCount(Number(d2.count) || 0)
+    } catch (e: any) {
+      setViewerError(e?.message || 'Could not load viewers')
+    }
+  }
+  useEffect(() => {
+    setViews([]); setViewCount(0); setShowViews(false)
+    if (s?.id && isStoryAuthor) void loadViews()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.id])
+
+  // Hold-to-pause: press-and-hold anywhere on the story pauses it, release
+  // resumes. Quick taps stay navigational (the click handler runs after and
+  // is suppressed if a hold just happened).
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const heldRef = useRef(false)
+  const lastHeldAtRef = useRef(0)
+  const onHoldStart = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement | null)?.closest('button, a, input, label, textarea')) return
+    heldRef.current = false
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
+    holdTimerRef.current = setTimeout(() => { heldRef.current = true; setIsPaused(true) }, 300)
+  }
+  const onHoldEnd = () => {
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
+    if (heldRef.current) { heldRef.current = false; setIsPaused(false); lastHeldAtRef.current = Date.now() }
+  }
   if (!s) return null
   const isLastUserStory = idx === allStories.length - 1
 
@@ -210,7 +249,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   return (
     <>
       {viewerError && <div className="absolute top-3 left-3 right-3 z-[90]"><ErrorMessage message={viewerError} action={<button type="button" onClick={() => setViewerError('')} className="text-xs font-bold underline">Dismiss</button>} /></div>}
-      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : "var(--safe-area-inset-bottom, env(safe-area-inset-bottom))" }} onClick={handleTap}>
+      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : "var(--safe-area-inset-bottom, env(safe-area-inset-bottom))" }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={e => { if (Date.now() - lastHeldAtRef.current < 450) return; handleTap(e) }}>
       <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-stone-800 rounded overflow-hidden relative"><div className="h-full bg-white rounded" style={{ width: i < idx ? '100%' : i === idx ? `${progress}%` : '0%', transition: i === idx ? 'none' : 'width 0.3s' }} /></div>)}</div>
       <div className="flex items-center justify-between px-4 py-3">
         <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}><div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-black flex items-center justify-center text-xs font-bold">{s.me ? '＋' : s.name[0].toUpperCase()}</div></div><div><p className="text-sm font-semibold text-white">{s.name}</p>{users.find((u: any) => u.username === s.name)?.role && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${users.find((u: any) => u.username === s.name)?.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-stone-700 text-stone-300'}`}>{users.find((u: any) => u.username === s.name)?.role || 'member'}</span>}</div></button>
@@ -272,14 +311,38 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
         {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
         {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
       </div>
+      {showViews && (
+        <div onClick={e => e.stopPropagation()} className="absolute left-3 right-3 max-h-52 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 64}px` : 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 6rem)' }}>
+          <div className="flex justify-between items-center mb-2">
+            <b className="text-xs">Seen by {viewCount}{viewCount === 1 ? '' : ' members'}</b>
+            <button onClick={() => setShowViews(false)} className="min-w-11 min-h-11 text-base" aria-label="Close viewers list">×</button>
+          </div>
+          {views.length ? views.map((v: any) => (
+            <div key={v.username || v.name} className="flex items-center gap-2.5 text-xs py-1.5">
+              <div className="w-7 h-7 shrink-0 rounded-full bg-white/15 flex items-center justify-center text-[10px] font-bold">{(v.name || v.username || 'H').charAt(0).toUpperCase()}</div>
+              <p className="min-w-0 flex-1 truncate"><b>{v.name || v.username}</b>{v.verified ? ' ✓' : ''} <span className="text-stone-400">@{v.username}</span></p>
+              <span className="text-[10px] text-stone-400 shrink-0">{(() => {
+                const m = Math.floor((Date.now() - new Date(v.viewed_at).getTime()) / 60000)
+                if (!Number.isFinite(m) || m < 1) return 'now'
+                if (m < 60) return `${m}m`
+                const h = Math.floor(m / 60); if (h < 24) return `${h}h`
+                return `${Math.floor(h / 24)}d`
+              })()}</span>
+            </div>
+          )) : <p className="text-xs text-stone-400">No views yet — they appear here as members watch.</p>}
+        </div>
+      )}
       {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 64}px` : "calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 6rem)" }}><div className="flex justify-between mb-2"><b className="text-xs">Replies</b><button onClick={()=>setShowReplies(false)}>×</button></div>{replies.length ? replies.map((r:any)=>{
             const canRemove = isAdmin || isStoryAuthor || (r.username && r.username === me)
             return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={()=>void deleteReply(String(r.id))} className="min-w-11 min-h-11 shrink-0 text-stone-300 hover:text-white" aria-label="Delete reply">×</button>}</div>
           }) : <p className="text-xs text-stone-400">No replies yet.</p>}</div>}
       <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : "calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 3rem)" }}>
         {isStoryAuthor ? (<>
-          <span className="flex-1 min-h-11 flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/15 text-white/70 text-sm">{showReplies ? 'Written replies are listed above' : 'Replies to your story land here'}</span>
-          <button onClick={()=>{setShowReplies(v=>!v); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button>
+          <button onClick={() => { setShowViews(v => !v); setShowReplies(false); void loadViews() }} className="flex-1 min-h-11 flex items-center justify-between gap-1 px-4 py-2 rounded-full bg-white/10 border border-white/15 text-white/85 text-sm" aria-expanded={showViews} aria-label={`Seen by ${viewCount} members — open viewers list`}>
+            <span className="text-white/70">{showViews ? 'Viewers listed above' : 'Replies land in your inbox'}</span>
+            <span className="text-xs font-bold shrink-0">👁 {viewCount}</span>
+          </button>
+          <button onClick={()=>{setShowReplies(v=>!v); setShowViews(false); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs">💬 {replies.length||''}</button>
         </>) : (<>
           <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full bg-white/95 text-black px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-400" />
           <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold">{replyBusy?'…':(replySent?'✓ Sent':'Send')}</button>
@@ -287,7 +350,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       </div>
       {canEdit && <button onClick={e=>{e.stopPropagation();setEditing(true)}} className="absolute top-14 right-16 min-h-11 text-white text-xs bg-black/50 px-3 py-2 rounded-full">✎ Edit</button>}
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-stone-500">{isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Tap to forward'}</div>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Forward') : (isLastUserStory ? 'Tap to close' : '← Rewind • Hold to pause • → Forward')}</div>
       </div>
     </>
   )
