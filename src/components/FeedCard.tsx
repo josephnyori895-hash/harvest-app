@@ -127,7 +127,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
       {p.video ? (
         <FeedMediaPreview src={p.video} poster={p.img} />
       ) : p.img ? (
-        <MediaThumbnail alt="" className="w-full h-auto" src={p.img} fallbackIcon="🖼️" />
+        <MediaThumbnail alt="" className="block w-full h-auto max-h-[70vh] object-contain mx-auto" src={p.img} fallbackIcon="🖼️" />
       ) : (
         <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>
       )}
