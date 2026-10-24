@@ -886,6 +886,17 @@ function Activity() {
   )
 }
 
+// Relative time for the saved-posts shelf — module scope so Profile can use it.
+const savedAgo = iso => {
+  if (!iso) return ''
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (!Number.isFinite(m) || m < 1) return 'now'
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h`
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d`
+  return new Date(iso).toLocaleDateString()
+}
+
 // Real profile: everything comes from /api/me + the member directory.
 function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   const { isAdmin, role, username } = useAuth()
@@ -899,7 +910,21 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
   const [savedReelsError, setSavedReelsError] = useState('')
   const [savedReelSearch, setSavedReelSearch] = useState('')
   const [savedReelDateFilter, setSavedReelDateFilter] = useState('all')
+  const [savedPosts, setSavedPosts] = useState([])
+  const [savedPostsLoading, setSavedPostsLoading] = useState(false)
+  const [savedPostsError, setSavedPostsError] = useState('')
   useEffect(() => subscribeUploads(() => { setUploads(getUploads()); setHistory(getUploadHistory()) }), [])
+  useEffect(() => {
+    let cancelled = false
+    setSavedPostsLoading(true)
+    setSavedPostsError('')
+    fetch(`${API}/api/posts/saved?limit=50`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(new Error(d?.error || 'Could not load saved posts'))))
+      .then(d => { if (!cancelled) setSavedPosts(d.posts || []) })
+      .catch(e => { if (!cancelled) setSavedPostsError(e?.message || 'Could not load saved posts') })
+      .finally(() => { if (!cancelled) setSavedPostsLoading(false) })
+    return () => { cancelled = true }
+  }, [])
   useEffect(() => {
     let cancelled = false
     setSavedReelsLoading(true)
@@ -1067,6 +1092,50 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
               </div>
             ))}
             <button onClick={() => clearUploadHistory()} className="text-[10px] text-[#766E63] underline px-1">Clear history</button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+        <div className="px-4 flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-[#29251F]">🔖 Saved Posts</h3>
+          <span className="text-[10px] text-[#766E63]">Saved on every device</span>
+        </div>
+        {savedPostsLoading && <p className="text-xs text-[#766E63] px-4 py-2">Loading saved posts…</p>}
+        {savedPostsError && <p className="text-xs text-rose-400 px-4 py-2">{savedPostsError}</p>}
+        {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
+          <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+            <p className="text-xs font-semibold">No saved posts yet.</p>
+            <p className="text-[11px] text-[#766E63] mt-1">Tap Save on a post to keep it here for later.</p>
+          </div>
+        )}
+        {savedPosts.length > 0 && (
+          <div className="px-4 grid grid-cols-2 gap-3">
+            {savedPosts.map(sp => (
+              <div key={sp.id} className="rounded-2xl overflow-hidden bg-white border border-[#E8DEC9]">
+                {sp.thumb_url ? (
+                  <img src={sp.thumb_url} alt={sp.caption || 'Saved post'} loading="lazy" className="w-full aspect-[4/3] object-cover" />
+                ) : (
+                  <div className="w-full aspect-[4/3] bg-[#F5F1E8] flex items-center justify-center p-3 text-center">
+                    <span className="text-[11px] font-semibold text-[#766E63] line-clamp-4">{sp.caption || 'Post'}</span>
+                  </div>
+                )}
+                <div className="p-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-[#766E63]">
+                    <span className="font-bold text-[#29251F] truncate">@{sp.username}{sp.verified ? ' ✓' : ''}</span>
+                    <span className="truncate">{savedAgo(sp.saved_at)}</span>
+                  </div>
+                  <p className="text-[11px] text-[#4B433A] line-clamp-2 mt-0.5">{sp.caption}</p>
+                  <button type="button"
+                    onClick={() => {
+                      setSavedPosts(list => list.filter(x => x.id !== sp.id))
+                      fetch(`${API}/api/posts/${encodeURIComponent(sp.id)}/save`, { method: 'DELETE', headers: authHeaders() })
+                        .catch(() => {})
+                    }}
+                    className="mt-1.5 text-[10px] font-extrabold text-[#B45309]" aria-label={`Remove ${sp.caption ? 'saved post' : 'post'} from Saved`}>Remove</button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

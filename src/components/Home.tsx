@@ -191,6 +191,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [feedLoaded, setFeedLoaded] = useState(false)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
   const pendingLikesRef = useRef(new Set<string>())
+  const pendingSavesRef = useRef(new Set<string>())
 
   const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
   const approvedPosts: any[] = []
@@ -292,6 +293,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     kind: p.is_pinned ? 'Pinned' : p.kind === 'reel' ? 'Video' : 'Community',
     music: p.music || null,
     liked: Boolean(p.liked),
+    saved: Boolean(p.saved),
   })), [livePosts])
 
   // Viewer list: live stories ONLY. The 'Your moment' composer placeholder must
@@ -374,6 +376,32 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     toggleLikeKey(key)
     setLikesTick(x => x + 1)
     showToast('Added to your gratitude ❤️', 'success', 1000)
+  }
+  const toggleSave = async (key: string) => {
+    if (!api) return
+    if (pendingSavesRef.current.has(key)) return
+    const post = livePosts.find((p: any) => `api_${p.kind}_${p.id}` === key)
+    if (!post?.id) return
+    pendingSavesRef.current.add(key)
+    const wasSaved = Boolean(post.saved)
+    const endpoint = post.kind === 'reel' ? `/api/reels/${encodeURIComponent(String(post.id))}/save` : `/api/posts/${encodeURIComponent(String(post.id))}/save`
+    setLivePosts(ps => ps.map((p: any) => `api_${p.kind}_${p.id}` === key ? { ...p, saved: !wasSaved } : p))
+    const revert = () => setLivePosts(ps => ps.map((p: any) => `api_${p.kind}_${p.id}` === key ? { ...p, saved: wasSaved } : p))
+    try {
+      const token = localStorage.getItem('harvest_token') || ''
+      const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+      const res = await fetch(`${API}${endpoint}`, {
+        method: wasSaved ? 'DELETE' : 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      })
+      if (!res.ok) { revert(); showToast('Could not update Saved — try again', 'error', 1800); return }
+      showToast(wasSaved ? 'Removed from Saved' : 'Saved — find it on your profile 🔖', 'success', 1400)
+    } catch {
+      revert()
+      showToast('Network problem — could not update Saved', 'error', 1800)
+    } finally {
+      pendingSavesRef.current.delete(key)
+    }
   }
   const bumpCommentCount = (key: string, delta: number) => {
     setLivePosts(ps => ps.map((p: any) => {
@@ -638,6 +666,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           onLike={() => toggleLike(key)}
           onComment={() => setCommentTarget({ scope: p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })}
           onShare={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post' })}
+          saved={api ? Boolean(p.saved) : false}
+          onSave={api ? () => toggleSave(key) : undefined}
           onOpenUser={onOpenUser}
         />
       ) })}</div></section>

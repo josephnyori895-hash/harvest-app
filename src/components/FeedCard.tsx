@@ -35,6 +35,8 @@ type Props = {
   onLike: () => void
   onComment: () => void
   onShare: () => void
+  saved?: boolean
+  onSave?: () => void
   onOpenUser?: (u: any) => void
 }
 
@@ -72,7 +74,7 @@ function MusicChip({ p }: { p: FeedCardPost }) {
   )
 }
 
-export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMenu, onLike, onComment, onShare, onOpenUser }: Props) {
+export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMenu, onLike, onComment, onShare, saved, onSave, onOpenUser }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
@@ -157,6 +159,12 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
             <span className="text-[13px]">↗</span>
             WhatsApp
           </button>
+          {onSave && (
+            <button type="button" onClick={() => onSave()} className={`ml-auto flex items-center gap-1.5 text-[11px] font-extrabold active:opacity-60 ${saved ? 'text-[#B45309]' : 'text-[#766E63]'}`} aria-pressed={!!saved} aria-label={saved ? 'Remove from Saved' : 'Save for later'}>
+              <span className="text-[13px]">{saved ? '🔖' : '🔖'}</span>
+              {saved ? 'Saved' : 'Save'}
+            </button>
+          )}
         </div>
       </div>
     </article>

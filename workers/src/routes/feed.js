@@ -64,12 +64,16 @@ export async function handleFeed(request, env, ctx) {
         AND (p.advertise_until IS NULL OR p.advertise_until >= ?)
       ORDER BY p.updated_at DESC LIMIT 3`, [new Date().toISOString(), new Date().toISOString()])
 
+    // Saved set for the bookmark toggles — one query, Set lookup per item.
+    const savedSet = user?.id
+      ? new Set((await query(env, 'SELECT post_id FROM saved_posts WHERE user_id=?', [user.id])).rows.map(x => String(x.post_id)))
+      : new Set()
     const items = await Promise.all([...posts.rows, ...reels.rows].map(async r => {
       const normalized = bool(r, 'verified', 'is_pinned')
       const liked = user?.id
         ? Boolean((await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [user.id, r.kind, r.id])).rows[0])
         : false
-      return { ...normalized, liked }
+      return { ...normalized, liked, saved: savedSet.has(String(r.id)) }
     }))
     const projects = projectRows.rows.map(p => ({
       id: p.id, kind: 'project', username: 'harvest_family', name: p.name, verified: true,
@@ -346,6 +350,53 @@ export async function handleFeed(request, env, ctx) {
     return jsonResponse({ ok: true, storyId: sid, viewed: true, viewedAt })
   }
 
+  // ── Saved posts shelf ─────────────────────────────────────
+  // POST/DELETE /api/posts/:id/save — bookmark toggle (mirrors /api/reels/:id/save).
+  const saveMatch = path.match(/^\/api\/posts\/([^/]+)\/save$/)
+  if (saveMatch && (request.method === 'POST' || request.method === 'DELETE')) {
+    const fresh = await requireMember(env, user)
+    const postId = saveMatch[1]
+    if (request.method === 'POST') {
+      const post = await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [postId])
+      if (!post.rows[0]) return errorResponse('post not found', 404)
+      await query(env, 'INSERT OR IGNORE INTO saved_posts (user_id, post_id) VALUES (?,?)', [fresh.id, postId])
+      return jsonResponse({ ok: true, saved: true, post_id: postId })
+    }
+    await query(env, 'DELETE FROM saved_posts WHERE user_id=? AND post_id=?', [fresh.id, postId])
+    return jsonResponse({ ok: true, saved: false, post_id: postId })
+  }
+
+  // GET /api/posts/saved — the member's saved shelf, newest save first.
+  if (path === '/api/posts/saved' && request.method === 'GET') {
+    const fresh = await requireMember(env, user)
+    const limit = Math.min(Math.max(parseInt(qp.limit || '50', 10) || 50, 1), 100)
+    const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
+    const { rows } = await query(
+      env,
+      `SELECT p.id, p.user_id, u.username, u.name, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
+              p.caption, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
+              p.music_track_id, sp.created_at AS saved_at
+         FROM saved_posts sp
+         JOIN posts p ON p.id = sp.post_id
+         JOIN users u ON u.id = p.user_id
+        WHERE sp.user_id=? AND p.approved_at IS NOT NULL
+        ORDER BY sp.created_at DESC LIMIT ? OFFSET ?`,
+      [fresh.id, limit, offset],
+    )
+    const out = await Promise.all(rows.map(async r => ({
+      id: r.id, username: r.username, name: r.name, verified: !!r.verified,
+      caption: r.caption || '', likes: Number(r.likes) || 0, comments: Number(r.comments) || 0,
+      kind: 'post', created_at: r.created_at, saved_at: r.saved_at,
+      thumb_url: await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
+      music: r.music_track_id ? await (async () => {
+        const t = await query(env, 'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?', [r.music_track_id])
+        const x = t.rows[0]
+        return x ? { id: x.id, title: x.title, artist: x.artist, url: await mediaUrlOrNull(env, x.original_key, 3600), cover_url: await mediaUrlOrNull(env, x.cover_thumb_key, 3600) } : null
+      })() : null,
+    })))
+    return jsonResponse({ posts: out, nextOffset: offset + rows.length, hasMore: rows.length === limit })
+  }
+
   // ── Self-delete (Instagram-style) ─────────────────────────
   // DELETE /api/posts/:id | /api/reels/:id | /api/stories/:id — the author or an
   // admin removes their own content. Cleans R2 objects + dependent rows (likes
@@ -373,6 +424,7 @@ export async function handleFeed(request, env, ctx) {
     // post_comments has no FK — clean up explicitly. likes has no FK to posts either.
     await query(env, 'DELETE FROM post_comments WHERE scope=? AND post_id=?', [kind === 'reels' ? 'reel' : 'post', id])
     await query(env, 'DELETE FROM post_likes WHERE post_id=? AND scope=?', [id, kind === 'reels' ? 'reel' : 'post'])
+    await query(env, 'DELETE FROM saved_posts WHERE post_id=?', [id])
     await query(env, 'DELETE FROM story_views WHERE story_id=?', [id])
     await query(env, `DELETE FROM ${table} WHERE id=?`, [id])
     return jsonResponse({ ok: true, deleted: id, kind })
