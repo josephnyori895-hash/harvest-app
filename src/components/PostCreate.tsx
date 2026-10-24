@@ -49,6 +49,12 @@ export default function PostCreate({ onDone }: Props) {
   const [showPreview, setShowPreview] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
+
+  // Release temporary local previews when media is replaced or the composer closes.
+  useEffect(() => {
+    if (!previewUrl?.startsWith('blob:')) return
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [previewUrl])
   useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
 
   const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,audio/mpeg,.mp4,video/mp4' : 'image/*,video/*'
@@ -185,13 +191,26 @@ export default function PostCreate({ onDone }: Props) {
             </div>
             <div className="p-4">
               {previewUrl && file?.type.startsWith('image/') && (
-                <img src={previewUrl} alt="Post preview" className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />
+                <img src={previewUrl} alt="Post preview" className="mx-auto block w-full max-h-[55vh] object-contain rounded-2xl bg-[#F5EEDF]" />
               )}
               {previewUrl && file?.type.startsWith('video/') && (
-                <video src={previewUrl} controls className="w-full max-h-[55vh] object-contain rounded-2xl bg-black" />
+                <video src={previewUrl} controls playsInline preload="metadata" className="mx-auto block w-full max-h-[55vh] object-contain rounded-2xl bg-[#F5EEDF]" />
               )}
               {caption.trim() && <p className="mt-3 text-sm whitespace-pre-wrap">{caption.trim()}</p>}
-              {musicTrack && <p className="mt-2 text-xs text-[#766E63]">🎵 {musicTrack.title} · {musicTrack.artist}</p>}
+              {musicTrack && (
+                <div className="mt-3 rounded-2xl border border-[#E8DEC9] bg-white p-3">
+                  <p className="text-xs font-bold text-[#5B21B6]">♫ {musicTrack.title}{musicTrack.artist ? ` · ${musicTrack.artist}` : ''}</p>
+                  {musicTrack.preview_url || musicTrack.previewUrl || musicTrack.url ? (
+                    <audio className="mt-2 w-full" controls preload="none" src={musicTrack.preview_url || musicTrack.previewUrl || musicTrack.url} />
+                  ) : <p className="mt-1 text-xs text-[#766E63]">Track selected. An in-app preview is unavailable for this track.</p>}
+                </div>
+              )}
+              {file?.type.startsWith('audio/') && previewUrl && (
+                <div className="mt-3 rounded-2xl border border-[#E8DEC9] bg-white p-3">
+                  <p className="mb-2 text-xs font-bold">Audio file preview</p>
+                  <audio className="w-full" controls preload="metadata" src={previewUrl} />
+                </div>
+              )}
               {type === 'music' && (
                 <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled track'}{artist.trim() ? ` · ${artist.trim()}` : ''}</p>
               )}
@@ -236,8 +255,8 @@ export default function PostCreate({ onDone }: Props) {
         {needsFile && (
           <div className="mt-3 rounded-3xl bg-white border border-[#E8DEC9] overflow-hidden shadow-sm">
             {previewUrl ? (
-              <div className="relative bg-[#F5EEDF] aspect-[4/3] flex items-center justify-center">
-                {file?.type.startsWith('video/') ? <video src={previewUrl} controls className="w-full h-full object-contain bg-black" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />}
+              <div className="relative bg-[#F5EEDF] max-h-[60vh] min-h-[180px] flex items-center justify-center overflow-hidden">
+                {file?.type.startsWith('video/') ? <video src={previewUrl} controls playsInline preload="metadata" className="w-full max-h-[60vh] object-contain bg-[#F5EEDF]" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full max-h-[60vh] object-contain" />}
                 {file?.type.startsWith('video/') && (
                   <button onClick={() => setVideoAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-[#141210]/60 text-white text-xs font-bold" aria-label="Edit video">✎ Edit video</button>
                 )}
