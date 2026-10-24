@@ -258,6 +258,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     img: s.thumb_url || undefined,
     video: s.media_type === 'video' ? (s.video_url || undefined) : undefined,
     caption: s.caption,
+    music: s.music || null,
   })), [liveStories])
 
   // IG-style grouping: one ring per person, no matter how many stories they posted.

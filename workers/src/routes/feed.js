@@ -139,6 +139,11 @@ export async function handleFeed(request, env, ctx) {
     const out = await Promise.all(rows.map(async r => ({ ...r,
       thumb_url: await mediaUrlOrNull(env, r.thumb_key || (String(r.media_type) === 'video' ? null : r.original_key), 600),
       video_url: String(r.media_type) === 'video' ? await mediaUrlOrNull(env, r.original_key, 1800) : null,
+      music: r.music_track_id ? await (async () => {
+        const t = await query(env, 'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?', [r.music_track_id])
+        const x = t.rows[0]
+        return x ? { id: x.id, title: x.title, artist: x.artist, url: await mediaUrlOrNull(env, x.original_key, 3600), cover_url: await mediaUrlOrNull(env, x.cover_thumb_key, 3600) } : null
+      })() : null,
     })))
     return jsonResponse({ stories: out })
   }
