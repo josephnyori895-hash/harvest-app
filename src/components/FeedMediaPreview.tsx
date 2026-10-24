@@ -1,72 +1,91 @@
-// src/components/FeedMediaPreview.tsx — reel/video preview used by feed cards.
-// IG geometry: media keeps its natural ratio, clamped between 4:5 (tallest)
-// and 1.91:1 (widest). Inside the clamp it fits exactly; outside, the overflow
-// is center-cropped (object-cover). Never stretched, never letterboxed.
-
-import { useEffect, useState } from 'react'
+// Consistent, bounded video preview for community feed cards.
+// The poster and playback share one measured frame; media is never stretched.
+import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
 
 const MIN_RATIO = 4 / 5
 const MAX_RATIO = 1.91
-const clamp = (r: number) => String(Math.min(Math.max(r, MIN_RATIO), MAX_RATIO))
+const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
 
 export default function FeedMediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
   const [playing, setPlaying] = useState(false)
-  const [posterReady, setPosterReady] = useState(false)
-  const [posterFailed, setPosterFailed] = useState(false)
   const [ratio, setRatio] = useState<number | null>(null)
-  const [videoRatio, setVideoRatio] = useState<number | null>(null)
+  const [posterFailed, setPosterFailed] = useState(false)
+  const [videoFailed, setVideoFailed] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
-    let cancelled = false
-    setPosterReady(false); setPosterFailed(false); setRatio(null)
-    if (!poster) return () => { cancelled = true }
-    const img = new Image()
-    img.decoding = 'async'
-    img.onload = () => { if (!cancelled) { setRatio(img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : null); setPosterReady(true) } }
-    img.onerror = () => { if (!cancelled) setPosterFailed(true) }
-    img.src = poster
-    return () => { cancelled = true; img.onload = null; img.onerror = null }
-  }, [poster])
+    let active = true
+    setRatio(null)
+    setPosterFailed(false)
+    setVideoFailed(false)
+    if (!poster) return () => { active = false }
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => {
+      if (active && image.naturalWidth && image.naturalHeight) setRatio(image.naturalWidth / image.naturalHeight)
+    }
+    image.onerror = () => { if (active) setPosterFailed(true) }
+    image.src = poster
+    return () => { active = false; image.onload = null; image.onerror = null }
+  }, [poster, src])
 
-  // No poster available: measure the video itself instead.
-  const onMeta = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const v = e.currentTarget
-    if (v.videoWidth && v.videoHeight) setVideoRatio(v.videoWidth / v.videoHeight)
+  const onMetadata = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget
+    if (video.videoWidth > 0 && video.videoHeight > 0) setRatio(video.videoWidth / video.videoHeight)
   }
+  const frameStyle = ratio ? { aspectRatio: String(clampRatio(ratio)) } : undefined
+  const validPoster = Boolean(poster && !posterFailed)
 
-  const usePoster = Boolean(poster && posterReady && !posterFailed)
-  const effective = ratio ?? videoRatio
-  const frame = effective ? { aspectRatio: clamp(effective) } : undefined
-
-  const mediaWrapper = 'relative w-full overflow-hidden bg-[#F4E8D0] cursor-pointer'
+  useEffect(() => {
+    if (!playing) return
+    const video = videoRef.current
+    if (!video) return
+    const result = video.play()
+    if (result && typeof result.catch === 'function') result.catch(() => setVideoFailed(true))
+  }, [playing, src])
 
   if (playing) {
-    return frame ? (
-      <div className="relative w-full overflow-hidden bg-black" style={frame}>
-        <video src={src} controls autoPlay playsInline className="w-full h-full object-cover" aria-label="Video" />
+    return (
+      <div className="relative mx-auto w-full max-h-[70vh] overflow-hidden bg-[#F4E8D0]" style={frameStyle}>
+        <video
+          ref={videoRef}
+          src={src}
+          poster={validPoster ? poster : undefined}
+          controls
+          autoPlay
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={onMetadata}
+          onError={() => setVideoFailed(true)}
+          className="block h-full max-h-[70vh] w-full object-contain"
+          aria-label="Video playback"
+        />
+        {videoFailed && <div className="absolute inset-x-0 bottom-0 bg-black/75 p-2 text-center text-xs text-white">Video could not be played. Check your connection and try again.</div>}
       </div>
-    ) : (
-      <video src={src} controls autoPlay playsInline onLoadedMetadata={onMeta} className="w-full h-auto bg-black" aria-label="Video" />
     )
   }
 
   return (
     <div
-      className={mediaWrapper}
-      style={frame}
-      onClick={() => setPlaying(true)}
+      className="relative mx-auto w-full max-h-[70vh] overflow-hidden bg-[#F4E8D0] cursor-pointer"
+      style={frameStyle}
+      onClick={() => { setVideoFailed(false); setPlaying(true) }}
       role="button"
+      tabIndex={0}
       aria-label="Play video"
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlaying(true) } }}
     >
-      {usePoster
-        ? <img src={poster!} alt={alt} decoding="async" fetchPriority="high" className={frame ? 'w-full h-full object-cover' : 'w-full h-auto block'} />
-        : <div className="aspect-[4/5] max-h-[80vh] w-full">
+      {validPoster
+        ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-contain mx-auto" />
+        : <div className="aspect-[4/5] max-h-[70vh] w-full">
             {src
-              ? <VideoThumb src={src} playable className="w-full h-full block" />
-              : <div className="w-full h-full flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
+              ? <VideoThumb src={src} playable className="block h-full w-full object-contain" />
+              : <div className="flex h-full w-full items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
           </div>}
-      <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-2xl text-white shadow-lg">▶</span>
+      </span>
     </div>
   )
 }
