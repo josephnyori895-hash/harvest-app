@@ -99,32 +99,6 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
-  const autoPlaying = useRef(false)
-  const scope = p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'
-
-  // IG-style: once the member has interacted with audio at least once, a post
-  // with a song track plays as it comes into view and pauses on the way out.
-  useEffect(() => {
-    const m = p.music
-    if (!m?.url || !m.id) return
-    if (p.video) return // a reel's own video owns the audio path
-    const el = ref.current
-    if (!el || typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        if (audioAutoplayReady() && !isPlayingId(m.id) && !autoPlaying.current) {
-          autoPlaying.current = true
-          void playTrack({ id: m.id, title: m.title, artist: m.artist || 'Harvest Family Church', url: m.url, artwork: m.cover_url || null, origin: 'feed' })
-            .catch(() => {})
-        }
-      } else if (autoPlaying.current) {
-        autoPlaying.current = false
-        if (isPlayingId(m.id)) pausePlayer()
-      }
-    }, { threshold: [0, 0.6] })
-    io.observe(el)
-    return () => { io.disconnect() }
-  }, [p.music, p.video])
 
   const profile = { username: p.username, name: p.user, verified: p.verified, group_name: p.loc }
 
