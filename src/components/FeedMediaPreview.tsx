@@ -30,11 +30,16 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
     return () => { active = false; image.onload = null; image.onerror = null }
   }, [poster, src])
 
-  const onMetadata = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+  const onMetadata = (event: import('react').SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget
     if (video.videoWidth > 0 && video.videoHeight > 0) setRatio(video.videoWidth / video.videoHeight)
   }
-  const frameStyle = ratio ? { aspectRatio: String(clampRatio(ratio)) } : undefined
+  // Constrain the stage to the media's natural ratio. Portrait media should not
+  // sit in a full-width empty stage on desktop; on small screens it fills width.
+  const boundedRatio = ratio ? clampRatio(ratio) : null
+  const frameStyle = boundedRatio
+    ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
+    : { width: '100%' }
   const validPoster = Boolean(poster && !posterFailed)
 
   useEffect(() => {
