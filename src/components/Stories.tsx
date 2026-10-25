@@ -34,6 +34,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
   const [musicPreviewId, setMusicPreviewId] = useState<string | null>(activeInlineMediaTrackId())
+  const isVideo = Boolean(s?.video)
   const toggleMusic = () => {
     if (!s?.music?.id || isVideo) return
     void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
@@ -46,7 +47,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
       void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
     }
     return () => { stopInlineMediaAudio() }
-  }, [idx, s?.music?.id, s?.music?.url, isVideo])
+  }, [idx, s?.music?.id, s?.music?.url, isVideo, isPaused])
   useEffect(() => () => stopInlineMediaAudio(), [])
   const [keyboardInset, setKeyboardInset] = useState(0)
   const historyPushedRef = useRef(false)
@@ -54,7 +55,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const duration = 4000
   const isLastStory = idx >= allStories.length - 1
-  const isVideo = Boolean(s?.video)
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   const canDelete = Boolean(s?.id && (s.username === me || isAdmin))
