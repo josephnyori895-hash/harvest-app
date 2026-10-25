@@ -71,8 +71,8 @@ export default function ImageAdjuster({
     if (!imgSize) return t
     const { vw, vh } = viewportSize()
     if (!vw || !vh) return t
-    const rot = ((t.rotation % 360) + 360) % 360
-    const swapped = rot === 90 || rot === 270
+    const rotationDegrees = ((t.rotation % 360) + 360) % 360
+    const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
     const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
@@ -93,8 +93,8 @@ export default function ImageAdjuster({
     if (!imgSize) return 1
     const { vw, vh } = viewportSize()
     if (!vw || !vh) return 1
-    const rot = ((transform.rotation % 360) + 360) % 360
-    const swapped = rot === 90 || rot === 270
+    const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+    const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
     const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
@@ -150,8 +150,8 @@ export default function ImageAdjuster({
     await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error('could not read image')); img.src = srcUrl })
 
     const { vw, vh } = viewportSize()
-    const rot = ((transform.rotation % 360) + 360) % 360
-    const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
+    const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+    const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
     const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
     const outW = Math.max(1, Math.round(cw >= ch ? 1440 : 1440 * cw / ch))
     const outH = Math.max(1, Math.round(ch > cw ? 1440 : 1440 * ch / cw))
@@ -160,7 +160,7 @@ export default function ImageAdjuster({
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH)
 
-    const swapped = rot === 90 || rot === 270
+    const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
     const minScale = Math.max(cw / iw, ch / ih) || 1
@@ -169,7 +169,7 @@ export default function ImageAdjuster({
 
     ctx.save()
     ctx.translate(outW / 2 + transform.x * (outW / cw), outH / 2 + transform.y * (outH / ch))
-    ctx.rotate((rot * Math.PI) / 180)
+    ctx.rotate((rotationDegrees * Math.PI) / 180)
     const drawnW = swapped ? drawH : drawW
     const drawnH = swapped ? drawW : drawH
     ctx.drawImage(img, -drawnW / 2, -drawnH / 2, drawnW, drawnH)
@@ -222,23 +222,23 @@ export default function ImageAdjuster({
               className="max-w-none pointer-events-none"
               style={{
                 width: (() => {
-                  const rot = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rot === 90 || rot === 270
+                  const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+                  const swapped = rotationDegrees === 90 || rotationDegrees === 270
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
+                  const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1
                   return iw * minScale * transform.scale
                 })(),
                 height: (() => {
-                  const rot = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rot === 90 || rot === 270
+                  const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+                  const swapped = rotationDegrees === 90 || rotationDegrees === 270
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
+                  const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1
                   return ih * minScale * transform.scale
