@@ -2,7 +2,8 @@
 // Preserve the church's visual identity while keeping media clear and responsive.
 
 import { useEffect, useRef, useState } from 'react'
-import { playTrack, pausePlayer, subscribePlayer, isPlayingId, audioAutoplayReady } from '../lib/audioPlayer'
+import { audioAutoplayReady } from '../lib/audioPlayer'
+import { playInlineTrack, pauseInlineAudio, subscribeInlineAudio, getInlineAudioState, pauseAllMediaAudio } from '../lib/inlineMediaAudio'
 import FeedMediaPreview from './FeedMediaPreview'
 
 export type FeedCardPost = {
@@ -46,14 +47,14 @@ const fmtCount = (n: number): string => {
 
 function MusicChip({ p }: { p: FeedCardPost }) {
   const m = p.music
-  const [, tick] = useState(0)
-  useEffect(() => subscribePlayer(() => tick(x => x + 1)), [])
+  const [audioState, setAudioState] = useState(getInlineAudioState())
+  useEffect(() => subscribeInlineAudio(setAudioState), [])
   if (!m?.id || !m.title) return null
-  const playing = isPlayingId(m.id)
+  const playing = audioState.id === m.id && audioState.playing
   const start = async () => {
-    if (playing) { pausePlayer(); return }
+    if (playing) { pauseInlineAudio(); return }
     if (!m.url) return
-    await playTrack({ id: m.id, title: m.title, artist: m.artist || 'Harvest Family Church', url: m.url, artwork: m.cover_url || null, origin: 'feed' })
+    await playInlineTrack({ id: m.id, title: m.title, artist: m.artist, url: m.url })
   }
   return (
     <button type="button" onClick={() => void start()} className="mt-2 flex items-center gap-2 text-left" aria-label={playing ? `Pause ${m.title}` : `Play ${m.title}`}>
@@ -107,28 +108,31 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const autoPlaying = useRef(false)
   const scope = p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'
 
-  // IG-style: once the member has interacted with audio at least once, a post
-  // with a song track plays as it comes into view and pauses on the way out.
+  // Feed soundtracks are inline audio, never the Worship Room player. Only
+  // autoplay after a previous user audio gesture, and release audio on exit.
   useEffect(() => {
     const m = p.music
-    if (!m?.url || !m.id) return
-    if (p.video) return // a reel's own video owns the audio path
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        if (audioAutoplayReady() && !isPlayingId(m.id) && !autoPlaying.current) {
-          autoPlaying.current = true
-          void playTrack({ id: m.id, title: m.title, artist: m.artist || 'Harvest Family Church', url: m.url, artwork: m.cover_url || null, origin: 'feed' })
-            .catch(() => {})
-        }
-      } else if (autoPlaying.current) {
+      const active = entry.isIntersecting && entry.intersectionRatio >= 0.6
+      if (p.video && active) {
         autoPlaying.current = false
-        if (isPlayingId(m.id)) pausePlayer()
+        pauseAllMediaAudio() // audible video takes priority over added music
+      } else if (!active && autoPlaying.current) {
+        autoPlaying.current = false
+        const current = getInlineAudioState()
+        if (current.id === m?.id) pauseInlineAudio()
+      } else if (!p.video && active && m?.id && m.url && audioAutoplayReady()) {
+        const current = getInlineAudioState()
+        if (current.id !== m.id || !current.playing) {
+          autoPlaying.current = true
+          void playInlineTrack({ id: m.id, title: m.title, artist: m.artist, url: m.url }).catch(() => {})
+        }
       }
     }, { threshold: [0, 0.6] })
     io.observe(el)
-    return () => { io.disconnect() }
+    return () => { io.disconnect(); if (autoPlaying.current) { const current = getInlineAudioState(); if (current.id === p.music?.id) pauseInlineAudio() } }
   }, [p.music, p.video])
 
   const profile = { username: p.username, name: p.user, verified: p.verified, group_name: p.loc }
