@@ -1,7 +1,5 @@
 // One lightweight audio channel for music attached to feed media and stories.
 // Attached soundtrack playback intentionally never opens the Worship Room player.
-import { pausePlayer } from './audioPlayer'
-
 let inlineAudio: HTMLAudioElement | null = null
 let activeId: string | null = null
 let onChange: ((id: string | null) => void) | null = null
@@ -28,7 +26,6 @@ export async function toggleInlineMediaTrack(track: { id: string; url?: string |
     return false
   }
   stopInlineMediaAudio()
-  pausePlayer()
   const audio = new Audio(track.url)
   inlineAudio = audio
   activeId = track.id
