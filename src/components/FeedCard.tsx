@@ -53,6 +53,7 @@ function MusicChip({ p }: { p: FeedCardPost }) {
   const playing = playingId === m.id
   const start = async () => {
     if (!m.url) return
+    pausePlayer()
     await toggleInlineMediaTrack({ id: m.id, url: m.url }, setPlayingId)
   }
   return (
