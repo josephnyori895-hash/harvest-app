@@ -6,7 +6,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { playTrack, pausePlayer, subscribePlayer, isPlayingId, audioAutoplayReady } from '../lib/audioPlayer'
 import FeedMediaPreview from './FeedMediaPreview'
-import MediaThumbnail from './MediaThumbnail'
 
 export type FeedCardPost = {
   key: string
@@ -74,6 +73,35 @@ function MusicChip({ p }: { p: FeedCardPost }) {
   )
 }
 
+function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
+  const [ratio, setRatio] = useState<number | null>(null)
+  const [failed, setFailed] = useState(false)
+  const boundedRatio = ratio ? Math.min(Math.max(ratio, 4 / 5), 1.91) : null
+  const style = boundedRatio
+    ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
+    : { width: '100%' as const }
+  return (
+    <div className="mx-auto flex max-h-[70vh] justify-center overflow-hidden bg-[#F4E8D0]" style={style}>
+      {failed ? (
+        <div className="flex min-h-40 w-full items-center justify-center text-sm text-[#766E63]">Photo preview unavailable</div>
+      ) : (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onLoad={event => {
+            const image = event.currentTarget
+            if (image.naturalWidth && image.naturalHeight) setRatio(image.naturalWidth / image.naturalHeight)
+          }}
+          onError={() => setFailed(true)}
+          className="block h-full max-h-[70vh] w-full object-contain"
+        />
+      )}
+    </div>
+  )
+}
+
 export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMenu, onLike, onComment, onShare, saved, onSave, onOpenUser }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -127,7 +155,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
       {p.video ? (
         <FeedMediaPreview src={p.video} poster={p.img} />
       ) : p.img ? (
-        <MediaThumbnail alt="" className="block w-full h-auto max-h-[70vh] object-contain mx-auto" src={p.img} fallbackIcon="🖼️" />
+        <FeedImagePreview src={p.img} />
       ) : (
         <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>
       )}
