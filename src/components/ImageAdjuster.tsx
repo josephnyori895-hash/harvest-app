@@ -234,7 +234,10 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih) || 1
+                  const rot = ((transform.rotation % 360) + 360) % 360
+                  const sourceRatio = rot === 90 || rot === 270 ? imgSize.w / imgSize.h : imgSize.h / imgSize.w
+                  const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
+                  const minScale = Math.max(cw / iw, ch / ih) || 1
                   return iw * minScale * transform.scale
                 })(),
                 height: (() => {
@@ -243,7 +246,10 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.max(vw / iw, vh / ih) || 1
+                  const rot = ((transform.rotation % 360) + 360) % 360
+                  const sourceRatio = rot === 90 || rot === 270 ? imgSize.w / imgSize.h : imgSize.h / imgSize.w
+                  const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
+                  const minScale = Math.max(cw / iw, ch / ih) || 1
                   return ih * minScale * transform.scale
                 })(),
                 transform: `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
