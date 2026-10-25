@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
 
-const MIN_RATIO = 4 / 5
+const MIN_RATIO = 0.5
 const MAX_RATIO = 1.91
 const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
 
