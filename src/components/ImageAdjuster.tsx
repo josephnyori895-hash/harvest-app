@@ -234,7 +234,6 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const rot = ((transform.rotation % 360) + 360) % 360
                   const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1
@@ -246,7 +245,6 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const rot = ((transform.rotation % 360) + 360) % 360
                   const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1

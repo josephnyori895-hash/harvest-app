@@ -6,6 +6,8 @@
 // React's lifecycle: screens come and go, worship keeps playing.
 // A floating NowPlayingBar (rendered in App.jsx) subscribes here.
 //
+import { stopInlineMediaAudio } from './inlineMediaAudio'
+
 // MediaSession metadata is set so Android can surface playback controls with
 // the current track when the WebView exposes them.
 
@@ -99,6 +101,8 @@ const ensureAudio = (): HTMLAudioElement => {
 
 /** Play a track. If the same id is already loaded, this toggles pause/play. */
 export async function playTrack(track: PlayerTrack): Promise<boolean> {
+  // Worship Room playback takes ownership of the single app-wide audio channel.
+  stopInlineMediaAudio()
   if (!track.url) {
     patch({ error: 'This track has no audio source yet' })
     return false

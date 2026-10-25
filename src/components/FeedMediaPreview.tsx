@@ -2,6 +2,8 @@
 // The poster and playback share one measured frame; media is never stretched.
 import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
+import { pausePlayer } from '../lib/audioPlayer'
+import { stopInlineMediaAudio } from '../lib/inlineMediaAudio'
 
 const MIN_RATIO = 0.5
 const MAX_RATIO = 1.91
@@ -46,6 +48,8 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
     if (!playing) return
     const video = videoRef.current
     if (!video) return
+    pausePlayer()
+    stopInlineMediaAudio()
     const result = video.play()
     if (result && typeof result.catch === 'function') result.catch(() => setVideoFailed(true))
   }, [playing, src])
