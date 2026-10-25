@@ -60,37 +60,38 @@ export default function ImageAdjuster({
 
   const activeRatio = PRESETS.find(p => p.id === aspect)?.ratio ?? null
 
-  // Fit the entire picked image inside the editor at the default zoom.
-  // Do not force a portrait flyer/photo to "cover" the viewport: users must be
-  // able to see the full media and deliberately zoom in when they want a crop.
+  // Presets define a centered crop window inside the responsive editor viewport.
+  // Original follows the rotated source image's own proportions.
+  const cropSize = useCallback((vw: number, vh: number, ratio: number | null) => {
+    if (!vw || !vh) return { cw: vw, ch: vh }
+    const target = ratio ?? (imgSize ? imgSize.w / imgSize.h : vw / vh)
+    return vw / vh > target
+      ? { cw: vh * target, ch: vh }
+      : { cw: vw, ch: vw / target }
+  }, [imgSize])
+
   const clampTransform = useCallback((t: Transform): Transform => {
     if (!imgSize) return t
     const { vw, vh } = viewportSize()
     if (!vw || !vh) return t
-    // Effective displayed image dimensions at scale 1.
     const rot = ((t.rotation % 360) + 360) % 360
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    // Cover the viewport at minimum zoom so the export cannot expose canvas
-    // corners. The crop is intentional; users can zoom out only to this fit.
-    const fit = Math.max(vw / iw, vh / ih)
-    const minScale = fit > 0 ? fit : 1
-    // At the minimum zoom the complete image is visible; panning is only allowed
-    // after zooming far enough that the image exceeds the viewport.
-    const dw = iw * minScale * t.scale
-    const dh = ih * minScale * t.scale
-    const maxX = Math.max((dw - vw) / 2, 0)
-    const maxY = Math.max((dh - vh) / 2, 0)
+    const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
+    const fit = Math.max(cw / iw, ch / ih) || 1
+    const dw = iw * fit * t.scale
+    const dh = ih * fit * t.scale
+    const maxX = Math.max((dw - cw) / 2, 0)
+    const maxY = Math.max((dh - ch) / 2, 0)
     return {
       ...t,
       scale: Math.min(Math.max(t.scale, MIN_SCALE), MAX_SCALE),
       x: Math.min(Math.max(t.x, -maxX), maxX),
       y: Math.min(Math.max(t.y, -maxY), maxY),
     }
-  }, [imgSize, viewportSize])
+  }, [imgSize, viewportSize, cropSize, activeRatio])
 
-  // minScale helper shared by zoom slider.
   const minScaleFor = useCallback(() => {
     if (!imgSize) return 1
     const { vw, vh } = viewportSize()
@@ -99,8 +100,9 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    return Math.max(vw / iw, vh / ih) || 1
-  }, [imgSize, transform.rotation, viewportSize])
+    const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
+    return Math.max(cw / iw, ch / ih) || 1
+  }, [imgSize, transform.rotation, viewportSize, cropSize, activeRatio])
 
   useEffect(() => { setZoom(transform.scale) }, [transform.scale])
 
@@ -154,24 +156,25 @@ export default function ImageAdjuster({
     await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error('could not read image')); img.src = srcUrl })
 
     const { vw, vh } = viewportSize()
-    // Crop box in source pixels: the viewport maps to the exported rectangle.
-    const outW = vw * 2 // 2x for sharpness, capped later
-    const outH = Math.round(outW * (vh / vw))
+    const rot = ((transform.rotation % 360) + 360) % 360
+    const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
+    const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
+    const outW = Math.max(1, Math.round(cw >= ch ? 1440 : 1440 * cw / ch))
+    const outH = Math.max(1, Math.round(ch > cw ? 1440 : 1440 * ch / cw))
     const canvas = document.createElement('canvas')
     canvas.width = outW; canvas.height = outH
     const ctx = canvas.getContext('2d')!
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH)
 
-    const rot = ((transform.rotation % 360) + 360) % 360
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const minScale = Math.max(vw / iw, vh / ih) || 1
+    const minScale = Math.max(cw / iw, ch / ih) || 1
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
 
     ctx.save()
-    ctx.translate(outW / 2 + transform.x * 2, outH / 2 + transform.y * 2)
+    ctx.translate(outW / 2 + transform.x * (outW / cw), outH / 2 + transform.y * (outH / ch))
     ctx.rotate((rot * Math.PI) / 180)
     const drawnW = swapped ? drawH : drawW
     const drawnH = swapped ? drawW : drawH
@@ -249,11 +252,14 @@ export default function ImageAdjuster({
             />
           </div>
         )}
-        {/* crop frame overlay */}
-        <div className="absolute inset-0 pointer-events-none border-2 border-white/80" />
-        <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
-          {Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/20" />)}
-        </div>
+        {/* This frame is the same centered rectangle used for the saved crop. */}
+        {(() => {
+          const { vw, vh } = viewportSize()
+          const { cw, ch } = cropSize(vw, vh, activeRatio ?? (imgSize ? imgSize.w / imgSize.h : vw / vh))
+          return <div className="absolute pointer-events-none border-2 border-white/90" data-testid="image-adjuster-crop-frame" style={{ width: cw, height: ch, left: (vw - cw) / 2, top: (vh - ch) / 2, boxShadow: '0 0 0 9999px rgba(49, 38, 64, 0.28)' }}>
+            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/25" />)}</div>
+          </div>
+        })()}
       </div>
 
       <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#FFFBF0]">
