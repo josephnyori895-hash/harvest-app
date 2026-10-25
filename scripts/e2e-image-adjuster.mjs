@@ -19,6 +19,7 @@ if (!baseUrl || !username || !pin || !chromePath) {
 const cases = [
   { id: 'original', label: 'Original', ratio: 3 / 2 },
   { id: '1:1', label: 'Square', ratio: 1 },
+  { id: '3:4', label: 'Tall portrait', ratio: 3 / 4 },
   { id: '4:5', label: 'Portrait', ratio: 4 / 5 },
   { id: '16:9', label: 'Wide', ratio: 16 / 9 },
 ]
@@ -149,7 +150,7 @@ try {
     console.log(`PASS ${testCase.label}: ${preview.width}x${preview.height}; border/content pixel checks passed; Preview and Details match`)
   }
 
-  console.log('PASS ImageAdjuster editor flow: Original, Square, Portrait and Wide, including pixel-level border/content checks')
+  console.log('PASS ImageAdjuster editor flow: Original, Square, Tall portrait, Portrait and Wide, including pixel-level border/content checks')
 } catch (error) {
   console.error(`FAIL ImageAdjuster editor flow: ${error instanceof Error ? error.stack || error.message : error}`)
   process.exitCode = 1
