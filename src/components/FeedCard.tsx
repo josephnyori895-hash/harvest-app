@@ -1,7 +1,5 @@
-// src/components/FeedCard.tsx — IG-style community post card.
-// Full-bleed media, tight header, compact icon action row, and a song chip
-// that actually plays the attached worship track (tap, or auto like IG once
-// the member has interacted with audio this session).
+// Harvest Family community post card.
+// Preserve the church's visual identity while keeping media clear and responsive.
 
 import { useEffect, useRef, useState } from 'react'
 import { playTrack, pausePlayer, subscribePlayer, isPlayingId, audioAutoplayReady } from '../lib/audioPlayer'
@@ -76,7 +74,7 @@ function MusicChip({ p }: { p: FeedCardPost }) {
 function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
   const [ratio, setRatio] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
-  const boundedRatio = ratio ? Math.min(Math.max(ratio, 4 / 5), 1.91) : null
+  const boundedRatio = ratio ? Math.min(Math.max(ratio, 0.5), 1.91) : null
   const style = boundedRatio
     ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
     : { width: '100%' as const }
