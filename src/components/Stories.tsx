@@ -6,6 +6,8 @@ import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
+import { pausePlayer } from '../lib/audioPlayer'
+import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
@@ -31,18 +33,21 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [showViews, setShowViews] = useState(false)
   const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
-  const [musicPreviewId, setMusicPreviewId] = useState<string | null>(null)
-  const musicAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [musicPreviewId, setMusicPreviewId] = useState<string | null>(activeInlineMediaTrackId())
   const toggleMusic = () => {
-    if (!s?.music?.id) return
-    if (musicPreviewId === s.music.id) { musicAudioRef.current?.pause(); musicAudioRef.current = null; setMusicPreviewId(null); return }
-    if (musicAudioRef.current) { musicAudioRef.current.pause(); musicAudioRef.current = null }
-    const a = new Audio(s.music.url)
-    a.onended = () => { setMusicPreviewId(null); musicAudioRef.current = null }
-    musicAudioRef.current = a
-    a.play().catch(() => {})
-    setMusicPreviewId(s.music.id)
+    if (!s?.music?.id || isVideo) return
+    void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
   }
+  useEffect(() => {
+    // Soundtracks are tied to the active photo story, never to the viewer lifetime.
+    stopInlineMediaAudio()
+    pausePlayer()
+    if (s?.music?.id && !isVideo && !isPaused) {
+      void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
+    }
+    return () => { stopInlineMediaAudio() }
+  }, [idx, s?.music?.id, s?.music?.url, isVideo])
+  useEffect(() => () => stopInlineMediaAudio(), [])
   const [keyboardInset, setKeyboardInset] = useState(0)
   const historyPushedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -130,6 +135,9 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     const v = videoRef.current
     if (!v) return
     v.currentTime = 0
+    // A story video's own soundtrack takes priority over attached music.
+    stopInlineMediaAudio()
+    pausePlayer()
     v.muted = storyMuted
     const tryPlay = () => {
       v.play().then(() => setVideoState('playing')).catch(() => {
@@ -319,7 +327,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
           </>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-6"><p className="font-bold text-white text-lg">{s.name}</p><p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>{s.music && <div className="flex gap-2 items-center mt-2 p-2 bg-black/60 rounded-lg"><img src={s.music.cover} className="w-8 h-8 rounded" /><div className="flex-1"><p className="text-xs font-semibold">🎵 {s.music.title}</p><p className="text-[11px] text-stone-400">{s.music.artist}</p></div><button type="button" onClick={(e) => { e.stopPropagation(); toggleMusic() }} className="text-xs bg-white text-black px-2 py-1 rounded-full" aria-label={musicPreviewId === s.music.id ? 'Pause story music' : 'Play story music'}>{musicPreviewId === s.music.id ? '⏸' : '▶'}</button></div>}</div>
+        <div className="absolute bottom-0 left-0 right-0 p-6"><p className="font-bold text-white text-lg">{s.name}</p><p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>{s.music && <div className="flex gap-2 items-center mt-2 p-2 bg-black/60 rounded-lg"><img src={s.music.cover} className="w-8 h-8 rounded" /><div className="flex-1"><p className="text-xs font-semibold">🎵 {s.music.title}</p><p className="text-[11px] text-stone-400">{s.music.artist}</p></div><button type="button" onClick={(e) => { e.stopPropagation(); toggleMusic() }} disabled={isVideo} className="text-xs bg-white text-black px-2 py-1 rounded-full disabled:opacity-40" aria-label={isVideo ? 'Video audio is playing with this story' : musicPreviewId === s.music.id ? 'Pause story music' : 'Play story music'}>{isVideo ? '♫ Video audio' : musicPreviewId === s.music.id ? '⏸' : '▶'}</button></div>}</div>
         {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">‹</button>}
         {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white text-xl">›</button>}
       </div>
