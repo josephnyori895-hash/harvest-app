@@ -398,6 +398,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [musicLoading, setMusicLoading] = useState(false)
   const [previewId, setPreviewId] = useState<any>(null)
   const previewRef = useRef<HTMLAudioElement | null>(null)
+  useEffect(() => () => { previewRef.current?.pause(); previewRef.current = null }, [])
   const isVideoFile = Boolean(fileObj?.type.startsWith('video/'))
   const [timer, setTimer] = useState(0)
   const [showFilters, setShowFilters] = useState(false)
@@ -423,7 +424,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
   const searchMusic = async (term: string) => { if (!term.trim()) { setMusicResults([]); return }; setMusicLoading(true); try { const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&limit=8`); const j = await r.json(); setMusicResults(j.results.map((x: any) => ({ id: x.trackId, title: x.trackName, artist: x.artistName, cover: x.artworkUrl100?.replace('100x100', '200x200'), url: x.previewUrl }))) } catch { setMusicResults([]) }; setMusicLoading(false) }
-  const togglePreview = (m: any) => { if (previewId === m.id) { previewRef.current?.pause(); setPreviewId(null); return }; if (previewRef.current) previewRef.current.pause(); const a = new Audio(m.url); a.play().catch(() => {}); (previewRef as any).current = a; setPreviewId(m.id); a.onended = () => setPreviewId(null) }
+  const togglePreview = (m: any) => { if (!m?.url) return; if (previewId === m.id) { previewRef.current?.pause(); previewRef.current = null; setPreviewId(null); return }; if (previewRef.current) previewRef.current.pause(); const a = new Audio(m.url); previewRef.current = a; a.onended = () => { setPreviewId(null); previewRef.current = null }; a.onerror = () => { setPreviewId(null); previewRef.current = null }; a.play().catch(() => { setPreviewId(null); previewRef.current = null }); setPreviewId(m.id) }
   const chooseMusic = (m: any) => { setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
   const MOOD_PICKS = [
     { mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] },
