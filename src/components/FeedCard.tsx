@@ -50,11 +50,11 @@ function MusicChip({ p }: { p: FeedCardPost }) {
   const [playingId, setPlayingId] = useState<string | null>(activeInlineMediaTrackId())
   useEffect(() => subscribeInlineMediaAudio(setPlayingId), [])
   if (!m?.id || !m.title) return null
-  const playing = playingId === m.id
+  const playing = String(playingId) === String(m.id)
   const start = async () => {
     if (!m.url) return
     pausePlayer()
-    await toggleInlineMediaTrack({ id: m.id, url: m.url }, setPlayingId)
+    await toggleInlineMediaTrack({ id: String(m.id), url: m.url }, setPlayingId)
   }
   return (
     <button type="button" onClick={() => void start()} className="mt-2 flex items-center gap-2 text-left" aria-label={playing ? `Pause ${m.title}` : `Play ${m.title}`}>
