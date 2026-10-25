@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// ImageAdjuster — Instagram-style pre-post editing for photos.
+// ImageAdjuster — Harvest Family photo adjustments.
 // Drag to reposition, pinch or slider to zoom, 90° rotate, and crop presets
-// (original / square / portrait / landscape). "Save" bakes the adjustments
+// (original / square / portrait / wide). "Save" bakes the adjustments
 // into a JPEG blob that replaces the picked file before upload, so the server
 // receives exactly what the user sees.
 //
 // Pure-canvas implementation (no external libs) so it works in the APK WebView.
 
-export type AspectPreset = 'original' | '1:1' | '4:5' | '16:9'
+export type AspectPreset = 'original' | '1:1' | '3:4' | '4:5' | '16:9'
 
 const PRESETS: { id: AspectPreset; label: string; box: string; ratio: number | null }[] = [
   { id: 'original', label: 'Original', box: 'w-6 h-6', ratio: null },
   { id: '1:1', label: 'Square', box: 'w-6 h-6', ratio: 1 },
+  { id: '3:4', label: 'Tall portrait', box: 'w-5 h-6', ratio: 3 / 4 },
   { id: '4:5', label: 'Portrait', box: 'w-5 h-6', ratio: 4 / 5 },
   { id: '16:9', label: 'Wide', box: 'w-7 h-4', ratio: 16 / 9 },
 ]
@@ -71,8 +72,8 @@ export default function ImageAdjuster({
     const swapped = rot === 90 || rot === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    // Cover the viewport at minimum zoom (IG-style): the crop can never show
-    // the black export canvas, so posts can't get baked-in letterbox bars.
+    // Cover the viewport at minimum zoom so the export cannot expose canvas
+    // corners. The crop is intentional; users can zoom out only to this fit.
     const fit = Math.max(vw / iw, vh / ih)
     const minScale = fit > 0 ? fit : 1
     // At the minimum zoom the complete image is visible; panning is only allowed
@@ -202,16 +203,16 @@ export default function ImageAdjuster({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#141210] flex flex-col" role="dialog" aria-label="Adjust image">
-      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-stone-800">
+    <div className="fixed inset-0 z-[60] bg-[#FFFBF0] flex flex-col" role="dialog" aria-label="Adjust image">
+      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9] bg-[#FFFBF0]">
         <button onClick={onCancel} className="text-sm text-stone-300 px-2 py-2" aria-label="Cancel">✕ Cancel</button>
         <p className="text-sm font-bold text-white">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-sky-400 px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments">{rotating ? '…' : 'Save ✓'}</button>
+        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-[#C4B5FD] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">{rotating ? '…' : 'Save ✓'}</button>
       </div>
 
       <div
         ref={viewportRef}
-        className="relative flex-1 overflow-hidden touch-none select-none bg-[#111]"
+        className="relative flex-1 overflow-hidden touch-none select-none bg-[#F4E8D0]"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
         style={{ cursor: 'grab' }}
@@ -239,7 +240,7 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const minScale = Math.min(vw / iw, vh / ih) || 1
+                  const minScale = Math.max(vw / iw, vh / ih) || 1
                   return ih * minScale * transform.scale
                 })(),
                 transform: `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
@@ -255,7 +256,7 @@ export default function ImageAdjuster({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-stone-800 px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#141210]">
+      <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#FFFBF0]">
         <div className="flex items-center gap-3">
           <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍−</span>
           <input
@@ -276,6 +277,7 @@ export default function ImageAdjuster({
                 onClick={() => { setAspect(p.id); setTransform({ x: 0, y: 0, scale: 1, rotation: 0 }); setZoom(1) }}
                 className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
                 aria-pressed={aspect === p.id}
+                data-testid={`image-adjuster-aspect-${p.id}`}
               >
                 <span className={`${p.box} rounded-sm border-2 ${aspect === p.id ? 'border-sky-400' : 'border-stone-500'}`} />
                 <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-sky-400' : 'text-stone-400'}`}>{p.label}</span>
