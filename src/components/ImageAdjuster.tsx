@@ -261,7 +261,9 @@ export default function ImageAdjuster({
         {/* This frame is the same centered rectangle used for the saved crop. */}
         {(() => {
           const { vw, vh } = viewportSize()
-          const { cw, ch } = cropSize(vw, vh, activeRatio ?? (imgSize ? imgSize.w / imgSize.h : vw / vh))
+          const rotated = ((transform.rotation % 360) + 360) % 360
+          const sourceRatio = imgSize ? (rotated === 90 || rotated === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h) : vw / vh
+          const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
           return <div className="absolute pointer-events-none border-2 border-white/90" data-testid="image-adjuster-crop-frame" style={{ width: cw, height: ch, left: (vw - cw) / 2, top: (vh - ch) / 2, boxShadow: '0 0 0 9999px rgba(49, 38, 64, 0.28)' }}>
             <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/25" />)}</div>
           </div>
