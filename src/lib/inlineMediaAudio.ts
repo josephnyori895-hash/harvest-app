@@ -16,13 +16,15 @@ export function stopInlineMediaAudio() {
   const previous = inlineAudio
   inlineAudio = null
   activeId = null
+  const previousChange = onChange
   onChange = null
   if (previous) {
     previous.pause()
     previous.onended = null
     previous.onerror = null
   }
-  notify(null)
+  listeners.forEach(listener => listener(null))
+  previousChange?.(null)
 }
 
 export async function toggleInlineMediaTrack(track: { id: string; url?: string | null }, changed?: (id: string | null) => void): Promise<boolean> {
