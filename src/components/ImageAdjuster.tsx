@@ -42,7 +42,6 @@ export default function ImageAdjuster({
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const pinchRef = useRef<{ dist: number; baseScale: number } | null>(null)
 
-  // Load the picked file into an <img> we can measure and draw.
   useEffect(() => {
     const url = URL.createObjectURL(file)
     setSrcUrl(url)
@@ -60,8 +59,6 @@ export default function ImageAdjuster({
 
   const activeRatio = PRESETS.find(p => p.id === aspect)?.ratio ?? null
 
-  // Presets define a centered crop window inside the responsive editor viewport.
-  // Original follows the rotated source image's own proportions.
   const cropSize = useCallback((vw: number, vh: number, ratio: number | null) => {
     if (!vw || !vh) return { cw: vw, ch: vh }
     const target = ratio ?? (imgSize ? imgSize.w / imgSize.h : vw / vh)
@@ -115,7 +112,6 @@ export default function ImageAdjuster({
     setZoom(1)
   }
 
-  // Drag to pan (mouse + touch).
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.pointerType === 'touch' && (e as any).isPrimary === false) return
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
@@ -128,7 +124,6 @@ export default function ImageAdjuster({
   }
   const onPointerUp = () => { dragRef.current = null }
 
-  // Two-finger pinch zoom.
   const onTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length !== 2) return
     const [a, b] = [e.touches[0], e.touches[1]]
@@ -149,7 +144,6 @@ export default function ImageAdjuster({
     setTransform(t => clampTransform({ ...t, scale: Math.max(v, min) }))
   }
 
-  // Bake the visible crop into a JPEG at up to 1440px on the long edge.
   const exportBlob = async (): Promise<Blob> => {
     if (!imgSize || !srcUrl) throw new Error('image not ready')
     const img = new Image()
@@ -181,7 +175,6 @@ export default function ImageAdjuster({
     ctx.drawImage(img, -drawnW / 2, -drawnH / 2, drawnW, drawnH)
     ctx.restore()
 
-    // Cap long edge at 1440px to keep uploads small.
     const long = Math.max(outW, outH)
     let final = canvas
     if (long > 1440) {
@@ -210,7 +203,7 @@ export default function ImageAdjuster({
       <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9] bg-[#FFFBF0]">
         <button onClick={onCancel} className="text-sm text-stone-300 px-2 py-2" aria-label="Cancel">✕ Cancel</button>
         <p className="text-sm font-bold text-white">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-[#C4B5FD] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">{rotating ? '…' : 'Save ✓'}</button>
+        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-[#C4B5FD] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">Save</button>
       </div>
 
       <div
@@ -234,7 +227,6 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const rot = ((transform.rotation % 360) + 360) % 360
                   const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1
@@ -246,7 +238,6 @@ export default function ImageAdjuster({
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
                   const { vw, vh } = viewportSize()
-                  const rot = ((transform.rotation % 360) + 360) % 360
                   const sourceRatio = rot === 90 || rot === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
                   const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
                   const minScale = Math.max(cw / iw, ch / ih) || 1
@@ -258,13 +249,12 @@ export default function ImageAdjuster({
             />
           </div>
         )}
-        {/* This frame is the same centered rectangle used for the saved crop. */}
         {(() => {
           const { vw, vh } = viewportSize()
           const rotated = ((transform.rotation % 360) + 360) % 360
           const sourceRatio = imgSize ? (rotated === 90 || rotated === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h) : vw / vh
           const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
-          return <div className="absolute pointer-events-none border-2 border-white/90" data-testid="image-adjuster-crop-frame" style={{ width: cw, height: ch, left: (vw - cw) / 2, top: (vh - ch) / 2, boxShadow: '0 0 0 9999px rgba(49, 38, 64, 0.28)' }}>
+          return <div className="absolute pointer-events-none border-2 border-white/90" data-testid="image-adjuster-crop-frame" style={{ width: cw, height: ch, left: (vw - cw) / 2, top: (vh - ch) / 2 }}>
             <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/25" />)}</div>
           </div>
         })()}
@@ -305,7 +295,6 @@ export default function ImageAdjuster({
   )
 }
 
-// Capture a frame from a video at a given time — used by the reel cover picker.
 export async function captureVideoFrame(videoUrl: string, timeSec: number): Promise<Blob | null> {
   return new Promise(resolve => {
     const v = document.createElement('video')
