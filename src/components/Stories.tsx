@@ -398,8 +398,39 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     const adjusted = new File([blob], 'story.jpg', { type: 'image/jpeg' })
     setFileObj(adjusted); setFileName('story.jpg'); setFileUrl(preview); setAdjusting(false)
   }
-  const applyFilter = (imgUrl: string, f: string) => { if (f === 'Original') return imgUrl; const c = document.createElement('canvas'); const ctx = c.getContext('2d'); if (!ctx) return imgUrl; const img = new Image(); return new Promise<string>((resolve) => { img.onload = () => { c.width = img.naturalWidth; c.height = img.naturalHeight; ctx.filter = 'none'; ctx.drawImage(img, 0, 0); const pixel = ctx.getImageData(0, 0, c.width, c.height); const data = pixel.data; for (let i = 0; i < data.length; i += 4) { const r = data[i]; const g = data[i + 1]; const b = data[i + 2]; if (f === 'Clarendon') { data[i] = Math.min(255, r * 1.2); data[i + 1] = Math.min(255, g * 1.05 + 12); data[i + 2] = Math.min(255, b * 1.1 + 10); } else if (f === 'Juno') { data[i] = Math.min(255, r * 1.15); data[i + 1] = Math.min(255, g * 1.02); data[i + 2] = Math.min(255, b * 1.25); } else if (f === 'Aden') { data[i] = Math.min(255, r * 1.25); data[i + 1] = Math.min(255, g * 1.1); data[i + 2] = Math.min(255, b * 0.9); } else if (f === 'Lark') { data[i] = Math.min(255, r * 0.98); data[i + 1] = Math.min(255, g * 1.15); data[i + 2] = Math.min(255, b * 0.96); } else if (f === 'Moody') { data[i] = Math.min(255, r * 0.7); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.2); } else if (f === 'Valencia') { data[i] = Math.min(255, r * 1.3); data[i + 1] = Math.min(255, g * 0.96); data[i + 2] = Math.min(255, b * 0.9); } else if (f === 'Perpetua') { data[i] = Math.min(255, r * 1.18); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 1.22); } else if (f === 'Willow') { data[i] = Math.min(255, r * 0.9); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 0.88); } else if (f === 'Gingham') { data[i] = Math.min(255, r * 1.12); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.18); } }
-        ctx.putImageData(pixel, 0, 0); resolve(c.toDataURL('image/jpeg', 0.9)); }; img.src = imgUrl }) }
+  const applyFilter = (imgUrl: string, f: string) => {
+    if (f === 'Original') return imgUrl
+    const c = document.createElement('canvas')
+    const ctx = c.getContext('2d')
+    if (!ctx) return imgUrl
+    const img = new Image()
+    return new Promise<string>((resolve) => {
+      img.onload = () => {
+        c.width = img.naturalWidth
+        c.height = img.naturalHeight
+        ctx.filter = 'none'
+        ctx.drawImage(img, 0, 0)
+        const pixel = ctx.getImageData(0, 0, c.width, c.height)
+        const data = pixel.data
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+          if (f === 'Clarendon') { data[i] = Math.min(255, r * 1.2); data[i + 1] = Math.min(255, g * 1.05 + 12); data[i + 2] = Math.min(255, b * 1.1 + 10) }
+          else if (f === 'Juno') { data[i] = Math.min(255, r * 1.15); data[i + 1] = Math.min(255, g * 1.02); data[i + 2] = Math.min(255, b * 1.25) }
+          else if (f === 'Aden') { data[i] = Math.min(255, r * 1.25); data[i + 1] = Math.min(255, g * 1.1); data[i + 2] = Math.min(255, b * 0.9) }
+          else if (f === 'Lark') { data[i] = Math.min(255, r * 0.98); data[i + 1] = Math.min(255, g * 1.15); data[i + 2] = Math.min(255, b * 0.96) }
+          else if (f === 'Moody') { data[i] = Math.min(255, r * 0.7); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.2) }
+          else if (f === 'Valencia') { data[i] = Math.min(255, r * 1.3); data[i + 1] = Math.min(255, g * 0.96); data[i + 2] = Math.min(255, b * 0.9) }
+          else if (f === 'Perpetua') { data[i] = Math.min(255, r * 1.18); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 1.22) }
+          else if (f === 'Willow') { data[i] = Math.min(255, r * 0.9); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 0.88) }
+          else if (f === 'Gingham') { data[i] = Math.min(255, r * 1.12); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.18) }
+        }
+        ctx.putImageData(pixel, 0, 0)
+        resolve(c.toDataURL('image/jpeg', 0.9))
+      }
+      img.src = imgUrl
+    })
   }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))

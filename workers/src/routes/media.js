@@ -16,6 +16,26 @@ async function audit(env, actor, action, targetType, targetId, meta = {}) {
   ).catch(() => {})
 }
 
+// Look up an existing registration for a storage key and return the ORIGINAL
+// upload result, so a retried confirm (same logical upload → same key) replays
+// instead of inserting a duplicate or erroring.
+async function findRegisteredUpload(env, type, key) {
+  const withRow = async (sql) => { const r = await query(env, sql, [key]); const row = r?.rows?.[0]; return row || null }
+  if (type === 'post') { const row = await withRow(`SELECT id FROM posts WHERE original_key=? LIMIT 1`); if (row) return { id: row.id, status: 'approved', key } }
+  if (type === 'reel') { const row = await withRow(`SELECT id FROM reels WHERE hls_master_key=? LIMIT 1`); if (row) return { id: row.id, status: 'approved', key } }
+  if (type === 'story') { const row = await withRow(`SELECT id FROM stories WHERE original_key=? LIMIT 1`); if (row) return { id: row.id, status: 'published', key } }
+  if (type === 'track') { const row = await withRow(`SELECT id FROM tracks WHERE original_key=? LIMIT 1`); if (row) return { id: row.id, status: 'approved', key } }
+  if (type === 'sermon_audio' || type === 'sermon_video') {
+    const kind = type === 'sermon_video' ? 'video' : 'audio'
+    const row = await withRow(`SELECT id FROM sermons WHERE media_key=? LIMIT 1`)
+    if (row) return { id: row.id, status: kind === 'video' ? 'published' : 'approved', kind, key }
+  }
+  const pending = await query(env, `SELECT id, status, created_at FROM pending_queue WHERE original_key=? AND status IN ('pending','approved') LIMIT 1`, [key])
+  const prow = pending?.rows?.[0]
+  if (prow) return { id: prow.id, status: prow.status, key, at: prow.created_at }
+  return null
+}
+
 export async function handleMedia(request, env, ctx) {
   const url = new URL(request.url)
   const path = url.pathname
@@ -43,7 +63,7 @@ export async function handleMedia(request, env, ctx) {
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
     const body = await readJson(request)
-    const { type, contentType, bytes, ext } = body
+    const { type, contentType, bytes, ext, idempotencyKey } = body
     if (!type || !contentType) return errorResponse('type and contentType required', 400)
     // Upload policy: stories and profile avatars are open to every signed-in
     // member. All other media (posts, reels, tracks) requires a verified
@@ -62,7 +82,7 @@ export async function handleMedia(request, env, ctx) {
       )
       if (Number(rows[0]?.count || 0) >= 10) return errorResponse('presign rate limit 10/min', 429)
       await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [uid, new Date().toISOString()])
-      return jsonResponse(await presignedPost(env, { type, contentType, bytes: Number(bytes) || 0, ext, ownerId: fresh.id }))
+      return jsonResponse(await presignedPost(env, { type, contentType, bytes: Number(bytes) || 0, ext, ownerId: fresh.id, idempotencyKey }))
     } catch (e) {
       return errorResponse(e.message, e.status || 400)
     }
@@ -138,18 +158,17 @@ export async function handleMedia(request, env, ctx) {
 
     const userId = fresh.id
 
-    // Confirm is intentionally idempotent: a retried client must not create
-    // duplicate feed rows for the same uploaded original.
-    const duplicate = await query(env, `
-      SELECT 1 AS found FROM posts WHERE original_key=? LIMIT 1
-    `, [key])
-    const duplicateReel = type === 'reel' ? await query(env, `SELECT 1 AS found FROM reels WHERE hls_master_key=? LIMIT 1`, [key]) : { rows: [] }
-    const duplicateStory = type === 'story' ? await query(env, `SELECT 1 AS found FROM stories WHERE original_key=? LIMIT 1`, [key]) : { rows: [] }
-    const duplicateTrack = type === 'track' ? await query(env, `SELECT 1 AS found FROM tracks WHERE original_key=? LIMIT 1`, [key]) : { rows: [] }
-    const duplicateSermon = (type === 'sermon_audio' || type === 'sermon_video') ? await query(env, `SELECT 1 AS found FROM sermons WHERE media_key=? LIMIT 1`, [key]) : { rows: [] }
-    const duplicatePending = await query(env, `SELECT 1 AS found FROM pending_queue WHERE original_key=? AND status IN ('pending','approved') LIMIT 1`, [key])
-    if (duplicate.rows[0] || duplicateReel.rows[0] || duplicateStory.rows[0] || duplicateTrack.rows[0] || duplicateSermon.rows[0] || duplicatePending.rows[0]) {
-      return errorResponse('this upload has already been submitted', 409)
+    // Idempotent confirm: the client derives the storage key from a stable
+    // idempotency key, so a retried logical upload re-submits the same key and
+    // must get the ORIGINAL result back — no duplicate registrations, no 409
+    // masquerading as failure when the first confirm actually landed.
+    const existing = await findRegisteredUpload(env, type, key)
+    if (existing) {
+      const status = existing.status
+      const out = { id: existing.id, status, key }
+      if (existing.kind) out.kind = existing.kind
+      if (existing.at) out.at = existing.at
+      return jsonResponse(out, status === 'pending' ? 202 : 200)
     }
 
     // A reel poster is a separate R2 object. Validate its shape, existence and

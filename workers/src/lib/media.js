@@ -123,14 +123,16 @@ function encodeQuery(value) {
   return encodeURIComponent(String(value)).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
 }
 
-export async function presignedPost(env, { type, contentType, bytes, ext, ownerId }) {
+export async function presignedPost(env, { type, contentType, bytes, ext, ownerId, idempotencyKey }) {
   const max = validatePresign({ type, contentType, bytes })
   const now = new Date()
   const yyyy = String(now.getUTCFullYear())
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
   const safeExt = (ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() ||
     (contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : type === 'reel' ? 'mp4' : type === 'track' ? 'mp3' : 'jpg')
-  const key = `originals/${type}/${yyyy}/${mm}/${crypto.randomUUID()}.${safeExt}`
+  const stable = String(idempotencyKey || '').toLowerCase().replace(/[^0-9a-f-]/g, '').slice(0, 36)
+  const idPart = stable || crypto.randomUUID().replace(/-/g, '')
+  const key = `originals/${type}/${yyyy}/${mm}/${idPart}.${safeExt}`
 
   const accountId = env.CLOUDFLARE_ACCOUNT_ID
   const accessKeyId = env.R2_ACCESS_KEY_ID

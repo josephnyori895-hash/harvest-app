@@ -18,6 +18,8 @@ export type UploadKind = 'avatar' | 'story' | 'post' | 'reel' | 'track' | 'sermo
 export type UploadTask = {
   kind: UploadKind
   file: File | Blob
+  /** Stable per-logical-upload key — retries of the same upload reuse it. */
+  idempotency_key?: string
   filename?: string
   caption?: string
   title?: string
@@ -201,8 +203,9 @@ async function uploadOne(
   onPct: (p: number) => void,
   pctFrom: number,
   pctTo: number,
+  idempotencyKey: string,
 ): Promise<string> {
-  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: file.type || 'application/octet-stream', bytes: file.size, ext: extOf(file, filename) })
+  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: file.type || 'application/octet-stream', bytes: file.size, ext: extOf(file, filename), idempotencyKey })
   const direct = /^https?:\/\//.test(presign.url)
   const method = String(presign.method || (direct ? 'PUT' : 'POST')).toUpperCase()
   const directHeaders = Object.fromEntries(Object.entries(presign.fields || {}).map(([k, v]) => [k, String(v)]))
@@ -224,10 +227,11 @@ async function uploadOne(
 
 // presign → upload (with progress) → confirm, for any task kind.
 export async function performUpload(task: UploadTask, onPct: (p: number) => void) {
-  const audioKey = await uploadOne(task.file, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95)
+  const idempotencyKey = task.idempotency_key || crypto.randomUUID().replace(/-/g, '')
+  const audioKey = await uploadOne(task.file, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
   let coverKey: string | undefined
   if (task.kind === 'track' && task.cover) {
-    coverKey = await uploadOne(task.cover, 'post', (task.cover as File)?.name, onPct, 88, 95)
+    coverKey = await uploadOne(task.cover, 'post', (task.cover as File)?.name, onPct, 88, 95, idempotencyKey)
   }
   if (task.kind === 'avatar') {
     // Avatars are attached to the profile with a follow-up PATCH /api/me.
@@ -320,8 +324,9 @@ async function runAttempt(id: string) {
 const currentOwner = () => localStorage.getItem('harvest_username') || ''
 
 export function startBackgroundUpload(opts: { label: string; successMsg: string; task: UploadTask }): Promise<void> {
+  const task: UploadTask = { ...opts.task, idempotency_key: opts.task.idempotency_key || crypto.randomUUID().replace(/-/g, '') }
   const id = `up_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task: opts.task, attempts: 0, nextAttemptAt: 0, owner: currentOwner() })
+  records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task, attempts: 0, nextAttemptAt: 0, owner: currentOwner() })
   states.set(id, { id, label: opts.label, pct: 0, status: 'uploading', attempt: 1, startedAt: Date.now() })
   emit()
   const promise = runAttempt(id)

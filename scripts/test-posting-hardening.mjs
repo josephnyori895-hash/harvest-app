@@ -17,11 +17,12 @@ assert.match(media, /validatedPosterKey/)
 assert.match(media, /poster does not belong to this account/)
 assert.match(media, /type === 'reel' \? validatedPosterKey : null/)
 
-// Retried confirm calls must not create duplicate DB records.
-assert.match(media, /this upload has already been submitted/)
-assert.match(media, /SELECT 1 AS found FROM pending_queue WHERE original_key=\?/)
-assert.match(media, /SELECT 1 AS found FROM reels WHERE hls_master_key=\?/)
-assert.match(media, /SELECT 1 AS found FROM tracks WHERE original_key=\?/)
+// Retried confirm calls must not create duplicate DB records: the shared
+// lookup finds any prior registration and returns the ORIGINAL result.
+assert.match(media, /findRegisteredUpload/)
+assert.match(media, /SELECT id, status, created_at FROM pending_queue WHERE original_key=\?/)
+assert.match(media, /SELECT id FROM reels WHERE hls_master_key=\?/)
+assert.match(media, /SELECT id FROM tracks WHERE original_key=\?/)
 
 // Composer must provide a review step and enforce the same caption limit in
 // the UI before handing work to the background uploader.
