@@ -16,6 +16,21 @@ async function audit(env, actor, action, targetType, targetId, meta = {}) {
   ).catch(() => {})
 }
 
+// A cover/poster is a separate R2 object attached to a media row. Validate its
+// shape, existence and ownership — one security rule for every attach site
+// (reel posters, track covers, admin cover edits). Returns { key } or { error }.
+const POSTER_MSGS = { invalid: 'invalid poster key', missing: 'poster not found in storage', forbidden: 'poster does not belong to this account' }
+const COVER_MSGS = { invalid: 'invalid cover key', missing: 'cover not found in storage', forbidden: 'cover does not belong to this account' }
+async function validateAttachedCover(env, fresh, rawKey, msgs) {
+  const key = String(rawKey)
+  if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(key)) return { error: errorResponse(msgs.invalid, 400) }
+  const obj = await env.MEDIA.head(key)
+  if (!obj) return { error: errorResponse(msgs.missing, 404) }
+  const ownerId = String(obj.customMetadata?.ownerId || obj.customMetadata?.ownerid || '')
+  if (ownerId !== String(fresh.id) && fresh.role !== 'admin') return { error: errorResponse(msgs.forbidden, 403) }
+  return { key }
+}
+
 // Look up an existing registration for a storage key and return the ORIGINAL
 // upload result, so a retried confirm (same logical upload → same key) replays
 // instead of inserting a duplicate or erroring.
@@ -171,18 +186,17 @@ export async function handleMedia(request, env, ctx) {
       return jsonResponse(out, status === 'pending' ? 202 : 200)
     }
 
-    // A reel poster is a separate R2 object. Validate its shape, existence and
-    // ownership before either direct publication or moderation queueing so the
-    // same security rule applies to verified members and admins alike.
+    // A cover/poster is a separate R2 object attached to a media row. Validate
+    // its shape, existence and ownership before direct publication,
+    // moderation queueing, or an update — one rule everywhere.
     let validatedPosterKey = null
     if (type === 'reel' && coverKeyRaw) {
-      const posterKeyRaw = String(coverKeyRaw)
-      if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(posterKeyRaw)) return errorResponse('invalid poster key', 400)
-      const pobj = await env.MEDIA.head(posterKeyRaw)
-      if (!pobj) return errorResponse('poster not found in storage', 404)
-      const posterOwnerId = String(pobj.customMetadata?.ownerId || pobj.customMetadata?.ownerid || '')
-      if (posterOwnerId !== String(fresh.id) && fresh.role !== 'admin') return errorResponse('poster does not belong to this account', 403)
-      validatedPosterKey = posterKeyRaw
+      const r = await validateAttachedCover(env, fresh, coverKeyRaw, POSTER_MSGS)
+      if (r.error) return r.error
+      validatedPosterKey = r.key
+    } else if (type === 'track' && coverKeyRaw) {
+      const r = await validateAttachedCover(env, fresh, coverKeyRaw, COVER_MSGS)
+      if (r.error) return r.error
     } else if (coverKeyRaw) {
       return errorResponse('cover key is only supported for reels', 400)
     }
@@ -249,15 +263,9 @@ export async function handleMedia(request, env, ctx) {
           [id, userId, caption || '', musicTrackId || null, key, posterKey, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'track') {
-        // Optional cover art: uploaded as an image (originals/post/…) and linked here.
-        let coverKey = null
-        const ck = String(coverKeyRaw || '')
-        if (ck) {
-          if (!/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(ck)) return errorResponse('invalid cover key', 400)
-          const cobj = await env.MEDIA.head(ck)
-          if (!cobj) return errorResponse('cover not found in storage', 404)
-          coverKey = ck
-        }
+        // Optional cover art: validated (format, existence, ownership) in the
+        // shared gate above; attach whatever survived it.
+        const coverKey = String(coverKeyRaw || '') || null
         await query(env, `INSERT INTO tracks (id, user_id, title, artist, original_key, preview_key, cover_thumb_key) VALUES (?,?,?,?,?,?,?)`, [id, userId, title || caption || 'Untitled', artist || '', key, key, coverKey])
       } else return errorResponse('unsupported media type', 400)
       await audit(env, fresh, 'direct_publish', type, id, { key, caption })
@@ -366,11 +374,12 @@ export async function handleMedia(request, env, ctx) {
     if (body.title !== undefined) { sets.push('title=?'); vals.push(String(body.title || '').slice(0, 120)) }
     if (body.artist !== undefined) { sets.push('artist=?'); vals.push(String(body.artist || '').slice(0, 120)) }
     if (body.cover_key !== undefined) {
+      // Track covers are attached media: format, existence and ownership are
+      // validated under the same rule as reel posters (P2 unification).
       const ck = String(body.cover_key || '')
-      if (ck && !/^originals\/post\/\d{4}\/\d{2}\/[0-9a-f-]+\.(jpg|jpeg|png|webp)$/i.test(ck)) return errorResponse('invalid cover key', 400)
       if (ck) {
-        const cobj = await env.MEDIA.head(ck)
-        if (!cobj) return errorResponse('cover not found in storage', 404)
+        const r = await validateAttachedCover(env, fresh, ck, COVER_MSGS)
+        if (r.error) return r.error
       }
       sets.push('cover_thumb_key=?'); vals.push(ck || null)
     }
