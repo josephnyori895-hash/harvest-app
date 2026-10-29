@@ -239,7 +239,7 @@ async function uploadOne(
 
 // presign → upload (with progress) → confirm, for any task kind.
 export async function performUpload(task: UploadTask, onPct: (p: number) => void) {
-  const idempotencyKey = task.idempotency_key || crypto.randomUUID().replace(/-/g, '')
+  const idempotencyKey = task.idempotency_key || newUploadId()
   const audioKey = await uploadOne(task.file, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
   let coverKey: string | undefined
   if (task.kind === 'track' && task.cover) {
@@ -335,8 +335,15 @@ async function runAttempt(id: string) {
 // typically attach .catch(() => {}).
 const currentOwner = () => localStorage.getItem('harvest_username') || ''
 
+// Hermes (React Native WebView) runtimes have shipped without crypto.randomUUID
+// in places — fall back to a random UUID-shaped string rather than dying silently
+// inside the upload hand-off.
+const newUploadId = () => (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  ? crypto.randomUUID()
+  : `up_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`)
+
 export function startBackgroundUpload(opts: { label: string; successMsg: string; task: UploadTask }): Promise<void> {
-  const task: UploadTask = { ...opts.task, idempotency_key: opts.task.idempotency_key || crypto.randomUUID().replace(/-/g, '') }
+  const task: UploadTask = { ...opts.task, idempotency_key: opts.task.idempotency_key || newUploadId() }
   const id = `up_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
   records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task, attempts: 0, nextAttemptAt: 0, owner: currentOwner() })
   states.set(id, { id, label: opts.label, pct: 0, status: 'uploading', attempt: 1, startedAt: Date.now() })

@@ -176,8 +176,11 @@ export default function PostCreate({ onDone }: Props) {
             description: type === 'sermon' ? caption.trim() : undefined,
             cover_key: coverKey,
           },
-        }).catch(() => {})
-        onDone()
+        }).then(() => onDone()).catch((e: any) => {
+          // Never swallow: a failed hand-off must be visible to the member.
+          setNotice(e?.message || 'Upload could not start — check your connection and try again')
+          onDone()
+        })
       } else {
         onDone()
       }
