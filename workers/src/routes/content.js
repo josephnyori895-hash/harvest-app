@@ -25,6 +25,8 @@ const EDITABLE = {
   paybill_name: 120,
   // JSON array: [{ id, label, sub, icon }] (max 12 funds)
   giving_funds: 4000,
+  // JSON object keyed by fund id; purpose-specific payment instructions (no secrets).
+  giving_payment_methods: 12000,
   // JSON array of quick-amount integers, e.g. [100,200,500]
   giving_quick: 200,
 }
@@ -58,6 +60,23 @@ export async function handleContent(request, env, ctx) {
           if (!f || typeof f.id !== 'string' || typeof f.label !== 'string' || !f.label.trim()) return errorResponse('giving_funds: each fund needs id and label', 400)
         }
       } catch { return errorResponse('giving_funds must be valid JSON', 400) }
+    }
+    if ('giving_payment_methods' in body) {
+      try {
+        const configs = JSON.parse(String(body.giving_payment_methods || '{}'))
+        const methods = new Set(['stk', 'paybill', 'till', 'bank', 'manual'])
+        if (!configs || typeof configs !== 'object' || Array.isArray(configs) || Object.keys(configs).length > 12) return errorResponse('giving_payment_methods: expected an object with at most 12 purposes', 400)
+        for (const [id, cfg] of Object.entries(configs)) {
+          if (!/^[a-z0-9_-]{1,40}$/.test(id) || !cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return errorResponse('giving_payment_methods: invalid purpose configuration', 400)
+          if (!methods.has(String(cfg.method || 'stk'))) return errorResponse('giving_payment_methods: unsupported payment method', 400)
+          if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean') return errorResponse('giving_payment_methods: enabled must be boolean', 400)
+          for (const field of ['instructions', 'payment_number', 'account_reference', 'bank_name', 'bank_account_name', 'bank_account_number']) {
+            if (cfg[field] !== undefined && (typeof cfg[field] !== 'string' || cfg[field].length > 1000)) return errorResponse(`giving_payment_methods: invalid ${field}`, 400)
+          }
+          if (['paybill', 'till'].includes(cfg.method) && !String(cfg.payment_number || '').trim()) return errorResponse('giving_payment_methods: Paybill/Till number is required', 400)
+          if (cfg.method === 'bank' && (!String(cfg.bank_name || '').trim() || !String(cfg.bank_account_name || '').trim() || !String(cfg.bank_account_number || '').trim())) return errorResponse('giving_payment_methods: bank name, account name and account number are required', 400)
+        }
+      } catch { return errorResponse('giving_payment_methods must be valid JSON', 400) }
     }
     if ('giving_quick' in body) {
       try {
