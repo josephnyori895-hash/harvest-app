@@ -189,7 +189,7 @@ export default function Give() {
     fetch(`${API}/api/content`).then(r => r.json()).then(d => { const next = d?.content || {}; setContent(next); try { const parsed = JSON.parse(next.giving_payment_methods || '{}'); setPaymentConfigs(parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) } catch { setPaymentConfigs({}) }; setContentLoaded(true) }).catch(() => setContentLoaded(true))
   }, [])
 
-  const purpose = useMemo(() => funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund])
+  const purpose = useMemo(() => paymentConfigs[fund]?.label?.trim() || funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund, paymentConfigs])
 
   useEffect(() => {
     if (!apiEnabled) return
@@ -335,8 +335,19 @@ export default function Give() {
         <div className="flex gap-2 mb-4 flex-wrap">{quick.map((v: number) => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
         <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder={`Custom amount KES (min ${MIN_GIVE})`} className="input-premium mb-1" />
         {amount !== '' && !Number.isInteger(Number(amount)) && <p className="text-xs text-[#B45309] mb-1">M-Pesa takes whole shillings — this will be rejected.</p>}
-        <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
-        {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
+        {selectedPayment.enabled === false ? <div className="mb-4 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] p-4 text-sm text-[#991B1B]">Giving to {purpose} is temporarily unavailable. Please choose another purpose or contact the church office.</div> : selectedPayment.method !== 'stk' ? (
+          <div className="mb-4 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-sm">
+            <p className="font-bold">{selectedPayment.method === 'paybill' ? 'M-Pesa Paybill' : selectedPayment.method === 'till' ? 'M-Pesa Till' : selectedPayment.method === 'bank' ? 'Bank transfer' : 'Giving instructions'} · {purpose}</p>
+            {selectedPayment.method === 'paybill' && <p className="mt-2">Business number: <b className="select-all">{selectedPayment.payment_number}</b> · Account: <b className="select-all">{selectedPayment.account_reference || purpose}</b></p>}
+            {selectedPayment.method === 'till' && <p className="mt-2">Till number: <b className="select-all">{selectedPayment.payment_number}</b></p>}
+            {selectedPayment.method === 'bank' && <div className="mt-2 space-y-1"><p>Bank: <b>{selectedPayment.bank_name}</b></p><p>Account name: <b>{selectedPayment.bank_account_name}</b></p><p>Account number: <b className="select-all">{selectedPayment.bank_account_number}</b></p>{selectedPayment.account_reference && <p>Reference: <b>{selectedPayment.account_reference}</b></p>}</div>}
+            {selectedPayment.instructions && <p className="mt-3 whitespace-pre-wrap">{selectedPayment.instructions}</p>}
+            <p className="mt-3 text-xs text-[#6B6257]">Please verify the details before sending. This app does not automatically confirm manual transfers.</p>
+          </div>
+        ) : <>
+          <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
+          {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
+        </>}
         {mpesaEnabled === false && (
           <div className="mb-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] p-4 text-sm">
             <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
@@ -350,7 +361,7 @@ export default function Give() {
           </div>
         )}
         {givingProject && <div className="mb-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] p-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-[10px] uppercase tracking-wide font-extrabold text-[#5B21B6]">Giving toward</p><p className="text-sm font-extrabold truncate">{givingProject.name}</p></div><button type="button" onClick={() => setGivingProject(null)} className="text-xs font-bold text-[#6B6257]">Clear</button></div>}
-        <button disabled={busy} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{busy?'Sending M-Pesa prompt…':`Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
+        <button disabled={busy || selectedPayment.enabled === false || (selectedPayment.method && selectedPayment.method !== 'stk')} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{selectedPayment.enabled === false ? 'Giving unavailable' : selectedPayment.method && selectedPayment.method !== 'stk' ? 'Use payment instructions above' : busy ? 'Sending M-Pesa prompt…' : `Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
         {pollingId && <div className="mb-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-4 text-sm text-[#1E40AF] flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-[#3B82F6] animate-pulse" />Waiting for you to enter your M-Pesa PIN…</div>}
         {message && <div className="mb-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] p-4 text-sm text-[#065F46]">{message}</div>}
 
@@ -389,6 +400,9 @@ export default function Give() {
                 <select value={cfg.method || 'stk'} onChange={e => updatePaymentConfig(paymentEditFund, { method: e.target.value })} className="input-premium mt-1">
                   <option value="stk">M-Pesa STK Push</option><option value="paybill">M-Pesa Paybill</option><option value="till">M-Pesa Till</option><option value="bank">Bank transfer</option><option value="manual">Manual instructions</option>
                 </select>
+              </label>
+              <label className="block text-xs font-bold">Member-facing purpose name
+                <input value={cfg.label ?? funds.find((f:any)=>f.id===paymentEditFund)?.label ?? ''} onChange={e => updatePaymentConfig(paymentEditFund, { label: e.target.value })} maxLength={120} placeholder="e.g. Children Ministry" className="input-premium mt-1" />
               </label>
               {(cfg.method === 'paybill' || cfg.method === 'till') && <label className="block text-xs font-bold">{cfg.method === 'paybill' ? 'Paybill number' : 'Till number'}
                 <input value={cfg.payment_number || ''} onChange={e => updatePaymentConfig(paymentEditFund, { payment_number: e.target.value })} maxLength={32} placeholder="Enter official payment number" className="input-premium mt-1" />
