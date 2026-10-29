@@ -3,7 +3,6 @@
 // the captured-frame fallback and the player share one measured frame, and a
 // single retry path resets whichever leg failed. Media is never stretched.
 import { useEffect, useRef, useState } from 'react'
-import VideoThumb from './VideoThumb'
 
 const MIN_RATIO = 0.5
 const MAX_RATIO = 1.91
@@ -25,7 +24,6 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
   const [ratio, setRatio] = useState<number | null>(null)
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
-  const [thumbKey, setThumbKey] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -113,11 +111,7 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
         ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-contain mx-auto" />
         : <div className="aspect-[4/5] max-h-[70vh] w-full">
             {src
-              ? <VideoThumb
-                  src={src}
-                  retryKey={thumbKey}
-                  onRetryBump={() => setThumbKey(k => k + 1)}
-                  className="block h-full w-full object-contain" />
+              ? <video src={`${src}#t=0.001`} muted loop playsInline preload="metadata" className="block h-full w-full object-cover" aria-label="Video preview" />
               : <div className="flex h-full w-full items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
           </div>}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
