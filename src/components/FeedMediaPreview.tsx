@@ -1,17 +1,31 @@
 // Consistent, bounded video preview for community feed cards.
-// The poster and playback share one measured frame; media is never stretched.
+// One stage machine owns loading, preview, playback and failure — the poster,
+// the captured-frame fallback and the player share one measured frame, and a
+// single retry path resets whichever leg failed. Media is never stretched.
 import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
 
 const MIN_RATIO = 0.5
 const MAX_RATIO = 1.91
 const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
+// iOS Safari (and a few Android WebViews) play HLS natively in <video>;
+// Chromium cannot — surface that instead of a dead player (P1 don't-assume).
+const HLS_T = 'application/vnd.apple.mpegurl'
+const HLS_HINT = 'This stream format may not be supported on this device'
+const isHls = (u: string) => /(\.m3u8)(\?|&|#|$)/i.test(u)
+const nativeHls = () => {
+  if (typeof document === 'undefined') return false
+  const probe = document.createElement('video')
+  return probe.canPlayType(HLS_T) !== ''
+}
 
 export default function FeedMediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
+  const hls = Boolean(src && isHls(src))
   const [playing, setPlaying] = useState(false)
   const [ratio, setRatio] = useState<number | null>(null)
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
+  const [thumbKey, setThumbKey] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -19,6 +33,7 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
     setRatio(null)
     setPosterFailed(false)
     setVideoFailed(false)
+    setPlaying(false)
     if (!poster) return () => { active = false }
     const image = new Image()
     image.decoding = 'async'
@@ -41,6 +56,14 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
     ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
     : { width: '100%' }
   const validPoster = Boolean(poster && !posterFailed)
+  const retryPlayback = () => {
+    setVideoFailed(false)
+    const video = videoRef.current
+    if (!video || !videoRef) return
+    video.load()
+    const result = video.play()
+    if (result && typeof result.catch === 'function') result.catch(() => setVideoFailed(true))
+  }
 
   useEffect(() => {
     if (!playing) return
@@ -66,7 +89,12 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
           className="block h-full max-h-[70vh] w-full object-contain"
           aria-label="Video playback"
         />
-        {videoFailed && <div className="absolute inset-x-0 bottom-0 bg-black/75 p-2 text-center text-xs text-white">Video could not be played. Check your connection and try again.</div>}
+        {videoFailed && (
+          <div className="absolute inset-x-0 bottom-0 bg-black/75 p-2 text-center text-xs text-white">
+            <p>{hls && !nativeHls() ? HLS_HINT : 'Video could not be played. Check your connection and try again.'}</p>
+            <button type="button" onClick={retryPlayback} className="mt-1 min-h-11 rounded-xl border border-white/15 bg-white/10 px-4 font-semibold" aria-label="Retry video playback">Retry</button>
+          </div>
+        )}
       </div>
     )
   }
@@ -79,13 +107,17 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
       role="button"
       tabIndex={0}
       aria-label="Play video"
-      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlaying(true) } }}
+      onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setVideoFailed(false); setPlaying(true) } }}
     >
       {validPoster
         ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-contain mx-auto" />
         : <div className="aspect-[4/5] max-h-[70vh] w-full">
             {src
-              ? <VideoThumb src={src} playable className="block h-full w-full object-contain" />
+              ? <VideoThumb
+                  src={src}
+                  retryKey={thumbKey}
+                  onRetryBump={() => setThumbKey(k => k + 1)}
+                  className="block h-full w-full object-contain" />
               : <div className="flex h-full w-full items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
           </div>}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center">

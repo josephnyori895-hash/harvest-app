@@ -28,21 +28,20 @@ function timeAgo(iso?: string) {
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
 
-// Feed video preview, Android-WebView-safe.
-//
-// The old version kept a <video controls> mounted at all times; Android WebView
-// paints its huge native play-glyph over visible video elements, and autoplay
-// in feeds is blocked anyway. Now: show the server poster when it exists, or a
-// VideoThumb canvas first-frame when it doesn't — and only swap in the real
-// <video controls> after the user taps (VideoThumb's playable behavior).
+// Feed video preview, Android-WebView-safe. Same unified contract as
+// FeedMediaPreview: the parent owns playback; VideoThumb is the visual
+// fallback only, with its own retryable failure state.
 function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
   const [playing, setPlaying] = useState(false)
   const [posterReady, setPosterReady] = useState(false)
   const [posterFailed, setPosterFailed] = useState(false)
+  const [failedVideo, setFailedVideo] = useState(false)
+  const [thumbKey, setThumbKey] = useState(0)
+  const hls = Boolean(src && /(\.m3u8)(\?|&|#|$)/i.test(src))
 
   useEffect(() => {
     let cancelled = false
-    setPosterReady(false); setPosterFailed(false)
+    setPosterReady(false); setPosterFailed(false); setFailedVideo(false)
     if (!poster) return () => { cancelled = true }
     const img = new Image()
     img.decoding = 'async'
@@ -53,22 +52,33 @@ function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string;
   }, [poster])
 
   if (playing) {
-    return <video src={src} controls autoPlay playsInline className="w-full aspect-[4/3] object-cover bg-black" aria-label="Video" />
+    return (
+      <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0]">
+        <video src={src} controls autoPlay playsInline onError={() => setFailedVideo(true)} className="w-full h-full object-cover bg-black" aria-label="Video" />
+        {failedVideo && (
+          <div className="absolute inset-x-0 bottom-0 bg-black/75 p-2 text-center text-xs text-white">
+            <p>Video could not be played. Check your connection and try again.</p>
+            <button type="button" onClick={() => setFailedVideo(false)} className="mt-1 min-h-11 rounded-xl border border-white/15 bg-white/10 px-4 font-semibold" aria-label="Retry video">Retry</button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   const usePoster = Boolean(poster && posterReady && !posterFailed)
   return (
     <div
       className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0] cursor-pointer"
-      onClick={() => setPlaying(true)}
+      onClick={() => { setFailedVideo(false); setPlaying(true) }}
       role="button"
       aria-label="Play video"
     >
       {usePoster
         ? <img src={poster!} alt={alt} decoding="async" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover" />
         : src
-          ? <VideoThumb src={src} playable className="absolute inset-0" />
+          ? <VideoThumb src={src} retryKey={thumbKey} onRetryBump={() => setThumbKey(k => k + 1)} className="absolute inset-0" />
           : <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
+      {hls && <span className="absolute top-2 left-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-bold text-white" aria-hidden>streaming</span>}
       <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>
     </div>
   )
