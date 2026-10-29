@@ -52,7 +52,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const historyPushedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const duration = 4000
+  // Photo stories auto-advance on the author's chosen duration; video stories
+  // play in full (onEnded). Composer-chosen duration rides the upload task.
+  const storyDurationSec = Number((s as any)?.duration_secs) || Number((s as any)?.duration) || 4
+  const duration = isVideo ? 0 : storyDurationSec * 1000
   const isLastStory = idx >= allStories.length - 1
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
@@ -378,7 +381,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const previewRef = useRef<HTMLAudioElement | null>(null)
   useEffect(() => () => { previewRef.current?.pause(); previewRef.current = null }, [])
   const isVideoFile = Boolean(fileObj?.type.startsWith('video/'))
-  const [timer, setTimer] = useState(0)
+  const [timer, setTimer] = useState(4)
   const [showFilters, setShowFilters] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
   const [showMusic, setShowMusic] = useState(false)
@@ -495,6 +498,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
           file: blob,
           caption: caption.trim(),
           music_track_id: musicTrack?.id,
+          duration_secs: timer,
         },
       }).catch(() => {})
       onDone()
@@ -507,6 +511,16 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     <div className="bg-stone-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
       <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-200 bg-white"><button onClick={onDone} className="text-xl text-stone-700">✕</button><p className="font-bold text-stone-800">New story</p><button onClick={() => void submit()} disabled={busy || !fileObj} className="text-sm font-bold text-violet-600 disabled:opacity-40">{busy ? 'Posting…' : 'Share'}</button></div>
       <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-stone-50 to-white">
+        {fileUrl && !isVideoFile && (
+          <div className="w-full px-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500 mb-2">Story duration</p>
+            <div className="flex gap-2">
+              {[3, 5, 8, 12].map(s => (
+                <button key={s} onClick={() => setTimer(s)} className={`min-h-11 px-4 rounded-xl text-sm font-bold ${timer === s ? 'bg-violet-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{s}s</button>
+              ))}
+            </div>
+          </div>
+        )}
         {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-stone-300 flex items-center justify-center text-stone-500 font-semibold cursor-pointer"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />Choose a photo or video</label> : <div className="relative w-full aspect-[9/16] overflow-hidden rounded-2xl bg-stone-900">{isVideoFile ? <video src={fileUrl} controls playsInline className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" /> : <img src={fileUrl} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/35 px-2 py-1 rounded-full text-[10px] font-bold">{filter}</div>}{textOverlay && <div className="absolute inset-x-0 top-4 flex justify-center"><span className="px-3 py-1 rounded-full text-sm font-bold" style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 8px rgba(0,0,0,.6)' }}>{textOverlay}</span></div>}{stickers.length > 0 && <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">{stickers.map(s => <span key={s} className="text-2xl">{s}</span>)}</div>}{musicTrack && <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1 text-[10px] font-bold text-white"><button type="button" aria-label={previewId === String(musicTrack.id) ? 'Stop music preview' : `Preview ${musicTrack.title}`} onClick={() => togglePreview(musicTrack)}>{previewId === String(musicTrack.id) ? '⏸' : previewFailedId === String(musicTrack.id) ? '⚠ Retry' : '♪'}</button><span className="max-w-[110px] truncate">{musicTrack.title}</span><button type="button" aria-label="Remove music" onClick={() => { stopPreview(); setPreviewFailedId(null); setMusicTrack(null) }}>×</button></div>}</div>}
       </div>
       {fileUrl && !isVideoFile && <><div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Filters</button></div>{showFilters && <div className="px-4 pb-4 bg-white border-t border-stone-200 grid grid-cols-3 gap-2">{FILTERS.map((f) => <button key={f} onClick={() => { setFilter(f); setShowFilters(false) }} className={`rounded-xl border px-2 py-2 text-xs font-bold ${filter === f ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-700'}`}>{f}</button>)}</div>}</>}

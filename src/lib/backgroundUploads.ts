@@ -31,6 +31,8 @@ export type UploadTask = {
   cover?: File | Blob
   /** Reels only: pre-uploaded poster key (client-picked cover frame). */
   cover_key?: string
+  /** Photo stories: per-author duration in seconds (viewer auto-advance). */
+  duration_secs?: number
 }
 
 export type BgUpload = {
@@ -262,6 +264,7 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
       // Tracks upload their cover in this lifecycle; reels may already have
       // a pre-uploaded poster key. Prefer the newly uploaded cover when present.
       cover_key: coverKey ?? task.cover_key,
+      duration_secs: task.duration_secs,
     })
   }
   onPct(100)
