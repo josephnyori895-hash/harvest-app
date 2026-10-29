@@ -14,7 +14,7 @@ const DEFAULT_TTL = 900
 // size, so R2 credentials are required for full-length sermon videos.
 // Stories allow short video moments up to 30 MB; photos 10 MB.
 const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, sermon_audio: 2 * 1024 * 1024 * 1024, sermon_video: 5 * 1024 * 1024 * 1024 }
-const ALLOW_CT = {
+export const ALLOW_CT = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
   story: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],

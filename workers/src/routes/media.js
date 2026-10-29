@@ -2,7 +2,7 @@
 import { query, uuid } from '../lib/db.js'
 import { requireMember, requireAdmin } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
-import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull } from '../lib/media.js'
+import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT } from '../lib/media.js'
 import { hasCap } from '../lib/capabilities.js'
 const CAP_DELETE = 'delete_media'
 
@@ -193,10 +193,14 @@ export async function handleMedia(request, env, ctx) {
       if (!hasCap(fresh, 'manage_sermons')) {
         return errorResponse('sermon management permission required', 403)
       }
-      const storedCt = String(obj.httpMetadata?.contentType || '')
+      // The stored content type is normalized from the object metadata (or the
+      // key extension when metadata is missing) and must match the SAME
+      // allowlist presign used — otherwise an m4a recording the server cheerfully
+      // presigned would be rejected at confirm, after the full transfer. The
+      // original file keeps its native format; no transcoding happens here.
+      const storedCt = contentTypeForKey(key, obj.httpMetadata?.contentType)
       const kind = type === 'sermon_video' ? 'video' : 'audio'
-      if (kind === 'audio' && storedCt !== 'audio/mpeg') return errorResponse('sermon audio must be an MP3 file', 400)
-      if (kind === 'video' && storedCt !== 'video/mp4') return errorResponse('sermon video must be an MP4 file', 400)
+      if (!ALLOW_CT[type].includes(storedCt)) return errorResponse(kind === 'audio' ? 'sermon audio format not supported' : 'sermon video format not supported', 400)
       const id = uuid()
       await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
         [id, userId, String(title || caption || 'Untitled Sermon').trim().slice(0, 200), String(speaker || '').trim().slice(0, 200) || null, String(scripture || '').trim().slice(0, 200) || null, String(description || caption || '').trim().slice(0, 1000) || null, kind, key, Number(obj.size) || null])
@@ -222,20 +226,6 @@ export async function handleMedia(request, env, ctx) {
       await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type, caption, music_track_id) VALUES (?,?,?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType, caption || '', musicTrackId || null])
       await audit(env, fresh, 'direct_publish', 'story', id, { key, caption, mediaType })
       return jsonResponse({ id, status: 'published', key }, 201)
-    }
-
-    if (hasCap(fresh, 'manage_sermons') && type.startsWith('sermon_')) {
-      // Sermon registration. kind: audio | video; the original file keeps its
-      // format (mp3/m4a for audio, mp4/webm for video) so downloads are native.
-      const kind = type === 'sermon_video' ? 'video' : 'audio'
-      const id = uuid()
-      await query(
-        env,
-        `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [id, userId, title || caption || 'Untitled sermon', artist || null, null, caption || null, kind, key, Number(obj.size) || null],
-      )
-      await audit(env, fresh, 'sermon_published', id, { kind, key })
-      return jsonResponse({ id, status: 'published', kind, key }, 201)
     }
 
     // Direct publication: admin, verified members (option 2 policy — trusted

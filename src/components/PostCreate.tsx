@@ -24,11 +24,24 @@ export default function PostCreate({ onDone }: Props) {
   const { role, isVerified, isAdmin } = useAuth()
   const user = useMemo(() => ({ role, verified: isVerified }), [role, isVerified])
   // One composer, with options derived from the user's privileges.
-  // Member: story. Verified: story + community media/sermon/music. Admin: everything.
+  // Member: story. Verified: story + community media/music. Sermons additionally
+  // require the manage_sermons capability grant — advertising the option to
+  // plain verified members only set them up for the server's 403.
+  const [canManageSermons, setCanManageSermons] = useState(isAdmin)
+  useEffect(() => {
+    if (!isVerified && !isAdmin) return
+    const token = localStorage.getItem('harvest_token') || ''
+    fetch(`${API}/api/me`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setCanManageSermons(isAdmin || (Array.isArray(d?.grants) && d.grants.includes('manage_sermons'))))
+      .catch(() => {})
+  }, [isAdmin, isVerified])
   const available: ContentType[] = isAdmin
     ? ['post', 'story', 'video', 'sermon', 'music', 'announcement']
     : isVerified
-      ? ['post', 'story', 'video', 'sermon', 'music']
+      ? canManageSermons
+        ? ['post', 'story', 'video', 'sermon', 'music']
+        : ['post', 'story', 'video', 'music']
       : ['story']
   const [type, setType] = useState<ContentType>(available[0])
   const [caption, setCaption] = useState('')
@@ -57,7 +70,7 @@ export default function PostCreate({ onDone }: Props) {
   }, [previewUrl])
   useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
 
-  const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,audio/mpeg,.mp4,video/mp4' : 'image/*,video/*'
+  const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,.m4a,.aac,.ogg,.wav,.mp4,.webm,.mov,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/wav,video/mp4,video/webm,video/quicktime,video/x-m4v' : 'image/*,video/*'
   const needsFile = type !== 'announcement'
 
   const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {

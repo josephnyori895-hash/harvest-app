@@ -196,6 +196,15 @@ const extOf = (file: File | Blob, filename?: string) =>
   || file.type.split('/')[1]?.split('+')[0]?.toLowerCase()
   || 'bin'
 
+// Some Android WebViews report an empty (or generic octet-stream) type for
+// mp3/m4a picks. Derive the mime from the extension so presign validates and
+// the direct PUT carries exactly the content type the signature was made for.
+const MIME_BY_EXT: Record<string, string> = {
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', wav: 'audio/wav',
+  mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic',
+}
+
 async function uploadOne(
   file: File | Blob,
   type: UploadKind | 'post',
@@ -205,7 +214,10 @@ async function uploadOne(
   pctTo: number,
   idempotencyKey: string,
 ): Promise<string> {
-  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: file.type || 'application/octet-stream', bytes: file.size, ext: extOf(file, filename), idempotencyKey })
+  const declaredType = file.type && file.type !== 'application/octet-stream'
+    ? file.type
+    : (MIME_BY_EXT[extOf(file, filename)] || 'application/octet-stream')
+  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey })
   const direct = /^https?:\/\//.test(presign.url)
   const method = String(presign.method || (direct ? 'PUT' : 'POST')).toUpperCase()
   const directHeaders = Object.fromEntries(Object.entries(presign.fields || {}).map(([k, v]) => [k, String(v)]))
