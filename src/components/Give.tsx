@@ -51,6 +51,9 @@ export default function Give() {
   const [pollingId, setPollingId] = useState<string | null>(null)
   // Admin-editable content (funds, amounts, headline, paybill) with defaults.
   const [content, setContent] = useState<Record<string, string>>({})
+  const [paymentConfigs, setPaymentConfigs] = useState<Record<string, any>>({})
+  const [paymentSaving, setPaymentSaving] = useState(false)
+  const [paymentEditFund, setPaymentEditFund] = useState('offering')
   const [projects, setProjects] = useState<any[]>([])
   const [selectedProject, setSelectedProject] = useState<any | null>(null)
   const [givingProject, setGivingProject] = useState<any | null>(null)
@@ -160,12 +163,33 @@ export default function Give() {
     return QUICK
   }, [content.giving_quick])
   const paybillName = content.paybill_name || PAYBILL_FALLBACK.name
+  const selectedPayment = paymentConfigs[fund] || { method: 'stk', enabled: true, instructions: '', payment_number: '', account_reference: '' }
+  const savePaymentConfigs = async () => {
+    setPaymentSaving(true)
+    try {
+      const token = localStorage.getItem('harvest_token')
+      const response = await fetch(`${API}/api/content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ giving_payment_methods: JSON.stringify(paymentConfigs) }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result?.error || result?.message || 'Could not save payment settings')
+      setContent(result.content || { ...content, giving_payment_methods: JSON.stringify(paymentConfigs) })
+      showToast('Purpose-specific payment settings saved', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save payment settings', 'error')
+    } finally { setPaymentSaving(false) }
+  }
+  const updatePaymentConfig = (id: string, patch: Record<string, any>) => {
+    setPaymentConfigs(prev => ({ ...prev, [id]: { method: 'stk', enabled: true, instructions: '', payment_number: '', account_reference: '', ...(prev[id] || {}), ...patch } }))
+  }
 
   useEffect(() => {
-    fetch(`${API}/api/content`).then(r => r.json()).then(d => { setContent(d?.content || {}); setContentLoaded(true) }).catch(() => setContentLoaded(true))
+    fetch(`${API}/api/content`).then(r => r.json()).then(d => { const next = d?.content || {}; setContent(next); try { const parsed = JSON.parse(next.giving_payment_methods || '{}'); setPaymentConfigs(parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) } catch { setPaymentConfigs({}) }; setContentLoaded(true) }).catch(() => setContentLoaded(true))
   }, [])
 
-  const purpose = useMemo(() => funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund])
+  const purpose = useMemo(() => paymentConfigs[fund]?.label?.trim() || funds.find((f: any) => f.id === fund)?.label || 'General Giving', [funds, fund, paymentConfigs])
 
   useEffect(() => {
     if (!apiEnabled) return
@@ -264,7 +288,7 @@ export default function Give() {
     if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
     setBusy(true); setMessage('')
     try {
-      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
+      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, purpose_id: fund, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
       showToast('M-Pesa prompt sent — check your phone', 'success')
       setPollingId(result.transactionId || null)
@@ -311,9 +335,20 @@ export default function Give() {
         <div className="flex gap-2 mb-4 flex-wrap">{quick.map((v: number) => <button key={v} onClick={() => setAmount(v)} className={`px-4 py-2 rounded-full text-sm font-semibold ${amount===v?'bg-[#7C3AED] text-white':'bg-white border border-[#E8DEC9]'}`}>{v.toLocaleString()}</button>)}</div>
         <input inputMode="numeric" value={amount} onChange={e => setAmount(e.target.value===''?'':Number(e.target.value))} placeholder={`Custom amount KES (min ${MIN_GIVE})`} className="input-premium mb-1" />
         {amount !== '' && !Number.isInteger(Number(amount)) && <p className="text-xs text-[#B45309] mb-1">M-Pesa takes whole shillings — this will be rejected.</p>}
-        <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
-        {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
-        {mpesaEnabled === false && (
+        {selectedPayment.enabled === false ? <div className="mb-4 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] p-4 text-sm text-[#991B1B]">Giving to {purpose} is temporarily unavailable. Please choose another purpose or contact the church office.</div> : selectedPayment.method !== 'stk' ? (
+          <div className="mb-4 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-sm">
+            <p className="font-bold">{selectedPayment.method === 'paybill' ? 'M-Pesa Paybill' : selectedPayment.method === 'till' ? 'M-Pesa Till' : selectedPayment.method === 'bank' ? 'Bank transfer' : 'Giving instructions'} · {purpose}</p>
+            {selectedPayment.method === 'paybill' && <p className="mt-2">Business number: <b className="select-all">{selectedPayment.payment_number}</b> · Account: <b className="select-all">{selectedPayment.account_reference || purpose}</b></p>}
+            {selectedPayment.method === 'till' && <p className="mt-2">Till number: <b className="select-all">{selectedPayment.payment_number}</b></p>}
+            {selectedPayment.method === 'bank' && <div className="mt-2 space-y-1"><p>Bank: <b>{selectedPayment.bank_name}</b></p><p>Account name: <b>{selectedPayment.bank_account_name}</b></p><p>Account number: <b className="select-all">{selectedPayment.bank_account_number}</b></p>{selectedPayment.account_reference && <p>Reference: <b>{selectedPayment.account_reference}</b></p>}</div>}
+            {selectedPayment.instructions && <p className="mt-3 whitespace-pre-wrap">{selectedPayment.instructions}</p>}
+            <p className="mt-3 text-xs text-[#6B6257]">Please verify the details before sending. This app does not automatically confirm manual transfers.</p>
+          </div>
+        ) : <>
+          <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
+          {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
+        </>}
+        {mpesaEnabled === false && selectedPayment.method === 'stk' && (
           <div className="mb-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] p-4 text-sm">
             <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
             <ol className="list-decimal ml-4 mt-2 space-y-1 text-[#78350F]">
@@ -326,7 +361,7 @@ export default function Give() {
           </div>
         )}
         {givingProject && <div className="mb-3 rounded-2xl bg-[#F3E8FF] border border-[#DDD6FE] p-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="text-[10px] uppercase tracking-wide font-extrabold text-[#5B21B6]">Giving toward</p><p className="text-sm font-extrabold truncate">{givingProject.name}</p></div><button type="button" onClick={() => setGivingProject(null)} className="text-xs font-bold text-[#6B6257]">Clear</button></div>}
-        <button disabled={busy} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{busy?'Sending M-Pesa prompt…':`Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
+        <button disabled={busy || selectedPayment.enabled === false || (selectedPayment.method && selectedPayment.method !== 'stk')} onClick={pay} className="btn-primary-lg w-full mb-3 disabled:opacity-60">{selectedPayment.enabled === false ? 'Giving unavailable' : selectedPayment.method && selectedPayment.method !== 'stk' ? 'Use payment instructions above' : busy ? 'Sending M-Pesa prompt…' : `Give KES ${Number(amount||0).toLocaleString()} · ${purpose}`}</button>
         {pollingId && <div className="mb-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-4 text-sm text-[#1E40AF] flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-[#3B82F6] animate-pulse" />Waiting for you to enter your M-Pesa PIN…</div>}
         {message && <div className="mb-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] p-4 text-sm text-[#065F46]">{message}</div>}
 
@@ -350,6 +385,46 @@ export default function Give() {
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-[#7C3AED]">Administration</p><h1 className="text-2xl font-extrabold mt-1">Giving ledger</h1></div>
+        <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+          <h2 className="font-extrabold">Purpose-specific payment methods</h2>
+          <p className="text-xs text-[#6B6257] mt-1">Each giving purpose has its own editable payment instructions. These settings never change another purpose's configuration.</p>
+          <label className="block mt-3 text-xs font-bold">Giving purpose
+            <select value={paymentEditFund} onChange={e => setPaymentEditFund(e.target.value)} className="input-premium mt-1">
+              {funds.map((f:any) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+          </label>
+          {(() => {
+            const cfg = paymentConfigs[paymentEditFund] || { method: 'stk', enabled: true, instructions: '', payment_number: '', account_reference: '' }
+            return <div className="mt-3 space-y-3">
+              <label className="block text-xs font-bold">Payment method
+                <select value={cfg.method || 'stk'} onChange={e => updatePaymentConfig(paymentEditFund, { method: e.target.value })} className="input-premium mt-1">
+                  <option value="stk">M-Pesa STK Push</option><option value="paybill">M-Pesa Paybill</option><option value="till">M-Pesa Till</option><option value="bank">Bank transfer</option><option value="manual">Manual instructions</option>
+                </select>
+              </label>
+              <label className="block text-xs font-bold">Member-facing purpose name
+                <input value={cfg.label ?? funds.find((f:any)=>f.id===paymentEditFund)?.label ?? ''} onChange={e => updatePaymentConfig(paymentEditFund, { label: e.target.value })} maxLength={120} placeholder="e.g. Children Ministry" className="input-premium mt-1" />
+              </label>
+              {(cfg.method === 'paybill' || cfg.method === 'till') && <label className="block text-xs font-bold">{cfg.method === 'paybill' ? 'Paybill number' : 'Till number'}
+                <input value={cfg.payment_number || ''} onChange={e => updatePaymentConfig(paymentEditFund, { payment_number: e.target.value })} maxLength={32} placeholder="Enter official payment number" className="input-premium mt-1" />
+              </label>}
+              {cfg.method === 'paybill' && <label className="block text-xs font-bold">Account reference
+                <input value={cfg.account_reference || ''} onChange={e => updatePaymentConfig(paymentEditFund, { account_reference: e.target.value })} maxLength={40} placeholder={funds.find((f:any)=>f.id===paymentEditFund)?.label || 'Purpose reference'} className="input-premium mt-1" />
+              </label>}
+              {cfg.method === 'bank' && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input value={cfg.bank_name || ''} onChange={e => updatePaymentConfig(paymentEditFund, { bank_name: e.target.value })} maxLength={120} placeholder="Bank name" className="input-premium" />
+                <input value={cfg.bank_account_name || ''} onChange={e => updatePaymentConfig(paymentEditFund, { bank_account_name: e.target.value })} maxLength={120} placeholder="Account name" className="input-premium" />
+                <input value={cfg.bank_account_number || ''} onChange={e => updatePaymentConfig(paymentEditFund, { bank_account_number: e.target.value })} maxLength={64} placeholder="Account number" className="input-premium" />
+                <input value={cfg.account_reference || ''} onChange={e => updatePaymentConfig(paymentEditFund, { account_reference: e.target.value })} maxLength={40} placeholder="Transfer reference" className="input-premium" />
+              </div>}
+              <label className="block text-xs font-bold">Instructions shown to members
+                <textarea value={cfg.instructions || ''} onChange={e => updatePaymentConfig(paymentEditFund, { instructions: e.target.value })} maxLength={1000} rows={3} placeholder="Explain how to give to this purpose" className="input-premium mt-1" />
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={cfg.enabled !== false} onChange={e => updatePaymentConfig(paymentEditFund, { enabled: e.target.checked })} /> Members can give to this purpose</label>
+              <button type="button" disabled={paymentSaving} onClick={() => void savePaymentConfigs()} className="btn-primary-lg w-full disabled:opacity-60">{paymentSaving ? 'Saving…' : 'Save payment settings'}</button>
+              <p className="text-[10px] text-[#8B8175]">No preview/example payment number is prefilled. M-Pesa API credentials remain server-side.</p>
+            </div>
+          })()}
+        </div>
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Manage projects</h2><p className="text-xs text-[#6B6257] mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projects.length === 0 && <p className="text-xs text-[#6B6257] mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-[#F1E9DA]"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-[#7C3AED] ml-1">{p.status}</span></p><p className="text-xs text-[#6B6257] mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-[#065F46] text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4"><h2 className="font-extrabold">Create project</h2><p className="text-xs text-[#6B6257] mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
         {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-[#FFFBF0] p-5" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-9 h-9 rounded-full bg-white border border-[#E8DEC9]">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}

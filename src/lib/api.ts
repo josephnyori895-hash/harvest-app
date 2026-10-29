@@ -77,7 +77,7 @@ export async function fetchFeed(offset=0, limit=20) {
   return apiJson(`/api/feed?offset=${offset}&limit=${limit}`) as Promise<{posts:any[],stories:any[],nextOffset:number,hasMore:boolean}>
 }
 
-export async function startGiving(params: {amount:number,phone:string,purpose:string,project_id?:string}) {
+export async function startGiving(params: {amount:number,phone:string,purpose:string,purpose_id?:string,project_id?:string}) {
   return apiJson('/api/giving/mpesa/stkpush', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{transactionId:string,checkoutRequestId:string,message:string}>
 }
 
