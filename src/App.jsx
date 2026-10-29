@@ -522,7 +522,7 @@ function InnerApp() {
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
           {tab === 'activity' && <Activity />}
-          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} />}
+          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} onOpenActivity={() => setTab('activity')} />}
           {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
           {tab === 'chat' && (
             <Chat
@@ -898,7 +898,7 @@ const savedAgo = iso => {
 }
 
 // Real profile: everything comes from /api/me + the member directory.
-function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
+function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity }) {
   const { isAdmin, role, username } = useAuth()
   const [me, setMe] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -1227,6 +1227,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile }) {
       </div>
 
       <div className="px-4 mt-5">
+        {/* Give took the bottom bar slot Activity used to hold; Activity stays
+            one tap away here so nothing members relied on disappears. */}
+        <button onClick={() => onOpenActivity?.()} className="mb-2 w-full py-2.5 rounded-full border border-[#E8DEC9] bg-[#FFFBF0] text-[#5B21B6] text-xs font-semibold active:opacity-70">🕘 Your activity</button>
         <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-[#E8DEC9] text-[#6B6257] text-xs font-semibold">Sign out</button>
       </div>
     </div>
@@ -1239,7 +1242,7 @@ function Nav({ tab, setTab }) {
     ['search', 'search'],
     ['reels', 'reels'],
     ['post', 'post'],
-    ['activity', 'activity'],
+    ['give', 'give'],
     ['chat', 'chat'],
     ['profile', 'profile'],
   ]
