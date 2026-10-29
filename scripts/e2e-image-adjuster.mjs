@@ -22,6 +22,11 @@ const cases = [
   { id: '3:4', label: 'Tall portrait', ratio: 3 / 4 },
   { id: '4:5', label: 'Portrait', ratio: 4 / 5 },
   { id: '16:9', label: 'Wide', ratio: 16 / 9 },
+  // Regression: 90° rotation previously bled near-black fill into the export
+  // (the client's black-bar report). Rotated exports must be as clean as
+  // unrotated ones — same pixel assertions apply.
+  { id: '1:1', label: 'Square rotated 90°', ratio: 1, rotate: true },
+  { id: '3:4', label: 'Tall portrait rotated 180°', ratio: 3 / 4, rotate: true, rotations: 2 },
 ]
 
 const browser = await puppeteer.launch({
@@ -82,7 +87,10 @@ async function login() {
 async function clickExactButton(text) {
   const clicked = await page.evaluate((value) => {
     const nodes = [...document.querySelectorAll('button')]
-    const node = nodes.find(b => b.textContent?.trim() === value)
+    // Composer option buttons embed a primary label span plus a hint span;
+    // match the primary label, falling back to whole-text equality.
+    const node = nodes.find(b => b.querySelector('span')?.textContent?.trim() === value)
+      || nodes.find(b => b.textContent?.trim() === value)
     if (!node) return false
     node.click()
     return true
@@ -106,7 +114,7 @@ try {
   await login()
 
   for (const testCase of cases) {
-    await page.reload({ waitUntil: 'networkidle2' })
+    await page.goto(baseUrl, { waitUntil: 'networkidle2' })
 
     const openPost = await page.$('button[aria-label="Open post"]')
     assert.ok(openPost, 'Post creation navigation button is missing')
@@ -115,16 +123,25 @@ try {
     await page.waitForSelector('button', { visible: true })
     await clickExactButton('Photo post')
 
-    const input = await page.waitForSelector('input[data-testid="post-create-file-input"]')
+    // Hidden file input inside the composer's media picker shell.
+    const input = await page.waitForSelector('input[type="file"]', { hidden: true, timeout: 15000 })
     await input.uploadFile(fixture)
+
+    // Applied file shows its preview with an Adjust affordance.
+    await page.waitForSelector('button[aria-label="Adjust image"]', { visible: true })
+    await page.click('button[aria-label="Adjust image"]')
 
     await page.waitForSelector('[data-testid="image-adjuster-save"]', { visible: true })
     await page.waitForSelector(`[data-testid="image-adjuster-aspect-${testCase.id}"]`, { visible: true })
     await page.click(`[data-testid="image-adjuster-aspect-${testCase.id}"]`)
+    for (let i = 0; i < (testCase.rotate ? (testCase.rotations || 1) : 0); i++) {
+      await page.click('[data-testid="image-adjuster-rotate"]')
+    }
     await page.click('[data-testid="image-adjuster-save"]')
 
-    await page.waitForSelector('[data-testid="post-create-edit"]', { visible: true })
-    const preview = await waitForImageDimensions('[data-testid="post-create-edit"] img')
+    // Composer preview now carries the exported JPEG.
+    await page.waitForSelector('img[alt="Preview"]', { visible: true })
+    const preview = await waitForImageDimensions('img[alt="Preview"]')
     assert.equal(preview.mime, 'image/jpeg', `${testCase.label} export is not JPEG: ${preview.mime}`)
     const previewRatio = preview.width / preview.height
     const pixels = await inspectExportPixels(preview.src)
@@ -135,10 +152,10 @@ try {
     assert.ok(Math.abs(previewRatio - testCase.ratio) < 0.01,
       `${testCase.label} Preview ratio mismatch: ${preview.width}x${preview.height} = ${previewRatio}`)
 
-    await page.click('[data-testid="post-create-continue-details"]')
-    await page.waitForSelector('[data-testid="post-create-details"]', { visible: true })
+    await clickExactButton('Preview')
+    await page.waitForSelector('img[alt="Post preview"]', { visible: true })
 
-    const details = await waitForImageDimensions('[data-testid="post-create-details-preview"] img')
+    const details = await waitForImageDimensions('img[alt="Post preview"]')
     assert.equal(details.mime, 'image/jpeg', `${testCase.label} Details preview is not the exported JPEG: ${details.mime}`)
     const detailsRatio = details.width / details.height
 
@@ -150,7 +167,7 @@ try {
     console.log(`PASS ${testCase.label}: ${preview.width}x${preview.height}; border/content pixel checks passed; Preview and Details match`)
   }
 
-  console.log('PASS ImageAdjuster editor flow: Original, Square, Tall portrait, Portrait and Wide, including pixel-level border/content checks')
+  console.log('PASS ImageAdjuster editor flow: Original, Square, Tall portrait, Portrait and Wide, plus 90°/180° rotated cases, including pixel-level border/content checks')
 } catch (error) {
   console.error(`FAIL ImageAdjuster editor flow: ${error instanceof Error ? error.stack || error.message : error}`)
   process.exitCode = 1

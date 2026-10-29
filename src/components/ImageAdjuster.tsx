@@ -158,12 +158,16 @@ export default function ImageAdjuster({
     const canvas = document.createElement('canvas')
     canvas.width = outW; canvas.height = outH
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, outW, outH)
+    // Paper-cream under-layer, never black: coverage seams (sub-pixel cracks at
+    // the crop boundary, amplified by JPEG) must read as paper, not as bars.
+    ctx.fillStyle = '#F4E8D0'; ctx.fillRect(0, 0, outW, outH)
 
     const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const minScale = Math.max(cw / iw, ch / ih) || 1
+    // Cover with a small slack so boundary arithmetic never exposes a
+    // sub-pixel crack after rounding + JPEG (the black-bar client report).
+    const minScale = (Math.max(cw / iw, ch / ih) || 1) * 1.002
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
 
@@ -273,7 +277,7 @@ export default function ImageAdjuster({
         </div>
         <div className="flex items-center gap-2">
           <button onClick={reset} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Reset image adjustments">Reset</button>
-          <button onClick={rotate} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Rotate image">↻ Rotate</button>
+          <button onClick={rotate} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Rotate image" data-testid="image-adjuster-rotate">↻ Rotate</button>
           <div className="flex gap-2 overflow-x-auto min-w-0">
             {PRESETS.map(p => (
               <button
