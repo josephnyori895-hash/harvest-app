@@ -63,7 +63,16 @@ export async function handleGiving(request, env, ctx) {
       const body = await readJson(request)
       const amount = Number(body.amount)
       const phone = normalizePhone(body.phone)
+      const purposeId = String(body.purpose_id || '').trim().slice(0, 40)
       const purpose = String(body.purpose || 'General Giving').trim().slice(0, 120) || 'General Giving'
+      if (purposeId) {
+        const configResult = await query(env, "SELECT value FROM site_content WHERE key='giving_payment_methods' LIMIT 1")
+        let configs = {}
+        try { configs = JSON.parse(String(configResult.rows[0]?.value || '{}')) } catch { return errorResponse('giving payment configuration is invalid', 503) }
+        const config = configs && typeof configs === 'object' && !Array.isArray(configs) ? configs[purposeId] : null
+        if (config?.enabled === false) return errorResponse('This giving purpose is temporarily unavailable', 409)
+        if (config?.method && config.method !== 'stk') return errorResponse('This purpose uses manual payment instructions; M-Pesa STK Push is not available', 409)
+      }
       const projectId = body.project_id ? String(body.project_id).slice(0, 64) : null
       if (projectId) {
         const project = await query(env, 'SELECT id,status FROM projects WHERE id=?', [projectId])
