@@ -58,3 +58,8 @@ export async function toggleInlineMediaTrack(track: { id: string; url?: string |
 export function activeInlineMediaTrackId(): string | null {
   return activeId
 }
+
+/** Whether the attached track currently playing matches the given id. */
+export function isInlinePlaying(id: string): boolean {
+  return !!inlineAudio && !inlineAudio.paused && activeId === id
+}

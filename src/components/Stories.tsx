@@ -6,7 +6,6 @@ import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
-import { pausePlayer } from '../lib/audioPlayer'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
@@ -41,7 +40,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   }
   useEffect(() => {
     stopInlineMediaAudio()
-    pausePlayer()
     if (s?.music?.id && !isVideo && !isPaused) {
       void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
     }
@@ -128,7 +126,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     if (!v) return
     v.currentTime = 0
     stopInlineMediaAudio()
-    pausePlayer()
     v.muted = storyMuted
     const tryPlay = () => {
       v.play().then(() => setVideoState('playing')).catch(() => {
@@ -378,8 +375,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [musicLoading, setMusicLoading] = useState(false)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [previewFailedId, setPreviewFailedId] = useState<string | null>(null)
-  const previewRef = useRef<HTMLAudioElement | null>(null)
-  useEffect(() => () => { previewRef.current?.pause(); previewRef.current = null }, [])
+  useEffect(() => () => { stopInlineMediaAudio() }, [])
   const isVideoFile = Boolean(fileObj?.type.startsWith('video/'))
   const [timer, setTimer] = useState(4)
   const [showFilters, setShowFilters] = useState(false)
@@ -456,21 +452,13 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     }, 250)
     return () => clearTimeout(t)
   }, [showMusic, musicQuery])
-  const stopPreview = () => { previewRef.current?.pause(); previewRef.current = null; setPreviewId(null) }
+  const stopPreview = () => { stopInlineMediaAudio(); setPreviewId(null); setPreviewFailedId(null) }
   const togglePreview = (m: any) => {
     if (!m?.id) return
     const id = String(m.id)
     if (!m.url) { setPreviewFailedId(id); return }
-    if (previewId === id) { stopPreview(); setPreviewFailedId(null); return }
-    previewRef.current?.pause()
-    const a = new Audio(m.url)
-    const fail = () => { if (previewRef.current === a) { previewRef.current = null; setPreviewId(null); setPreviewFailedId(id) } }
-    a.onended = () => { if (previewRef.current === a) { previewRef.current = null; setPreviewId(null) } }
-    a.onerror = fail
-    a.play().catch(fail)
-    previewRef.current = a
-    setPreviewId(id)
-    setPreviewFailedId(null)
+    if (previewId === id) { stopPreview(); return }
+    void toggleInlineMediaTrack({ id, url: m.url }, setPreviewId).then(ok => { if (!ok) setPreviewFailedId(id) })
   }
   const chooseMusic = (m: any) => { stopPreview(); setPreviewFailedId(null); setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
   const MOOD_PICKS = [

@@ -2,7 +2,8 @@
 // Preserve the church's visual identity while keeping media clear and responsive.
 
 import { useEffect, useRef, useState } from 'react'
-import { playTrack, pausePlayer, subscribePlayer, isPlayingId, audioAutoplayReady } from '../lib/audioPlayer'
+import { audioAutoplayReady } from '../lib/audioPlayer'
+import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio, isInlinePlaying } from '../lib/inlineMediaAudio'
 import FeedMediaPreview from './FeedMediaPreview'
 
 export type FeedCardPost = {
@@ -46,28 +47,40 @@ const fmtCount = (n: number): string => {
 
 function MusicChip({ p }: { p: FeedCardPost }) {
   const m = p.music
-  const [, tick] = useState(0)
-  useEffect(() => subscribePlayer(() => tick(x => x + 1)), [])
+  const [liveId, setLiveId] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [loading, setLoading] = useState(false)
+  useEffect(() => subscribeInlineMediaAudio(id => { setLiveId(id); setLoading(false) }), [])
   if (!m?.id || !m.title) return null
-  const playing = isPlayingId(m.id)
+  const playing = !loading && liveId === m.id && !failed
   const start = async () => {
-    if (playing) { pausePlayer(); return }
-    if (!m.url) return
-    await playTrack({ id: m.id, title: m.title, artist: m.artist || 'Harvest Family Church', url: m.url, artwork: m.cover_url || null, origin: 'feed' })
+    if (loading) return
+    if (playing) { stopInlineMediaAudio(); return }
+    if (!m.url) { setFailed(true); return }
+    setLoading(true)
+    const ok = await toggleInlineMediaTrack({ id: String(m.id), url: m.url }, setLiveId)
+    setLoading(false)
+    if (!ok) setFailed(true)
   }
+  const retry = () => { setFailed(false); void start() }
   return (
-    <button type="button" onClick={() => void start()} className="mt-2 flex items-center gap-2 text-left" aria-label={playing ? `Pause ${m.title}` : `Play ${m.title}`}>
-      <span className="flex h-4 w-4 items-end justify-center gap-[2px] shrink-0" aria-hidden="true">
-        {playing ? (
-          <>
-            <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '55%', animation: 'eqbar 0.9s ease-in-out infinite' }} />
-            <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '100%', animation: 'eqbar 0.7s ease-in-out infinite reverse' }} />
-            <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '70%', animation: 'eqbar 1.1s ease-in-out infinite' }} />
-          </>
-        ) : <span className="text-[13px] leading-none text-[#7C3AED]">▶</span>}
-      </span>
-      <span className="truncate text-[11px] font-bold text-[#5B21B6]">{m.title}{m.artist ? ` · ${m.artist}` : ''}</span>
-    </button>
+    <>
+      <button type="button" onClick={() => void start()} disabled={loading} className="mt-2 flex w-full items-center gap-2 text-left disabled:opacity-70" aria-label={playing ? `Pause ${m.title}` : loading ? `Loading ${m.title}` : `Play ${m.title}`}>
+        <span className="flex h-4 w-4 items-end justify-center gap-[2px] shrink-0" aria-hidden="true">
+          {playing ? (
+            <>
+              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '55%', animation: 'eqbar 0.9s ease-in-out infinite' }} />
+              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '100%', animation: 'eqbar 0.7s ease-in-out infinite reverse' }} />
+              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '70%', animation: 'eqbar 1.1s ease-in-out infinite' }} />
+            </>
+          ) : loading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#7C3AED] border-t-transparent" /> : <span className="text-[13px] leading-none text-[#7C3AED]">▶</span>}
+        </span>
+        <span className="truncate text-[11px] font-bold text-[#5B21B6]">{m.title}{m.artist ? ` · ${m.artist}` : ''}</span>
+      </button>
+      {failed && (
+        <button type="button" onClick={() => void retry()} className="mt-1 text-[10px] font-bold text-[#B45309] underline">Retry music</button>
+      )}
+    </>
   )
 }
 
@@ -117,14 +130,14 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        if (audioAutoplayReady() && !isPlayingId(m.id) && !autoPlaying.current) {
+        if (audioAutoplayReady() && !isInlinePlaying(m.id) && !autoPlaying.current) {
           autoPlaying.current = true
-          void playTrack({ id: m.id, title: m.title, artist: m.artist || 'Harvest Family Church', url: m.url, artwork: m.cover_url || null, origin: 'feed' })
+          void toggleInlineMediaTrack({ id: String(m.id), url: m.url }, undefined)
             .catch(() => {})
         }
       } else if (autoPlaying.current) {
         autoPlaying.current = false
-        if (isPlayingId(m.id)) pausePlayer()
+        stopInlineMediaAudio()
       }
     }, { threshold: [0, 0.6] })
     io.observe(el)
