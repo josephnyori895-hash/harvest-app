@@ -356,7 +356,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
 
 const FILTERS = ['Original', 'Clarendon', 'Juno', 'Aden', 'Lark', 'Moody', 'Valencia', 'Perpetua', 'Willow', 'Gingham']
 const STORY_STICKERS = ['🙏', '🔥', '❤️', '🎵', '🎤', '📍', '📷', '✝️', '🕊️', '💜', '👏', '😍', '🤗', '✨', '🎉', '🍕', '🌟', '⚽', '🎸', '💎']
-const STORY_MUSIC = ['Worship 🎵', 'Hillsong 🎶', 'Sinach 🎤', 'Maverick 🔥', 'Elevation 🙏', 'Harvest 🎹']
 
 export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
@@ -374,7 +373,8 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [musicQuery, setMusicQuery] = useState('')
   const [musicResults, setMusicResults] = useState<any[]>([])
   const [musicLoading, setMusicLoading] = useState(false)
-  const [previewId, setPreviewId] = useState<any>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewFailedId, setPreviewFailedId] = useState<string | null>(null)
   const previewRef = useRef<HTMLAudioElement | null>(null)
   useEffect(() => () => { previewRef.current?.pause(); previewRef.current = null }, [])
   const isVideoFile = Boolean(fileObj?.type.startsWith('video/'))
@@ -382,7 +382,6 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [showFilters, setShowFilters] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
   const [showMusic, setShowMusic] = useState(false)
-  const [showMood, setShowMood] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [adjusting, setAdjusting] = useState(false)
   const onFile = (e: any) => {
@@ -434,9 +433,43 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
-  const searchMusic = async (term: string) => { if (!term.trim()) { setMusicResults([]); return }; setMusicLoading(true); try { const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=8`); const d = await r.json().catch(() => ({})); const items = Array.isArray(d.results) ? d.results.map((m:any) => ({ id: String(m.trackId || Math.random()), name: m.trackName || 'Untitled', artist: m.artistName || 'Unknown artist', url: m.previewUrl || '', artwork: m.artworkUrl100 || '' })) : []; setMusicResults(items) } catch { setMusicResults([]) } finally { setMusicLoading(false) } }
-  const togglePreview = (m: any) => { if (!m?.url) return; if (previewId === m.id) { previewRef.current?.pause(); previewRef.current = null; setPreviewId(null); return }; if (previewRef.current) previewRef.current.pause(); const a = new Audio(m.url); a.onended = () => setPreviewId(null); previewRef.current = a; void a.play().catch(() => setPreviewId(null)); setPreviewId(m.id) }
-  const chooseMusic = (m: any) => { setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
+  // Music must come from the church library: the worker validates
+  // music_track_id against the tracks table, so transit-none iTunes picks
+  // would 404 the confirm and silently destroy the story upload.
+  useEffect(() => {
+    if (!showMusic) return
+    const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    const q = musicQuery.trim().toLowerCase()
+    const t = setTimeout(() => {
+      setMusicLoading(true)
+      fetch(API + '/api/music?limit=100')
+        .then(r => r.json())
+        .then(d => {
+          const all = Array.isArray(d?.tracks) ? d.tracks : []
+          setMusicResults(q ? all.filter((x: any) => `${x.title} ${x.artist}`.toLowerCase().includes(q)) : all)
+        })
+        .catch(() => setMusicResults([]))
+        .finally(() => setMusicLoading(false))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [showMusic, musicQuery])
+  const stopPreview = () => { previewRef.current?.pause(); previewRef.current = null; setPreviewId(null) }
+  const togglePreview = (m: any) => {
+    if (!m?.id) return
+    const id = String(m.id)
+    if (!m.url) { setPreviewFailedId(id); return }
+    if (previewId === id) { stopPreview(); setPreviewFailedId(null); return }
+    previewRef.current?.pause()
+    const a = new Audio(m.url)
+    const fail = () => { if (previewRef.current === a) { previewRef.current = null; setPreviewId(null); setPreviewFailedId(id) } }
+    a.onended = () => { if (previewRef.current === a) { previewRef.current = null; setPreviewId(null) } }
+    a.onerror = fail
+    a.play().catch(fail)
+    previewRef.current = a
+    setPreviewId(id)
+    setPreviewFailedId(null)
+  }
+  const chooseMusic = (m: any) => { stopPreview(); setPreviewFailedId(null); setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
   const MOOD_PICKS = [
     { mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] },
     { mood: '🎶 Choir', tags: ['choir', 'choral'] },
@@ -444,7 +477,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     { mood: '❤️ Hymns', tags: ['hymn', 'traditional'] },
     { mood: '🎤 Gospel', tags: ['gospel', 'praise'] },
   ]
-  const filterByMood = (tags: string[]) => { setShowMood(false); const matches = STORY_MUSIC.filter((m: any) => tags.some((t: string) => m.toLowerCase().includes(t))); if (matches.length) chooseMusic({ id: matches[0], name: matches[0], artist: 'Harvest', url: '', artwork: '' }) }
+  const filterByMood = (tags: string[]) => { setMusicQuery(tags[0] || '') }
   const submit = async () => {
     if (busy) return
     if (!fileObj) { setNotice('Add a photo or video first'); return }
@@ -474,11 +507,11 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     <div className="bg-stone-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
       <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-200 bg-white"><button onClick={onDone} className="text-xl text-stone-700">✕</button><p className="font-bold text-stone-800">New story</p><button onClick={() => void submit()} disabled={busy || !fileObj} className="text-sm font-bold text-violet-600 disabled:opacity-40">{busy ? 'Posting…' : 'Share'}</button></div>
       <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-stone-50 to-white">
-        {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-stone-300 flex items-center justify-center text-stone-500 font-semibold cursor-pointer"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />Choose a photo or video</label> : <div className="relative w-full aspect-[9/16] overflow-hidden rounded-2xl bg-stone-900">{isVideoFile ? <video src={fileUrl} controls playsInline className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" /> : <img src={fileUrl} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/35 px-2 py-1 rounded-full text-[10px] font-bold">{filter}</div>}{textOverlay && <div className="absolute inset-x-0 top-4 flex justify-center"><span className="px-3 py-1 rounded-full text-sm font-bold" style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 8px rgba(0,0,0,.6)' }}>{textOverlay}</span></div>}{stickers.length > 0 && <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">{stickers.map(s => <span key={s} className="text-2xl">{s}</span>)}</div>}{musicTrack && <div className="absolute top-3 right-3 bg-black/50 rounded-full px-2 py-1 text-[10px] font-bold text-white">♪ {musicTrack.name}</div>}</div>}
+        {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-stone-300 flex items-center justify-center text-stone-500 font-semibold cursor-pointer"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />Choose a photo or video</label> : <div className="relative w-full aspect-[9/16] overflow-hidden rounded-2xl bg-stone-900">{isVideoFile ? <video src={fileUrl} controls playsInline className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" /> : <img src={fileUrl} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/35 px-2 py-1 rounded-full text-[10px] font-bold">{filter}</div>}{textOverlay && <div className="absolute inset-x-0 top-4 flex justify-center"><span className="px-3 py-1 rounded-full text-sm font-bold" style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 8px rgba(0,0,0,.6)' }}>{textOverlay}</span></div>}{stickers.length > 0 && <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">{stickers.map(s => <span key={s} className="text-2xl">{s}</span>)}</div>}{musicTrack && <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1 text-[10px] font-bold text-white"><button type="button" aria-label={previewId === String(musicTrack.id) ? 'Stop music preview' : `Preview ${musicTrack.title}`} onClick={() => togglePreview(musicTrack)}>{previewId === String(musicTrack.id) ? '⏸' : previewFailedId === String(musicTrack.id) ? '⚠ Retry' : '♪'}</button><span className="max-w-[110px] truncate">{musicTrack.title}</span><button type="button" aria-label="Remove music" onClick={() => { stopPreview(); setPreviewFailedId(null); setMusicTrack(null) }}>×</button></div>}</div>}
       </div>
-      {fileUrl && !isVideoFile && <><div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false); setShowMood(false) }} className="text-sm font-bold text-stone-700">Filters</button></div>{showFilters && <div className="px-4 pb-4 bg-white border-t border-stone-200 grid grid-cols-3 gap-2">{FILTERS.map((f) => <button key={f} onClick={() => { setFilter(f); setShowFilters(false) }} className={`rounded-xl border px-2 py-2 text-xs font-bold ${filter === f ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-700'}`}>{f}</button>)}</div>}</>}
-      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false); setShowMood(false) }} className="text-sm font-bold text-stone-700">Stickers</button></div>}{showStickers && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 flex flex-wrap gap-2">{STORY_STICKERS.map((s) => <button key={s} onClick={() => addSticker(s)} className="text-2xl">{s}</button>)}{stickers.map((s) => <button key={s} onClick={() => removeSticker(s)} className="text-xs text-stone-700">× {s}</button>)}</div>}
-      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowMusic(!showMusic); setShowFilters(false); setShowStickers(false); setShowMood(false) }} className="text-sm font-bold text-stone-700">Music</button></div>}{showMusic && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 space-y-3"><input value={musicQuery} onChange={e => { setMusicQuery(e.target.value); void searchMusic(e.target.value) }} placeholder="Search music…" className="w-full bg-stone-100 rounded-xl px-3 py-2 text-sm text-stone-800" />{musicLoading && <p className="text-xs text-stone-500">Loading…</p>}{musicResults.length === 0 && !musicLoading && <div className="flex flex-wrap gap-2">{MOOD_PICKS.map(({ mood, tags }) => <button key={mood} onClick={() => filterByMood(tags)} className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">{mood}</button>)}</div>}<div className="space-y-2">{musicResults.map((m:any) => <div key={m.id} className="flex items-center gap-3 rounded-xl bg-stone-100 p-2"><img src={m.artwork || 'https://placehold.co/48x48/png'} alt="" className="w-12 h-12 rounded-lg" /><div className="flex-1 min-w-0"><p className="text-sm font-bold text-stone-800 truncate">{m.name}</p><p className="text-[11px] text-stone-500 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} className="min-w-11 min-h-11 rounded-full bg-white text-stone-700 text-xs font-bold">{previewId === m.id ? 'Stop' : 'Preview'}</button><button onClick={() => chooseMusic(m)} className="min-w-11 min-h-11 rounded-full bg-violet-600 text-white text-xs font-bold">Use</button></div>)}</div></div>}
+      {fileUrl && !isVideoFile && <><div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Filters</button></div>{showFilters && <div className="px-4 pb-4 bg-white border-t border-stone-200 grid grid-cols-3 gap-2">{FILTERS.map((f) => <button key={f} onClick={() => { setFilter(f); setShowFilters(false) }} className={`rounded-xl border px-2 py-2 text-xs font-bold ${filter === f ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-700'}`}>{f}</button>)}</div>}</>}
+      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Stickers</button></div>}{showStickers && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 flex flex-wrap gap-2">{STORY_STICKERS.map((s) => <button key={s} onClick={() => addSticker(s)} className="text-2xl">{s}</button>)}{stickers.map((s) => <button key={s} onClick={() => removeSticker(s)} className="text-xs text-stone-700">× {s}</button>)}</div>}
+      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowMusic(!showMusic); setShowFilters(false); setShowStickers(false) }} className="text-sm font-bold text-stone-700">Music</button></div>}{showMusic && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 space-y-3"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} placeholder="Search church music…" className="w-full bg-stone-100 rounded-xl px-3 py-2 text-sm text-stone-800" />{musicLoading && <p className="text-xs text-stone-500">Loading…</p>}{!musicQuery.trim() && <div className="flex flex-wrap gap-2">{MOOD_PICKS.map(({ mood, tags }) => <button key={mood} onClick={() => filterByMood(tags)} className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">{mood}</button>)}</div>}{!musicLoading && musicQuery.trim() && musicResults.length === 0 && <p className="text-xs text-stone-500">No library tracks match — upload one in the Music tab first.</p>}<div className="space-y-2">{!musicLoading && musicResults.map((m:any) => <div key={m.id} className="flex items-center gap-3 rounded-xl bg-stone-100 p-2"><img src={m.cover_url || 'https://placehold.co/48x48/png'} alt="" className="w-12 h-12 rounded-lg" /><div className="flex-1 min-w-0"><p className="text-sm font-bold text-stone-800 truncate">{m.title}</p><p className="text-[11px] text-stone-500 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} aria-label={previewId === m.id ? 'Stop preview' : 'Preview music'} className={`min-w-11 min-h-11 rounded-full bg-white text-xs font-bold ${previewFailedId === String(m.id) ? 'text-red-600' : 'text-stone-700'}`}>{previewId === m.id ? 'Stop' : previewFailedId === String(m.id) ? 'Retry' : 'Preview'}</button><button onClick={() => chooseMusic(m)} className="min-w-11 min-h-11 rounded-full bg-violet-600 text-white text-xs font-bold">Use</button></div>)}</div></div>}
       {notice && <div className="mx-4 mb-2"><ErrorMessage message={notice} /></div>}
       {adjusting && fileObj && fileObj.type.startsWith('image/') && (
         <ImageAdjuster file={fileObj} onCancel={() => setAdjusting(false)} onDone={applyAdjust} />
