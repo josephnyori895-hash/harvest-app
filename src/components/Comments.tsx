@@ -1,21 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import ErrorMessage from './ErrorMessage'
+import { timeAgo } from '../lib/time'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-
-function timeAgo(iso?: string) {
-  if (!iso) return 'Just now'
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms) || ms < 0) return 'Just now'
-  const m = Math.floor(ms / 60000)
-  if (!m || m < 1) return 'Just now'
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d`
-  return new Date(iso).toLocaleDateString()
-}
 
 type Comment = {
   id: string; username: string; body: string; created_at: string; verified?: boolean

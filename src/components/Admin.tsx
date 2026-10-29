@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import AdminMedia from './AdminMedia'
 import { useCongregations } from '../lib/useCongregations'
 import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
+import { timeAgo } from '../lib/time'
 
 import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -438,7 +439,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             </div>
             <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
               <h2 className="font-extrabold text-sm mb-3">📰 Recent content</h2>
-              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-[#766E63]">{x.type || 'post'} · {x.created_at ? new Date(x.created_at).toLocaleString() : ''}</p></div>) : <p className="text-xs text-[#766E63]">No recent content.</p>}
+              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-[#766E63]">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p></div>) : <p className="text-xs text-[#766E63]">No recent content.</p>}
             </div>
             <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
               <h2 className="font-extrabold text-sm mb-3">💬 Recent chat activity</h2>

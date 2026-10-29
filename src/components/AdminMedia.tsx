@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import ErrorMessage from './ErrorMessage'
+import { timeAgo } from '../lib/time'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Item = {
@@ -227,7 +228,7 @@ export default function AdminMedia({ onBack }: Props) {
                 <div className="flex gap-3">
                   {item.preview_url && <img src={item.preview_url} alt="" className="w-16 h-16 rounded-2xl object-cover bg-[#F5EEDF]" />}
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-[#766E63]">@{item.username} · {new Date(item.created_at).toLocaleDateString()}</p>
+                    <p className="text-xs text-[#766E63]">@{item.username} · {timeAgo(item.created_at)}</p>
                     {editing === item.id ? (
                       <div className="mt-1 flex gap-2">
                         <input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-1.5 text-sm outline-none focus:border-[#7C3AED]" />

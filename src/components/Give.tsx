@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, overrideGivingPledge, removeGivenParticipant, renameGivingTake, removeFromTake, useApi } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
+import { timeAgo } from '../lib/time'
 
 const FUNDS = [
   { id:'tithe', label:'Tithe', sub:'First fruits', icon:'💰' },
@@ -247,7 +248,7 @@ export default function Give() {
       <div className="mt-3 h-2 rounded-full bg-[#F4E8D0] overflow-hidden"><div className="h-full bg-[#7C3AED] rounded-full" style={{width:`${pct}%`}} /></div>
       <div className="mt-2 flex justify-between gap-3 text-[11px] font-semibold"><span>KES {Number(p.raised_kes).toLocaleString()} raised</span><span>{pct}% · {p.participants} participating</span></div>
       {p.mine && <p className="mt-2 text-[11px] text-[#5B21B6] font-bold">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</p>}
-      {p.deadline && <p className="mt-1 text-[10px] text-[#8B8175]">Deadline {new Date(p.deadline).toLocaleDateString()}</p>}
+      {p.deadline && <p className="mt-1 text-[10px] text-[#8B8175]">Deadline {timeAgo(p.deadline)}</p>}
     </button>
   }
 
@@ -332,7 +333,7 @@ export default function Give() {
         <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
           <h2 className="font-bold mb-3">My giving</h2>
           {transactions.length === 0 ? <p className="text-sm text-[#6B6257]">Your completed and pending gifts will appear here.</p> : transactions.map(t => <div key={t.id} className="flex items-center justify-between py-3 border-b last:border-0 border-[#F1E9DA]">
-            <div><p className="text-sm font-semibold">KES {Number(t.amount_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">{t.purpose} · {new Date(t.created_at).toLocaleDateString()}</p></div>
+            <div><p className="text-sm font-semibold">KES {Number(t.amount_kes).toLocaleString()}</p><p className="text-xs text-[#6B6257]">{t.purpose} · {timeAgo(t.created_at)}</p></div>
             <span className="text-xs font-bold capitalize">{t.status}</span>
           </div>)}
         </div>

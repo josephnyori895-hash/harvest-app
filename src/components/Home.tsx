@@ -11,19 +11,7 @@ import { sharePostToWhatsApp } from '../lib/whatsappShare'
 import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
-function timeAgo(iso?: string) {
-  if (!iso) return 'Just now'
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms) || ms < 0) return 'Just now'
-  const m = Math.floor(ms / 60000)
-  if (m < 1) return 'Just now'
-  if (m < 60) return `${m}m`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d`
-  return new Date(iso).toLocaleDateString()
-}
+import { timeAgo } from '../lib/time'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
@@ -652,7 +640,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#766E63]">
                     <span>{Number(project.participants || 0)} participating</span>
-                    {project.deadline ? <span className={urgent ? 'font-bold text-[#B45309]' : ''}>{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? `⏳ ${daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : `Ends ${new Date(project.deadline).toLocaleDateString()}`}</span> : <span>Open participation</span>}
+                    {project.deadline ? <span className={urgent ? 'font-bold text-[#B45309]' : ''}>{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? `⏳ ${daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : `Ends ${timeAgo(project.deadline)}`}</span> : <span>Open participation</span>}
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">

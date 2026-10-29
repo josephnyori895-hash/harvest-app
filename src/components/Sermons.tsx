@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
+import { timeAgo } from '../lib/time'
 
 import ErrorMessage from './ErrorMessage'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -347,7 +348,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
                 <div className="min-w-0 flex-1">
                   <p className="font-extrabold text-sm leading-snug">{s.title}</p>
                   <p className="text-[11px] text-[#6B6257] mt-0.5">
-                    {s.speaker || 'Harvest Family Church'}{s.scripture ? ` · ${s.scripture}` : ''} · {fmtDur(Number(s.duration_secs) || 0)}{s.duration_secs ? '' : ` · ${new Date(s.created_at).toLocaleDateString()}`}
+                    {s.speaker || 'Harvest Family Church'}{s.scripture ? ` · ${s.scripture}` : ''} · {fmtDur(Number(s.duration_secs) || 0)}{s.duration_secs ? '' : ` · ${timeAgo(s.created_at)}`}
                   </p>
                   <p className="text-[10px] text-[#8B8175] mt-1">▶ {s.plays} plays · 📥 {s.downloads} downloads{s.bytes ? ` · ${fmtBytes(s.bytes)}` : ''}</p>
                 </div>
