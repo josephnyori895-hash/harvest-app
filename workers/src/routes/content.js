@@ -29,6 +29,15 @@ const EDITABLE = {
   giving_payment_methods: 12000,
   // JSON array of quick-amount integers, e.g. [100,200,500]
   giving_quick: 200,
+  // JSON array: [{ id, title, body, cta_url, image_url?, enabled?, audience? }] (max 20 ads)
+  sponsor_adverts: 20000,
+  // JSON object: { placement: 'feed'|'none', interval: 3-20, daily_cap: 1-10 }
+  advert_settings: 400,
+}
+
+function isAbsoluteUrl(value, required) {
+  if (value === undefined || value === null) return !required
+  return typeof value === 'string' && /^https?:\/\/\S{1,500}$/.test(value)
 }
 
 function readAll(env) {
@@ -60,6 +69,37 @@ export async function handleContent(request, env, ctx) {
           if (!f || typeof f.id !== 'string' || typeof f.label !== 'string' || !f.label.trim()) return errorResponse('giving_funds: each fund needs id and label', 400)
         }
       } catch { return errorResponse('giving_funds must be valid JSON', 400) }
+    }
+    if ('sponsor_adverts' in body) {
+      try {
+        const adverts = JSON.parse(String(body.sponsor_adverts || '[]'))
+        if (!Array.isArray(adverts) || adverts.length > 20) return errorResponse('sponsor_adverts: expected an array with at most 20 adverts', 400)
+        const seen = new Set()
+        for (const ad of adverts) {
+          if (!ad || typeof ad !== 'object' || Array.isArray(ad)) return errorResponse('sponsor_adverts: each advert must be an object', 400)
+          if (!/^[a-z0-9_-]{1,40}$/.test(String(ad.id || ''))) return errorResponse('sponsor_adverts: advert id must be [a-z0-9_-]{1,40}', 400)
+          if (seen.has(String(ad.id))) return errorResponse('sponsor_adverts: duplicate advert id', 400)
+          seen.add(String(ad.id))
+          if (typeof ad.title !== 'string' || !ad.title.trim() || ad.title.length > 80) return errorResponse('sponsor_adverts: title required (max 80 chars)', 400)
+          if (typeof ad.body !== 'string' || ad.body.length > 400) return errorResponse('sponsor_adverts: body max 400 chars', 400)
+          for (const urlField of ['cta_url', 'image_url']) {
+            if (!isAbsoluteUrl(ad[urlField], urlField === 'cta_url')) return errorResponse(`sponsor_adverts: ${urlField} must be an http(s) URL`, 400)
+          }
+          if (ad.enabled !== undefined && typeof ad.enabled !== 'boolean') return errorResponse('sponsor_adverts: enabled must be boolean', 400)
+          if (!['all', 'members'].includes(String(ad.audience || 'all'))) return errorResponse("sponsor_adverts: audience must be 'all' or 'members'", 400)
+        }
+      } catch { return errorResponse('sponsor_adverts must be valid JSON', 400) }
+    }
+    if ('advert_settings' in body) {
+      try {
+        const settings = JSON.parse(String(body.advert_settings || '{}'))
+        if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return errorResponse('advert_settings: expected an object', 400)
+        if (!['feed', 'none'].includes(String(settings.placement || 'feed'))) return errorResponse("advert_settings: placement must be 'feed' or 'none'", 400)
+        const interval = Number(settings.interval ?? 6)
+        if (!Number.isInteger(interval) || interval < 3 || interval > 20) return errorResponse('advert_settings: interval must be an integer (3-20)', 400)
+        const cap = Number(settings.daily_cap ?? 2)
+        if (!Number.isInteger(cap) || cap < 1 || cap > 10) return errorResponse('advert_settings: daily_cap must be an integer (1-10)', 400)
+      } catch { return errorResponse('advert_settings must be valid JSON', 400) }
     }
     if ('giving_payment_methods' in body) {
       try {

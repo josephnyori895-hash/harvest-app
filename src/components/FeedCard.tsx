@@ -45,6 +45,34 @@ const fmtCount = (n: number): string => {
   return String(n)
 }
 
+// Sponsored advert slot — third-party advert card, cream identity, never
+// styled to mimic an organic post (the Sponsored chip is always visible).
+export function AdvertCard({ advert }: { advert: { id: string; advert_id?: string; title?: string; caption?: string; body?: string; image_url?: string | null; cta_url?: string | null } }) {
+  const title = advert.title || advert.caption || 'Sponsored'
+  const body = advert.body || ''
+  const href = advert.cta_url || null
+  return (
+    <article className="relative overflow-hidden rounded-[24px] border border-[#D8C7F5] bg-[#FFFCF6] shadow-sm" data-advert-id={advert.advert_id || advert.id}>
+      {advert.image_url && (
+        <button type="button" onClick={() => href && window.open(href, '_blank', 'noopener')} className="block w-full text-left" aria-label={href ? `Open advertiser: ${title}` : undefined}>
+          <img src={advert.image_url} alt={title} className="max-h-72 w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+        </button>
+      )}
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EDE9FE] px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#5B21B6]">Sponsored</span>
+          {href && <span className="text-[11px] font-bold text-[#7C3AED] shrink-0">Learn more →</span>}
+        </div>
+        <h3 className="font-extrabold text-[16px] leading-5">{title}</h3>
+        {body && <p className="mt-1 text-sm leading-6 text-[#5F564B] break-words">{body}</p>}
+        {href && (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center justify-center rounded-full bg-[#5B21B6] px-4 py-2 text-xs font-extrabold text-white shadow-sm">Learn more</a>
+        )}
+      </div>
+    </article>
+  )
+}
+
 function MusicChip({ p }: { p: FeedCardPost }) {
   const m = p.music
   const [liveId, setLiveId] = useState<string | null>(null)

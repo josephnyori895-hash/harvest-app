@@ -9,8 +9,17 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
 const USE_API = true
+// Example shapes shown in the advert editor's empty fields.
+const ADVERT_SETTINGS_EXAMPLE = JSON.stringify({ placement: 'feed', interval: 6, daily_cap: 2 }, null, 2)
+const ADVERT_EXAMPLE = JSON.stringify([{
+  id: 'harvest-bookshop',
+  title: 'Harvest Bookshop',
+  body: 'Bibles, devotionals and Sunday-school books at the church entrance.',
+  cta_url: 'https://example.com/bookshop',
+  enabled: true,
+}], null, 2)
 
-type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts'
 
 type Props = {
   onBack: () => void
@@ -81,6 +90,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const fundsJson = (() => { try { return JSON.stringify(JSON.parse(content.giving_funds || '[]'), null, 1) } catch { return (content.giving_funds || '') } })()
   const [fundsDraft, setFundsDraft] = useState<string | null>(null)
   const [quickDraft, setQuickDraft] = useState<string | null>(null)
+  // ── Sponsored adverts in the Home feed ──
+  // Stored as JSON in site_content; the feed worker interleaves them and caps
+  // appearances per member per day, so saving here goes live on next refresh.
+  const advertsJson = (() => { try { return JSON.stringify(JSON.parse(content.sponsor_adverts || '[]'), null, 2) } catch { return (content.sponsor_adverts || '[]') } })()
+  const settingsJson = (() => { try { return JSON.stringify(JSON.parse(content.advert_settings || '{}'), null, 2) } catch { return (content.advert_settings || '{}') } })()
+  const [advertsDraft, setAdvertsDraft] = useState<string | null>(null)
+  const [settingsDraft, setSettingsDraft] = useState<string | null>(null)
   useEffect(() => {
     fetch(`${API}/api/content`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -99,6 +115,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
       setContent(d.content || {})
       setFundsDraft(null); setQuickDraft(null)
+      setAdvertsDraft(null); setSettingsDraft(null)
       flash('Saved — live for everyone ✓')
     } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
   }
@@ -403,9 +420,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['dashboard', 'moderation', 'media', 'accounts', 'announce', 'home', 'give', 'chat', 'audit'] as const).map(value => (
+        {(['dashboard', 'moderation', 'media', 'accounts', 'announce', 'home', 'give', 'adverts', 'chat', 'audit'] as const).map(value => (
           <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
-            {value === 'dashboard' ? '📊 Today' : value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
+            {value === 'dashboard' ? '📊 Today' : value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'adverts' ? '📢 Adverts' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
@@ -641,6 +658,70 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
             </button>
             <p className="text-[10px] text-[#766E63]">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sponsored adverts tab ── */}
+      {tab === 'adverts' && (
+        <div className="space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+            <div>
+              <h2 className="font-extrabold text-sm">📢 Sponsored adverts</h2>
+              <p className="text-xs text-[#766E63] mt-0.5">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
+            </div>
+            <div>
+              <label htmlFor="ad-settings" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Placement and limits</label>
+              <textarea
+                id="ad-settings"
+                value={settingsDraft ?? settingsJson}
+                onChange={e => setSettingsDraft(e.target.value)}
+                rows={4}
+                placeholder={ADVERT_SETTINGS_EXAMPLE}
+                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+              />
+              <p className="text-[10px] text-[#766E63] mt-0.5">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
+            </div>
+            <div>
+              <label htmlFor="ad-list" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Adverts (JSON array)</label>
+              <textarea
+                id="ad-list"
+                value={advertsDraft ?? advertsJson}
+                onChange={e => setAdvertsDraft(e.target.value)}
+                rows={10}
+                placeholder={ADVERT_EXAMPLE}
+                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+              />
+              <p className="text-[10px] text-[#766E63] mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members).</p>
+            </div>
+            <button
+              onClick={() => {
+                if (!window.confirm('Publish these adverts to the Home feed?')) return
+                let adverts: unknown
+                let settings: unknown
+                try { adverts = JSON.parse((advertsDraft ?? advertsJson) || '[]') } catch { setError('Adverts must be valid JSON'); return }
+                try { settings = JSON.parse((settingsDraft ?? settingsJson) || '{}') } catch { setError('Placement and limits must be valid JSON'); return }
+                setError('')
+                void (async () => {
+                  setContentBusy(true)
+                  try {
+                    const r = await fetch(`${API}/api/content`, {
+                      method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ sponsor_adverts: JSON.stringify(adverts), advert_settings: JSON.stringify(settings) }),
+                    })
+                    const d = await r.json().catch(() => ({}))
+                    if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
+                    setContent(d.content || content); setAdvertsDraft(null); setSettingsDraft(null)
+                    flash('Adverts published — live on the next feed refresh ✓')
+                  } catch (e: any) { setError(e?.message || 'Could not save adverts') } finally { setContentBusy(false) }
+                })()
+              }}
+              disabled={contentBusy}
+              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+            >
+              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+            </button>
+            <p className="text-[10px] text-[#766E63]">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
           </div>
         </div>
       )}

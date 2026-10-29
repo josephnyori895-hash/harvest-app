@@ -3,6 +3,7 @@
 // the captured-frame fallback and the player share one measured frame, and a
 // single retry path resets whichever leg failed. Media is never stretched.
 import { useEffect, useRef, useState } from 'react'
+import VideoThumb from './VideoThumb'
 
 const MIN_RATIO = 0.5
 const MAX_RATIO = 1.91
@@ -54,22 +55,28 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
     ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
     : { width: '100%' }
   const validPoster = Boolean(poster && !posterFailed)
-  const retryPlayback = () => {
-    setVideoFailed(false)
-    const video = videoRef.current
-    if (!video || !videoRef) return
-    video.load()
-    const result = video.play()
-    if (result && typeof result.catch === 'function') result.catch(() => setVideoFailed(true))
-  }
-
-  useEffect(() => {
-    if (!playing) return
+  // Browsers/WebViews can refuse a sound-on play() even after a tap. Retry
+  // muted (controls stay visible so the member can raise the volume) instead
+  // of declaring the video broken.
+  const playWithMutedFallback = () => {
     const video = videoRef.current
     if (!video) return
     const result = video.play()
-    if (result && typeof result.catch === 'function') result.catch(() => setVideoFailed(true))
-  }, [playing, src])
+    if (!result || typeof result.catch !== 'function') return
+    result.catch(() => {
+      if (video.muted) { setVideoFailed(true); return }
+      video.muted = true
+      const retry = video.play()
+      if (retry && typeof retry.catch === 'function') retry.catch(() => setVideoFailed(true))
+    })
+  }
+  const retryPlayback = () => {
+    setVideoFailed(false)
+    videoRef.current?.load()
+    playWithMutedFallback()
+  }
+
+  useEffect(() => { if (playing) playWithMutedFallback() }, [playing, src])
 
   if (playing) {
     return (
@@ -110,8 +117,10 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
       {validPoster
         ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-contain mx-auto" />
         : <div className="aspect-[4/5] max-h-[70vh] w-full">
+            {/* No poster: capture a real frame on a canvas. A bare <video> here
+                painted black (Chromium) or the native play glyph (WebView). */}
             {src
-              ? <video src={`${src}#t=0.001`} muted loop playsInline preload="metadata" className="block h-full w-full object-cover" aria-label="Video preview" />
+              ? <VideoThumb src={src} className="h-full w-full" />
               : <div className="flex h-full w-full items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
           </div>}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center">

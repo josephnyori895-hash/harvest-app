@@ -117,8 +117,63 @@ export async function handleFeed(request, env, ctx) {
       )
       stories = await Promise.all(s.rows.map(async x => ({ ...x, music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
+    // Sponsored adverts: server-side interleaving + per-member daily caps.
+    // Adverts are counted as SERVED at feed render — the two-appearance cap
+    // (advert_settings.daily_cap) is enforced here, so refreshes or extra
+    // devices cannot extract more appearances than the cap allows.
+    let contentRows = []
+    try { contentRows = (await query(env, "SELECT key, value FROM site_content WHERE key IN ('sponsor_adverts','advert_settings')")).rows } catch {}
+    const contentMap = new Map(contentRows.map(r => [String(r.key), String(r.value ?? '')]))
+    const parseJsonSafe = (raw, fallback) => { try { const v = JSON.parse(raw); return v ?? fallback } catch { return fallback } }
+    const settings = parseJsonSafe(contentMap.get('advert_settings'), null) || {}
+    const placement = String(settings.placement || 'feed')
+    const interval = Number.isInteger(Number(settings.interval)) ? Number(settings.interval) : 6
+    const dailyCap = Number.isInteger(Number(settings.daily_cap)) ? Number(settings.daily_cap) : 2
+    const allAdverts = placement !== 'none' && interval >= 1 ? parseJsonSafe(contentMap.get('sponsor_adverts'), []) : []
+    const eligibleRaw = (Array.isArray(allAdverts) ? allAdverts : []).filter(ad =>
+      ad && ad.enabled !== false && typeof ad.title === 'string' && ad.title.trim()
+      && (String(ad.audience || 'all') !== 'members' || Boolean(user?.id)))
+    let eligible = eligibleRaw
+    let servedCounter = null
+    if (user?.id) {
+      const day = new Date().toISOString().slice(0, 10)
+      const counts = (await query(env, 'SELECT advert_id, impressions FROM advert_impressions WHERE member_id=? AND day=?', [user.id, day])).rows
+      const shown = new Map(counts.map(r => [String(r.advert_id), Number(r.impressions) || 0]))
+      eligible = eligibleRaw.filter(ad => (shown.get(String(ad.id)) || 0) < dailyCap)
+      servedCounter = { user: user.id, day, shown }
+    }
+    // Page build: organic posts keep their order; a sponsored advert slots in
+    // after every `interval` organic items, members' caps willing.
+    let ai = 0
+    const pagePosts = []
+    let organicSinceAd = 0
+    for (const item of enriched) {
+      pagePosts.push(item)
+      organicSinceAd += 1
+      if (organicSinceAd % interval === 0 && ai < eligible.length) {
+        const ad = eligible[ai++]
+        pagePosts.push({
+          id: `advert_${ad.id}`, kind: 'advert', advert_id: ad.id,
+          name: 'Harvest Family', verified: true,
+          caption: ad.body || ad.title, title: ad.title, body: ad.body || '',
+          cta_url: ad.cta_url || null, image_url: ad.image_url || null,
+        })
+      }
+    }
+    if (servedCounter && ai > 0) {
+      const day = servedCounter.day
+      for (const ad of eligible.slice(0, ai)) {
+        await query(
+          env,
+          `INSERT INTO advert_impressions (advert_id, member_id, day, impressions, updated_at) VALUES (?,?,?,?,?)
+           ON CONFLICT(advert_id, member_id, day) DO UPDATE SET impressions = impressions + 1, updated_at = excluded.updated_at`,
+          [String(ad.id), servedCounter.user, day, 1, new Date().toISOString()],
+        )
+      }
+    }
+
     const nextOffset = offset + limit
-    return jsonResponse({ posts: enriched, projects, stories, nextOffset, hasMore: enriched.length === limit })
+    return jsonResponse({ posts: pagePosts, projects, stories, nextOffset, hasMore: enriched.length === limit })
   }
 
   // GET /api/stories

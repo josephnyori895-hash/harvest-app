@@ -1,6 +1,7 @@
 import MediaThumbnail from './MediaThumbnail'
 import VideoThumb from './VideoThumb'
 import FeedCard from './FeedCard'
+import { AdvertCard } from './FeedCard'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getLikesTable, toggleLikeKey } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
@@ -274,7 +275,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     return [...map.values()]
   }, [liveMoments])
 
-  const liveUpdates = useMemo(() => livePosts.map((p: any) => ({
+  const liveUpdates = useMemo(() => livePosts.map((p: any) => {
+    if (p.kind === 'advert') return p
+    return {
     id: p.id,
     key: `api_${p.kind}_${p.id}`,
     user: p.name || p.username || 'Harvest member',
@@ -293,7 +296,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     music: p.music || null,
     liked: Boolean(p.liked),
     saved: Boolean(p.saved),
-  })), [livePosts])
+    }
+  }), [livePosts])
 
   // Viewer list: live stories ONLY. The 'Your moment' composer placeholder must
   // never be in here or the viewer lands on an empty black story at the end.
@@ -654,7 +658,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         </div>
       </section>
 
-      <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="shrink-0 mr-11 px-3 py-1.5 rounded-full border border-[#E8DEC9] bg-white text-[10px] font-extrabold text-[#5B21B6] disabled:opacity-40">↻ Refresh</button></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`; const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
+      <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="shrink-0 mr-11 px-3 py-1.5 rounded-full border border-[#E8DEC9] bg-white text-[10px] font-extrabold text-[#5B21B6] disabled:opacity-40">↻ Refresh</button></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
+        if (p.kind === 'advert') return <div key={String(p.id)}><AdvertCard advert={p} /></div>
+        const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
         <FeedCard
           key={key}
           p={{ ...p, key: String(key) }}
