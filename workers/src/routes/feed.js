@@ -247,8 +247,9 @@ export async function handleFeed(request, env, ctx) {
   }
 
   // ── Comments ──────────────────────────────────────────────
-  // GET /api/comments?scope=post|reel&id=<id> — parents ASC with their replies
-  // nested right after. Per-viewer likes come from comment_likes.
+  // GET /api/comments?scope=post|reel&id=<id> — parents NEWEST FIRST (IG-style
+  // ordering) with their replies nested right after. Per-viewer likes come
+  // from comment_likes.
   if (path === '/api/comments' && request.method === 'GET') {
     const fresh = await requireMember(env, user)
     const scope = qp.scope === 'reel' ? 'reel' : 'post'
@@ -265,7 +266,7 @@ export async function handleFeed(request, env, ctx) {
               EXISTS(SELECT 1 FROM comment_likes l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked,
               u.verified
          FROM post_comments c LEFT JOIN users u ON u.username = c.username
-        WHERE c.scope=? AND c.post_id=? ORDER BY c.created_at ASC LIMIT 300`,
+        WHERE c.scope=? AND c.post_id=? ORDER BY c.created_at DESC LIMIT 300`,
       [fresh.id, scope, id],
     )
     rows.forEach(r => { r.verified = !!r.verified; r.likes = Number(r.likes) || 0; r.liked = !!r.liked })

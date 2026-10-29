@@ -75,17 +75,18 @@ export default function Comments({
 
   useEffect(() => { void load() }, [load])
 
-  // Show parents in order with each reply nested directly under its parent.
+  // Show parents NEWEST FIRST (IG-style) with each reply nested directly under
+  // its parent, replies kept in chronological order under the parent.
   const grouped = (() => {
     const parents: Comment[] = comments.filter(c => !c.parent_id)
     const byParent: Record<string, Comment[]> = {}
     for (const r of comments.filter(x => x.parent_id)) (byParent[r.parent_id as string] ||= []).push(r)
-    return parents.map(p => ({ parent: p, replies: byParent[p.id] || [] }))
+    return parents.map(p => ({ parent: p, replies: (byParent[p.id] || []).slice().reverse() }))
   })()
 
-  // Keep the newest comment in view as the list grows.
+  // Keep the newest comment in view as the list grows (newest sits at top).
   useEffect(() => {
-    if (comments.length) listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+    if (comments.length) listRef.current?.scrollTo({ top: 0 })
   }, [comments.length])
 
   const send = async () => {
@@ -100,7 +101,8 @@ export default function Comments({
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data?.comment) {
-        setComments(prev => [...prev, data.comment as Comment])
+        // Newest-first list: a fresh comment takes the top slot immediately.
+        setComments(prev => [data.comment as Comment, ...prev])
         setText('')
         setReplyTo(null)
         onCountChange?.(1)
