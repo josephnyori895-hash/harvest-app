@@ -288,7 +288,7 @@ export default function Give() {
     if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
     setBusy(true); setMessage('')
     try {
-      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
+      const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, purpose_id: fund, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
       showToast('M-Pesa prompt sent — check your phone', 'success')
       setPollingId(result.transactionId || null)
@@ -348,7 +348,7 @@ export default function Give() {
           <input inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="M-Pesa phone 07… or 01…" className="input-premium mb-1" />
           {phone.trim() !== '' && !normalizeMpesaPhone(phone) && <p className="text-xs text-[#B45309] mb-1">Not a valid Safaricom number — use 07XX XXX XXX or 01XX XXX XXX.</p>}
         </>}
-        {mpesaEnabled === false && (
+        {mpesaEnabled === false && selectedPayment.method === 'stk' && (
           <div className="mb-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] p-4 text-sm">
             <p className="font-bold text-[#92400E]">Give via M-Pesa Paybill (works right now)</p>
             <ol className="list-decimal ml-4 mt-2 space-y-1 text-[#78350F]">
