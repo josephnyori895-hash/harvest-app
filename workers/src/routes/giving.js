@@ -156,10 +156,11 @@ export async function handleGiving(request, env, ctx) {
     const totals = await query(
       env,
       `SELECT COALESCE(SUM(CASE WHEN status='completed' THEN amount_kes ELSE 0 END), 0) AS completed_kes,
-              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count
+              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
+              SUM(CASE WHEN status='pending' THEN amount_kes ELSE 0 END) AS pending_kes
          FROM giving_transactions`,
     )
-    return jsonResponse({ transactions: rows, totals: { completed_kes: Number(totals.rows[0]?.completed_kes || 0), pending_count: Number(totals.rows[0]?.pending_count || 0) } })
+    return jsonResponse({ transactions: rows, totals: { completed_kes: Number(totals.rows[0]?.completed_kes || 0), pending_kes: Number(totals.rows[0]?.pending_kes || 0), pending_count: Number(totals.rows[0]?.pending_count || 0) } })
   }
 
   // POST /api/giving/mpesa/callback — Safaricom calls this (no auth).

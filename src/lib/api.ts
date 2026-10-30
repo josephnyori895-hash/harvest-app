@@ -153,7 +153,7 @@ export async function fetchMyGiving() {
 }
 
 export async function fetchGivingAdmin() {
-  return apiJson('/api/giving/admin') as Promise<{transactions:any[],totals:{completed_kes:string,pending_count:number}}>
+  return apiJson('/api/giving/admin') as Promise<{transactions:any[],totals:{completed_kes:string,pending_kes:number,pending_count:number}}>
 }
 
 export async function fetchMe() {
