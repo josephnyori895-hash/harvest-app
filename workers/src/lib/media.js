@@ -13,7 +13,7 @@ const DEFAULT_TTL = 900
 // PUT — the in-Worker proxy fallback would run out of memory on files this
 // size, so R2 credentials are required for full-length sermon videos.
 // Stories allow short video moments up to 30 MB; photos 10 MB.
-const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, sermon_audio: 2 * 1024 * 1024 * 1024, sermon_video: 5 * 1024 * 1024 * 1024 }
+const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, chat: 10 * 1024 * 1024, sermon_audio: 2 * 1024 * 1024 * 1024, sermon_video: 5 * 1024 * 1024 * 1024 }
 export const ALLOW_CT = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
@@ -22,10 +22,12 @@ export const ALLOW_CT = {
   track: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/x-m4a-aot', 'audio/aac', 'audio/ogg'],
   sermon_audio: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/ogg'],
   sermon_video: ['video/mp4', 'video/webm', 'video/x-m4v', 'video/quicktime'],
+  // Chat attachments: images only, referenced directly by chat messages rows.
+  chat: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
 }
 
 // Upload keys are restricted to originals/<type>/<yyyy>/<mm>/<uuid>.<ext>.
-const KEY_RE = /^originals\/(avatar|post|story|reel|track|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+const KEY_RE = /^originals\/(avatar|post|story|reel|track|chat|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
 
 // Reads also serve derived assets (thumbs/posters/hls) written by workers.
 const READ_KEY_RES = [
@@ -37,7 +39,7 @@ const READ_KEY_RES = [
 export const isReadableKey = key => READ_KEY_RES.some(re => re.test(key))
 
 export function validatePresign({ type, contentType, bytes }) {
-  if (!['avatar', 'post', 'story', 'reel', 'track', 'sermon_audio', 'sermon_video'].includes(type)) throw Object.assign(new Error('invalid type'), { status: 400 })
+  if (!['avatar', 'post', 'story', 'reel', 'track', 'chat', 'sermon_audio', 'sermon_video'].includes(type)) throw Object.assign(new Error('invalid type'), { status: 400 })
   const allowed = ALLOW_CT[type]
   if (!allowed.includes(contentType)) throw Object.assign(new Error(`contentType not allowed for ${type}: ${contentType}`), { status: 400 })
   const max = MAX_BYTES[type] || MAX_BYTES.post

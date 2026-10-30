@@ -6,7 +6,7 @@ import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUr
 import { hasCap } from '../lib/capabilities.js'
 const CAP_DELETE = 'delete_media'
 
-const KEY_RE = /^originals\/(avatar|post|story|reel|track|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
+const KEY_RE = /^originals\/(avatar|post|story|reel|track|chat|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
 
 async function audit(env, actor, action, targetType, targetId, meta = {}) {
   await query(
@@ -85,7 +85,7 @@ export async function handleMedia(request, env, ctx) {
     // account or admin.
     if ((type === 'sermon_audio' || type === 'sermon_video')) {
       if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
-    } else if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+    } else if (type !== 'story' && type !== 'avatar' && type !== 'chat' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
       return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
     }
     try {
@@ -119,7 +119,7 @@ export async function handleMedia(request, env, ctx) {
       const type = key.split('/')[1]
       if ((type === 'sermon_audio' || type === 'sermon_video')) {
         if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
-      } else if (type !== 'story' && type !== 'avatar' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+      } else if (type !== 'story' && type !== 'avatar' && type !== 'chat' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
         return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
       }
       const rate = await query(
@@ -153,6 +153,7 @@ export async function handleMedia(request, env, ctx) {
 
     if (!key || !type) return errorResponse('key and type required', 400)
     if (type === 'avatar') return errorResponse('avatars are attached with PATCH /api/me, not media/confirm', 400)
+    if (type === 'chat') return errorResponse('chat attachments are referenced directly by chat messages — nothing to confirm', 400)
     if (!KEY_RE.test(key) || !key.startsWith(`originals/${type}/`)) return errorResponse('invalid media key', 400)
 
     const obj = await env.MEDIA.head(key)

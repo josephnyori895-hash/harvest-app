@@ -460,7 +460,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     try {
       let media_key: string | undefined
       if (attach) {
-        const pre = await api<any>('/api/media/presign', { method: 'POST', body: JSON.stringify({ type: 'story', contentType: attach.type || 'image/jpeg', bytes: attach.size }) })
+        const pre = await api<any>('/api/media/presign', { method: 'POST', body: JSON.stringify({ type: 'chat', contentType: attach.type || 'image/jpeg', bytes: attach.size }) })
         const target = /^https?:\/\//.test(pre.url) ? pre.url : `${API}${pre.url}`
         const isDirectR2 = /^https?:\/\//.test(pre.url)
         let up
