@@ -703,7 +703,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 {isTeam && !mine && <p className="text-[11px] font-bold text-stone-400 mb-1 ml-1">{m.from}</p>}
                 <div className={`flex mb-2 ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className="relative max-w-[80%]">
-                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 px-1.5 py-0.5 rounded-full bg-stone-800 border border-stone-700 shadow text-xs`}>{m.reaction}</button>}
+                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 min-w-9 min-h-9 flex items-center justify-center px-2 rounded-full bg-stone-800 border border-stone-700 shadow text-xs`} aria-label="Remove reaction">{m.reaction}</button>}
                     <div
                       onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
                       onTouchStart={e => startSwipe(e, m)} onTouchEnd={e => endSwipe(e, m)} onTouchMove={e => moveSwipe(e, mine)}

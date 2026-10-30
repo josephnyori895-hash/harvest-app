@@ -134,7 +134,7 @@ export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 
       </div>
       <div className="p-6 bg-[#141210] flex justify-center gap-6">
         <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>{muted ? '🔇' : '🎤'}</button>
-        <button onClick={handleEnd} className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl">✕</button>
+        <button onClick={handleEnd} aria-label="End call" className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl">✕</button>
         <button onClick={toggleCam} className={`w-12 h-12 rounded-full flex items-center justify-center ${camOff ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>📹</button>
       </div>
     </div>

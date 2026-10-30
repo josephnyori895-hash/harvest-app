@@ -112,7 +112,7 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
   return (
     <div className="bg-[#141210] text-white min-h-[calc(100vh-56px)] pb-8">
       <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-800 sticky top-0 bg-[#141210] z-10">
-        <button onClick={onDone} className="text-xl text-stone-300 px-1">✕</button>
+        <button onClick={onDone} aria-label="Close profile editor" className="text-xl text-stone-300 px-1 min-w-11 min-h-11">✕</button>
         <p className="font-semibold text-sm">Edit profile</p>
         <button
           onClick={() => void save()}

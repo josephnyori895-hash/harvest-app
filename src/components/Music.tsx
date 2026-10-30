@@ -379,7 +379,7 @@ export default function Music() {
                 <p className="text-[10px] text-neutral-400 truncate">{activeTrack.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
               </div>
               <button onClick={() => void togglePlayGlobal()} className="w-9 h-9 rounded-full bg-white text-neutral-900 flex items-center justify-center font-bold shrink-0" aria-label={player.playing ? 'Pause' : 'Play'}>{player.playing ? '⏸' : '▶'}</button>
-              <button onClick={stopAndClosePlayer} className="w-7 h-7 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-xs shrink-0" aria-label="Close player">✕</button>
+              <button onClick={stopAndClosePlayer} className="w-9 h-9 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-xs shrink-0" aria-label="Close player">✕</button>
             </div>
             {player.error && <p className="text-[10px] text-amber-400 mt-1">{player.error}</p>}
             <div

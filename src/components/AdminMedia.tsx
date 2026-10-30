@@ -196,7 +196,7 @@ export default function AdminMedia({ onBack }: Props) {
                 {file.type.startsWith('video/') ? <video src={URL.createObjectURL(file)} controls className="w-full h-full object-cover" />
                   : file.type.startsWith('audio/') ? <div className="text-center"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div>
                   : <img src={URL.createObjectURL(file)} alt="Preview" className="w-full h-full object-cover" />}
-                <button onClick={() => setFile(null)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90">×</button>
+                <button onClick={() => setFile(null)} className="absolute top-2 right-2 w-10 h-10 rounded-full bg-white/90" aria-label="Remove selected media">×</button>
               </div>
             ) : (
               <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center rounded-2xl bg-[#FFFBF0] border border-dashed border-[#E8DEC9]">

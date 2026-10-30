@@ -187,7 +187,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
             <p className="text-[10px] text-[#8B8175] truncate">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
           </button>
         </div>
-        <button onClick={onToggleMenu} className="w-7 h-7 rounded-lg text-[#766E63] text-xs font-bold" aria-label="More options">•••</button>
+        <button onClick={onToggleMenu} className="w-11 h-11 -m-2 rounded-full text-[#766E63] text-xs font-bold" aria-label="More options">•••</button>
       </div>
 
       {/* media — full-bleed, natural aspect, no baked chrome */}

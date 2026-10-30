@@ -503,7 +503,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   }
   return (
     <div className="bg-stone-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-200 bg-white"><button onClick={onDone} className="text-xl text-stone-700">✕</button><p className="font-bold text-stone-800">New story</p><button onClick={() => void submit()} disabled={busy || !fileObj} className="text-sm font-bold text-violet-600 disabled:opacity-40">{busy ? 'Posting…' : 'Share'}</button></div>
+      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-200 bg-white"><button onClick={onDone} aria-label="Close story composer" className="text-xl text-stone-700 min-w-11 min-h-11">✕</button><p className="font-bold text-stone-800">New story</p><button onClick={() => void submit()} disabled={busy || !fileObj} className="text-sm font-bold text-violet-600 disabled:opacity-40">{busy ? 'Posting…' : 'Share'}</button></div>
       <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-stone-50 to-white">
         {fileUrl && !isVideoFile && (
           <div className="w-full px-4">

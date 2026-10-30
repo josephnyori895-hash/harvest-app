@@ -178,7 +178,7 @@ export default function Comments({
         </div>
       </div>
       {(isAdmin || c.username === me) && (
-        <button onClick={() => remove(c.id)} className="shrink-0 self-start text-[11px] text-[#B45309] font-bold px-1.5 py-1 rounded-lg" aria-label="Delete comment">🗑</button>
+        <button onClick={() => remove(c.id)} className="shrink-0 self-start min-w-9 min-h-9 text-[11px] text-[#B45309] font-bold px-2 rounded-lg" aria-label="Delete comment">🗑</button>
       )}
     </div>
   )
