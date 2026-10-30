@@ -441,7 +441,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     if (dy > 80 && containerRef.current && containerRef.current.scrollTop < 5 && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
   }
 
-  return <div ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
+  return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {showPastorPicker && (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">

@@ -301,15 +301,20 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             </>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-          <div className="absolute bottom-0 left-0 right-0 p-6">
-            <p className="font-bold text-white text-lg">{s.name}</p>
-            <p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>
-          </div>
           {idx > 0 && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); setIdx(idx - 1) }} className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/30 text-white text-xl" aria-label="Previous story">‹</button>}
           {!isLastUserStory && <button onClick={(e) => { e.stopPropagation(); if (timerRef.current) clearTimeout(timerRef.current); if (idx < allStories.length - 1) setIdx(idx + 1) }} className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/30 text-white text-xl" aria-label="Next story">›</button>}
         </div>
+        {/* One bottom stack: author, optional viewers/replies panels, the reply row
+            and the hint. As three separate absolute blocks they collided on short
+            viewports — the author name sat under the reply bar and the hint
+            printed straight over both. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-3 pb-3 pt-8">
+          <div className="px-3">
+            <p className="font-bold text-white text-lg">{s.name}</p>
+            <p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>
+          </div>
         {showViews && (
-          <div onClick={e => e.stopPropagation()} className="absolute left-3 right-3 max-h-52 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px)' }}>
+          <div onClick={e => e.stopPropagation()} className="pointer-events-auto max-h-48 overflow-auto rounded-2xl bg-black/80 p-3 text-white">
             <div className="flex justify-between items-center mb-2">
               <b className="text-xs">Seen by {viewCount}{viewCount === 1 ? '' : ' members'}</b>
               <button onClick={() => setShowViews(false)} className="min-w-11 min-h-11 text-base" aria-label="Close viewers list">×</button>
@@ -329,13 +334,13 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             )) : <p className="text-xs text-stone-400">No views yet — they appear here as members watch.</p>}
           </div>
         )}
-        {showReplies && <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px)' }}>
+        {showReplies && <div onClick={e=>e.stopPropagation()} className="pointer-events-auto max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white">
           {replies.length ? replies.map((r: any) => {
             const canRemove = isAdmin || isStoryAuthor || (r.username && r.username === me)
             return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={() => void deleteReply(String(r.id))} className="text-stone-400">×</button>}</div>
           }) : <p className="text-xs text-stone-400">No replies yet.</p>}
         </div>}
-        <div onClick={e=>e.stopPropagation()} className="absolute left-3 right-3 flex gap-2" style={{ bottom: keyboardInset ? `${keyboardInset + 12}px` : 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px)' }}>
+        <div onClick={e=>e.stopPropagation()} className="pointer-events-auto flex gap-2">
           {isStoryAuthor ? (<>
             <button onClick={() => { setShowViews(v => !v); setShowReplies(false); void loadViews() }} className="flex-1 min-h-11 flex items-center justify-between gap-1 px-4 py-2 rounded-full bg-white/10 text-white">
               <span className="text-white/70">{showViews ? 'Viewers listed above' : 'Replies land in your inbox'}</span>
@@ -347,9 +352,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
           </>) }
         </div>
+          <div className="text-center text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Forward') : 'Tap to pause • hold to pause • swipe to move'}</div>
+        </div>
       </div>
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Forward') : 'Tap to pause • hold to pause • swipe to move'} </div>
     </>
   )
 }
