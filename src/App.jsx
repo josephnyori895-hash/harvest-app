@@ -231,7 +231,24 @@ function InnerApp() {
     setTab('sermons')
   }
 
+  // Per-tab scroll memory: display:none wipes an ancestor scroller's position,
+  // so remember where each tab was and restore it on return — the IG feel
+  // (leaving Home and coming back keeps your place in the feed).
+  const scrollMemoryRef = useRef({})
+  useEffect(() => {
+    const target = scrollMemoryRef.current[tab] || 0
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { const el = document.querySelector('.app-content'); if (el) el.scrollTop = target })
+    })
+  }, [tab])
+
   const handleTab = (t) => {
+    // Save the outgoing tab's scroll BEFORE React swaps the children — after
+    // the swap the scroller's position is already clamped to the new content.
+    if (t !== tab) {
+      const el = document.querySelector('.app-content')
+      if (el && el.scrollTop > 0) scrollMemoryRef.current[tab] = el.scrollTop
+    }
     if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
     if (t === 'chat' && tab !== 'chat') {
       setChatReturnTab(tab)
@@ -517,7 +534,12 @@ function InnerApp() {
             />
           )}
           <div className={showNotifications ? 'hidden' : 'contents'}>
-          {tab === 'home' && <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />}
+          {/* Home stays mounted when switching tabs (hidden, not unmounted) so
+              scroll position and loaded feed state survive the round-trip —
+              the IG feel. Other tabs still mount on demand. */}
+          <div className={tab === 'home' ? 'contents' : 'hidden'}>
+            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />
+          </div>
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
