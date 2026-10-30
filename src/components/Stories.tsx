@@ -392,6 +392,9 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const onFile = (e: any) => {
     const f: File | undefined = e.target.files?.[0]
     if (!f) return
+    // Fresh media starts clean — stale decorations from a previous pick must
+    // not get burned into a different photo.
+    setFilter('Original'); setTextOverlay(''); setStickers([]); setTextBold(false)
     setFileObj(f); setFileName(f.name)
     const reader = new FileReader()
     reader.onload = () => { setFileUrl(reader.result as string); if (f.type.startsWith('image/')) setAdjusting(true) }
@@ -402,39 +405,79 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     const adjusted = new File([blob], 'story.jpg', { type: 'image/jpeg' })
     setFileObj(adjusted); setFileName('story.jpg'); setFileUrl(preview); setAdjusting(false)
   }
-  const applyFilter = (imgUrl: string, f: string) => {
-    if (f === 'Original') return imgUrl
+  // Compose the preview-era decorations (filter, text overlay, stickers) INTO
+  // the pixels at submit time — what the member saw is what every viewer gets.
+  // Videos can't be re-encoded client-side here, so the decoration controls are
+  // hidden for video picks instead of pretending.
+  const burnDecorations = async (file: File): Promise<File> => {
+    const hasText = !!textOverlay.trim()
+    if (filter === 'Original' && !hasText && stickers.length === 0) return file
     const c = document.createElement('canvas')
     const ctx = c.getContext('2d')
-    if (!ctx) return imgUrl
+    if (!ctx) return file
     const img = new Image()
-    return new Promise<string>((resolve) => {
-      img.onload = () => {
-        c.width = img.naturalWidth
-        c.height = img.naturalHeight
-        ctx.filter = 'none'
-        ctx.drawImage(img, 0, 0)
-        const pixel = ctx.getImageData(0, 0, c.width, c.height)
-        const data = pixel.data
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i]
-          const g = data[i + 1]
-          const b = data[i + 2]
-          if (f === 'Clarendon') { data[i] = Math.min(255, r * 1.2); data[i + 1] = Math.min(255, g * 1.05 + 12); data[i + 2] = Math.min(255, b * 1.1 + 10) }
-          else if (f === 'Juno') { data[i] = Math.min(255, r * 1.15); data[i + 1] = Math.min(255, g * 1.02); data[i + 2] = Math.min(255, b * 1.25) }
-          else if (f === 'Aden') { data[i] = Math.min(255, r * 1.25); data[i + 1] = Math.min(255, g * 1.1); data[i + 2] = Math.min(255, b * 0.9) }
-          else if (f === 'Lark') { data[i] = Math.min(255, r * 0.98); data[i + 1] = Math.min(255, g * 1.15); data[i + 2] = Math.min(255, b * 0.96) }
-          else if (f === 'Moody') { data[i] = Math.min(255, r * 0.7); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.2) }
-          else if (f === 'Valencia') { data[i] = Math.min(255, r * 1.3); data[i + 1] = Math.min(255, g * 0.96); data[i + 2] = Math.min(255, b * 0.9) }
-          else if (f === 'Perpetua') { data[i] = Math.min(255, r * 1.18); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 1.22) }
-          else if (f === 'Willow') { data[i] = Math.min(255, r * 0.9); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 0.88) }
-          else if (f === 'Gingham') { data[i] = Math.min(255, r * 1.12); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.18) }
-        }
-        ctx.putImageData(pixel, 0, 0)
-        resolve(c.toDataURL('image/jpeg', 0.9))
-      }
-      img.src = imgUrl
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res()
+      img.onerror = () => rej(new Error('could not decode image'))
+      img.src = URL.createObjectURL(file)
     })
+    c.width = img.naturalWidth
+    c.height = img.naturalHeight
+    ctx.drawImage(img, 0, 0)
+    if (filter !== 'Original') {
+      const pixel = ctx.getImageData(0, 0, c.width, c.height)
+      const data = pixel.data
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2]
+        if (filter === 'Clarendon') { data[i] = Math.min(255, r * 1.2); data[i + 1] = Math.min(255, g * 1.05 + 12); data[i + 2] = Math.min(255, b * 1.1 + 10) }
+        else if (filter === 'Juno') { data[i] = Math.min(255, r * 1.15); data[i + 1] = Math.min(255, g * 1.02); data[i + 2] = Math.min(255, b * 1.25) }
+        else if (filter === 'Aden') { data[i] = Math.min(255, r * 1.25); data[i + 1] = Math.min(255, g * 1.1); data[i + 2] = Math.min(255, b * 0.9) }
+        else if (filter === 'Lark') { data[i] = Math.min(255, r * 0.98); data[i + 1] = Math.min(255, g * 1.15); data[i + 2] = Math.min(255, b * 0.96) }
+        else if (filter === 'Moody') { data[i] = Math.min(255, r * 0.7); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.2) }
+        else if (filter === 'Valencia') { data[i] = Math.min(255, r * 1.3); data[i + 1] = Math.min(255, g * 0.96); data[i + 2] = Math.min(255, b * 0.9) }
+        else if (filter === 'Perpetua') { data[i] = Math.min(255, r * 1.18); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 1.22) }
+        else if (filter === 'Willow') { data[i] = Math.min(255, r * 0.9); data[i + 1] = Math.min(255, g * 1.08); data[i + 2] = Math.min(255, b * 0.88) }
+        else if (filter === 'Gingham') { data[i] = Math.min(255, r * 1.12); data[i + 1] = Math.min(255, g * 0.9); data[i + 2] = Math.min(255, b * 1.18) }
+      }
+      ctx.putImageData(pixel, 0, 0)
+    }
+    if (hasText) {
+      const fs = Math.max(28, Math.round(c.width * 0.05))
+      ctx.font = `${textBold ? 700 : 400} ${fs}px system-ui, sans-serif`
+      ctx.textAlign = 'center'
+      ctx.fillStyle = textColor
+      ctx.shadowColor = 'rgba(0,0,0,.6)'
+      ctx.shadowBlur = fs * 0.35
+      ctx.shadowOffsetY = fs * 0.1
+      const maxWidth = c.width * 0.86
+      const words = textOverlay.trim().split(/\s+/)
+      const lines: string[] = []
+      let line = ''
+      for (const w of words) {
+        const next = line ? `${line} ${w}` : w
+        if (ctx.measureText(next).width > maxWidth && line) { lines.push(line); line = w } else { line = next }
+      }
+      if (line) lines.push(line)
+      lines.slice(0, 5).forEach((l, i) => ctx.fillText(l, c.width / 2, fs * 1.4 + i * fs * 1.25))
+    }
+    if (stickers.length > 0) {
+      const sfs = Math.max(24, Math.round(c.width * 0.062))
+      ctx.font = `${sfs}px system-ui`
+      ctx.textAlign = 'left'
+      ctx.shadowColor = 'rgba(0,0,0,.35)'
+      ctx.shadowBlur = sfs * 0.2
+      let x = c.width * 0.06
+      let y = c.height - sfs * 0.8
+      for (const s of stickers) {
+        const w = ctx.measureText(s).width
+        if (x + w > c.width * 0.95 && y > sfs * 2.2) { x = c.width * 0.06; y -= sfs * 1.25 }
+        ctx.fillText(s, x, y)
+        x += w + sfs * 0.35
+      }
+    }
+    const blob = await new Promise<Blob | null>(res => c.toBlob(res, 'image/jpeg', 0.92))
+    if (!blob) return file
+    return new File([blob], 'story.jpg', { type: 'image/jpeg' })
   }
   const addSticker = (s: string) => { if (!stickers.includes(s)) setStickers([...stickers, s]) }
   const removeSticker = (s: string) => setStickers(stickers.filter(x => x !== s))
@@ -483,7 +526,8 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
       const token = localStorage.getItem('harvest_token') || ''
       const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
       if (!token || !API) { setNotice('You need to be signed in to share a story'); setBusy(false); return }
-      const blob = fileObj
+      let blob: File | Blob = fileObj
+      if (!isVideoFile) blob = await burnDecorations(fileObj)
       void startBackgroundUpload({
         label: 'story',
         successMsg: 'Story shared — visible for 24 hours ✓',
@@ -518,13 +562,13 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
         {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-stone-300 flex items-center justify-center text-stone-500 font-semibold cursor-pointer"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />Choose a photo or video</label> : <div className="relative w-full aspect-[9/16] overflow-hidden rounded-2xl bg-stone-900">{isVideoFile ? <video src={fileUrl} controls playsInline className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" /> : <img src={fileUrl} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/35 px-2 py-1 rounded-full text-[10px] font-bold">{filter}</div>}{textOverlay && <div className="absolute inset-x-0 top-4 flex justify-center"><span className="px-3 py-1 rounded-full text-sm font-bold" style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 8px rgba(0,0,0,.6)' }}>{textOverlay}</span></div>}{stickers.length > 0 && <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">{stickers.map(s => <span key={s} className="text-2xl">{s}</span>)}</div>}{musicTrack && <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1 text-[10px] font-bold text-white"><button type="button" aria-label={previewId === String(musicTrack.id) ? 'Stop music preview' : `Preview ${musicTrack.title}`} onClick={() => togglePreview(musicTrack)}>{previewId === String(musicTrack.id) ? '⏸' : previewFailedId === String(musicTrack.id) ? '⚠ Retry' : '♪'}</button><span className="max-w-[110px] truncate">{musicTrack.title}</span><button type="button" aria-label="Remove music" onClick={() => { stopPreview(); setPreviewFailedId(null); setMusicTrack(null) }}>×</button></div>}</div>}
       </div>
       {fileUrl && !isVideoFile && <><div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Filters</button></div>{showFilters && <div className="px-4 pb-4 bg-white border-t border-stone-200 grid grid-cols-3 gap-2">{FILTERS.map((f) => <button key={f} onClick={() => { setFilter(f); setShowFilters(false) }} className={`rounded-xl border px-2 py-2 text-xs font-bold ${filter === f ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-700'}`}>{f}</button>)}</div>}</>}
-      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Stickers</button></div>}{showStickers && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 flex flex-wrap gap-2">{STORY_STICKERS.map((s) => <button key={s} onClick={() => addSticker(s)} className="text-2xl">{s}</button>)}{stickers.map((s) => <button key={s} onClick={() => removeSticker(s)} className="text-xs text-stone-700">× {s}</button>)}</div>}
+      {fileUrl && !isVideoFile && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Stickers</button></div>}{showStickers && fileUrl && !isVideoFile && <div className="px-4 pb-4 bg-white border-t border-stone-200 flex flex-wrap gap-2">{STORY_STICKERS.map((s) => <button key={s} onClick={() => addSticker(s)} className="text-2xl">{s}</button>)}{stickers.map((s) => <button key={s} onClick={() => removeSticker(s)} className="text-xs text-stone-700">× {s}</button>)}</div>}
       {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowMusic(!showMusic); setShowFilters(false); setShowStickers(false) }} className="text-sm font-bold text-stone-700">Music</button></div>}{showMusic && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 space-y-3"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} placeholder="Search church music…" className="w-full bg-stone-100 rounded-xl px-3 py-2 text-sm text-stone-800" />{musicLoading && <p className="text-xs text-stone-500">Loading…</p>}{!musicQuery.trim() && <div className="flex flex-wrap gap-2">{MOOD_PICKS.map(({ mood, tags }) => <button key={mood} onClick={() => filterByMood(tags)} className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">{mood}</button>)}</div>}{!musicLoading && musicQuery.trim() && musicResults.length === 0 && <p className="text-xs text-stone-500">No library tracks match — upload one in the Music tab first.</p>}<div className="space-y-2">{!musicLoading && musicResults.map((m:any) => <div key={m.id} className="flex items-center gap-3 rounded-xl bg-stone-100 p-2"><img src={m.cover_url || 'https://placehold.co/48x48/png'} alt="" className="w-12 h-12 rounded-lg" /><div className="flex-1 min-w-0"><p className="text-sm font-bold text-stone-800 truncate">{m.title}</p><p className="text-[11px] text-stone-500 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} aria-label={previewId === m.id ? 'Stop preview' : 'Preview music'} className={`min-w-11 min-h-11 rounded-full bg-white text-xs font-bold ${previewFailedId === String(m.id) ? 'text-red-600' : 'text-stone-700'}`}>{previewId === m.id ? 'Stop' : previewFailedId === String(m.id) ? 'Retry' : 'Preview'}</button><button onClick={() => chooseMusic(m)} className="min-w-11 min-h-11 rounded-full bg-violet-600 text-white text-xs font-bold">Use</button></div>)}</div></div>}
       {notice && <div className="mx-4 mb-2"><ErrorMessage message={notice} /></div>}
       {adjusting && fileObj && fileObj.type.startsWith('image/') && (
         <ImageAdjuster file={fileObj} onCancel={() => setAdjusting(false)} onDone={applyAdjust} />
       )}
-      <div className="px-4 pb-4 bg-white border-t border-stone-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" /><div className="mt-3 flex gap-2"><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Text overlay" className="flex-1 bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" /><input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="w-12 h-10 rounded-lg border border-stone-200" /><button onClick={() => setTextBold(v => !v)} className={`rounded-xl px-3 py-2 text-xs font-bold ${textBold ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700'}`}>B</button></div></div>
+      <div className="px-4 pb-4 bg-white border-t border-stone-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" />{!isVideoFile && <div className="mt-3 flex gap-2"><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Text overlay" className="flex-1 bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" /><input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="w-12 h-10 rounded-lg border border-stone-200" /><button onClick={() => setTextBold(v => !v)} className={`rounded-xl px-3 py-2 text-xs font-bold ${textBold ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700'}`}>B</button></div>}</div>
     </div>
   )
 }

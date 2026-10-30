@@ -104,7 +104,7 @@ export async function handleFeed(request, env, ctx) {
     try {
       const s = await query(
         env,
-        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type, s.created_at,
+        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type, s.created_at,
                   CASE WHEN ? IS NOT NULL AND EXISTS (
                     SELECT 1 FROM story_views sv
                      WHERE sv.story_id = s.id
@@ -187,7 +187,7 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/stories' && request.method === 'GET') {
     const { rows } = await query(
       env,
-      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, COALESCE(s.media_type, 'image') AS media_type,
+      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type,
                 CASE WHEN ? IS NOT NULL AND EXISTS (
                   SELECT 1 FROM story_views sv
                    WHERE sv.story_id = s.id

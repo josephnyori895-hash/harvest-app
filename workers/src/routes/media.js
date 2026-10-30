@@ -237,8 +237,12 @@ export async function handleMedia(request, env, ctx) {
       // feed/viewer render it correctly (derived from the stored contentType).
       const storedCt = String(obj.httpMetadata?.contentType || '')
       const mediaType = storedCt.startsWith('video/') ? 'video' : 'image'
+      // Author-selected viewer duration for photo stories (seconds); clamped
+      // to the composer's chip range so nothing outside 1–12 persists.
+      const durRaw = Number(body?.duration_secs)
+      const durationSecs = Number.isFinite(durRaw) ? Math.min(Math.max(Math.round(durRaw), 1), 12) : null
       const id = uuid()
-      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type, caption, music_track_id) VALUES (?,?,?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType, caption || '', musicTrackId || null])
+      await query(env, `INSERT INTO stories (id, user_id, original_key, expires_at, media_type, caption, music_track_id, duration_secs) VALUES (?,?,?,?,?,?,?,?)`, [id, userId, key, new Date(Date.now() + 24 * 3600_000).toISOString(), mediaType, caption || '', musicTrackId || null, durationSecs])
       await audit(env, fresh, 'direct_publish', 'story', id, { key, caption, mediaType })
       return jsonResponse({ id, status: 'published', key }, 201)
     }
