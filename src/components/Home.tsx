@@ -17,58 +17,21 @@ import { timeAgo } from '../lib/time'
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
 
-// Feed video preview, Android-WebView-safe. Same unified contract as
-// FeedMediaPreview: the parent owns playback; VideoThumb is the visual
-// fallback only, with its own retryable failure state.
-function MediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
-  const [playing, setPlaying] = useState(false)
-  const [posterReady, setPosterReady] = useState(false)
-  const [posterFailed, setPosterFailed] = useState(false)
-  const [failedVideo, setFailedVideo] = useState(false)
-  const [thumbKey, setThumbKey] = useState(0)
-  const hls = Boolean(src && /(\.m3u8)(\?|&|#|$)/i.test(src))
-
-  useEffect(() => {
-    let cancelled = false
-    setPosterReady(false); setPosterFailed(false); setFailedVideo(false)
-    if (!poster) return () => { cancelled = true }
-    const img = new Image()
-    img.decoding = 'async'
-    img.onload = () => { if (!cancelled) setPosterReady(true) }
-    img.onerror = () => { if (!cancelled) setPosterFailed(true) }
-    img.src = poster
-    return () => { cancelled = true; img.onload = null; img.onerror = null }
-  }, [poster])
-
-  if (playing) {
-    return (
-      <div className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0]">
-        <video src={src} controls autoPlay playsInline onError={() => setFailedVideo(true)} className="w-full h-full object-cover bg-black" aria-label="Video" />
-        {failedVideo && (
-          <div className="absolute inset-x-0 bottom-0 bg-black/75 p-2 text-center text-xs text-white">
-            <p>Video could not be played. Check your connection and try again.</p>
-            <button type="button" onClick={() => setFailedVideo(false)} className="mt-1 min-h-11 rounded-xl border border-white/15 bg-white/10 px-4 font-semibold" aria-label="Retry video">Retry</button>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  const usePoster = Boolean(poster && posterReady && !posterFailed)
+// Shared centered-notice dialog scaffold (pastor notices and similar blockers).
+function CenterNotice({ label, icon, kicker = 'bg-gradient-to-br from-violet-100 to-amber-100', title, body, primary, onClose }: {
+  label: string; icon: string; kicker?: string; title: string; body: React.ReactNode; primary: React.ReactNode; onClose: () => void
+}) {
   return (
-    <div
-      className="relative w-full aspect-[4/3] overflow-hidden bg-[#F4E8D0] cursor-pointer"
-      onClick={() => { setFailedVideo(false); setPlaying(true) }}
-      role="button"
-      aria-label="Play video"
-    >
-      {usePoster
-        ? <img src={poster!} alt={alt} decoding="async" fetchPriority="high" className="absolute inset-0 w-full h-full object-cover" />
-        : src
-          ? <VideoThumb src={src} retryKey={thumbKey} onRetryBump={() => setThumbKey(k => k + 1)} className="absolute inset-0" />
-          : <div className="absolute inset-0 flex items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
-      {hls && <span className="absolute top-2 left-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-bold text-white" aria-hidden>streaming</span>}
-      <span className="absolute inset-0 pointer-events-none flex items-center justify-center"><span className="w-14 h-14 rounded-full bg-black/55 backdrop-blur flex items-center justify-center text-2xl text-white">▶</span></span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={onClose} role="dialog" aria-modal="true" aria-label={label}>
+      <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className={`mx-auto rounded-full ${kicker} flex items-center justify-center w-16 h-16 text-3xl`}>{icon}</div>
+        <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">{title}</h2>
+        <p className="mt-2 text-center text-sm leading-6 text-stone-500">{body}</p>
+        <div className="mt-5 flex flex-col gap-2">
+          {primary}
+          <button type="button" onClick={onClose} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -519,43 +482,28 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </div>
     )}
     {showPastorUnavailable && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowPastorUnavailable(null)} role="dialog" aria-modal="true" aria-label="Pastor unavailable">
-        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-          <div className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-2xl">🙏</div>
-          <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">Pastor isn't on Harvest yet</h2>
-          <p className="mt-2 text-center text-sm leading-6 text-stone-500">@{showPastorUnavailable} hasn't joined the app yet. You can still ask the Harvest Family to pray with you in Chats.</p>
-          <div className="mt-5 space-y-2">
-            <button type="button" onClick={() => { setShowPastorUnavailable(null); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>
-            <button type="button" onClick={() => setShowPastorUnavailable(null)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
-          </div>
-        </div>
-      </div>
+      <CenterNotice
+        label="Pastor unavailable" icon="🙏" title="Pastor isn't on Harvest yet"
+        body={<>@{showPastorUnavailable} hasn't joined the app yet. You can still ask the Harvest Family to pray with you in Chats.</>}
+        onClose={() => setShowPastorUnavailable(null)}
+        primary={<button type="button" onClick={() => { setShowPastorUnavailable(null); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>}
+      />
     )}
     {showDirectoryError && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowDirectoryError(false)} role="dialog" aria-modal="true" aria-label="Pastor directory unavailable">
-        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-          <div className="w-14 h-14 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-2xl">↯</div>
-          <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">Couldn't load pastors</h2>
-          <p className="mt-2 text-center text-sm leading-6 text-stone-500">Check your connection and try again. We won't assume a pastor hasn't joined when the directory is unavailable.</p>
-          <div className="mt-5 space-y-2">
-            <button type="button" onClick={() => { setShowDirectoryError(false); onRefreshDirectory?.() }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">Retry</button>
-            <button type="button" onClick={() => setShowDirectoryError(false)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
-          </div>
-        </div>
-      </div>
+      <CenterNotice
+        label="Pastor directory unavailable" icon="↯" kicker="bg-stone-100" title="Couldn't load pastors"
+        body="Check your connection and try again. We won't assume a pastor hasn't joined when the directory is unavailable."
+        onClose={() => setShowDirectoryError(false)}
+        primary={<button type="button" onClick={() => { setShowDirectoryError(false); onRefreshDirectory?.() }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">Retry</button>}
+      />
     )}
     {showNoPastor && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowNoPastor(false)} role="dialog" aria-modal="true" aria-label="Pastor support unavailable">
-        <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
-          <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-3xl">🙏</div>
-          <h2 className="mt-4 font-extrabold text-base text-stone-900">Pastor support isn't available yet</h2>
-          <p className="mt-2 text-sm leading-6 text-stone-500">You can still share a prayer request in Chats — the Harvest Family is ready to pray with you.</p>
-          <div className="mt-5 flex flex-col gap-2">
-            <button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>
-            <button type="button" onClick={() => setShowNoPastor(false)} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
-          </div>
-        </div>
-      </div>
+      <CenterNotice
+        label="Pastor support unavailable" icon="🙏" title="Pastor support isn't available yet"
+        body="You can still share a prayer request in Chats — the Harvest Family is ready to pray with you."
+        onClose={() => setShowNoPastor(false)}
+        primary={<button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>}
+      />
     )}
     {commentTarget && (
       <Comments
