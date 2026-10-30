@@ -40,6 +40,10 @@ function isAbsoluteUrl(value, required) {
   return typeof value === 'string' && /^https?:\/\/\S{1,500}$/.test(value)
 }
 
+function isIsoDate(value) {
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) && /\d{4}-\d{2}-\d{2}/.test(value)
+}
+
 function readAll(env) {
   return query(env, 'SELECT key, value FROM site_content')
 }
@@ -84,6 +88,10 @@ export async function handleContent(request, env, ctx) {
           if (typeof ad.body !== 'string' || ad.body.length > 400) return errorResponse('sponsor_adverts: body max 400 chars', 400)
           for (const urlField of ['cta_url', 'image_url']) {
             if (!isAbsoluteUrl(ad[urlField], urlField === 'cta_url')) return errorResponse(`sponsor_adverts: ${urlField} must be an http(s) URL`, 400)
+          }
+          for (const dateField of ['advertise_from', 'advertise_until']) {
+            if (ad[dateField] !== undefined && ad[dateField] !== null && (!isIsoDate(ad[dateField]))) return errorResponse(`sponsor_adverts: ${dateField} must be an ISO date-time`, 400)
+            if (ad[dateField] !== undefined && ad[dateField] !== null && ad[dateField].length > 30) return errorResponse(`sponsor_adverts: ${dateField} too long`, 400)
           }
           if (ad.enabled !== undefined && typeof ad.enabled !== 'boolean') return errorResponse('sponsor_adverts: enabled must be boolean', 400)
           if (!['all', 'members'].includes(String(ad.audience || 'all'))) return errorResponse("sponsor_adverts: audience must be 'all' or 'members'", 400)

@@ -130,8 +130,15 @@ export async function handleFeed(request, env, ctx) {
     const interval = Number.isInteger(Number(settings.interval)) ? Number(settings.interval) : 6
     const dailyCap = Number.isInteger(Number(settings.daily_cap)) ? Number(settings.daily_cap) : 2
     const allAdverts = placement !== 'none' && interval >= 1 ? parseJsonSafe(contentMap.get('sponsor_adverts'), []) : []
+    const nowIso = new Date().toISOString()
+    const inSchedule = (ad) => {
+      const from = typeof ad.advertise_from === 'string' && Date.parse(ad.advertise_from) ? ad.advertise_from : null
+      const until = typeof ad.advertise_until === 'string' && Date.parse(ad.advertise_until) ? ad.advertise_until : null
+      return (!from || from <= nowIso) && (!until || until >= nowIso)
+    }
     const eligibleRaw = (Array.isArray(allAdverts) ? allAdverts : []).filter(ad =>
       ad && ad.enabled !== false && typeof ad.title === 'string' && ad.title.trim()
+      && inSchedule(ad)
       && (String(ad.audience || 'all') !== 'members' || Boolean(user?.id)))
     let eligible = eligibleRaw
     let servedCounter = null

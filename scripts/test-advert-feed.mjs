@@ -44,4 +44,18 @@ console.log('render 2 adverts:', secondAds, '| render 3 adverts:', thirdAds)
 assert.ok(secondAds.includes('qa-ad-1'), 'cap of 2 should allow a second appearance')
 assert.equal(thirdAds.length, 0, 'daily cap of 2 not enforced on the third render')
 
+// Scheduling: an advert whose window has opened in 2099 must not render —
+// fresh id so the daily cap (not the schedule) decides nothing here; then restore.
+const contentGet = await fetch(`${API}/api/content`)
+const currentRaw = (await contentGet.json())?.content?.sponsor_adverts || '[]'
+const restore = JSON.parse(String(currentRaw))
+const scheduledOnly = [{ id: 'qa-ad-future', title: 'QA future advert', body: 'not yet', cta_url: 'https://example.org/qa', enabled: true, advertise_from: '2099-01-01T00:00:00Z' }]
+const put = await fetch(`${API}/api/content`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sponsor_adverts: JSON.stringify(scheduledOnly) }) })
+assert.equal(put.status, 200, `admin PUT failed: ${put.status}`)
+const squeezed = await feed()
+const squeezedIds = (squeezed.posts || []).filter(p => p.kind === 'advert').map(p => p.advert_id)
+console.log('future-scheduled adverts rendered:', squeezedIds)
+assert.ok(!squeezedIds.includes('qa-ad-future'), 'advert scheduled for 2099 must not render')
+await fetch(`${API}/api/content`, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sponsor_adverts: JSON.stringify(restore) }) })
+
 console.log('ADVERT FEED CONTRACT OK')

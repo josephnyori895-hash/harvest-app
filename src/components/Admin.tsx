@@ -17,6 +17,8 @@ const ADVERT_EXAMPLE = JSON.stringify([{
   body: 'Bibles, devotionals and Sunday-school books at the church entrance.',
   cta_url: 'https://example.com/bookshop',
   enabled: true,
+  advertise_from: '2026-10-30T00:00:00Z',
+  advertise_until: '2026-12-24T23:59:59Z',
 }], null, 2)
 
 type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts'
@@ -692,7 +694,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 placeholder={ADVERT_EXAMPLE}
                 className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
               />
-              <p className="text-[10px] text-[#766E63] mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members).</p>
+              <p className="text-[10px] text-[#766E63] mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
             </div>
             <button
               onClick={() => {
