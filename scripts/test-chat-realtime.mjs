@@ -23,3 +23,8 @@ test('DO handles chat:send (text) and fans out chat:message', () => {
   assert.match(rt, /case 'chat:send'/)
   assert.match(rt, /event: 'chat:message'/)
 })
+
+test('DO chat:send fans out FCM background push (never fails the send)', () => {
+  assert.match(rt, /await sendFanOut\(this\.env, \{/)
+  assert.match(rt, /push fan-out must never fail the send/)
+})

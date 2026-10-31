@@ -9,6 +9,7 @@
 
 import { query } from './lib/db.js'
 import { jwtVerify } from './lib/crypto.js'
+import { sendFanOut } from './lib/fcm.js'
 
 export class Realtime {
   constructor(state, env) {
@@ -174,6 +175,20 @@ export class Realtime {
           )
           const msg = { id, kind: 'group', conversation_key: conv, from: me.username, departmentSlug: slug, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
           await this.fanoutConversation(conv, { event: 'chat:message', data: msg })
+          try {
+            const deptRecipients = (await query(this.env, 'SELECT user_id FROM department_members WHERE department_id=(SELECT id FROM departments WHERE slug=?)', [slug])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
+            if (deptRecipients.length) {
+              await sendFanOut(this.env, {
+                recipients: deptRecipients,
+                title: `@${me.username}`,
+                body: String(text || '').slice(0, 200),
+                data: { kind: 'chat', type: 'department', conversation_key: conv, slug, message_id: id },
+                collapseKey: `chat:${conv}`,
+                requestKey: `chatmsg:${id}`,
+                actor: me.username,
+              })
+            }
+          } catch { /* push fan-out must never fail the send */ }
           return ack({ ok: true, id, serverId: id, at: msg.at, status: 'sent' })
         }
 
@@ -192,6 +207,20 @@ export class Realtime {
           )
           const msg = { id, kind: 'group', conversation_key: conv, from: me.username, groupSlug: slug, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
           await this.fanoutConversation(conv, { event: 'chat:message', data: msg })
+          try {
+            const groupRecipients = (await query(this.env, 'SELECT user_id FROM group_members WHERE group_id=?', [g.rows[0].id])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
+            if (groupRecipients.length) {
+              await sendFanOut(this.env, {
+                recipients: groupRecipients,
+                title: `@${me.username}`,
+                body: String(text || '').slice(0, 200),
+                data: { kind: 'chat', type: 'group', conversation_key: conv, slug, message_id: id },
+                collapseKey: `chat:${conv}`,
+                requestKey: `chatmsg:${id}`,
+                actor: me.username,
+              })
+            }
+          } catch { /* push fan-out must never fail the send */ }
           return ack({ ok: true, id, serverId: id, at: msg.at, status: 'sent' })
         }
 
@@ -208,6 +237,19 @@ export class Realtime {
         )
         const payload = { id, tempId: data.tempId, kind: 'dm', conversation_key: conv, from: me.username, to: targetUsername, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
         await this.fanoutConversation(conv, { event: 'chat:message', data: payload })
+        try {
+          if (recipient.rows[0]?.id && recipient.rows[0].id !== me.id) {
+            await sendFanOut(this.env, {
+              recipients: [recipient.rows[0].id],
+              title: `@${me.username}`,
+              body: String(text || '').slice(0, 200),
+              data: { kind: 'chat', type: 'dm', conversation_key: conv, peer: targetUsername, peer_user_id: recipient.rows[0].id, message_id: id },
+              collapseKey: `chat:${conv}`,
+              requestKey: `chatmsg:${id}`,
+              actor: me.username,
+            })
+          }
+        } catch { /* push fan-out must never fail the send */ }
         return ack({ ok: true, id, serverId: id, at: payload.at, status: 'sent' })
       }
 
