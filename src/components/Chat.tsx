@@ -299,6 +299,48 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
   }, [conversationKey])
 
+  // Realtime delivery loop: join the conversation on open + render incoming
+  // chat:message frames into the thread (polling stays as the fallback).
+  useEffect(() => {
+    if (!realtimeEnabled()) return
+    connectSocket()
+    const off = onSocket('chat:message', (data: any) => {
+      const ck = String(data?.conversation_key || '')
+      if (!conversationKey || ck !== conversationKey) return
+      if (String(data?.from || '') === currentUser) return
+      const incoming: any = {
+        id: String(data.id ?? `rt_${Date.now()}`),
+        kind: data.kind || (team ? 'group' : 'dm'),
+        from: String(data.from || ''),
+        to: team ? null : String(data.to || ''),
+        text: String(data.text || ''),
+        status: String(data.status || 'sent'),
+        created_at: String(data.created_at || new Date().toISOString()),
+        at: String(data.at || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+        reply_to_id: data.reply_to_id || null,
+        reply_preview: data.reply_preview || null,
+        media_type: data.media_type || null,
+        media_key: data.media_key || null,
+      }
+      setMsgs(c => {
+        const list = c[conversationKey] || []
+        if (list.some(m => String(m.id) === String(incoming.id))) return c
+        return { ...c, [conversationKey]: [...list, incoming] }
+      })
+    })
+    const join = () => {
+      if (!conversationKey) return
+      if (team) {
+        if (team.kind === 'group') emitSocket('group:join', { slug: team.slug })
+        return
+      }
+      const peer = team ? null : String((active as any)?.username || '')
+      if (peer) emitSocket('chat:join', { peer })
+    }
+    join()
+    return () => { off() }
+  }, [conversationKey, team, active, currentUser, realtimeEnabled])
+
   const saveMessages = useCallback((updater: Record<string, any[]> | ((c: Record<string, any[]>) => Record<string, any[]>)) => {
     setMsgs(current => {
       const next = typeof updater === 'function' ? updater(current) : updater
@@ -485,6 +527,21 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         }
         if (!up.ok) throw new Error('Media storage is not enabled yet — text messages still work')
         media_key = pre.key
+      }
+      let socketConfirmed: any = null
+      if (!attach) {
+        // Realtime send path (DO chat:send fan-out) with REST fallback.
+        const socketPayload = team
+          ? (team.kind === 'group' ? { kind: 'group', groupSlug: team.slug, body } : { kind: 'group', department: team.slug, body })
+          : { kind: 'dm', to: String((active as any)?.username || ''), body }
+        const ackRes = await new Promise<any>(resolve => emitSocket('chat:send', { ...socketPayload, tempId }, resolve))
+        if (ackRes && ackRes.ok) {
+          socketConfirmed = { ...optimistic, id: String(ackRes.id || ackRes.serverId || tempId), status: 'sent', created_at: new Date().toISOString(), at: ackRes.at || optimistic.at }
+          saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [socketConfirmed]) }))
+          cursorRef.current[conversationKey] = socketConfirmed.created_at || cursorRef.current[conversationKey]
+          void refreshInbox()
+          return
+        }
       }
       const teamPayload = team ? (team.kind === 'group' ? { group: team.slug } : { department: team.slug }) : { peer: active.username }
       const result = await api<{ message: any }>('/api/chat/messages', {
