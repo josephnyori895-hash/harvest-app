@@ -40,7 +40,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-import { initNotifications } from './lib/notifications'
+import { initNotifications, fetchFamilyActivity } from './lib/notifications'
 import { registerPush, disablePushOnLogout } from './lib/push'
 // Push tap routing: a notification tap emits harvest:push-tap with a
 // normalized deep link; route it through the app's existing navigation
@@ -323,6 +323,11 @@ function InnerApp() {
       .then(d => { if (!cancelled) setNotifications(Array.isArray(d?.notifications) ? d.notifications : []) })
       .catch(() => { if (!cancelled) setNotificationsError('Notifications are unavailable right now.') })
       .finally(() => { if (!cancelled) { setNotificationsLoading(false); setNotificationsLoadedOnce(true) } })
+    // Family-directory activity rides the same inbox (Activity+Notifications
+    // merge): normalized into notification rows and prepended to the list.
+    fetchFamilyActivity()
+      .then(rows => { if (!cancelled) setNotifications(prev => [...rows, ...prev]) })
+      .catch(() => { /* additive only — never block the inbox on it */ })
     return () => { cancelled = true }
   }, [onboarded])
 
@@ -334,6 +339,8 @@ function InnerApp() {
         const d = await r.json()
         setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
       }
+      const fam = await fetchFamilyActivity().catch(() => null)
+      if (fam) setNotifications(prev => [...fam, ...prev])
     } catch { /* keep the last good list */ }
     setNotificationsRefreshing(false)
   }
@@ -385,6 +392,9 @@ function InnerApp() {
     } else if (notification.type === 'sermon' && target.id) {
       setSearchSermonId(String(target.id))
       setTab('sermons')
+    } else if (notification.type === 'member_joined' || notification.type === 'followed_you' || notification.type === 'you_followed') {
+      const actor = notification.actor || {}
+      if (actor.username) openProfile({ username: String(actor.username), name: actor.name || String(actor.username), verified: !!actor.verified })
     }
     setShowNotifications(false)
   }
@@ -543,8 +553,7 @@ function InnerApp() {
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
           {tab === 'post' && <PostCreate onDone={() => setTab('home')} />}
-          {tab === 'activity' && <Activity />}
-          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} onOpenActivity={() => setTab('activity')} />}
+          {tab === 'profile' && <Profile users={users} onOpenAdmin={()=>setTab('admin')} onSignOut={signOut} onEditProfile={() => setTab('editprofile')} onOpenActivity={() => { setNotificationFilter('family'); setShowNotifications(true); void refreshNotifications() }} />}
           {tab === 'editprofile' && <EditProfile key={editProfileKey} onDone={() => { setEditProfileKey(k => k + 1); setTab('profile') }} />}
           {tab === 'chat' && (
             <Chat
@@ -806,103 +815,6 @@ function Onboarding({ onAuthSuccess }) {
             {mode === 'register' ? 'Already a member? Tap “Sign in” at the top right.' : 'New to Harvest? Tap “New here?” at the top right.'}
           </p>
         </div>
-      </div>
-    </div>
-  )
-}
-
-// Real activity from the server: new members + follows involving you.
-function Activity() {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState('')
-  const [clock, setClock] = useState(0)
-  useEffect(() => {
-    const tick = () => setClock(Date.now())
-    tick()
-    const timer = window.setInterval(tick, 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-  useEffect(() => {
-    let cancelled = false
-    fetch(`${API}/api/activity`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load activity'))))
-      .then(d => { if (!cancelled) setData(d) })
-      .catch(e => { if (!cancelled) setError(e.message) })
-    return () => { cancelled = true }
-  }, [])
-
-  const Avatar = ({ name }) => (
-    <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[2px] shrink-0">
-      <div className="w-full h-full rounded-full bg-[#F5F1E8] flex items-center justify-center text-xs font-bold text-[#29251F]">
-        {String(name || '?').split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
-      </div>
-    </div>
-  )
-  const Row = ({ children, keyi }) => (
-    <div key={keyi} className="flex gap-3 items-center bg-white border border-[#E8DEC9] rounded-2xl p-3">{children}</div>
-  )
-  const timeAgo = iso => {
-    if (!iso || !clock) return ''
-    const m = Math.floor((clock - new Date(iso).getTime()) / 60000)
-    if (m < 1) return 'now'
-    if (m < 60) return `${m}m`
-    const h = Math.floor(m / 60); if (h < 24) return `${h}h`
-    const d = Math.floor(h / 24); if (d < 7) return `${d}d`
-    return new Date(iso).toLocaleDateString()
-  }
-
-  return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh]">
-      <div className="px-4 pt-5 pb-3 border-b border-[#E8DEC9]">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</p>
-        <h1 className="text-2xl font-extrabold">Activity</h1>
-      </div>
-      <div className="p-4 space-y-6">
-        {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
-        {!data && !error && <p className="text-[#766E63] text-sm">Loading…</p>}
-        {data && (
-          <>
-            <section>
-              <h2 className="text-sm font-bold text-[#B45309] mb-2">New members</h2>
-              <div className="space-y-2">
-                {(data.new_members || []).length === 0 && <p className="text-xs text-zinc-500">No new members yet.</p>}
-                {(data.new_members || []).map((u, i) => (
-                  <Row keyi={`nm_${u.username}_${i}`}>
-                    <Avatar name={u.name || u.username} />
-                    <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> joined {u.group_name || 'the family'}</p>
-                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
-                  </Row>
-                ))}
-              </div>
-            </section>
-            <section>
-              <h2 className="text-sm font-bold text-[#7C3AED] mb-2">Following you</h2>
-              <div className="space-y-2">
-                {(data.follows_in || []).length === 0 && <p className="text-xs text-[#766E63]">No followers yet — connect with others on the Map.</p>}
-                {(data.follows_in || []).map((u, i) => (
-                  <Row keyi={`fi_${u.username}_${i}`}>
-                    <Avatar name={u.name || u.username} />
-                    <p className="text-[13px] flex-1"><b>{u.name || u.username}</b> started following you</p>
-                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
-                  </Row>
-                ))}
-              </div>
-            </section>
-            <section>
-              <h2 className="text-sm font-bold text-[#766E63] mb-2">You follow</h2>
-              <div className="space-y-2">
-                {(data.follows_out || []).length === 0 && <p className="text-xs text-[#766E63]">Tap a member on the Map to follow them.</p>}
-                {(data.follows_out || []).map((u, i) => (
-                  <Row keyi={`fo_${u.username}_${i}`}>
-                    <Avatar name={u.name || u.username} />
-                    <p className="text-[13px] flex-1">You follow <b>{u.name || u.username}</b></p>
-                    <span className="text-[11px] text-[#766E63]">{timeAgo(u.created_at)}</span>
-                  </Row>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
       </div>
     </div>
   )

@@ -73,6 +73,56 @@ export async function initNotifications(): Promise<void> {
   await requestNotificationPermission()
 }
 
+/**
+ * Family-directory activity (new members, follows in/out) normalized into
+ * notification-shaped rows so the single inbox can carry both.
+ */
+export async function fetchFamilyActivity(): Promise<any[]> {
+  const token = localStorage.getItem('harvest_token') || ''
+  const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  const r = await fetch(`${API}/api/activity`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!r.ok) throw new Error('Could not load family activity')
+  const d = await r.json()
+  const rows: any[] = []
+  for (const m of d?.new_members || []) {
+    rows.push({
+      id: `activity:nm:${m.username}`,
+      type: 'member_joined',
+      category: 'family',
+      title: `${m.name || m.username} joined the family`,
+      body: `Joined ${m.group_name || 'Harvest Family Church'}`,
+      created_at: m.created_at,
+      actor: { username: m.username, name: m.name, verified: !!m.verified },
+      read_at: null,
+    })
+  }
+  for (const f of d?.follows_in || []) {
+    rows.push({
+      id: `activity:fi:${f.username}`,
+      type: 'followed_you',
+      category: 'family',
+      title: `${f.name || f.username} started following you`,
+      body: '',
+      created_at: f.created_at,
+      actor: { username: f.username, name: f.name, verified: false },
+      read_at: null,
+    })
+  }
+  for (const f of d?.follows_out || []) {
+    rows.push({
+      id: `activity:fo:${f.username}`,
+      type: 'you_followed',
+      category: 'family',
+      title: `You followed ${f.name || f.username}`,
+      body: '',
+      created_at: f.created_at,
+      actor: { username: f.username, name: f.name, verified: false },
+      read_at: null,
+    })
+  }
+  return rows
+}
+
 
 /** Schedule local project reminders when a member still has a commitment outstanding. */
 export async function scheduleProjectReminders(project: { id: string; name: string; deadline?: string | null }, remainingKes: number): Promise<void> {

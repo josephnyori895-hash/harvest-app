@@ -5,6 +5,7 @@ const FILTERS = [
   { id: 'messages', label: 'Messages' },
   { id: 'groups', label: 'Groups' },
   { id: 'departments', label: 'Departments' },
+  { id: 'family', label: 'Family' },
 ]
 
 function categoryOf(n) {
@@ -12,6 +13,7 @@ function categoryOf(n) {
   if (n?.type === 'chat') return 'messages'
   if (n?.type === 'group_chat') return 'groups'
   if (n?.type === 'department_chat') return 'departments'
+  if (n?.type === 'member_joined' || n?.type === 'followed_you' || n?.type === 'you_followed') return 'family'
   return 'all'
 }
 
@@ -53,6 +55,9 @@ function groupByDate(items) {
 function iconFor(type) {
   if (type === 'group_chat') return '👥'
   if (type === 'department_chat') return '🏛'
+  if (type === 'member_joined') return '👋'
+  if (type === 'followed_you') return '❤️'
+  if (type === 'you_followed') return '❤️'
   if (type === 'post_like') return '♡'
   if (type === 'post_comment') return '💬'
   if (type === 'sermon' || type === 'reel') return '▶'
