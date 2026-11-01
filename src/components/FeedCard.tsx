@@ -154,15 +154,14 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   // Videos with an attached soundtrack ride the same channel (no manual play).
   useEffect(() => {
     const m = p.music
-    if (!m?.url || !m.id) return
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
         if (autoPlaying.current) return
         autoPlaying.current = true
-        setAutoPlayVideo(true)
-        if (audioAutoplayReady() && !isInlinePlaying(m.id)) {
+        if (p.video) setAutoPlayVideo(true)
+        if (m?.url && m.id && audioAutoplayReady() && !isInlinePlaying(m.id)) {
           void toggleInlineMediaTrack({ id: String(m.id), url: m.url }, undefined)
             .catch(() => {})
         }
