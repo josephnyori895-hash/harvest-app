@@ -150,10 +150,10 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
 
   // IG-style: once the member has interacted with audio at least once, a post
   // with a song track plays as it comes into view and pauses on the way out.
+  // Videos with an attached soundtrack ride the same channel (no manual play).
   useEffect(() => {
     const m = p.music
     if (!m?.url || !m.id) return
-    if (p.video) return // a reel's own video owns the audio path
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([entry]) => {

@@ -35,6 +35,7 @@ let state: PlayerState = { track: null, playing: false, currentTime: 0, duration
 // use this to decide between auto-start (IG-style) and tap-to-play.
 let audioUnlocked = false
 export const audioAutoplayReady = (): boolean => audioUnlocked
+export const markAudioUnlocked = (): void => { audioUnlocked = true }
 
 const emit = () => { listeners.forEach(l => l(state)) }
 const patch = (p: Partial<PlayerState>) => { state = { ...state, ...p }; emit() }
