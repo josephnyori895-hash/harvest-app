@@ -5,6 +5,7 @@ import { fetchMusic, useApi } from '../lib/api'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, closePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
+import { stopFeedPlayback } from '../lib/feedPlayback'
 
 // Worship room: the church library (admin uploads) + online search with
 // 30-second previews (Apple iTunes Search API — no key required, free).
@@ -225,6 +226,8 @@ export default function Music() {
   // screen unmounts. That is the entire point.
   const togglePlay = (track: Track) => {
     setError('')
+    // Worship owns the global audio element while it plays — feed music yields.
+    stopFeedPlayback()
     void playTrack({ id: track.id, title: track.title, artist: track.artist, url: track.url || null, artwork: track.artwork || null, origin: 'music' })
   }
   const seek = (fraction: number) => seekToFraction(fraction)

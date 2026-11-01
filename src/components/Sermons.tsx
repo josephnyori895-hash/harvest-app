@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
+import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
 
 import ErrorMessage from './ErrorMessage'
@@ -82,6 +83,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
     if (target) {
       setPlaying(String(focusId))
       if (target.kind !== 'video' && target.media_url) {
+        stopFeedPlayback()
         void playTrack({ id: `sermon:${focusId}`, title: target.title || 'Sermon', artist: target.speaker || 'Harvest Family Church', url: target.media_url, artwork: null, origin: 'sermons' }).then(ok => { if (!ok) showToast('Tap ▶ to start the sermon', 'info') })
       } else if (target.kind === 'video') {
         setPlayerReady(prev => ({ ...prev, [String(focusId)]: true }))
@@ -155,6 +157,7 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
       return
     }
     pausePlayer()
+    stopFeedPlayback()
     videoRef.current?.pause()
     if (s.kind === 'audio') {
       const ok = await playTrack({ id: `sermon:${s.id}`, title: s.title || 'Sermon', artist: s.speaker || 'Harvest Family Church', url: s.media_url, artwork: null, origin: 'sermons' })

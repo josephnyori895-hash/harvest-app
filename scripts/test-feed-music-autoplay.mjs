@@ -3,29 +3,73 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 
 const feed = await readFile(new URL('../src/components/FeedCard.tsx', import.meta.url), 'utf8')
-const media = await readFile(new URL('../src/components/FeedMediaPreview.tsx', import.meta.url), 'utf8')
 const inline = await readFile(new URL('../src/lib/inlineMediaAudio.ts', import.meta.url), 'utf8')
+const player = await readFile(new URL('../src/lib/audioPlayer.ts', import.meta.url), 'utf8')
+const playback = await readFile(new URL('../src/lib/feedPlayback.ts', import.meta.url), 'utf8')
+const music = await readFile(new URL('../src/components/Music.tsx', import.meta.url), 'utf8')
+const sermons = await readFile(new URL('../src/components/Sermons.tsx', import.meta.url), 'utf8')
+const media = await readFile(new URL('../src/components/FeedMediaPreview.tsx', import.meta.url), 'utf8')
 
-test('feed music autoplay covers video posts too (no manual-play skip)', () => {
-  assert.doesNotMatch(feed, /if \(p\.video\) return/)
+test('1. eligible music post becomes visible → playback attempted', () => {
+  assert.match(feed, /startFeedPlayback\(p\)/)
+  assert.match(playback, /export async function startFeedPlayback/)
+  assert.match(playback, /if \(!postId \|\| !url\) return false/)
 })
 
-test('scroll-into-view (ratio >= 0.6) arms autoPlay + inline music', () => {
-  assert.match(feed, /entry\.isIntersecting && entry\.intersectionRatio >= 0\.6/)
-  assert.match(feed, /setAutoPlayVideo\(true\)/)
-  assert.match(feed, /setAutoPlayVideo\(false\)/)
-  assert.match(feed, /audioAutoplayReady\(\)/)
+test('2. scrolling away → playback stops', () => {
+  assert.match(feed, /stopFeedPlayback\(\)/)
+  assert.match(playback, /export function stopFeedPlayback/)
 })
 
-test('video posts with soundtrack render FeedMediaPreview with autoPlay', () => {
-  assert.match(feed, /<FeedMediaPreview src=\{p\.video\} poster=\{p\.img\} autoPlay=\{autoPlayVideo\} \/>/)
+test('3. next music post becomes visible → previous stops and next starts', () => {
+  assert.match(playback, /stopFeedPlayback\(\)/)
+  assert.match(playback, /activePostId = postId/)
 })
 
-test('media stage plays when autoPlay flips on, returns to poster when off', () => {
+test('4. posts without music → no playback', () => {
+  assert.match(feed, /Boolean\(p\.video\) \|\| Boolean\(p\.music\?\.url && p\.music\?\.id\)/)
+})
+
+test('5. autoplay disabled → no automatic playback', () => {
+  assert.match(playback, /if \(!getFeedAutoplayPref\(\)\) return false/)
+  assert.match(feed, /getFeedAutoplayPref/)
+})
+
+test('6. browser rejects autoplay → manual enable/play action appears', () => {
+  assert.match(feed, /Enable music autoplay/)
+  assert.match(feed, /markAudioUnlocked/)
+  assert.match(inline, /await audio\.play\(\)/)
+})
+
+test('7. worship player starts → feed music pauses', () => {
+  assert.match(music, /stopFeedPlayback/)
+  assert.match(sermons, /stopFeedPlayback/)
+})
+
+test('8. Home becomes hidden → feed music pauses', () => {
+  assert.match(playback, /visibilitychange/)
+  assert.match(playback, /pagehide/)
+})
+
+test('9. rapid scrolling → no overlapping audio', () => {
+  assert.match(playback, /stopFeedPlayback\(\)/)
+  assert.match(playback, /activePostId/)
+})
+
+test('10. playback failure → useful retry state', () => {
+  assert.match(feed, /Retry music/)
+  assert.match(inline, /toggleInlineMediaTrack/)
+})
+
+test('11. media stage plays when autoPlay flips on, returns to poster when off', () => {
   assert.match(media, /autoPlay\?: boolean/)
   assert.match(media, /if \(autoPlay\) \{ setVideoFailed\(false\); setPlaying\(true\) \} else \{ setPlaying\(false\) \}/)
 })
 
-test('inline media play marks the app-level audio unlocked', () => {
+test('12. inline media play marks the app-level audio unlocked', () => {
   assert.match(inline, /markAudioUnlocked\(\)/)
+})
+
+test('13. global player exposes playing state for coordinator gating', () => {
+  assert.match(player, /isGlobalPlayerPlaying/)
 })
