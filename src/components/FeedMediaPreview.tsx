@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
 
-const MIN_RATIO = 0.5
+const MIN_RATIO = 0.5625 // 9:16 — reel-style portrait floor; tighter crops get pushed to the nearest portrait frame
 const MAX_RATIO = 1.91
 const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
 // iOS Safari (and a few Android WebViews) play HLS natively in <video>;
