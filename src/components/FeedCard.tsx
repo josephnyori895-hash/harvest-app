@@ -144,6 +144,7 @@ function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
 export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMenu, onLike, onComment, onShare, saved, onSave, onOpenUser }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [autoPlayVideo, setAutoPlayVideo] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
   const autoPlaying = useRef(false)
   const scope = p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'
@@ -158,13 +159,16 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
     if (!el || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        if (audioAutoplayReady() && !isInlinePlaying(m.id) && !autoPlaying.current) {
-          autoPlaying.current = true
+        if (autoPlaying.current) return
+        autoPlaying.current = true
+        setAutoPlayVideo(true)
+        if (audioAutoplayReady() && !isInlinePlaying(m.id)) {
           void toggleInlineMediaTrack({ id: String(m.id), url: m.url }, undefined)
             .catch(() => {})
         }
       } else if (autoPlaying.current) {
         autoPlaying.current = false
+        setAutoPlayVideo(false)
         stopInlineMediaAudio()
       }
     }, { threshold: [0, 0.6] })
@@ -192,7 +196,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
 
       {/* media — full-bleed, natural aspect, no baked chrome */}
       {p.video ? (
-        <FeedMediaPreview src={p.video} poster={p.img} />
+        <FeedMediaPreview src={p.video} poster={p.img} autoPlay={autoPlayVideo} />
       ) : p.img ? (
         <FeedImagePreview src={p.img} />
       ) : (

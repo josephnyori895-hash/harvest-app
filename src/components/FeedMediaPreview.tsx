@@ -19,7 +19,7 @@ const nativeHls = () => {
   return probe.canPlayType(HLS_T) !== ''
 }
 
-export default function FeedMediaPreview({ src, poster, alt = '' }: { src: string; poster?: string; alt?: string }) {
+export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = false }: { src: string; poster?: string; alt?: string; autoPlay?: boolean }) {
   const hls = Boolean(src && isHls(src))
   const [playing, setPlaying] = useState(false)
   const [ratio, setRatio] = useState<number | null>(null)
@@ -77,6 +77,11 @@ export default function FeedMediaPreview({ src, poster, alt = '' }: { src: strin
   }
 
   useEffect(() => { if (playing) playWithMutedFallback() }, [playing, src])
+  // IG-style scroll-driven autoplay: entering the viewport (ratio ≥ 0.6) flips
+  // autoPlay on → playing=true → muted-safe play; leaving flips it off → poster.
+  useEffect(() => {
+    if (autoPlay) { setVideoFailed(false); setPlaying(true) } else { setPlaying(false) }
+  }, [autoPlay])
 
   if (playing) {
     return (
