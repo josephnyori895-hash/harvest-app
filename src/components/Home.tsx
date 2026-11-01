@@ -152,6 +152,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
+  const [feedOffset, setFeedOffset] = useState(0)
+  const [feedHasMore, setFeedHasMore] = useState(false)
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false)
   const pendingLikesRef = useRef(new Set<string>())
   const pendingSavesRef = useRef(new Set<string>())
 
@@ -185,6 +188,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           })
         }
         setFeedLoaded(true)
+        setFeedOffset(Number(d?.nextOffset) || 20)
+        setFeedHasMore(Boolean(d?.hasMore))
       })
       .catch((e: any) => {
         if (cancelled) return
@@ -194,6 +199,36 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       })
     return () => { cancelled = true }
   }, [api, feedTick])
+
+  // Reliable further-page loading for the community feed. The /api/feed contract
+  // is { posts, stories, nextOffset, hasMore } — hasMore means "nextOffset is
+  // populated", so paging advances only while it stays true. Appends with a
+  // kind_id dedupe so retries/overlays can never double-insert a post.
+  const loadMoreFeed = async () => {
+    if (!api || feedLoadingMore || !feedHasMore) return
+    setFeedLoadingMore(true)
+    try {
+      const d: any = await fetchFeed(feedOffset, 20)
+      const incoming: any[] = Array.isArray(d?.posts) ? d.posts : []
+      const seen = new Set<string>()
+      setLivePosts(prev => {
+        const next = [...prev]
+        for (const p of incoming) {
+          const k = `api_${p.kind}_${p.id}`
+          if (seen.has(k)) continue
+          seen.add(k)
+          next.push(p)
+        }
+        return next
+      })
+      setFeedOffset(Number(d?.nextOffset) || feedOffset + 20)
+      setFeedHasMore(Boolean(d?.hasMore))
+    } catch (e: any) {
+      showToast(e?.message || 'Could not load more updates', 'error', 2200)
+    } finally {
+      setFeedLoadingMore(false)
+    }
+  }
 
   useEffect(() => {
     const bump = () => setApprovedTick(x => x + 1)
@@ -397,6 +432,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     }
   }
 
+  const reelCount = livePosts.filter((p: any) => p.kind === 'reel').length
+
   const onTouchStart = (e: any) => { startYRef.current = e.touches[0].clientY }
   const onTouchEnd = (e: any) => {
     if (startYRef.current === null) return
@@ -531,7 +568,42 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </nav>
       <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">{heroKicker}</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">{heroTitle}</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">{heroSubtitle}</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={openPastorChat} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
 
-      <section className="mt-5"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Today at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-3 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('sermons')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎙</span><p className="mt-2 font-extrabold text-sm">Sermons</p><p className="mt-1 text-[11px] text-[#766E63]">Listen, watch & download.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
+      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">What’s happening at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-3 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('sermons')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎙</span><p className="mt-2 font-extrabold text-sm">Sermons</p><p className="mt-1 text-[11px] text-[#766E63]">Listen, watch & download.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
+
+      <section className="mt-7">
+        <div className="mb-3">
+          <p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Watch & listen</p>
+          <h2 className="text-lg font-extrabold">Media that feeds the soul</h2>
+          <p className="text-xs text-[#766E63] mt-1">Sermons, community videos and worship — real recordings from Harvest Family.</p>
+        </div>
+        <div className="grid gap-3">
+          <button type="button" onClick={() => setTab('sermons')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎙</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-extrabold text-[#29251F]">Sermons</span>
+              <span className="block text-[11px] text-[#766E63] mt-0.5">Listen & watch</span>
+            </span>
+            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
+          </button>
+          <button type="button" onClick={() => setTab('reels')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎥</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-extrabold text-[#29251F]">Community videos &amp; reels</span>
+              <span className="block text-[11px] text-[#766E63] mt-0.5">{reelCount} in your feed</span>
+            </span>
+            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
+          </button>
+          <button type="button" onClick={() => setTab('music')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎶</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-extrabold text-[#29251F]">Songs &amp; worship</span>
+              <span className="block text-[11px] text-[#766E63] mt-0.5">Worship room</span>
+            </span>
+            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
+          </button>
+        </div>
+      </section>
+
 
       <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
@@ -623,7 +695,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           onSave={api ? () => toggleSave(key) : undefined}
           onOpenUser={onOpenUser}
         />
-      ) })}</div></section>
+      ) })}</div>
+        {feedHasMore && (
+          <button type="button" onClick={() => void loadMoreFeed()} disabled={!api || feedLoadingMore} className="mt-5 w-full min-h-11 rounded-2xl bg-white border border-[#E8DEC9] text-[11px] font-extrabold text-[#5B21B6] disabled:opacity-40">
+            {feedLoadingMore ? 'Loading more…' : 'Load more updates'}
+          </button>
+        )}
+      </section>
 
       <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
     </main>
