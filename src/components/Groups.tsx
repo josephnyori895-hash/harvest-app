@@ -254,10 +254,10 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   // Group membership avatar colors — warm church tints, one per name.
   const avatarTint = (name: string) => {
     const tints = [
-      'from-[#EDE9FE] to-[#C4B5FD] text-[#5B21B6]',
-      'from-[#FEF3C7] to-[#FDE68A] text-[#B45309]',
+      'from-accent-soft to-[#C4B5FD] text-accent-strong',
+      'from-gold-soft to-gold text-gold-strong',
       'from-[#FCE7F3] to-[#F9A8D4] text-[#9D174D]',
-      'from-[#D1FAE5] to-[#A7F3D0] text-[#065F46]',
+      'from-[#D1FAE5] to-success text-success',
       'from-[#DBEAFE] to-[#BFDBFE] text-[#1E40AF]',
       'from-[#FFE4E6] to-[#FECDD3] text-[#9F1239]',
     ]
@@ -269,34 +269,34 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const filteredGroups = groups.filter(g => `${g.name || ''} ${g.description || ''} ${g.community || ''}`.toLowerCase().includes(groupQuery.trim().toLowerCase()))
 
   const GroupRow = ({ g }: { g: any }) => (
-    <div className="w-full p-4 rounded-[22px] bg-white border border-[#E8DEC9] shadow-sm hover:shadow-md transition">
+    <div className="w-full p-4 rounded-[22px] bg-white border border-line shadow-sm hover:shadow-md transition">
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => openDetail(g.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
           <div className="flex items-center gap-3">
             <div className={`w-11 h-11 shrink-0 rounded-2xl bg-gradient-to-br ${avatarTint(g.name)} flex items-center justify-center text-sm font-extrabold shadow-sm`}>{String(g.name).split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
             <div className="min-w-0">
-              <p className="text-sm font-extrabold text-[#29251F] flex items-center gap-2 flex-wrap">
+              <p className="text-sm font-extrabold text-ink flex items-center gap-2 flex-wrap">
                 {g.name}
-                {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold">ADMIN</span>}
+                {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent text-white font-extrabold">ADMIN</span>}
                 {g.joined && !g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold">MEMBER</span>}
               </p>
-              <p className="text-[10px] text-[#8B8175] mt-0.5">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
+              <p className="text-[10px] text-ink-subtle mt-0.5">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
             </div>
           </div>
-          {g.description && <p className="text-[11px] text-[#766E63] mt-2 leading-5">{g.description}</p>}
+          {g.description && <p className="text-[11px] text-ink-muted mt-2 leading-5">{g.description}</p>}
         </button>
         <div className="shrink-0 flex flex-col items-end gap-1.5">
           {g.joined && onOpenChat && (
-            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70 shadow-sm">
+            <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 rounded-full bg-accent text-white text-[10px] font-extrabold active:opacity-70 shadow-sm">
               💬 Chat
               {Number(unreadByGroup[g.slug]) > 0 && <UnreadBadge count={Number(unreadByGroup[g.slug])} className="absolute -right-1.5 -top-1.5" />}
             </button>
           )}
           {g.joined
-            ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-[#E8DEC9] bg-[#FAF6EC] text-[#766E63] ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
+            ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-line bg-surface-sunken text-ink-muted ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
             : g.my_request === 'pending'
-              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">⏳ Requested</span>
-              : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-[#7C3AED] text-white shadow-sm ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
+              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-gold-soft text-gold-strong border border-gold">⏳ Requested</span>
+              : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-accent text-white shadow-sm ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
         </div>
       </div>
     </div>
@@ -307,53 +307,53 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     const canManage = isAdmin || isGroupAdmin
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
-      <div className="group-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-[#FFFBF0] text-[#29251F] pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-[#E8DEC9] px-3 bg-[#FFFBF0]/95 backdrop-blur z-10">
-          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-[#5B21B6]" aria-label="Back">‹</button>
+      <div className="group-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line px-3 bg-surface/95 backdrop-blur z-10">
+          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-accent-strong" aria-label="Back">‹</button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
-        {!detail ? <p className="text-[#8B8175] text-sm text-center py-10">Loading…</p> : (
+        {!detail ? <p className="text-ink-subtle text-sm text-center py-10">Loading…</p> : (
           <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
-                <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-3 shadow-sm">
-                  <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">ADMIN — GROUP SETTINGS</p>
+                <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-3 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-accent tracking-widest">ADMIN — GROUP SETTINGS</p>
                   <div>
-                    <label htmlFor="gst-name" className="block text-[10px] font-bold text-[#766E63] mb-1">GROUP NAME</label>
-                    <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                    <label htmlFor="gst-name" className="block text-[10px] font-bold text-ink-muted mb-1">GROUP NAME</label>
+                    <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                   </div>
                   <div>
-                    <label htmlFor="gst-desc" className="block text-[10px] font-bold text-[#766E63] mb-1">DESCRIPTION</label>
-                    <input id="gst-desc" value={stForm.description} onChange={e => setStForm(f => ({ ...f, description: e.target.value }))} placeholder="What this group is about" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                    <label htmlFor="gst-desc" className="block text-[10px] font-bold text-ink-muted mb-1">DESCRIPTION</label>
+                    <input id="gst-desc" value={stForm.description} onChange={e => setStForm(f => ({ ...f, description: e.target.value }))} placeholder="What this group is about" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                   </div>
                   <div>
-                    <label htmlFor="gst-com" className="block text-[10px] font-bold text-[#766E63] mb-1">COMMUNITY (congregation)</label>
-                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                    <label htmlFor="gst-com" className="block text-[10px] font-bold text-ink-muted mb-1">COMMUNITY (congregation)</label>
+                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                   </div>
                   {isAdmin && (
-                    <div className="p-3 rounded-xl bg-[#F5F3FF] border border-[#DDD6FE] space-y-2">
-                      <p className="text-[10px] font-extrabold text-[#5B21B6] tracking-widest">📍 REGISTRATION LOCATION</p>
-                      <p className="text-[11px] text-[#5B21B6]/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
+                    <div className="p-3 rounded-xl bg-[#F5F3FF] border border-accent-soft space-y-2">
+                      <p className="text-[10px] font-extrabold text-accent-strong tracking-widest">📍 REGISTRATION LOCATION</p>
+                      <p className="text-[11px] text-accent-strong/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
                       <div className="grid min-w-0 grid-cols-2 gap-2">
                         <div>
-                          <label htmlFor="gst-lat" className="block text-[10px] font-bold text-[#766E63] mb-1">LATITUDE</label>
-                          <input id="gst-lat" inputMode="decimal" value={stForm.lat} onChange={e => setStForm(f => ({ ...f, lat: e.target.value }))} placeholder="-0.4197" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                          <label htmlFor="gst-lat" className="block text-[10px] font-bold text-ink-muted mb-1">LATITUDE</label>
+                          <input id="gst-lat" inputMode="decimal" value={stForm.lat} onChange={e => setStForm(f => ({ ...f, lat: e.target.value }))} placeholder="-0.4197" className="w-full bg-white border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                         </div>
                         <div>
-                          <label htmlFor="gst-lng" className="block text-[10px] font-bold text-[#766E63] mb-1">LONGITUDE</label>
-                          <input id="gst-lng" inputMode="decimal" value={stForm.lng} onChange={e => setStForm(f => ({ ...f, lng: e.target.value }))} placeholder="36.9475" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                          <label htmlFor="gst-lng" className="block text-[10px] font-bold text-ink-muted mb-1">LONGITUDE</label>
+                          <input id="gst-lng" inputMode="decimal" value={stForm.lng} onChange={e => setStForm(f => ({ ...f, lng: e.target.value }))} placeholder="36.9475" className="w-full bg-white border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                         </div>
                       </div>
                       <div>
-                        <label htmlFor="gst-loc" className="block text-[10px] font-bold text-[#766E63] mb-1">AREA LABEL</label>
-                        <input id="gst-loc" value={stForm.location_label} onChange={e => setStForm(f => ({ ...f, location_label: e.target.value }))} placeholder="e.g. Nyeri Town" className="w-full bg-white border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                        <label htmlFor="gst-loc" className="block text-[10px] font-bold text-ink-muted mb-1">AREA LABEL</label>
+                        <input id="gst-loc" value={stForm.location_label} onChange={e => setStForm(f => ({ ...f, location_label: e.target.value }))} placeholder="e.g. Nyeri Town" className="w-full bg-white border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                       </div>
                     </div>
                   )}
                   <div className="space-y-2">
-                    <p className="text-[10px] font-extrabold text-[#8B8175] tracking-widest">GROUP PERMISSIONS</p>
+                    <p className="text-[10px] font-extrabold text-ink-subtle tracking-widest">GROUP PERMISSIONS</p>
                     {([
                       ['allowMemberEditInfo', 'Edit group settings', 'Members can change the group name and description.', stForm.allowMemberEditInfo],
                       ['allowMemberSend', 'Send new messages', 'Turn off for an announcements-only group.', stForm.allowMemberSend],
@@ -366,15 +366,15 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                         key={key}
                         type="button"
                         onClick={() => setStForm(f => ({ ...f, [key]: !f[key] }))}
-                        className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-left"
+                        className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-sunken border border-line text-left"
                         role="switch"
                         aria-checked={enabled}
                       >
                         <span className="min-w-0">
-                          <span className="block text-sm font-bold text-[#29251F]">{title}</span>
-                          <span className="block text-[11px] text-[#766E63] mt-0.5">{description}</span>
+                          <span className="block text-sm font-bold text-ink">{title}</span>
+                          <span className="block text-[11px] text-ink-muted mt-0.5">{description}</span>
                         </span>
-                        <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${enabled ? 'bg-[#7C3AED]' : 'bg-[#DDD6FE]'}`}>
+                        <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${enabled ? 'bg-accent' : 'bg-accent-soft'}`}>
                           <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
                         </span>
                       </button>
@@ -382,32 +382,32 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                     <button
                       type="button"
                       onClick={() => setStForm(f => ({ ...f, addOnly: !f.addOnly }))}
-                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FAF6EC] border border-[#E8DEC9] text-left"
+                      className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-sunken border border-line text-left"
                       role="switch" aria-checked={stForm.addOnly}
                     >
                       <span>
-                        <span className="block text-sm font-bold text-[#29251F]">Admin-only membership</span>
-                        <span className="block text-[11px] text-[#766E63] mt-0.5">{stForm.addOnly ? 'ON — members cannot request to join; admins add them.' : 'OFF — members can request to join.'}</span>
+                        <span className="block text-sm font-bold text-ink">Admin-only membership</span>
+                        <span className="block text-[11px] text-ink-muted mt-0.5">{stForm.addOnly ? 'ON — members cannot request to join; admins add them.' : 'OFF — members can request to join.'}</span>
                       </span>
-                      <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-[#7C3AED]' : 'bg-[#DDD6FE]'}`}>
+                      <span className={`shrink-0 w-11 h-6 rounded-full relative transition ${stForm.addOnly ? 'bg-accent' : 'bg-accent-soft'}`}>
                         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${stForm.addOnly ? 'left-[22px]' : 'left-0.5'}`} />
                       </span>
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
-                    <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-[#F4E8D0] text-[#766E63] text-xs font-bold">Cancel</button>
+                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
+                    <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-surface-sunken text-ink-muted text-xs font-bold">Cancel</button>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-2 shadow-sm">
-                  <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">ADD MEMBER DIRECTLY</p>
+                <div className="p-4 rounded-2xl bg-white border border-line space-y-2 shadow-sm">
+                  <p className="text-[10px] font-extrabold text-accent tracking-widest">ADD MEMBER DIRECTLY</p>
                   <div className="flex gap-2">
-                    <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-                    <button disabled={busy === 'add_member' || !addUname.trim()} onClick={() => void addMemberDirect()} className="px-3 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Add</button>
+                    <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+                    <button disabled={busy === 'add_member' || !addUname.trim()} onClick={() => void addMemberDirect()} className="px-3 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Add</button>
                   </div>
                   <div className="flex gap-2">
                     {(['member', 'admin'] as const).map(r => (
-                      <button key={r} onClick={() => setAddRole(r)} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${addRole === r ? 'bg-[#7C3AED] text-white' : 'bg-[#F4E8D0] text-[#766E63]'}`}>{r === 'admin' ? 'As group admin' : 'As member'}</button>
+                      <button key={r} onClick={() => setAddRole(r)} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${addRole === r ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>{r === 'admin' ? 'As group admin' : 'As member'}</button>
                     ))}
                   </div>
                 </div>
@@ -423,61 +423,61 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
               </div>
             ) : (
               <>
-            {detail.group.description && <p className="text-xs text-[#766E63] pb-1 leading-5">{detail.group.description}</p>}
+            {detail.group.description && <p className="text-xs text-ink-muted pb-1 leading-5">{detail.group.description}</p>}
 
             {me && onOpenChat && (
-              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm"><span className="flex items-center justify-center gap-2">💬 Open group chat <UnreadBadge count={Number(unreadByGroup[detail.group.slug])} /></span></button>
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm"><span className="flex items-center justify-center gap-2">💬 Open group chat <UnreadBadge count={Number(unreadByGroup[detail.group.slug])} /></span></button>
             )}
 
             {canManage && requests.length > 0 && (
-              <div className="p-3 rounded-xl bg-white border border-[#FDE68A] mb-2 shadow-sm">
-                <p className="text-[10px] font-extrabold text-[#B45309] mb-2 tracking-widest">JOIN REQUESTS ({requests.length})</p>
+              <div className="p-3 rounded-xl bg-white border border-gold mb-2 shadow-sm">
+                <p className="text-[10px] font-extrabold text-gold-strong mb-2 tracking-widest">JOIN REQUESTS ({requests.length})</p>
                 {requests.map(q => (
                   <div key={q.id} className="flex items-center gap-2 py-1.5">
-                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold truncate">{q.name || q.username}</p><p className="text-[10px] text-[#8B8175]">@{q.username}</p></div>
+                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold truncate">{q.name || q.username}</p><p className="text-[10px] text-ink-subtle">@{q.username}</p></div>
                     <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, true)} className="px-3 py-1.5 rounded-full bg-[#0F766E] text-white text-[10px] font-bold disabled:opacity-50">Approve</button>
-                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-[#F4E8D0] text-[#766E63] text-[10px] font-bold disabled:opacity-50">Reject</button>
+                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-surface-sunken text-ink-muted text-[10px] font-bold disabled:opacity-50">Reject</button>
                   </div>
                 ))}
               </div>
             )}
 
             {canManage && (
-              <div className="p-3 rounded-xl bg-white border border-[#E8DEC9] shadow-sm">
-                <p className="text-[10px] font-extrabold text-[#8B8175] tracking-widest mb-2">GROUP PERMISSIONS</p>
+              <div className="p-3 rounded-xl bg-white border border-line shadow-sm">
+                <p className="text-[10px] font-extrabold text-ink-subtle tracking-widest mb-2">GROUP PERMISSIONS</p>
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
-                  <span className="text-[#4B433A]">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
-                  <span className="text-[#4B433A]">{detail.group.allow_member_add ? '✓ Members can add people' : '✓ Admins add people'}</span>
-                  <span className="text-[#4B433A]">{detail.group.approve_new_members ? '✓ Join requests approved' : '✓ Open joining'}</span>
-                  <span className="text-[#4B433A]">{detail.group.allow_member_edit_info ? '✓ Members can edit info' : '✓ Admins edit info'}</span>
+                  <span className="text-ink-muted">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
+                  <span className="text-ink-muted">{detail.group.allow_member_add ? '✓ Members can add people' : '✓ Admins add people'}</span>
+                  <span className="text-ink-muted">{detail.group.approve_new_members ? '✓ Join requests approved' : '✓ Open joining'}</span>
+                  <span className="text-ink-muted">{detail.group.allow_member_edit_info ? '✓ Members can edit info' : '✓ Admins edit info'}</span>
                 </div>
               </div>
             )}
 
-            <p className="text-[10px] uppercase tracking-widest text-[#8B8175] font-bold pt-1">Members ({detail.members.length})</p>
+            <p className="text-[10px] uppercase tracking-widest text-ink-subtle font-bold pt-1">Members ({detail.members.length})</p>
             {detail.members.map(u => (
-              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-[#E8DEC9] shadow-sm">
+              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-line shadow-sm">
                 <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
                   <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED] text-white font-extrabold ml-1">ADMIN</span>}</p>
-                    <p className="text-[11px] text-[#8B8175] truncate">@{u.username}</p>
+                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'admin' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent text-white font-extrabold ml-1">ADMIN</span>}</p>
+                    <p className="text-[11px] text-ink-subtle truncate">@{u.username}</p>
                   </div>
                 </button>
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
-                    <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-[#F4E8D0] text-[#5B21B6] text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
+                    <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-surface-sunken text-accent-strong text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
                     <button disabled={busy.startsWith(`rm_${detail.group.slug}_`)} onClick={() => void removeMember(detail.group.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold disabled:opacity-50">Remove</button>
                   </div>
                 )}
               </div>
             ))}
-            {detail.members.length === 0 && <p className="text-sm text-[#8B8175] text-center py-8">No members yet.</p>}
+            {detail.members.length === 0 && <p className="text-sm text-ink-subtle text-center py-8">No members yet.</p>}
 
             <div className="pt-3">
               {me
-                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-[#E8DEC9] bg-white text-[#766E63] text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
-                : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">Request to join</button>}
+                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-line bg-white text-ink-muted text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
+                : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm">Request to join</button>}
             </div>
               </>
             )}
@@ -488,15 +488,15 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   }
 
   return (
-    <div className="min-h-[70vh] bg-[#FFFBF0] text-[#29251F] pb-8">
-      <div className="px-4 pt-5 pb-4 bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#7C3AED] text-white">
+    <div className="min-h-[70vh] bg-surface text-ink pb-8">
+      <div className="px-4 pt-5 pb-4 bg-gradient-to-br from-accent-strong via-accent-strong to-accent text-white">
         <div className="flex items-end justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">Harvest Family</p>
             <h1 className="text-2xl font-extrabold">Groups</h1>
             <p className="text-xs text-purple-100 mt-1">Fellowship in small groups across Nyeri.</p>
           </div>
-          {isAdmin && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-[#5B21B6] text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
+          {isAdmin && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-accent-strong text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
         </div>
         {(() => { const joined = groups.filter((g: any) => g.joined).length; return groups.length > 0 ? (
           <div className="mt-4 flex gap-2">
@@ -510,34 +510,34 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {isAdmin && showCreate && (
-          <div className="p-4 rounded-2xl bg-white border-2 border-[#7C3AED]/30 space-y-2 shadow-sm">
-            <p className="text-[10px] font-extrabold text-[#7C3AED] tracking-widest">NEW GROUP</p>
-            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-            <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-[#FAF6EC] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-            <p className="text-[10px] text-[#8B8175]">A community hosts 3–10 groups.</p>
-            <div className="p-3 rounded-xl bg-[#FEF3C7] border border-[#FDE68A]">
-              <p className="text-[11px] font-extrabold text-[#B45309]">CREATOR ADMIN</p>
-              <p className="text-[11px] text-[#766E63] mt-1">You will automatically become a group admin. You can add other admins later from Group Settings.</p>
+          <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-2 shadow-sm">
+            <p className="text-[10px] font-extrabold text-accent tracking-widest">NEW GROUP</p>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <p className="text-[10px] text-ink-subtle">A community hosts 3–10 groups.</p>
+            <div className="p-3 rounded-xl bg-gold-soft border border-gold">
+              <p className="text-[11px] font-extrabold text-gold-strong">CREATOR ADMIN</p>
+              <p className="text-[11px] text-ink-muted mt-1">You will automatically become a group admin. You can add other admins later from Group Settings.</p>
             </div>
-            <button disabled={busy === 'create' || !form.name.trim()} onClick={() => void create()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50 shadow-sm">Create group</button>
+            <button disabled={busy === 'create' || !form.name.trim()} onClick={() => void create()} className="w-full py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm">Create group</button>
           </div>
         )}
 
         {loading ? (
-          <div role="status" aria-live="polite" className="rounded-2xl border border-[#E8DEC9] bg-white px-4 py-6 text-center">
-            <div className="mx-auto w-7 h-7 rounded-full border-2 border-[#E8DEC9] border-t-[#7C3AED] animate-spin" aria-hidden="true" />
-            <p className="mt-3 text-xs font-semibold text-[#8B8175]">Loading groups…</p>
+          <div role="status" aria-live="polite" className="rounded-2xl border border-line bg-white px-4 py-6 text-center">
+            <div className="mx-auto w-7 h-7 rounded-full border-2 border-line border-t-accent animate-spin" aria-hidden="true" />
+            <p className="mt-3 text-xs font-semibold text-ink-subtle">Loading groups…</p>
           </div>
         ) : groups.length === 0 ? (
-          <div className="rounded-3xl border border-[#E8DEC9] bg-white px-5 py-10 text-center">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-[#F4E8D0] flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
-            <h2 className="mt-4 text-sm font-extrabold text-[#29251F]">No groups yet</h2>
-            <p className="mt-2 text-xs leading-5 text-[#8B8175]">Groups you can join will appear here. {isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
+          <div className="rounded-3xl border border-line bg-white px-5 py-10 text-center">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-surface-sunken flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
+            <h2 className="mt-4 text-sm font-extrabold text-ink">No groups yet</h2>
+            <p className="mt-2 text-xs leading-5 text-ink-subtle">Groups you can join will appear here. {isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>
         ) : (
-          <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-[#E8DEC9] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-[#E8DEC9] bg-white p-6 text-center text-sm text-[#766E63]">No matching groups.</div>}</div>
+          <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-accent" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">No matching groups.</div>}</div>
         )}
       </div>
     </div>

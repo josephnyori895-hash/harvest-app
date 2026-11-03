@@ -1,11 +1,12 @@
 import MediaThumbnail from './MediaThumbnail'
 import { useState, useEffect, useRef } from 'react'
-import { startBackgroundUpload } from '../lib/backgroundUploads'
+import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
 import { shareStoryToWhatsApp } from '../lib/whatsappShare'
 import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
+import { Icon, Spinner } from '../ui'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
@@ -362,6 +363,21 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
 
 const FILTERS = ['Original', 'Clarendon', 'Juno', 'Aden', 'Lark', 'Moody', 'Valencia', 'Perpetua', 'Willow', 'Gingham']
 const STORY_STICKERS = ['🙏', '🔥', '❤️', '🎵', '🎤', '📍', '📷', '✝️', '🕊️', '💜', '👏', '😍', '🤗', '✨', '🎉', '🍕', '🌟', '⚽', '🎸', '💎']
+// Preview-only approximations of the filters that burnDecorations applies to
+// the pixels at submit. The composer must show what the viewer will get.
+const FILTER_CSS: Record<string, string> = {
+  Original: 'none',
+  Clarendon: 'brightness(1.06) contrast(1.14) saturate(1.18)',
+  Juno: 'brightness(1.05) contrast(1.1) saturate(1.3) hue-rotate(-6deg)',
+  Aden: 'brightness(1.08) contrast(1.06) saturate(1.2) hue-rotate(4deg)',
+  Lark: 'brightness(1.06) contrast(1.04) saturate(1.12) hue-rotate(-8deg)',
+  Moody: 'brightness(0.88) contrast(1.12) saturate(1.2) hue-rotate(8deg)',
+  Valencia: 'brightness(1.1) contrast(1.05) saturate(1.24) hue-rotate(4deg)',
+  Perpetua: 'brightness(1.06) contrast(1.02) saturate(1.26) hue-rotate(-4deg)',
+  Willow: 'brightness(0.98) contrast(1.04) saturate(0.9) hue-rotate(10deg)',
+  Gingham: 'brightness(1.06) contrast(1.06) saturate(1.1) hue-rotate(-10deg)',
+}
+const TEXT_COLORS = ['#ffffff', '#000000', '#f5c451', '#7ed6a5', '#8ec5ff', '#ff9fc4', '#c9a6ff', '#ffb27a']
 
 export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
@@ -383,15 +399,21 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [previewFailedId, setPreviewFailedId] = useState<string | null>(null)
   useEffect(() => () => { stopInlineMediaAudio() }, [])
   const isVideoFile = Boolean(fileObj?.type.startsWith('video/'))
-  const [timer, setTimer] = useState(4)
+  const [timer, setTimer] = useState(5)
   const [showFilters, setShowFilters] = useState(false)
   const [showStickers, setShowStickers] = useState(false)
   const [showMusic, setShowMusic] = useState(false)
+  const [showText, setShowText] = useState(false)
+  const [showLength, setShowLength] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [adjusting, setAdjusting] = useState(false)
   const onFile = (e: any) => {
     const f: File | undefined = e.target.files?.[0]
     if (!f) return
+    // Reject before the upload starts, with the same story limit the server
+    // enforces — the composer must never queue a file that cannot land.
+    const tooBig = uploadTooLarge('story', f.size)
+    if (tooBig) { setNotice(tooBig); e.target.value = ''; return }
     // Fresh media starts clean — stale decorations from a previous pick must
     // not get burned into a different photo.
     setFilter('Original'); setTextOverlay(''); setStickers([]); setTextBold(false)
@@ -510,6 +532,19 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     void toggleInlineMediaTrack({ id, url: m.url }, setPreviewId).then(ok => { if (!ok) setPreviewFailedId(id) })
   }
   const chooseMusic = (m: any) => { stopPreview(); setPreviewFailedId(null); setMusicTrack(m); setShowMusic(false); setMusicQuery(''); setMusicResults([]) }
+  // One panel open at a time; tapping the active tool closes it.
+  const openTool = (id: string) => {
+    const on = id === 'filters' ? showFilters
+      : id === 'text' ? showText
+      : id === 'stickers' ? showStickers
+      : id === 'music' ? showMusic
+      : showLength
+    setShowFilters(id === 'filters' && !on)
+    setShowText(id === 'text' && !on)
+    setShowStickers(id === 'stickers' && !on)
+    setShowMusic(id === 'music' && !on)
+    setShowLength(id === 'length' && !on)
+  }
   const MOOD_PICKS = [
     { mood: '🙏 Worship', tags: ['worship', 'praise', 'hymn'] },
     { mood: '🎶 Choir', tags: ['choir', 'choral'] },
@@ -546,29 +581,272 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
     }
   }
   return (
-    <div className="bg-stone-50 text-white min-h-[calc(100vh-49px)] flex flex-col">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-200 bg-white"><button onClick={onDone} aria-label="Close story composer" className="text-xl text-stone-700 min-w-11 min-h-11">✕</button><p className="font-bold text-stone-800">New story</p><button onClick={() => void submit()} disabled={busy || !fileObj} className="text-sm font-bold text-violet-600 disabled:opacity-40">{busy ? 'Posting…' : 'Share'}</button></div>
-      <div className="flex-1 flex items-center justify-center p-4 relative bg-gradient-to-b from-stone-50 to-white">
-        {fileUrl && !isVideoFile && (
-          <div className="w-full px-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-stone-500 mb-2">Story duration</p>
-            <div className="flex gap-2">
-              {[3, 5, 8, 12].map(s => (
-                <button key={s} onClick={() => setTimer(s)} className={`min-h-11 px-4 rounded-xl text-sm font-bold ${timer === s ? 'bg-violet-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{s}s</button>
-              ))}
-            </div>
-          </div>
-        )}
-        {!fileUrl ? <label className="w-full aspect-[9/16] bg-white rounded-2xl border-2 border-dashed border-stone-300 flex items-center justify-center text-stone-500 font-semibold cursor-pointer"><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />Choose a photo or video</label> : <div className="relative w-full aspect-[9/16] overflow-hidden rounded-2xl bg-stone-900">{isVideoFile ? <video src={fileUrl} controls playsInline className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" /> : <img src={fileUrl} alt="" className="absolute inset-0 m-auto max-w-full max-h-full w-auto h-auto object-contain" />}{filter !== 'Original' && <div className="absolute top-2 left-2 bg-black/35 px-2 py-1 rounded-full text-[10px] font-bold">{filter}</div>}{textOverlay && <div className="absolute inset-x-0 top-4 flex justify-center"><span className="px-3 py-1 rounded-full text-sm font-bold" style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 8px rgba(0,0,0,.6)' }}>{textOverlay}</span></div>}{stickers.length > 0 && <div className="absolute bottom-4 left-4 flex flex-wrap gap-2">{stickers.map(s => <span key={s} className="text-2xl">{s}</span>)}</div>}{musicTrack && <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 rounded-full px-2 py-1 text-[10px] font-bold text-white"><button type="button" aria-label={previewId === String(musicTrack.id) ? 'Stop music preview' : `Preview ${musicTrack.title}`} onClick={() => togglePreview(musicTrack)}>{previewId === String(musicTrack.id) ? '⏸' : previewFailedId === String(musicTrack.id) ? '⚠ Retry' : '♪'}</button><span className="max-w-[110px] truncate">{musicTrack.title}</span><button type="button" aria-label="Remove music" onClick={() => { stopPreview(); setPreviewFailedId(null); setMusicTrack(null) }}>×</button></div>}</div>}
+    <div className="fixed inset-0 z-50 flex flex-col bg-ink text-white">
+      {/* top bar — close, title, one primary action */}
+      <div className="flex h-14 shrink-0 items-center gap-2 px-3">
+        <button onClick={onDone} aria-label="Close story composer" className="grid h-10 w-10 place-items-center rounded-full bg-white/10 text-white transition active:scale-95">
+          <Icon name="close" size={20} />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-sm font-extrabold">New story</p>
+        <button
+          onClick={() => void submit()}
+          disabled={busy || !fileObj}
+          className="inline-flex min-h-10 items-center rounded-full bg-accent px-5 text-2xs font-extrabold text-white disabled:opacity-40"
+        >
+          {busy ? 'Sharing…' : 'Share'}
+        </button>
       </div>
-      {fileUrl && !isVideoFile && <><div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowFilters(!showFilters); setShowStickers(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Filters</button></div>{showFilters && <div className="px-4 pb-4 bg-white border-t border-stone-200 grid grid-cols-3 gap-2">{FILTERS.map((f) => <button key={f} onClick={() => { setFilter(f); setShowFilters(false) }} className={`rounded-xl border px-2 py-2 text-xs font-bold ${filter === f ? 'border-violet-400 bg-violet-50 text-violet-700' : 'border-stone-200 text-stone-700'}`}>{f}</button>)}</div>}</>}
-      {fileUrl && !isVideoFile && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowStickers(!showStickers); setShowFilters(false); setShowMusic(false) }} className="text-sm font-bold text-stone-700">Stickers</button></div>}{showStickers && fileUrl && !isVideoFile && <div className="px-4 pb-4 bg-white border-t border-stone-200 flex flex-wrap gap-2">{STORY_STICKERS.map((s) => <button key={s} onClick={() => addSticker(s)} className="text-2xl">{s}</button>)}{stickers.map((s) => <button key={s} onClick={() => removeSticker(s)} className="text-xs text-stone-700">× {s}</button>)}</div>}
-      {fileUrl && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick={() => { setShowMusic(!showMusic); setShowFilters(false); setShowStickers(false) }} className="text-sm font-bold text-stone-700">Music</button></div>}{showMusic && fileUrl && <div className="px-4 pb-4 bg-white border-t border-stone-200 space-y-3"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} placeholder="Search church music…" className="w-full bg-stone-100 rounded-xl px-3 py-2 text-sm text-stone-800" />{musicLoading && <p className="text-xs text-stone-500">Loading…</p>}{!musicQuery.trim() && <div className="flex flex-wrap gap-2">{MOOD_PICKS.map(({ mood, tags }) => <button key={mood} onClick={() => filterByMood(tags)} className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">{mood}</button>)}</div>}{!musicLoading && musicQuery.trim() && musicResults.length === 0 && <p className="text-xs text-stone-500">No library tracks match — upload one in the Music tab first.</p>}<div className="space-y-2">{!musicLoading && musicResults.map((m:any) => <div key={m.id} className="flex items-center gap-3 rounded-xl bg-stone-100 p-2"><img src={m.cover_url || 'https://placehold.co/48x48/png'} alt="" className="w-12 h-12 rounded-lg" /><div className="flex-1 min-w-0"><p className="text-sm font-bold text-stone-800 truncate">{m.title}</p><p className="text-[11px] text-stone-500 truncate">{m.artist}</p></div><button onClick={() => togglePreview(m)} aria-label={previewId === m.id ? 'Stop preview' : 'Preview music'} className={`min-w-11 min-h-11 rounded-full bg-white text-xs font-bold ${previewFailedId === String(m.id) ? 'text-red-600' : 'text-stone-700'}`}>{previewId === m.id ? 'Stop' : previewFailedId === String(m.id) ? 'Retry' : 'Preview'}</button><button onClick={() => chooseMusic(m)} className="min-w-11 min-h-11 rounded-full bg-violet-600 text-white text-xs font-bold">Use</button></div>)}</div></div>}
-      {notice && <div className="mx-4 mb-2"><ErrorMessage message={notice} /></div>}
+
+      {/* canvas — full-bleed portrait stage, exactly what viewers will see */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-2">
+        <div className="relative h-full w-full max-w-[440px] overflow-hidden rounded-2xl bg-black">
+          {fileUrl ? (
+            isVideoFile
+              ? <video src={fileUrl} controls playsInline className="h-full w-full object-contain" />
+              : <img src={fileUrl} alt="Story preview" className="h-full w-full object-cover" style={{ filter: FILTER_CSS[filter] || 'none' }} />
+          ) : (
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2 px-6 text-center">
+              <span className="grid h-16 w-16 place-items-center rounded-full bg-white/10">
+                <Icon name="plus" size={28} />
+              </span>
+              <span className="mt-1 text-sm font-extrabold">Add to your story</span>
+              <span className="text-2xs text-white/60">Photo or video · up to 30 MB</span>
+            </button>
+          )}
+          {/* Always mounted: the same picker both adds and replaces the media. */}
+          <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />
+
+          {fileUrl && (
+            <>
+              {textOverlay && (
+                <div className="pointer-events-none absolute inset-x-0 top-14 flex justify-center px-4">
+                  <span
+                    className="rounded-lg px-2 text-center text-xl"
+                    style={{ color: textColor, fontWeight: textBold ? 700 : 400, textShadow: '0 2px 10px rgba(0,0,0,.55)' }}
+                  >
+                    {textOverlay}
+                  </span>
+                </div>
+              )}
+              {stickers.length > 0 && (
+                <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1.5">
+                  {stickers.map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => removeSticker(s)}
+                      className="rounded-lg bg-black/35 px-2 py-1 text-2xl backdrop-blur-sm"
+                      aria-label={`Remove ${s} sticker`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {musicTrack && (
+                <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/45 py-1 pl-1 pr-2 text-2xs font-bold backdrop-blur-sm">
+                  <button
+                    type="button"
+                    onClick={() => togglePreview(musicTrack)}
+                    className="grid h-7 w-7 place-items-center rounded-full bg-white/15"
+                    aria-label={previewId === String(musicTrack.id) ? 'Stop music preview' : `Preview ${musicTrack.title}`}
+                  >
+                    {previewFailedId === String(musicTrack.id)
+                      ? <Icon name="alert" size={13} />
+                      : <Icon name={previewId === String(musicTrack.id) ? 'pause' : 'play'} size={12} />}
+                  </button>
+                  <span className="max-w-[120px] truncate">{musicTrack.title}</span>
+                  <button
+                    type="button"
+                    aria-label="Remove music"
+                    onClick={() => { stopPreview(); setPreviewFailedId(null); setMusicTrack(null) }}
+                    className="grid h-6 w-6 place-items-center rounded-full bg-white/15"
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                </div>
+              )}
+              {!isVideoFile && filter !== 'Original' && (
+                <span className="absolute left-3 top-3 rounded-full bg-black/45 px-2.5 py-1 text-2xs font-bold backdrop-blur-sm">{filter}</span>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute bottom-3 right-3 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-black/45 px-3 text-2xs font-extrabold backdrop-blur-sm"
+              >
+                <Icon name="retry" size={13} /> Replace
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* tools — one rail, one open panel at a time */}
+      {fileUrl && (
+        <div className="shrink-0">
+          {showFilters && !isVideoFile && (
+            <div className="border-t border-white/10 px-3 pb-2 pt-3">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {FILTERS.map(f => (
+                  <button key={f} onClick={() => setFilter(f)} className={`shrink-0 text-center ${filter === f ? 'text-white' : 'text-white/60'}`} aria-pressed={filter === f}>
+                    <span className={`block h-16 w-14 overflow-hidden rounded-lg border ${filter === f ? 'border-white' : 'border-transparent'}`}>
+                      <img src={fileUrl} alt="" className="h-full w-full object-cover" style={{ filter: FILTER_CSS[f] || 'none' }} />
+                    </span>
+                    <span className="mt-1 block text-2xs">{f}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showText && (
+            <div className="space-y-2 border-t border-white/10 px-3 pb-2 pt-3">
+              <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-white/50">On the photo</p>
+              <input
+                value={textOverlay}
+                onChange={e => setTextOverlay(e.target.value)}
+                maxLength={80}
+                placeholder="Type something…"
+                className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 gap-1.5 overflow-x-auto">
+                  {TEXT_COLORS.map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setTextColor(c)}
+                      aria-label={`Text colour ${c}`}
+                      aria-pressed={textColor === c}
+                      className={`h-7 w-7 shrink-0 rounded-full border-2 ${textColor === c ? 'border-white' : 'border-white/20'}`}
+                      style={{ background: c }}
+                    />
+                  ))}
+                </div>
+                <button onClick={() => setTextBold(v => !v)} aria-pressed={textBold} aria-label="Bold text" className={`grid h-9 w-9 place-items-center rounded-xl text-xs font-extrabold ${textBold ? 'bg-white text-ink' : 'bg-white/10 text-white'}`}>B</button>
+              </div>
+              <p className="pt-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-white/50">Caption (optional)</p>
+              <input
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                maxLength={300}
+                placeholder="Describe this moment…"
+                className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
+              />
+            </div>
+          )}
+
+          {showStickers && (
+            <div className="border-t border-white/10 px-3 pb-2 pt-3">
+              <div className="grid grid-cols-8 gap-1.5">
+                {STORY_STICKERS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => addSticker(s)}
+                    className={`grid h-9 place-items-center rounded-lg text-xl transition ${stickers.includes(s) ? 'bg-white/25' : 'bg-white/10 hover:bg-white/20'}`}
+                    aria-pressed={stickers.includes(s)}
+                    aria-label={`Add ${s}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showMusic && (
+            <div className="space-y-2 border-t border-white/10 px-3 pb-2 pt-3">
+              <input
+                value={musicQuery}
+                onChange={e => setMusicQuery(e.target.value)}
+                placeholder="Search church music…"
+                className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none"
+              />
+              {musicLoading && <p className="flex items-center gap-2 text-2xs text-white/60"><Spinner size={12} /> Searching…</p>}
+              {!musicQuery.trim() && (
+                <div className="flex flex-wrap gap-1.5">
+                  {MOOD_PICKS.map(({ mood, tags }) => (
+                    <button key={mood} onClick={() => filterByMood(tags)} className="rounded-full bg-white/10 px-3 py-1 text-2xs font-bold text-white/80">{mood}</button>
+                  ))}
+                </div>
+              )}
+              {!musicLoading && musicQuery.trim() && musicResults.length === 0 && (
+                <p className="text-2xs text-white/60">No tracks match — upload it in the Music tab first.</p>
+              )}
+              <div className="max-h-40 space-y-1 overflow-auto">
+                {musicResults.map((m: any) => (
+                  <div key={m.id} className="flex items-center gap-2 rounded-xl bg-white/5 p-1.5">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-white/10">
+                      {m.cover_url ? <img src={m.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={14} />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-2xs font-bold">{m.title}</span>
+                      <span className="block truncate text-2xs text-white/60">{m.artist}</span>
+                    </span>
+                    <button
+                      onClick={() => togglePreview(m)}
+                      aria-label={previewId === m.id ? 'Stop preview' : 'Preview music'}
+                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 ${previewFailedId === String(m.id) ? 'text-gold' : 'text-white'}`}
+                    >
+                      {previewId === m.id ? <Icon name="pause" size={13} /> : <Icon name="play" size={13} />}
+                    </button>
+                    <button onClick={() => chooseMusic(m)} className="min-h-9 shrink-0 rounded-full bg-accent px-3 text-2xs font-extrabold">Use</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showLength && !isVideoFile && (
+            <div className="border-t border-white/10 px-3 pb-2 pt-3">
+              <div className="flex gap-2" role="radiogroup" aria-label="Story length in seconds">
+                {[3, 5, 8, 12].map(s => (
+                  <button
+                    key={s}
+                    role="radio"
+                    aria-checked={timer === s}
+                    onClick={() => setTimer(s)}
+                    className={`min-h-9 flex-1 rounded-xl text-2xs font-extrabold ${timer === s ? 'bg-white text-ink' : 'bg-white/10 text-white'}`}
+                  >
+                    {s}s
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-2">
+            {([
+              { id: 'filters', label: 'Filters', icon: 'sparkle', photoOnly: true },
+              { id: 'text', label: 'Text', icon: 'pencil', photoOnly: true },
+              { id: 'stickers', label: 'Stickers', icon: 'smile', photoOnly: true },
+              { id: 'music', label: 'Music', icon: 'music', photoOnly: false },
+              { id: 'length', label: 'Length', icon: 'clock', photoOnly: true },
+            ] as const).filter(t => !(isVideoFile && t.photoOnly)).map(t => {
+              const active = t.id === 'filters' ? showFilters
+                : t.id === 'text' ? showText
+                : t.id === 'stickers' ? showStickers
+                : t.id === 'music' ? showMusic
+                : showLength
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => openTool(t.id)}
+                  aria-pressed={active}
+                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-2xs font-extrabold transition ${active ? 'bg-white text-ink' : 'bg-white/10 text-white'}`}
+                >
+                  <Icon name={t.icon} size={14} /> {t.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {notice && <div className="px-3 pb-2"><ErrorMessage message={notice} /></div>}
+
       {adjusting && fileObj && fileObj.type.startsWith('image/') && (
         <ImageAdjuster file={fileObj} onCancel={() => setAdjusting(false)} onDone={applyAdjust} />
       )}
-      <div className="px-4 pb-4 bg-white border-t border-stone-200"><input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption..." className="w-full bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" />{!isVideoFile && <div className="mt-3 flex gap-2"><input value={textOverlay} onChange={e => setTextOverlay(e.target.value)} placeholder="Text overlay" className="flex-1 bg-stone-50 rounded-xl px-3 py-2 text-sm text-stone-800 outline-none" /><input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} className="w-12 h-10 rounded-lg border border-stone-200" /><button onClick={() => setTextBold(v => !v)} className={`rounded-xl px-3 py-2 text-xs font-bold ${textBold ? 'bg-stone-800 text-white' : 'bg-stone-100 text-stone-700'}`}>B</button></div>}</div>
     </div>
   )
 }

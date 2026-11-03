@@ -8,9 +8,11 @@ const comments = fs.readFileSync('src/components/Comments.tsx', 'utf8')
 
 assert.match(reels, /bg-gradient-to-t from-black\/72 via-black\/28 to-transparent/)
 assert.match(reels, /h-40 sm:h-44/) 
-// Visual usability: poster/video should fill the available reel viewport without distortion,
-// while the text overlay stays confined to the lower caption-safe area.
-assert.match(reels, /max-w-full max-h-full w-auto h-auto object-contain/)
+// Visual contract: the reel fills the screen edge to edge like a vertical feed
+// — cover, never letterboxed inside a black frame — while the text stays in the
+// lower caption-safe area.
+assert.match(reels, /absolute inset-0 h-full w-full object-cover bg-black/)
+assert.doesNotMatch(reels, /object-contain/, 'reels must not letterbox')
 assert.match(reels, /poster=\{!posterFailed \? \(cur\.img \|\| generatedPoster \|\| undefined\) : \(generatedPoster \|\| undefined\)\}/)
 assert.match(reels, /transition-opacity duration-200 \$\{videoReady \? 'opacity-100' : 'opacity-0'\}/)
 assert.match(reels, /h-40 sm:h-44 bg-gradient-to-t from-black\/72 via-black\/28 to-transparent pointer-events-none/)

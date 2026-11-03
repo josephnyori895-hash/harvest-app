@@ -16,7 +16,9 @@ test('family activity is normalized into notification rows by the lib', () => {
 
 test('App merges family activity into the single notifications inbox', () => {
   assert.match(app, /fetchFamilyActivity\(\)/)
-  assert.match(app, /setNotifications\(prev => \[\.\.\.rows, \.\.\.prev\]\)/)
+  // Merged by id — the 60s poll must not stack duplicate activity rows.
+  assert.match(app, /seen\.has\(String\(n\.id\)\)/)
+  assert.match(app, /\[\.\.\.fam\.filter\(n => !seen\.has\(String\(n\.id\)\)\), \.\.\.prev\]/)
 })
 
 test('Inbox press routing opens the member profile from family activity rows', () => {

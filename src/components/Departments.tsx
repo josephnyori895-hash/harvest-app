@@ -229,27 +229,27 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
     return (
-    <div className="group relative w-full overflow-hidden rounded-3xl border border-[#E8DEC9] bg-white shadow-sm transition hover:border-[#7C3AED]/40">
+    <div className="group relative w-full overflow-hidden rounded-3xl border border-line bg-white shadow-sm transition hover:border-accent/40">
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.tint}`} />
       <div className="relative p-4">
       <div className="flex items-start justify-between gap-3">
         <button onClick={() => openDetail(d.slug)} className="min-w-0 flex flex-1 gap-3 text-left active:opacity-70">
-          <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-[#E8DEC9] flex items-center justify-center text-2xl`}>
+          <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-line flex items-center justify-center text-2xl`}>
             {style.icon}
           </div>
           <div className="min-w-0 pt-0.5">
-          <p className="text-sm font-bold text-[#29251F] flex items-center gap-2 truncate">
+          <p className="text-sm font-bold text-ink flex items-center gap-2 truncate">
             <span className="truncate">{d.name}</span>
             {d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">LEADER</span>}
             {d.joined && !d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-600 text-white font-extrabold">JOINED</span>}
           </p>
-          {d.description && <p className="text-[11px] text-[#6B6257] mt-1 line-clamp-2">{d.description}</p>}
-          <p className="text-[10px] text-[#766E63] mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
+          {d.description && <p className="text-[11px] text-ink-muted mt-1 line-clamp-2">{d.description}</p>}
+          <p className="text-[10px] text-ink-muted mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
           </div>
         </button>
         <div className="shrink-0 flex flex-col items-end gap-2">
           {(d.joined || isAdmin) && onOpenDeptChat && (
-            <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-[#7C3AED] text-white text-[10px] font-extrabold active:opacity-70">
+            <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-accent text-white text-[10px] font-extrabold active:opacity-70">
               💬 Chat
               <UnreadBadge count={Number(unreadByDepartment[d.slug])} className="absolute -right-1.5 -top-1.5" />
             </button>
@@ -258,7 +258,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             type="button"
             aria-label={d.joined ? `Leave ${d.name}` : `Join ${d.name}`}
             onClick={() => d.joined ? void leave(d.slug) : void join(d.slug)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-[#F5F1E8] text-[#766E63]' : d.joined ? 'bg-[#F5F1E8] text-[#6B6257] border border-[#E8DEC9]' : 'bg-[#7C3AED] text-white'}`}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${busy === d.slug ? 'opacity-50 bg-surface-sunken text-ink-muted' : d.joined ? 'bg-surface-sunken text-ink-muted border border-line' : 'bg-accent text-white'}`}
           >
             {d.joined ? 'Leave' : 'Join'}
           </button>
@@ -272,11 +272,11 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
     const canManage = isAdmin || isDepartmentLeader
     return (
-      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-[#141210] text-white pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-stone-800 px-3 bg-[#141210] z-10">
+      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-ink text-white pb-0">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-stone-800 px-3 bg-ink z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
-          {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${detail.department.joined ? 'bg-stone-800 text-stone-300 border border-stone-700' : 'bg-[#7C3AED] text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
+          {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${detail.department.joined ? 'bg-stone-800 text-stone-300 border border-stone-700' : 'bg-accent text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
           {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="w-10 h-10 rounded-full bg-stone-900 border border-stone-800 text-lg" aria-label="Department settings" title="Department settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-stone-500 text-sm text-center py-10">Loading…</p> : (
@@ -287,7 +287,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
                 <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
                 <div className="flex gap-2">
-                  <button disabled={busy === 'edit'} onClick={() => void saveEdit()} className="flex-1 py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">{busy === 'edit' ? 'Saving…' : 'Save changes'}</button>
+                  <button disabled={busy === 'edit'} onClick={() => void saveEdit()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">{busy === 'edit' ? 'Saving…' : 'Save changes'}</button>
                   <button disabled={busy === 'edit'} onClick={() => setEditing(false)} className="px-4 py-2.5 rounded-xl bg-stone-800 text-stone-300 text-xs font-bold">Cancel</button>
                 </div>
               </div>
@@ -295,7 +295,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
               <>
                 {detail.department.description && <p className="text-xs text-stone-400 pb-1">{detail.department.description}</p>}
                 {(detail.department.joined || isAdmin) && onOpenDeptChat && (
-                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold active:opacity-70 mb-2">
+                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold active:opacity-70 mb-2">
                     💬 Open team chat
                     <UnreadBadge count={Number(unreadByDepartment[detail.department.slug])} className="absolute right-3 top-1/2 -translate-y-1/2" />
                   </button>
@@ -310,7 +310,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
                 <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — ADD MEMBER</p>
                 <div className="flex gap-2">
                   <input value={addUsername} onChange={e => setAddUsername(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
-                  <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'member')} className="px-3 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Add</button>
+                  <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'member')} className="px-3 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Add</button>
                   <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'leader')} className="px-3 rounded-xl bg-amber-400 text-black text-xs font-bold disabled:opacity-50">Leader</button>
                 </div>
               </div>
@@ -346,8 +346,8 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   }
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] pb-8">
-      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-[#E8DEC9] bg-gradient-to-br from-[#7C3AED] via-[#5B2DBF] to-[#3B1E86]">
+    <div className="bg-surface text-ink min-h-[70vh] pb-8">
+      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-line bg-gradient-to-br from-accent via-[#5B2DBF] to-[#3B1E86]">
         <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-fuchsia-500/20 blur-3xl" />
         <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-violet-500/15 blur-3xl" />
         <div className="relative">
@@ -366,32 +366,32 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {isAdmin && (
-          <div className="p-3 rounded-xl bg-white border border-[#E8DEC9]">
-            <p className="text-[10px] font-bold text-[#B45309] mb-2">ADMIN — NEW DEPARTMENT</p>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Department name (e.g. Transport)" className="w-full bg-[#F5F1E8] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm text-[#29251F] outline-none mb-2 placeholder:text-[#9C948A]" />
-            <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-[#F5F1E8] border border-[#E8DEC9] rounded-xl px-3 py-2.5 text-sm text-[#29251F] outline-none placeholder:text-[#9C948A] mb-2" />
-            <button disabled={busy === 'create' || !newName.trim()} onClick={() => void createDepartment()} className="w-full py-2.5 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">Create department</button>
+          <div className="p-3 rounded-xl bg-white border border-line">
+            <p className="text-[10px] font-bold text-gold-strong mb-2">ADMIN — NEW DEPARTMENT</p>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Department name (e.g. Transport)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm text-ink outline-none mb-2 placeholder:text-ink-subtle" />
+            <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-subtle mb-2" />
+            <button disabled={busy === 'create' || !newName.trim()} onClick={() => void createDepartment()} className="w-full py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Create department</button>
           </div>
         )}
 
         {filteredMine.length > 0 && (
           <section>
-            <h2 className="text-sm font-black text-[#29251F] mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
+            <h2 className="text-sm font-black text-ink mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400" />Your teams</h2>
             <div className="space-y-2">{filteredMine.map(d => <DeptCard key={d.id} d={d} />)}</div>
           </section>
         )}
 
         <section>
-          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-[#29251F]">Explore departments</h2><span className="text-[10px] text-[#766E63]">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-[#F5F1E8] border border-[#E8DEC9] px-3 py-2.5 text-sm text-[#29251F] outline-none focus:border-[#7C3AED] placeholder:text-[#9C948A]" />
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-ink">Explore departments</h2><span className="text-[10px] text-ink-muted">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-surface-sunken border border-line px-3 py-2.5 text-sm text-ink outline-none focus:border-accent placeholder:text-ink-subtle" />
           {loading ? (
-            <div role="status" aria-live="polite" className="rounded-2xl border border-[#E8DEC9] bg-[#F5F1E8] px-4 py-6 text-center">
+            <div role="status" aria-live="polite" className="rounded-2xl border border-line bg-surface-sunken px-4 py-6 text-center">
               <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
               <p className="mt-3 text-xs font-semibold text-stone-400">Loading departments…</p>
             </div>
           ) : availableDepartments.length === 0 ? (
-            <div className="rounded-3xl border border-[#E8DEC9] bg-[#F5F1E8] px-5 py-10 text-center">
+            <div className="rounded-3xl border border-line bg-surface-sunken px-5 py-10 text-center">
               <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">🏛️</div>
-              <h2 className="mt-4 text-sm font-extrabold text-[#29251F]">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
+              <h2 className="mt-4 text-sm font-extrabold text-ink">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
               <p className="mt-2 text-xs leading-5 text-stone-500">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
             </div>
           ) : (

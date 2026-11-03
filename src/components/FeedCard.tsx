@@ -1,11 +1,21 @@
 // Harvest Family community post card.
-// Preserve the church's visual identity while keeping media clear and responsive.
+//
+// Anatomy follows a real feed post: no card frame, media edge-to-edge, an
+// icon-only monochrome action row, then the text stack (count, caption,
+// comments link, timestamp). Colour is reserved for meaning — a liked heart —
+// rather than decorating each button.
+//
+// Music attached to a photo or clip follows the feed convention: a spinning
+// album-art disc sits in the corner of the media. It is the only music control
+// on the post — spinning while the song plays, still when it is paused, and a
+// tap toggles it (which is also how the member mutes music for good).
 
 import { useEffect, useRef, useState } from 'react'
-import { audioAutoplayReady, getFeedAutoplayPref, setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
-import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio, isInlinePlaying } from '../lib/inlineMediaAudio'
+import { setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
+import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio } from '../lib/inlineMediaAudio'
 import { startFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
 import FeedMediaPreview from './FeedMediaPreview'
+import { Icon, Spinner } from '../ui'
 
 export type FeedCardPost = {
   key: string
@@ -53,97 +63,122 @@ export function AdvertCard({ advert }: { advert: { id: string; advert_id?: strin
   const body = advert.body || ''
   const href = advert.cta_url || null
   return (
-    <article className="relative overflow-hidden rounded-[24px] border border-[#D8C7F5] bg-[#FFFCF6] shadow-sm" data-advert-id={advert.advert_id || advert.id}>
+    <article className="relative overflow-hidden rounded-card border border-accent-soft bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id}>
       {advert.image_url && (
         <button type="button" onClick={() => href && window.open(href, '_blank', 'noopener')} className="block w-full text-left" aria-label={href ? `Open advertiser: ${title}` : undefined}>
           <img src={advert.image_url} alt={title} className="max-h-72 w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
         </button>
       )}
       <div className="p-4">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EDE9FE] px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#5B21B6]">Sponsored</span>
-          {href && <span className="text-[11px] font-bold text-[#7C3AED] shrink-0">Learn more →</span>}
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-accent-strong">Sponsored</span>
+          {href && <span className="inline-flex shrink-0 items-center gap-1 text-2xs font-bold text-accent">Learn more <Icon name="chevron-right" size={13} /></span>}
         </div>
-        <h3 className="font-extrabold text-[16px] leading-5">{title}</h3>
-        {body && <p className="mt-1 text-sm leading-6 text-[#5F564B] break-words">{body}</p>}
+        <h3 className="text-heading font-extrabold leading-5 text-ink">{title}</h3>
+        {body && <p className="mt-1 text-sm leading-6 text-ink-muted break-words">{body}</p>}
         {href && (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center justify-center rounded-full bg-[#5B21B6] px-4 py-2 text-xs font-extrabold text-white shadow-sm">Learn more</a>
+          <a href={href} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full bg-accent px-5 text-2xs font-extrabold text-white shadow-card">Visit sponsor</a>
         )}
       </div>
     </article>
   )
 }
 
-function MusicChip({ p }: { p: FeedCardPost }) {
-  const m = p.music
+/** Inline music state for one post: the channel is the single source of truth,
+ *  so autoplay and a manual tap look identical in the UI. */
+function useInlineMusic(music?: FeedCardPost['music']) {
   const [liveId, setLiveId] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [autoplayAllowed, setAutoplayAllowed] = useState(getFeedAutoplayPref())
-  useEffect(() => subscribeInlineMediaAudio(id => { setLiveId(id); setLoading(false) }), [])
-  if (!m?.id || !m.title) return null
-  const playing = !loading && liveId === m.id && !failed
-  const start = async (): Promise<boolean> => {
+  useEffect(() => subscribeInlineMediaAudio(setLiveId), [])
+  const id = music?.id ? String(music.id) : null
+  const url = music?.url || null
+  const playing = Boolean(id) && liveId === id && !failed
+
+  const toggle = async (): Promise<boolean> => {
+    if (!id) return false
+    if (!url) { setFailed(true); return false }
     if (loading) return false
-    if (playing) { stopInlineMediaAudio(); return true }
-    if (!m.url) { setFailed(true); return false }
+    if (playing) {
+      stopInlineMediaAudio()
+      // Tapping the disc is the member's mute: remembered, so scrolling onto the
+      // next song post does not start talking again.
+      setFeedAutoplayPref(false)
+      return false
+    }
     setLoading(true)
-    const ok = await toggleInlineMediaTrack({ id: String(m.id), url: m.url }, setLiveId)
-    setLoading(false)
-    if (!ok) setFailed(true)
-    return Boolean(ok)
-  }
-  const retry = () => { setFailed(false); void start() }
-  const enableAutoplay = async () => {
-    setFeedAutoplayPref(true)
-    // Real user gesture → the browser grants playback for this activation.
+    setFailed(false)
+    // A tap is a real gesture — the browser now lets this post (and later posts) play.
     markAudioUnlocked()
-    const started = await start()
-    // Honest state: only show "enabled" when audio actually started. A rejected
-    // play() (NotAllowedError / track error) keeps the manual Play control up.
-    if (started) setAutoplayAllowed(true)
+    const ok = await toggleInlineMediaTrack({ id, url }, setLiveId)
+    setLoading(false)
+    if (ok) setFeedAutoplayPref(true)
+    else setFailed(true)
+    return ok
   }
+
+  return { visible: Boolean(id), playing, loading, failed, toggle }
+}
+
+/** Spinning album-art disc in the corner of the media: the feed's only music
+ *  control. Frozen rotation while paused, spinner while loading, alert + retry
+ *  tap when the track refuses to play. */
+function MusicDisc({ music, playing, loading, failed, onToggle, raised = false }: {
+  music?: FeedCardPost['music']
+  playing: boolean
+  loading: boolean
+  failed: boolean
+  onToggle: () => void
+  raised?: boolean
+}) {
+  const title = music?.title || 'song'
+  const state = failed ? 'failed' : loading ? 'loading' : playing ? 'playing' : 'paused'
   return (
-    <>
-      <button type="button" onClick={() => void start()} disabled={loading} className="mt-2 flex w-full items-center gap-2 text-left disabled:opacity-70" aria-label={playing ? `Pause ${m.title}` : loading ? `Loading ${m.title}` : `Play ${m.title}`}>
-        <span className="flex h-4 w-4 items-end justify-center gap-[2px] shrink-0" aria-hidden="true">
-          {playing ? (
-            <>
-              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '55%', animation: 'eqbar 0.9s ease-in-out infinite' }} />
-              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '100%', animation: 'eqbar 0.7s ease-in-out infinite reverse' }} />
-              <span className="w-[3px] rounded-sm bg-[#7C3AED]" style={{ height: '70%', animation: 'eqbar 1.1s ease-in-out infinite' }} />
-            </>
-          ) : loading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-[#7C3AED] border-t-transparent" /> : <span className="text-[13px] leading-none text-[#7C3AED]">▶</span>}
+    <button
+      type="button"
+      onClick={onToggle}
+      data-music-disc
+      data-state={state}
+      aria-label={failed ? `Retry ${title}` : loading ? `Loading ${title}` : playing ? `Pause ${title}` : `Play ${title}`}
+      title={music?.artist ? `${title} · ${music.artist}` : title}
+      className={`absolute right-3 z-10 h-11 w-11 rounded-full bg-white/25 p-[2px] shadow-lg ring-1 ring-white/20 transition active:scale-95 ${raised ? 'bottom-14' : 'bottom-3'}`}
+    >
+      <span className="relative block h-full w-full overflow-hidden rounded-full bg-ink">
+        {music?.cover_url ? (
+          <img
+            src={music.cover_url}
+            alt=""
+            decoding="async"
+            className="music-disc-spin h-full w-full object-cover"
+            style={{ animationPlayState: playing ? 'running' : 'paused' }}
+          />
+        ) : (
+          <span className="grid h-full w-full place-items-center text-white/85"><Icon name="music" size={16} /></span>
+        )}
+        <span className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
+          <span className="h-2 w-2 rounded-full bg-white/85 shadow-sm" />
         </span>
-        <span className="truncate text-[11px] font-bold text-[#5B21B6]">{m.title}{m.artist ? ` · ${m.artist}` : ''}</span>
-      </button>
-      {!playing && !loading && !autoplayAllowed && (
-        <button type="button" onClick={() => void enableAutoplay()} className="mt-2 w-full min-h-11 rounded-xl bg-[#7C3AED] text-white text-[11px] font-extrabold">Enable music autoplay</button>
-      )}
-      {autoplayAllowed && !playing && !loading && !failed && audioAutoplayReady() && (
-        <p className="mt-1 text-[10px] font-bold text-[#0F766E]" role="status">Autoplay on — scroll to another song post</p>
-      )}
-      {autoplayAllowed && !playing && !loading && !audioAutoplayReady() && (
-        <button type="button" onClick={() => { markAudioUnlocked(); void start() }} className="mt-1 min-h-9 w-full rounded-xl bg-[#F4E8D0] border border-[#E8DEC9] text-[11px] font-extrabold text-[#B45309]">Tap to allow sound</button>
-      )}
-      {failed && (
-        <button type="button" onClick={() => void retry()} className="mt-1 text-[10px] font-bold text-[#B45309] underline">Retry music</button>
-      )}
-    </>
+        {loading && (
+          <span className="absolute inset-0 grid place-items-center bg-ink/55 text-white"><Spinner size={13} /></span>
+        )}
+        {failed && (
+          <span className="absolute inset-0 grid place-items-center bg-ink/65 text-white"><Icon name="alert" size={15} /></span>
+        )}
+      </span>
+    </button>
   )
 }
 
 function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
   const [ratio, setRatio] = useState<number | null>(null)
   const [failed, setFailed] = useState(false)
-  const boundedRatio = ratio ? Math.min(Math.max(ratio, 0.5), 1.91) : null
-  const style = boundedRatio
-    ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
-    : { width: '100%' as const }
+  // Full-bleed and cropped, exactly like a feed post: the media spans the whole
+  // column so the post reads as one object, never a picture inside a frame.
+  const boundedRatio = ratio ? Math.min(Math.max(ratio, 0.8), 1.91) : null
   return (
-    <div className="mx-auto flex max-h-[70vh] justify-center overflow-hidden bg-[#F4E8D0]" style={style}>
+    <div className="relative w-full max-h-[70vh] overflow-hidden bg-surface-sunken" style={boundedRatio ? { aspectRatio: String(boundedRatio) } : undefined}>
       {failed ? (
-        <div className="flex min-h-40 w-full items-center justify-center text-sm text-[#766E63]">Photo preview unavailable</div>
+        <div className="flex min-h-40 w-full items-center justify-center text-sm text-ink-muted">Photo preview unavailable</div>
       ) : (
         <img
           src={src}
@@ -155,7 +190,7 @@ function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
             if (image.naturalWidth && image.naturalHeight) setRatio(image.naturalWidth / image.naturalHeight)
           }}
           onError={() => setFailed(true)}
-          className="block h-full max-h-[70vh] w-full object-contain"
+          className="block h-full max-h-[70vh] w-full object-cover"
         />
       )}
     </div>
@@ -167,7 +202,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const [busy, setBusy] = useState(false)
   const [autoPlayVideo, setAutoPlayVideo] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
-  const scope = p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'
+  const music = useInlineMusic(p.music)
 
   // IG-style scroll-driven playback via the central feed coordinator. Videos
   // arm the muted-safe stage; posts with an attached track arm the soundtrack.
@@ -192,66 +227,94 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   }, [p.music, p.video])
 
   const profile = { username: p.username, name: p.user, verified: p.verified, group_name: p.loc }
+  const caption = p.caption || ''
+  const longCaption = caption.length > 120
 
   return (
-    <article ref={ref} data-post-id={String(p.id ?? p.key)} className="rounded-[26px] overflow-hidden bg-white border border-[#E8DEC9] shadow-sm">
-      {/* header — one tight row */}
-      <div className="px-3 pt-2.5 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="w-9 h-9 shrink-0 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-[11px] font-extrabold text-[#5B21B6]">
+    <article ref={ref} data-post-id={String(p.id ?? p.key)} className="bg-surface">
+      {/* header — 32px avatar, one bold line, one meta line, overflow */}
+      <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
             {String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}
           </button>
-          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="text-left min-w-0">
-            <p className="text-[13px] font-extrabold leading-tight truncate">{p.user}{p.verified ? <span className="ml-1 text-[#0F766E]">✓</span> : null}</p>
-            <p className="text-[10px] text-[#8B8175] truncate">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
+          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="min-w-0 text-left">
+            <p className="flex min-w-0 items-center gap-1 text-caption font-extrabold leading-tight text-ink">
+              <span className="truncate">{p.user}</span>
+              {p.verified ? (
+                <span role="img" aria-label="Verified account" className="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full bg-accent text-white">
+                  <Icon name="check" size={9} strokeWidth={3.2} />
+                </span>
+              ) : null}
+            </p>
+            <p className="truncate text-2xs text-ink-subtle">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
           </button>
         </div>
-        <button onClick={onToggleMenu} className="w-11 h-11 -m-2 rounded-full text-[#766E63] text-xs font-bold" aria-label="More options">•••</button>
+        <button onClick={onToggleMenu} className="-mr-2 grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface-sunken" aria-label="More options" aria-expanded={menuOpen}>
+          <Icon name="dots" size={20} />
+        </button>
       </div>
 
-      {/* media — full-bleed, natural aspect, no baked chrome */}
-      {p.video ? (
-        <FeedMediaPreview src={p.video} poster={p.img} autoPlay={autoPlayVideo} />
-      ) : p.img ? (
-        <FeedImagePreview src={p.img} />
-      ) : (
-        <div className="w-full aspect-[4/3] bg-[#F4E8D0] flex items-center justify-center text-4xl" aria-label="Image pending review">🙏</div>
-      )}
-
-      {/* footer — caption, song, actions: IG density */}
-      <div className="px-3 pt-2 pb-2.5">
-        <p className={`text-[12.5px] leading-5 text-[#4B433A] ${expanded ? '' : 'line-clamp-2'}`}>
-          <strong className="text-[#29251F] font-extrabold">{p.user}</strong>{' '}
-          {(p.caption || '').split(/(\s+)/).map((w, i) => /#([\p{L}\p{N}_]+)/u.test(w) ? <span key={i} className="text-[#7C3AED]">{w}</span> : <span key={i}>{w}</span>)}
-        </p>
-        {(p.caption || '').length > 120 && (
-          <button type="button" onClick={() => setExpanded(x => !x)} className="text-[11px] font-bold text-[#8B8175] mt-0.5" aria-label={expanded ? 'Show less' : 'Show more'}>
-            {expanded ? 'less' : 'more'}
-          </button>
-        )}
-
-        <MusicChip p={p} />
-
-        <div className="mt-2 flex items-center gap-4">
-          <button type="button" onClick={onLike} disabled={busy} className="flex items-center gap-1.5 text-[11px] font-extrabold text-[#B91C1C]/90 active:opacity-60" aria-label={liked ? 'Unlike' : 'Appreciate'}>
-            <span className={liked ? 'text-[13px]' : 'text-[13px] grayscale opacity-60'}>{liked ? '♥' : '♡'}</span>
-            {fmtCount(displayLikes) || (liked ? '1' : '')}
-          </button>
-          <button type="button" onClick={onComment} className="flex items-center gap-1.5 text-[11px] font-extrabold text-[#5B21B6] active:opacity-60" aria-label="Comments">
-            <span className="text-[13px]">💬</span>
-            {fmtCount(Number(p.comments) || 0)}
-          </button>
-          <button type="button" onClick={() => { setBusy(true); try { onShare() } finally { setTimeout(() => setBusy(false), 600) } }} className="flex items-center gap-1.5 text-[11px] font-extrabold text-[#128C4A] active:opacity-60" aria-label="Share on WhatsApp" title="Share on WhatsApp" disabled={busy}>
-            <span className="text-[13px]">↗</span>
-            WhatsApp
-          </button>
-          {onSave && (
-            <button type="button" onClick={() => onSave()} className={`ml-auto flex items-center gap-1.5 text-[11px] font-extrabold active:opacity-60 ${saved ? 'text-[#B45309]' : 'text-[#766E63]'}`} aria-pressed={!!saved} aria-label={saved ? 'Remove from Saved' : 'Save for later'}>
-              <span className="text-[13px]">{saved ? '🔖' : '🔖'}</span>
-              {saved ? 'Saved' : 'Save'}
-            </button>
+      {/* media — full bleed, no card frame; the music disc rides in its corner */}
+      {p.video || p.img ? (
+        <div className="relative">
+          {p.video
+            ? <FeedMediaPreview src={p.video} poster={p.img} autoPlay={autoPlayVideo} />
+            : <FeedImagePreview src={p.img as string} />}
+          {music.visible && (
+            <MusicDisc
+              music={p.music}
+              playing={music.playing}
+              loading={music.loading}
+              failed={music.failed}
+              onToggle={() => { void music.toggle() }}
+              raised={Boolean(p.video)}
+            />
           )}
         </div>
+      ) : (
+        <div className="flex aspect-[4/5] w-full flex-col items-center justify-center gap-2 bg-surface-sunken text-ink-subtle" aria-label="Image pending review">
+          <Icon name="camera" size={26} />
+          <span className="text-2xs font-semibold">Photo on its way</span>
+        </div>
+      )}
+
+      {/* actions — icon only, monochrome; colour means "liked" */}
+      <div className="flex items-center gap-4 px-3 pt-2.5">
+        <button type="button" onClick={onLike} disabled={busy} className="transition active:scale-90" aria-label={liked ? 'Unlike' : 'Appreciate'} aria-pressed={liked}>
+          <Icon name="heart" size={24} strokeWidth={liked ? 2.4 : 1.7} className={liked ? 'fill-current text-danger' : 'text-ink'} />
+        </button>
+        <button type="button" onClick={onComment} className="transition active:scale-90" aria-label="Comments">
+          <Icon name="chat" size={24} className="text-ink" />
+        </button>
+        <button type="button" onClick={() => { setBusy(true); try { onShare() } finally { setTimeout(() => setBusy(false), 600) } }} className="transition active:scale-90" aria-label="Share on WhatsApp" title="Share on WhatsApp" disabled={busy}>
+          <Icon name="send" size={24} className="text-ink" />
+        </button>
+        {onSave && (
+          <button type="button" onClick={() => onSave()} className="ml-auto transition active:scale-90" aria-pressed={!!saved} aria-label={saved ? 'Remove from Saved' : 'Save for later'}>
+            <Icon name="bookmark" size={24} className={saved ? 'fill-current text-ink' : 'text-ink'} />
+          </button>
+        )}
+      </div>
+
+      {/* text stack — count, caption, comments, timestamp */}
+      <div className="px-3 pb-3 pt-1.5">
+        {displayLikes > 0 && (
+          <p className="text-caption font-extrabold text-ink">{fmtCount(displayLikes)} appreciation{displayLikes === 1 ? '' : 's'}</p>
+        )}
+        {caption && (
+          <p className="mt-1 text-caption leading-5 text-ink">
+            <strong className="font-extrabold">{p.user}</strong>{' '}
+            {caption.split(/(\s+)/).map((w, i) => /#([\p{L}\p{N}_]+)/u.test(w) ? <span key={i} className="text-accent">{w}</span> : <span key={i}>{w}</span>)}
+            {longCaption && (
+              <> <button type="button" onClick={() => setExpanded(x => !x)} className="text-ink-subtle" aria-label={expanded ? 'Show less' : 'Show more'}>{expanded ? 'less' : 'more'}</button></>
+            )}
+          </p>
+        )}
+        {Number(p.comments) > 0 && (
+          <button type="button" onClick={onComment} className="mt-1 block text-caption text-ink-muted">View all {fmtCount(Number(p.comments))} comments</button>
+        )}
+        {p.time && <p className="mt-1.5 text-2xs uppercase tracking-wide text-ink-subtle">{p.time}</p>}
       </div>
     </article>
   )

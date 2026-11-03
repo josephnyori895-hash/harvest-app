@@ -309,18 +309,28 @@ export async function handleFeed(request, env, ctx) {
   }
 
   // ── Comments ──────────────────────────────────────────────
-  // GET /api/comments?scope=post|reel&id=<id> — parents NEWEST FIRST (IG-style
-  // ordering) with their replies nested right after. Per-viewer likes come
-  // from comment_likes.
+  // One comment store serves every commentable kind. Posts and reels only accept
+  // comments once approved; sermons are admin-published, so they carry no
+  // approved_at gate. The table each kind counts against is declared once here
+  // so the counter can never point at the wrong row.
+  const COMMENT_TARGETS = {
+    post: { missing: 'post not found', table: 'posts', sql: 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL' },
+    reel: { missing: 'reel not found', table: 'reels', sql: 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL' },
+    sermon: { missing: 'sermon not found', table: 'sermons', sql: 'SELECT id FROM sermons WHERE id=?' },
+  }
+  const commentScope = raw => (raw === 'reel' || raw === 'sermon' ? raw : 'post')
+  const commentTarget = (scope, id) => query(env, COMMENT_TARGETS[scope].sql, [id])
+
+  // GET /api/comments?scope=post|reel|sermon&id=<id> — parents NEWEST FIRST
+  // (IG-style ordering) with their replies nested right after. Per-viewer likes
+  // come from comment_likes.
   if (path === '/api/comments' && request.method === 'GET') {
     const fresh = await requireMember(env, user)
-    const scope = qp.scope === 'reel' ? 'reel' : 'post'
+    const scope = commentScope(qp.scope)
     const id = String(qp.id || '').slice(0, 64)
     if (!id) return errorResponse('id required', 400)
-    const target = scope === 'reel'
-      ? await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [id])
-      : await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [id])
-    if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
+    const target = await commentTarget(scope, id)
+    if (!target.rows[0]) return errorResponse(COMMENT_TARGETS[scope].missing, 404)
     const { rows } = await query(
       env,
       `SELECT c.id, c.username, c.body, c.created_at, c.parent_id,
@@ -339,14 +349,12 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/comments' && request.method === 'POST') {
     const fresh = await requireMember(env, user)
     const body = await readJson(request)
-    const scope = body.scope === 'reel' ? 'reel' : 'post'
+    const scope = commentScope(body.scope)
     const targetId = String(body.id || '').slice(0, 64)
     const text = String(body.body || '').trim().slice(0, 1000)
     if (!targetId || !text) return errorResponse('id and body required', 400)
-    const target = scope === 'reel'
-      ? await query(env, 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL', [targetId])
-      : await query(env, 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL', [targetId])
-    if (!target.rows[0]) return errorResponse(scope === 'reel' ? 'reel not found' : 'post not found', 404)
+    const target = await commentTarget(scope, targetId)
+    if (!target.rows[0]) return errorResponse(COMMENT_TARGETS[scope].missing, 404)
     let parentId = null
     if (body.parent_id) {
       const p = await query(env, 'SELECT id, post_id, scope, parent_id FROM post_comments WHERE id=?', [String(body.parent_id).slice(0, 64)])
@@ -360,7 +368,7 @@ export async function handleFeed(request, env, ctx) {
       `INSERT INTO post_comments (id, post_id, scope, user_id, username, body, parent_id) VALUES (?,?,?,?,?,?,?)`,
       [cid, targetId, scope, fresh.id, fresh.username, text, parentId],
     )
-    const col = scope === 'reel' ? 'reels' : 'posts'
+    const col = COMMENT_TARGETS[scope].table
     await query(env, `UPDATE ${col} SET comments = comments + 1 WHERE id=?`, [targetId])
     return jsonResponse({ comment: { id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(), verified: !!fresh.verified, likes: 0, liked: false, parent_id: parentId } }, 201)
   }
@@ -389,7 +397,7 @@ export async function handleFeed(request, env, ctx) {
     const c = await query(env, 'SELECT id, user_id, username, post_id, scope FROM post_comments WHERE id=?', [cid])
     if (!c.rows[0]) return errorResponse('not found', 404)
     const ownsComment = c.rows[0].user_id ? c.rows[0].user_id === fresh.id : c.rows[0].username === fresh.username
-    const contentTable = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
+    const contentTable = (COMMENT_TARGETS[c.rows[0].scope] || COMMENT_TARGETS.post).table
     const content = await query(env, `SELECT user_id FROM ${contentTable} WHERE id=?`, [c.rows[0].post_id])
     const isContentAuthor = content.rows[0]?.user_id === fresh.id
     if (!ownsComment && !isContentAuthor && fresh.role !== 'admin') return errorResponse('forbidden', 403)
@@ -397,7 +405,7 @@ export async function handleFeed(request, env, ctx) {
     for (const r of replies.rows) await query(env, 'DELETE FROM comment_likes WHERE comment_id=?', [r.id])
     await query(env, 'DELETE FROM comment_likes WHERE comment_id=?', [cid])
     await query(env, 'DELETE FROM post_comments WHERE id=? OR parent_id=?', [cid, cid])
-    const col = c.rows[0].scope === 'reel' ? 'reels' : 'posts'
+    const col = (COMMENT_TARGETS[c.rows[0].scope] || COMMENT_TARGETS.post).table
     await query(env, `UPDATE ${col} SET comments = MAX(comments - ?, 0) WHERE id=?`, [1 + (replies.rows.length || 0), c.rows[0].post_id])
     return jsonResponse({ ok: true })
   }

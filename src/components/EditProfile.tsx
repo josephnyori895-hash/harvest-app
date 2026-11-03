@@ -110,14 +110,14 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
   )
 
   return (
-    <div className="bg-[#141210] text-white min-h-[calc(100vh-56px)] pb-8">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-800 sticky top-0 bg-[#141210] z-10">
+    <div className="bg-ink text-white min-h-[calc(100vh-56px)] pb-8">
+      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-800 sticky top-0 bg-ink z-10">
         <button onClick={onDone} aria-label="Close profile editor" className="text-xl text-stone-300 px-1 min-w-11 min-h-11">✕</button>
         <p className="font-semibold text-sm">Edit profile</p>
         <button
           onClick={() => void save()}
           disabled={busy || avatarUploading || !dirty}
-          className={`font-semibold text-sm ${busy || avatarUploading || !dirty ? 'text-stone-600' : 'text-[#7C3AED]'}`}
+          className={`font-semibold text-sm ${busy || avatarUploading || !dirty ? 'text-stone-600' : 'text-accent'}`}
         >{busy ? 'Saving…' : 'Save'}</button>
       </div>
 
@@ -130,12 +130,12 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-black" />
             ) : (
-              <div className="w-full h-full rounded-full bg-[#141210] flex items-center justify-center font-bold text-xl border-[3px] border-black">
+              <div className="w-full h-full rounded-full bg-ink flex items-center justify-center font-bold text-xl border-[3px] border-black">
                 {(name || me?.username || '?').split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
               </div>
             )}
           </div>
-          <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-[#7C3AED] flex items-center justify-center cursor-pointer border-2 border-black" title="Change profile photo">
+          <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-accent flex items-center justify-center cursor-pointer border-2 border-black" title="Change profile photo">
             <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onAvatarFile} className="hidden" />
             <span className="text-sm">📷</span>
           </label>

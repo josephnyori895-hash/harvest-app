@@ -7,15 +7,15 @@ const chat = await readFile(new URL('../src/components/Chat.tsx', import.meta.ur
 test('chat rows keep names, verified badges, and unread indicators stable at narrow widths', () => {
   // Inbox row: the name is inside a truncating paragraph so it can never push the
   // badge or timestamp out of the row at narrow widths.
-  assert.match(chat, /text-\[15px\] truncate/)
+  assert.match(chat, /text-\[15px\] font-extrabold truncate/)
   assert.match(chat, /\{c\.peer_name\}\{c\.peer_verified && <VerifiedBadge \/>\}/)
   // Timestamp is a fixed-position, non-shrinking inline control.
-  assert.match(chat, /ml-2 shrink-0 text-\[10px\]/)
+  assert.match(chat, /ml-2 shrink-0 text-2xs/)
   assert.match(chat, /<UnreadBadge count=\{unread\} \/>/)
 })
 
 test('People list prevents long names from pushing the verified badge or unread indicator', () => {
-  assert.match(chat, /className="flex min-w-0 items-center gap-1\.5 font-semibold/)
+  assert.match(chat, /className="flex min-w-0 items-center gap-1\.5 text-\[15px\] font-semibold text-ink"/)
   assert.match(chat, /<span className="truncate">\{u\.name \|\| u\.username\}<\/span>/)
   assert.match(chat, /\{u\.verified && <VerifiedBadge \/>\}/)
 })
@@ -23,5 +23,29 @@ test('People list prevents long names from pushing the verified badge or unread 
 test('verified badge is a fixed-size non-shrinking inline control', () => {
   assert.match(chat, /inline-flex shrink-0 items-center justify-center/)
   assert.match(chat, /h-\[18px\] w-\[18px\]/)
-  assert.match(chat, /h-5 w-5 text-\[12px\]/)
+  assert.match(chat, /<Icon name="check" size=\{size === 'md' \? 13 : 11\}/)
+})
+
+// The screen used to be built on Instagram's dark palette while every other
+// screen was token-based, so it rendered as a black slab. Colour must now come
+// from the token layer only, and dark mode stays a variable swap.
+test('chat draws colour from design tokens, not a hardcoded dark palette', () => {
+  // (A translucent bg-white/15 inside an accent bubble is fine; a solid
+  // bg-white surface is what made the screen look pasted-on.)
+  for (const legacy of [/bg-stone-\d/, /text-stone-\d/, /border-stone-\d/, /bg-black\b/, /bg-white['"\s]/, /from-purple-6\d\d/, /to-fuchsia-6\d\d/]) {
+    assert.doesNotMatch(chat, legacy, `legacy palette class leaked back in: ${legacy}`)
+  }
+  assert.match(chat, /bg-surface/, 'screen must paint the surface token')
+  assert.match(chat, /bg-surface-raised/, 'cards and own chrome must use the raised surface')
+  assert.match(chat, /bg-accent text-white/, 'the send action and own bubbles use the accent token')
+})
+
+test('chat respects the 12px type floor and uses the icon set instead of emoji chrome', () => {
+  assert.doesNotMatch(chat, /text-\[(9|10|11)px\]/, 'nothing below 12px ships')
+  for (const glyph of ['⚙️', '💬', '👥', '⛪', '🏛', '☆', '★', '⌕', '✕', '↩', '⧉', '🗑']) {
+    assert.ok(!chat.includes(glyph), `emoji/glyph chrome should be an <Icon>, found: ${glyph}`)
+  }
+  // '📷' survives only as the stored text sentinel for a photo-only message
+  // (wire format); it must never be rendered as a JSX child.
+  assert.doesNotMatch(chat, />📷/, 'photo placeholder must render as an <Icon>')
 })

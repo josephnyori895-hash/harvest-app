@@ -25,6 +25,7 @@ import UploadPill from './components/UploadPill'
 import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
+import { Icon } from './ui'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 
 // Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
@@ -116,7 +117,7 @@ function IgIcon({ name, active }) {
   if (name === 'home') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4z" /></svg>
   if (name === 'search') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={s}><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
   if (name === 'reels') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M10 8l6 4-6 4z" fill={active ? '#FFFBF0' : 'none'} stroke="none" /></svg>
-  if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'border-[#A49A8E]'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#FFFBF0' : '#A49A8E'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
+  if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-accent text-white border-accent' : 'border-ink-subtle'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#FFFBF0' : '#A49A8E'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
   if (name === 'activity') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 21s-6-4-6-10a6 6 0 0 1 12 0c0 6-6 10-6 10z" /></svg>
   if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
   if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'grayscale(0.4) opacity(0.75)'}} role="img" aria-label="give">🤲</span>
@@ -150,7 +151,7 @@ function UpdateGate({ children }) {
   return (
     <>
       {update && !hidden && (
-        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-[#1C1917] text-white shadow-2xl border border-[#7C3AED]/40 flex items-center gap-3">
+        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-ink text-white shadow-2xl border border-accent/40 flex items-center gap-3">
           <span className="text-2xl shrink-0" aria-hidden="true">🚀</span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
@@ -158,7 +159,7 @@ function UpdateGate({ children }) {
           </div>
           <button
             onClick={() => { import('./lib/appUpdate').then(({ openApkDownload }) => openApkDownload(update.apkUrl)) }}
-            className="shrink-0 px-4 py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-extrabold active:bg-[#6D28D9]"
+            className="shrink-0 px-4 py-2.5 rounded-full bg-accent text-white text-xs font-extrabold active:bg-accent-strong"
           >Update</button>
           <button
             onClick={() => { import('./lib/appUpdate').then(({ dismissUpdate }) => { dismissUpdate(update.versionCode); setHidden(true) }) }}
@@ -326,13 +327,21 @@ function InnerApp() {
     // Family-directory activity rides the same inbox (Activity+Notifications
     // merge): normalized into notification rows and prepended to the list.
     fetchFamilyActivity()
-      .then(rows => { if (!cancelled) setNotifications(prev => [...rows, ...prev]) })
+      .then(rows => {
+        if (cancelled) return
+        setNotifications(prev => {
+          // Activity rides the same inbox; merge by id so the background poll
+          // (or a fast panel reopen) can never stack the same row twice.
+          const seen = new Set(prev.map(n => String(n.id)))
+          return [...rows.filter(r => !seen.has(String(r.id))), ...prev]
+        })
+      })
       .catch(() => { /* additive only — never block the inbox on it */ })
     return () => { cancelled = true }
   }, [onboarded])
 
-  const refreshNotifications = async () => {
-    setNotificationsRefreshing(true)
+  const refreshNotifications = async (silent = false) => {
+    if (!silent) setNotificationsRefreshing(true)
     try {
       const r = await fetch(`${API}/api/notifications`, { headers: authHeaders() })
       if (r.ok) {
@@ -340,10 +349,36 @@ function InnerApp() {
         setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
       }
       const fam = await fetchFamilyActivity().catch(() => null)
-      if (fam) setNotifications(prev => [...fam, ...prev])
+      if (fam) setNotifications(prev => {
+        const seen = new Set(prev.map(n => String(n.id)))
+        return [...fam.filter(n => !seen.has(String(n.id))), ...prev]
+      })
     } catch { /* keep the last good list */ }
-    setNotificationsRefreshing(false)
+    if (!silent) setNotificationsRefreshing(false)
   }
+
+  // The badge has to be live. Loading the inbox only at sign-in and when the
+  // panel opens left the count stale for the whole session; poll quietly while
+  // the app is in the foreground and refresh the moment it comes back.
+  useEffect(() => {
+    if (!onboarded) return
+    let busy = false
+    const tick = () => {
+      if (busy || document.visibilityState === 'hidden') return
+      busy = true
+      void refreshNotifications(true).finally(() => { busy = false })
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') tick() }
+    const id = window.setInterval(tick, 60_000)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboarded])
 
   const markAllNotificationsRead = async () => {
     if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
@@ -505,20 +540,22 @@ function InnerApp() {
 
   return (
     <UpdateGate>
-    <div className="app-shell bg-[#FFFBF0] flex justify-center">
-      {/* Fluid width: fills the phone screen (no more 390px demo column) */}
-      <div className="app-shell w-full h-[100dvh] max-h-[100dvh] bg-[#FFFBF0] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+    <div className="app-shell flex min-h-[100dvh] bg-surface">
+      <Sidebar tab={tab} setTab={handleTab} />
+      {/* Fluid on phones; on desktop the content column sits beside the rail
+          instead of stretching a phone layout across the whole window. */}
+      <div className="app-shell mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[760px] xl:max-w-[860px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <button
           type="button"
           onClick={() => setShowNotifications(v => { const next = !v; if (next) void refreshNotifications(); return next })}
           aria-pressed={showNotifications}
           aria-label={showNotifications ? 'Close notifications' : `Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
-          className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-[#E8DEC9] bg-[#FFFBF0]/95 text-lg shadow-sm backdrop-blur focus:outline-none focus-visible:ring-2"
+          className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink shadow-card focus:outline-none focus-visible:ring-2"
           style={{ top: 'calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 8px)' }}
         >
-          <span aria-hidden="true">🔔</span>
+          <Icon name="bell" size={20} />
           {notifications.some(n => !n.read_at) && (
-            <span className="absolute -right-0.5 -top-0.5 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+            <span className="absolute -right-0.5 -top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger px-1 text-2xs font-bold leading-none text-white">
               {notifications.filter(n => !n.read_at).length > 99 ? '99+' : notifications.filter(n => !n.read_at).length}
             </span>
           )}
@@ -707,22 +744,22 @@ function Onboarding({ onAuthSuccess }) {
       <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
         <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-[#FFCD00] shadow-sm" />
+            <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
             <div className="min-w-0 leading-tight">
               <p className="text-[15px] font-extrabold text-zinc-900 truncate">Harvest Family Church</p>
-              <p className="text-[11px] font-bold tracking-wide text-[#7C3AED]">NYERI</p>
+              <p className="text-[11px] font-bold tracking-wide text-accent">NYERI</p>
             </div>
           </div>
-          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="shrink-0 text-[13px] font-bold px-4 py-2.5 rounded-full border border-zinc-300 bg-zinc-50 text-[#5B21B6] active:bg-zinc-100">
+          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="shrink-0 text-[13px] font-bold px-4 py-2.5 rounded-full border border-zinc-300 bg-zinc-50 text-accent-strong active:bg-zinc-100">
             {mode === 'register' ? 'Sign in' : 'New here?'}
           </button>
         </div>
 
-        <div className="rounded-[22px] mx-5 mt-3 p-5 bg-gradient-to-br from-[#EDE9FE] via-[#F5F0FF] to-[#FFFBEB] border border-[#EDE9FE] shadow-sm">
-          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-[#F59E0B] text-white px-3 py-1.5 rounded-full">Karibu</span>
-          <h1 className="mt-3.5 text-[30px] font-extrabold leading-[1.12] tracking-tight text-[#4C1D95]">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
-          <div className="mt-3 h-px bg-[#DDD6FE]" />
-          <p className="mt-2.5 text-[12px] font-extrabold tracking-[0.22em] text-[#7C3AED]">COMPEL · RAISE · RELEASE</p>
+        <div className="rounded-[22px] mx-5 mt-3 p-5 bg-gradient-to-br from-accent-soft via-accent-wash to-gold-soft border border-accent-soft shadow-sm">
+          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-gold text-white px-3 py-1.5 rounded-full">Karibu</span>
+          <h1 className="mt-3.5 text-[30px] font-extrabold leading-[1.12] tracking-tight text-accent-strong">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
+          <div className="mt-3 h-px bg-accent-soft" />
+          <p className="mt-2.5 text-[12px] font-extrabold tracking-[0.22em] text-accent">COMPEL · RAISE · RELEASE</p>
         </div>
 
         {mode === 'register' ? (
@@ -733,20 +770,20 @@ function Onboarding({ onAuthSuccess }) {
             </div>
             <div>
               <label htmlFor="reg-username" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username</label>
-              <input id="reg-username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
             </div>
             <div>
               <label htmlFor="reg-name" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Full name</label>
-              <input id="reg-name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
             </div>
             <div>
               <label htmlFor="reg-phone" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Phone number</label>
-              <input id="reg-phone" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-phone" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
             </div>
             <div>
               <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
               <div className="relative">
-                <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+                <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
                 <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showRegPass ? '🙈' : '👁'}</button>
               </div>
               <p className="text-[11px] text-zinc-500 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap 👁 to check what you typed.'}</p>
@@ -754,7 +791,7 @@ function Onboarding({ onAuthSuccess }) {
             <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
               <div className="relative">
-                <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100">
+                <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-accent focus:ring-2 focus:ring-purple-100">
                   {!REG_GROUP_OPTIONS.length && <option value="">{groupsLive ? 'No groups available' : 'Loading groups…'}</option>}
                   {REG_GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
@@ -784,12 +821,12 @@ function Onboarding({ onAuthSuccess }) {
             </div>
             <div>
               <label htmlFor="login-id" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username or phone</label>
-              <input id="login-id" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+              <input id="login-id" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
             </div>
             <div>
               <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
               <div className="relative">
-                <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-[#7C3AED] focus:ring-2 focus:ring-purple-100" />
+                <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
                 <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showLoginPass ? '🙈' : '👁'}</button>
               </div>
             </div>
@@ -807,7 +844,7 @@ function Onboarding({ onAuthSuccess }) {
           <button
             onClick={() => void (mode === 'register' ? submitRegister() : submitLogin())}
             disabled={busy}
-            className={`w-full py-4 rounded-full font-extrabold text-[16px] flex items-center justify-center gap-2 shadow-sm ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-[#7C3AED] text-white active:bg-[#6D28D9]'}`}
+            className={`w-full py-4 rounded-full font-extrabold text-[16px] flex items-center justify-center gap-2 shadow-sm ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-accent text-white active:bg-accent-strong'}`}
           >
             {busy ? 'Please wait…' : mode === 'register' ? 'Create my account →' : 'Sign in →'}
           </button>
@@ -915,13 +952,13 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
   const displayName = me?.name || username || 'Member'
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] pb-8">
-      <div className="px-4 pt-5 pb-3 border-b border-[#E8DEC9] flex justify-between items-center">
+    <div className="bg-surface text-ink pb-8">
+      <div className="px-4 pt-5 pb-3 border-b border-line flex justify-between items-center">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-[#766E63] font-bold">Harvest Family</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-ink-muted font-bold">Harvest Family</p>
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
-        <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-[#7C3AED] text-white' : 'bg-[#F4E8D0] text-[#6B6257]'}`}>
+        <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>
           {role === 'admin' ? '★ Admin' : me?.verified ? '✓ Verified' : 'Member'}
         </span>
       </div>
@@ -929,144 +966,144 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       <div className="px-4 mt-4 flex gap-4 items-center">
         <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
           {me?.avatar_url ? (
-            <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-[#FFFBF0]" />
+            <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-surface" />
           ) : (
-            <div className="w-full h-full rounded-full bg-[#F5F1E8] text-[#29251F] flex items-center justify-center font-bold border-[3px] border-[#FFFBF0] text-xl">
+            <div className="w-full h-full rounded-full bg-surface-sunken text-ink flex items-center justify-center font-bold border-[3px] border-surface text-xl">
               {displayName.split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
             </div>
           )}
         </div>
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
-          <p className="text-[#6B6257] text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
-          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-[#F5F1E8] border border-[#E8DEC9] text-xs font-bold text-[#29251F] active:opacity-70">✏️ Edit profile</button>
+          <p className="text-ink-muted text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
+          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-surface-sunken border border-line text-xs font-bold text-ink active:opacity-70">✏️ Edit profile</button>
         </div>
       </div>
 
       <div className="px-4 mt-3">
         <div className="mt-2 flex flex-wrap gap-2">
-          <span className="text-xs bg-[#F5F1E8] px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
+          <span className="text-xs bg-surface-sunken px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
           <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group_name || 'Harvest Nyeri'}</span>
-          {me?.phone && <span className="text-xs bg-[#F5F1E8] px-2 py-1 rounded-full">📱 {me.phone}</span>}
+          {me?.phone && <span className="text-xs bg-surface-sunken px-2 py-1 rounded-full">📱 {me.phone}</span>}
         </div>
       </div>
 
       {isAdmin && (
-        <div className="mt-4 border-t border-[#E8DEC9] pt-3 px-4">
-          <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold">🛡 Open moderation queue</button>
-          <p className="text-[11px] text-[#766E63] text-center mt-2">Review posts, stories and reels submitted by members</p>
+        <div className="mt-4 border-t border-line pt-3 px-4">
+          <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-accent text-white text-xs font-bold">🛡 Open moderation queue</button>
+          <p className="text-[11px] text-ink-muted text-center mt-2">Review posts, stories and reels submitted by members</p>
         </div>
       )}
 
       {isAdmin && (
-        <div className="mt-4 border-t border-[#E8DEC9] pt-3">
-          <h3 className="text-sm font-bold px-4 text-[#7C3AED] mb-2">✓ Verified Accounts</h3>
+        <div className="mt-4 border-t border-line pt-3">
+          <h3 className="text-sm font-bold px-4 text-accent mb-2">✓ Verified Accounts</h3>
           <div className="space-y-2 px-4">
             {users.filter(u => u.verified).map(u => (
-              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E8DEC9]">
+              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-white border border-line">
                 <div className="flex gap-2 items-center">
-                  <div className="w-8 h-8 rounded-full bg-[#F4E8D0] flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
+                  <div className="w-8 h-8 rounded-full bg-surface-sunken flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
                   <p className="text-xs font-semibold">{u.name || u.username}</p>
                 </div>
                 <button disabled={busy} onClick={() => void toggleVerified(u)} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
               </div>
             ))}
-            {users.filter(u => u.verified).length === 0 && <p className="text-xs text-[#766E63]">No verified accounts yet.</p>}
+            {users.filter(u => u.verified).length === 0 && <p className="text-xs text-ink-muted">No verified accounts yet.</p>}
           </div>
         </div>
       )}
 
-      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+      <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 mb-2">
-          <h3 className="text-sm font-bold text-[#29251F]">My Groups</h3>
-          <p className="text-[11px] text-[#766E63]">Live membership from the Groups service</p>
+          <h3 className="text-sm font-bold text-ink">My Groups</h3>
+          <p className="text-[11px] text-ink-muted">Live membership from the Groups service</p>
         </div>
         <div className="space-y-2 px-4">
           {memberGroups.map(g => (
-            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-white border border-[#E8DEC9]">
-              <div className="min-w-0"><p className="text-sm font-semibold text-[#29251F] truncate">{g.name}</p><p className="text-xs text-[#6B6257]">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
+            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-white border border-line">
+              <div className="min-w-0"><p className="text-sm font-semibold text-ink truncate">{g.name}</p><p className="text-xs text-ink-muted">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
               <span className="text-xs bg-white text-black px-3 py-1 rounded-full">👥</span>
             </div>
           ))}
-          {memberGroups.length === 0 && <p className="text-xs text-[#766E63] px-4">You are not in any groups.</p>}
+          {memberGroups.length === 0 && <p className="text-xs text-ink-muted px-4">You are not in any groups.</p>}
         </div>
       </div>
 
       {/* Uploads: live transfers + recent history */}
-      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
-        <h3 className="text-sm font-bold px-4 text-[#29251F] mb-2">My uploads</h3>
+      <div className="mt-4 border-t border-line pt-3">
+        <h3 className="text-sm font-bold px-4 text-ink mb-2">My uploads</h3>
         {uploads.length > 0 && (
           <div className="space-y-2 px-4 mb-3">
             {uploads.map(u => (
-              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-[#E8DEC9]">
-                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-[#E8DEC9] flex items-center justify-center text-[10px] font-bold text-[#29251F]" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
+                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{u.label}</p>
-                  <p className="text-[10px] text-[#6B6257]">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
+                  <p className="text-[10px] text-ink-muted">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
                 </div>
               </div>
             ))}
           </div>
         )}
         {history.length === 0 && uploads.length === 0 && (
-          <p className="text-xs text-[#766E63] px-4">No uploads yet — share a story, post or video and it shows here.</p>
+          <p className="text-xs text-ink-muted px-4">No uploads yet — share a story, post or video and it shows here.</p>
         )}
         {history.length > 0 && (
           <div className="space-y-2 px-4">
             {history.slice(0, 8).map(h => (
-              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-[#E8DEC9]">
+              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
                 <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? '✓' : '✕'}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{h.label}</p>
                   {h.status === 'done'
-                    ? <p className="text-[10px] text-[#6B6257] truncate">Published</p>
+                    ? <p className="text-[10px] text-ink-muted truncate">Published</p>
                     : <div className="mt-1"><ErrorMessage message={h.detail || 'Upload failed — try sharing again.'} /></div>}
                 </div>
-                <span className="text-[10px] text-[#766E63] shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span className="text-[10px] text-ink-muted shrink-0">{new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             ))}
-            <button onClick={() => clearUploadHistory()} className="text-[10px] text-[#766E63] underline px-1">Clear history</button>
+            <button onClick={() => clearUploadHistory()} className="text-[10px] text-ink-muted underline px-1">Clear history</button>
           </div>
         )}
       </div>
 
-      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+      <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-[#29251F]">🔖 Saved Posts</h3>
-          <span className="text-[10px] text-[#766E63]">Saved on every device</span>
+          <h3 className="text-sm font-bold text-ink">🔖 Saved Posts</h3>
+          <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
-        {savedPostsLoading && <p className="text-xs text-[#766E63] px-4 py-2">Loading saved posts…</p>}
+        {savedPostsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved posts…</p>}
         {savedPostsError && <p className="text-xs text-rose-400 px-4 py-2">{savedPostsError}</p>}
         {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
-          <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+          <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
             <p className="text-xs font-semibold">No saved posts yet.</p>
-            <p className="text-[11px] text-[#766E63] mt-1">Tap Save on a post to keep it here for later.</p>
+            <p className="text-[11px] text-ink-muted mt-1">Tap Save on a post to keep it here for later.</p>
           </div>
         )}
         {savedPosts.length > 0 && (
           <div className="px-4 grid grid-cols-2 gap-3">
             {savedPosts.map(sp => (
-              <div key={sp.id} className="rounded-2xl overflow-hidden bg-white border border-[#E8DEC9]">
+              <div key={sp.id} className="rounded-2xl overflow-hidden bg-white border border-line">
                 {sp.thumb_url ? (
                   <img src={sp.thumb_url} alt={sp.caption || 'Saved post'} loading="lazy" className="w-full aspect-[4/3] object-cover" />
                 ) : (
-                  <div className="w-full aspect-[4/3] bg-[#F5F1E8] flex items-center justify-center p-3 text-center">
-                    <span className="text-[11px] font-semibold text-[#766E63] line-clamp-4">{sp.caption || 'Post'}</span>
+                  <div className="w-full aspect-[4/3] bg-surface-sunken flex items-center justify-center p-3 text-center">
+                    <span className="text-[11px] font-semibold text-ink-muted line-clamp-4">{sp.caption || 'Post'}</span>
                   </div>
                 )}
                 <div className="p-2.5">
-                  <div className="flex items-center gap-1.5 text-[10px] text-[#766E63]">
-                    <span className="font-bold text-[#29251F] truncate">@{sp.username}{sp.verified ? ' ✓' : ''}</span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-ink-muted">
+                    <span className="font-bold text-ink truncate">@{sp.username}{sp.verified ? ' ✓' : ''}</span>
                     <span className="truncate">{savedAgo(sp.saved_at)}</span>
                   </div>
-                  <p className="text-[11px] text-[#4B433A] line-clamp-2 mt-0.5">{sp.caption}</p>
+                  <p className="text-[11px] text-ink-muted line-clamp-2 mt-0.5">{sp.caption}</p>
                   <button type="button"
                     onClick={() => {
                       setSavedPosts(list => list.filter(x => x.id !== sp.id))
                       fetch(`${API}/api/posts/${encodeURIComponent(sp.id)}/save`, { method: 'DELETE', headers: authHeaders() })
                         .catch(() => {})
                     }}
-                    className="mt-1.5 text-[10px] font-extrabold text-[#B45309]" aria-label={`Remove ${sp.caption ? 'saved post' : 'post'} from Saved`}>Remove</button>
+                    className="mt-1.5 text-[10px] font-extrabold text-gold-strong" aria-label={`Remove ${sp.caption ? 'saved post' : 'post'} from Saved`}>Remove</button>
                 </div>
               </div>
             ))}
@@ -1074,17 +1111,17 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         )}
       </div>
 
-      <div className="mt-4 border-t border-[#E8DEC9] pt-3">
+      <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-[#29251F]">🔖 Saved Videos</h3>
-          <span className="text-[10px] text-[#766E63]">Saved on every device</span>
+          <h3 className="text-sm font-bold text-ink">🔖 Saved Videos</h3>
+          <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
-        {savedReelsLoading && <p className="text-xs text-[#766E63] px-4 py-2">Loading saved videos…</p>}
+        {savedReelsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved videos…</p>}
         {savedReelsError && <p className="text-xs text-rose-400 px-4 py-2">{savedReelsError}</p>}
         {!savedReelsLoading && !savedReelsError && savedReels.length === 0 && (
-          <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+          <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
             <p className="text-xs font-semibold">Nothing saved yet.</p>
-            <p className="text-[11px] text-[#766E63] mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
+            <p className="text-[11px] text-ink-muted mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
           </div>
         )}
         {savedReels.length > 0 && (() => {
@@ -1113,9 +1150,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                     value={savedReelSearch}
                     onChange={e => setSavedReelSearch(e.target.value)}
                     placeholder="Search creator or caption"
-                    className="w-full min-h-11 rounded-xl bg-white border border-[#E8DEC9] px-3 pl-9 text-xs text-[#29251F] placeholder:text-[#9C948A] outline-none focus:border-[#D9CDB4]"
+                    className="w-full min-h-11 rounded-xl bg-white border border-line px-3 pl-9 text-xs text-ink placeholder:text-ink-subtle outline-none focus:border-line-strong"
                   />
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#766E63] text-sm" aria-hidden>⌕</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted text-sm" aria-hidden>⌕</span>
                 </label>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5">
                   {[
@@ -1128,7 +1165,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                       key={value}
                       type="button"
                       onClick={() => setSavedReelDateFilter(value)}
-                      className={`min-h-9 shrink-0 rounded-full px-3 text-[11px] font-semibold border ${savedReelDateFilter === value ? 'bg-[#29251F] text-white border-[#29251F]' : 'bg-white text-[#6B6257] border-[#E8DEC9]'}`}
+                      className={`min-h-9 shrink-0 rounded-full px-3 text-[11px] font-semibold border ${savedReelDateFilter === value ? 'bg-ink text-white border-ink' : 'bg-white text-ink-muted border-line'}`}
                     >
                       {label}
                     </button>
@@ -1140,7 +1177,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                   {filtered.map(r => (
                     <button key={r.id} type="button"
                       onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
-                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-white border border-[#E8DEC9] text-left active:scale-[0.98] transition-transform">
+                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-white border border-line text-left active:scale-[0.98] transition-transform">
                       {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
                         <p className="text-[11px] font-bold truncate">{r.username}</p>
@@ -1150,9 +1187,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                   ))}
                 </div>
               ) : (
-                <div className="mx-4 p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+                <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
                   <p className="text-xs font-semibold">No saved videos match.</p>
-                  <p className="text-[11px] text-[#766E63] mt-1">Try a different creator, caption, or saved-date filter.</p>
+                  <p className="text-[11px] text-ink-muted mt-1">Try a different creator, caption, or saved-date filter.</p>
                 </div>
               )}
             </>
@@ -1163,32 +1200,82 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       <div className="px-4 mt-5">
         {/* Give took the bottom bar slot Activity used to hold; Activity stays
             one tap away here so nothing members relied on disappears. */}
-        <button onClick={() => onOpenActivity?.()} className="mb-2 w-full py-2.5 rounded-full border border-[#E8DEC9] bg-[#FFFBF0] text-[#5B21B6] text-xs font-semibold active:opacity-70">🕘 Your activity</button>
-        <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-[#E8DEC9] text-[#6B6257] text-xs font-semibold">Sign out</button>
+        <button onClick={() => onOpenActivity?.()} className="mb-2 w-full py-2.5 rounded-full border border-line bg-surface text-accent-strong text-xs font-semibold active:opacity-70">🕘 Your activity</button>
+        <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-line text-ink-muted text-xs font-semibold">Sign out</button>
       </div>
     </div>
   )
 }
 
+const NAV_ITEMS = [
+  { id: 'home', label: 'Home', icon: 'home' },
+  { id: 'search', label: 'Search', icon: 'search' },
+  { id: 'reels', label: 'Reels', icon: 'reels' },
+  { id: 'post', label: 'Create', icon: 'plus' },
+  { id: 'give', label: 'Give', icon: 'gift' },
+  { id: 'chat', label: 'Chat', icon: 'chat' },
+  { id: 'profile', label: 'Profile', icon: 'user' },
+]
+
+// Phones: fixed bottom bar (unchanged reachability, now with a real icon set
+// and 12px labels). Desktop: hidden — the sidebar in the shell takes over.
 function Nav({ tab, setTab }) {
-  const items = [
-    ['home', 'home'],
-    ['search', 'search'],
-    ['reels', 'reels'],
-    ['post', 'post'],
-    ['give', 'give'],
-    ['chat', 'chat'],
-    ['profile', 'profile'],
-  ]
   return (
-    // Fixed to the viewport so it can never be scrolled away or mis-tapped.
-    // Warm church bar: deep warm-brown with a soft purple glow above the active tab.
-    <div className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex justify-around items-center border-t border-[#E8DEC9] bg-[#FFFBF0]/97 backdrop-blur" style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgba(124, 58, 237, 0.08)' }}>
-      {items.map(([id]) => (
-        <button key={id} type="button" aria-label={`Open ${id}`} onClick={() => setTab(id)} className="active:opacity-60">
-          <IgIcon name={id} active={tab === id} />
-        </button>
-      ))}
-    </div>
+    <nav
+      aria-label="Primary"
+      className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around border-t border-line bg-surface/95 backdrop-blur lg:hidden"
+      style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgb(var(--accent) / 0.08)' }}
+    >
+      {NAV_ITEMS.map(item => {
+        const active = tab === item.id
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            aria-label={item.label}
+            aria-current={active ? 'page' : undefined}
+            className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-2xs font-semibold transition-colors ${active ? 'text-accent' : 'text-ink-subtle'}`}
+          >
+            <Icon name={item.icon} size={22} strokeWidth={active ? 2.1 : 1.7} />
+            <span>{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+// Desktop-only navigation rail. Static (not fixed) so it never covers content,
+// and it retires the phone layout as the only way to move around the app.
+function Sidebar({ tab, setTab }) {
+  return (
+    <aside className="hidden shrink-0 border-r border-line bg-surface-raised lg:flex lg:w-[248px] lg:flex-col" aria-label="Primary">
+      <div className="flex items-center gap-2.5 px-5 py-5">
+        <img src="/logo.png" alt="" className="h-9 w-9 rounded-xl bg-gold object-contain" />
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-sm font-extrabold text-ink">Harvest Family</p>
+          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-accent">Nyeri</p>
+        </div>
+      </div>
+      <nav className="flex flex-col gap-1 px-3">
+        {NAV_ITEMS.map(item => {
+          const active = tab === item.id
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${active ? 'bg-accent-soft text-accent-strong' : 'text-ink-muted hover:bg-surface-sunken hover:text-ink'}`}
+            >
+              <Icon name={item.icon} size={20} strokeWidth={active ? 2.1 : 1.7} />
+              <span className="truncate">{item.label}</span>
+            </button>
+          )
+        })}
+      </nav>
+      <p className="mt-auto px-5 py-5 text-2xs font-bold uppercase tracking-[0.14em] text-ink-subtle">Compel · Raise · Release</p>
+    </aside>
   )
 }

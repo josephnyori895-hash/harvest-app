@@ -1,3 +1,15 @@
+// One composer for every kind of content a member can publish.
+//
+// The canvas is the preview: type is a compact segmented control, the media
+// fills the stage edge-to-edge, and the caption sits directly under it with the
+// music picker and per-type options. There is no separate "preview" modal —
+// what you see is what posts.
+//
+// Behaviour that must not regress: privilege-gated types, size rejection before
+// the upload starts, image/video adjustment before hand-off, a captured poster
+// for reels, story duration, and the background upload manager owning the
+// transfer so the member can leave the screen.
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
@@ -7,10 +19,13 @@ import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 import VideoAdjuster from './VideoAdjuster'
 
 import ErrorMessage from './ErrorMessage'
-type Props = { onDone: () => void }
+import { Button, Dialog, Icon, Spinner, type IconName } from '../ui'
+type Props = { onDone: () => void; initialType?: ContentType }
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const labels: Record<ContentType, string> = { post: 'Photo post', story: 'Story (24h)', video: 'Reel / clip video', music: 'Worship track', sermon: 'Sermon (MP3/MP4)', announcement: 'Announcement' }
+const shortLabels: Record<ContentType, string> = { post: 'Photo', story: 'Story', video: 'Reel', music: 'Music', sermon: 'Sermon', announcement: 'Notice' }
+const typeIcons: Record<ContentType, IconName> = { post: 'camera', story: 'sparkle', video: 'reels', music: 'music', sermon: 'mic', announcement: 'bell' }
 const hints: Record<ContentType, string> = {
   post: 'A photo with a message for the family',
   story: 'A moment visible for 24 hours',
@@ -19,8 +34,20 @@ const hints: Record<ContentType, string> = {
   sermon: 'Full teaching — members stream or download it',
   announcement: 'Official notice to the whole church',
 }
+const captions: Record<ContentType, string> = {
+  post: 'Write a message for your church family…',
+  story: 'What is happening in this moment?',
+  video: 'Say something about this reel…',
+  music: 'Artist notes (optional)',
+  sermon: 'Short description — what is this teaching about?',
+  announcement: 'Write the official church announcement…',
+}
+const STORY_DURATIONS = [3, 5, 8, 12]
 
-export default function PostCreate({ onDone }: Props) {
+/** Portrait canvas for stories and reels, feed-shaped for photo posts. */
+const stageRatio = (type: ContentType) => (type === 'story' || type === 'video' ? '9 / 16' : '4 / 5')
+
+export default function PostCreate({ onDone, initialType }: Props) {
   const { role, isVerified, isAdmin } = useAuth()
   const user = useMemo(() => ({ role, verified: isVerified }), [role, isVerified])
   // One composer, with options derived from the user's privileges.
@@ -43,15 +70,17 @@ export default function PostCreate({ onDone }: Props) {
         ? ['post', 'story', 'video', 'sermon', 'music']
         : ['post', 'story', 'video', 'music']
       : ['story']
-  const [type, setType] = useState<ContentType>(available[0])
+  const [type, setType] = useState<ContentType>(initialType && available.includes(initialType) ? initialType : available[0])
   const [caption, setCaption] = useState('')
   const [title, setTitle] = useState('')
   const [artist, setArtist] = useState('')
   const [scripture, setScripture] = useState('')
+  const [duration, setDuration] = useState(5)
   const [musicTrack, setMusicTrack] = useState<any | null>(null)
   const [musicResults, setMusicResults] = useState<any[]>([])
   const [musicQuery, setMusicQuery] = useState('')
   const [musicOpen, setMusicOpen] = useState(false)
+  const [musicLoading, setMusicLoading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -59,7 +88,7 @@ export default function PostCreate({ onDone }: Props) {
   const [adjusting, setAdjusting] = useState(false)
   const [videoAdjusting, setVideoAdjusting] = useState(false)
   const [videoCover, setVideoCover] = useState<Blob | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
 
@@ -68,24 +97,44 @@ export default function PostCreate({ onDone }: Props) {
     if (!previewUrl?.startsWith('blob:')) return
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
-  useEffect(() => { if (!musicOpen || type === 'music' || type === 'sermon') return; const q = musicQuery.trim(); if (!q) { setMusicResults([]); return }; const t = setTimeout(() => { fetch(`${API}/api/music?limit=20`).then(r => r.json()).then(d => { const all = Array.isArray(d?.tracks) ? d.tracks : []; setMusicResults(all.filter((x:any) => `${x.title} ${x.artist}`.toLowerCase().includes(q.toLowerCase()))) }).catch(() => setMusicResults([])) }, 250); return () => clearTimeout(t) }, [musicOpen, musicQuery, type])
+
+  useEffect(() => {
+    if (!musicOpen) return
+    // Opening the sheet pulls the church's online library, so the member sees
+    // the catalogue straight away instead of an empty box demanding a search.
+    // Typing then filters that same list locally.
+    const needle = musicQuery.trim().toLowerCase()
+    setMusicLoading(true)
+    const t = setTimeout(() => {
+      fetch(`${API}/api/music?limit=100`)
+        .then(r => r.json())
+        .then(d => {
+          const all = Array.isArray(d?.tracks) ? d.tracks : []
+          setMusicResults(needle ? all.filter((x: any) => `${x.title} ${x.artist}`.toLowerCase().includes(needle)) : all)
+        })
+        .catch(() => setMusicResults([]))
+        .finally(() => setMusicLoading(false))
+    }, needle ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [musicOpen, musicQuery])
 
   const accept = type === 'video' ? 'video/mp4,video/*' : type === 'music' ? 'audio/*' : type === 'sermon' ? '.mp3,.m4a,.aac,.ogg,.wav,.mp4,.webm,.mov,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/wav,video/mp4,video/webm,video/quicktime,video/x-m4v' : 'image/*,video/*'
   const needsFile = type !== 'announcement'
+  const audioOnlyStage = type === 'music' || type === 'sermon'
 
-  const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const f = event.target.files?.[0]
-    if (!f) return
+  const serverTypeOf = (f: File | Blob) => type === 'video' ? 'reel'
+    : type === 'music' ? 'track'
+    : type === 'sermon' ? (f.type.startsWith('video/') ? 'sermon_video' : 'sermon_audio')
+    : type
+
+  const takeFile = (f: File) => {
     // Reject oversized files immediately — before a member waits on a
     // multi-hundred-MB upload that can only fail at presign time.
-    const serverType = type === 'video' ? 'reel'
-      : type === 'music' ? 'track'
-      : type === 'sermon' ? (f.type.startsWith('video/') ? 'sermon_video' : 'sermon_audio')
-      : type
-    const tooBig = uploadTooLarge(serverType, f.size)
-    if (tooBig) { setNotice(tooBig); event.target.value = ''; return }
-    // Photos and videos use the same simple edit-first flow. Videos let the
-    // user choose a cover frame without changing the original video.
+    const tooBig = uploadTooLarge(serverTypeOf(f), f.size)
+    if (tooBig) { setNotice(tooBig); return }
+    setNotice('')
+    // Photos and videos use the same edit-first flow. Videos let the user pick
+    // a cover frame without changing the original video.
     if (f.type.startsWith('image/')) {
       setFile(f)
       setPreviewUrl(URL.createObjectURL(f))
@@ -99,7 +148,19 @@ export default function PostCreate({ onDone }: Props) {
       setFile(f)
       setPreviewUrl(URL.createObjectURL(f))
     }
+  }
+
+  const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const f = event.target.files?.[0]
+    if (f) takeFile(f)
     event.target.value = ''
+  }
+
+  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setDragging(false)
+    const f = event.dataTransfer?.files?.[0]
+    if (f) takeFile(f)
   }
 
   const applyVideoAdjust = (editedFile: File, cover: Blob | null) => {
@@ -113,6 +174,11 @@ export default function PostCreate({ onDone }: Props) {
     setFile(adjusted)
     setPreviewUrl(preview)
     setAdjusting(false)
+  }
+
+  const resetFor = (next: ContentType) => {
+    setType(next); setFile(null); setPreviewUrl(null); setMusicTrack(null)
+    setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice('')
   }
 
   const submit = async () => {
@@ -153,33 +219,30 @@ export default function PostCreate({ onDone }: Props) {
             // The video remains publishable if a device cannot capture a frame.
           }
         }
-        // Sermons: audio vs video is decided by the picked file itself.
-        const serverType = type === 'video' ? 'reel'
-          : type === 'music' ? 'track'
-          : type === 'sermon' ? (file.type.startsWith('video/') ? 'sermon_video' : 'sermon_audio')
-          : type
         const label = labels[type]
         // Hand off to the background manager and close immediately —
         // progress shows in the floating pill while the user keeps browsing.
         void startBackgroundUpload({
           label,
-          successMsg: `${label} shared with the family ✓`,
+          successMsg: type === 'story' ? 'Story shared — visible for 24 hours ✓' : `${label} shared with the family ✓`,
           task: {
-            kind: serverType as any,
+            kind: serverTypeOf(file) as any,
             file,
             caption: caption.trim(),
             title: (type === 'music' || type === 'sermon') ? title.trim() : undefined,
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
             speaker: type === 'sermon' ? artist.trim() || undefined : undefined,
             scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
-            music_track_id: ['post','video','story'].includes(type) ? musicTrack?.id : undefined,
+            music_track_id: ['post', 'video', 'story'].includes(type) ? musicTrack?.id : undefined,
             description: type === 'sermon' ? caption.trim() : undefined,
             cover_key: coverKey,
+            duration_secs: type === 'story' ? duration : undefined,
           },
         }).then(() => onDone()).catch((e: any) => {
-          // Never swallow: a failed hand-off must be visible to the member.
+          // Manager rejects on terminal failure now — the composer stays open,
+          // the member's file + draft remain recoverable for a manual retry.
           setNotice(e?.message || 'Upload could not start — check your connection and try again')
-          onDone()
+          setBusy(false)
         })
       } else {
         onDone()
@@ -190,139 +253,256 @@ export default function PostCreate({ onDone }: Props) {
     }
   }
 
+  const heading = type === 'story' ? 'New story' : type === 'video' ? 'New reel' : type === 'post' ? 'New post' : labels[type]
+
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-[#FFFBF0] text-[#29251F] pb-8">
-      <>
-      <header className="sticky top-0 z-10 flex items-center justify-between px-4 h-16 bg-[#FFFBF0]/95 backdrop-blur border-b border-[#E8DEC9]">
-        <button onClick={onDone} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Close">×</button>
-        <div className="text-center"><p className="text-[11px] uppercase tracking-[0.16em] text-[#766E63]">Harvest Family</p><h1 className="font-extrabold text-base">{isAdmin ? 'Admin studio' : 'Share a moment'}</h1></div>
-        <button disabled={busy || (needsFile && !file)} onClick={() => setShowPreview(true)} className="px-4 py-2 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50 mr-12">Preview</button>
-      </header>
-      {showPreview && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Post preview" onClick={() => setShowPreview(false)}>
-          <div className="w-full max-w-md max-h-[90vh] overflow-auto rounded-3xl bg-[#FFFBF0] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-[#E8DEC9]">
-              <strong className="text-sm">Final preview</strong>
-              <button onClick={() => setShowPreview(false)} className="w-9 h-9 rounded-full bg-white" aria-label="Close preview">×</button>
-            </div>
-            <div className="p-4">
-              {previewUrl && file?.type.startsWith('image/') && (
-                <img src={previewUrl} alt="Post preview" className="mx-auto block w-full max-h-[55vh] object-contain rounded-2xl bg-[#F5EEDF]" />
-              )}
-              {previewUrl && file?.type.startsWith('video/') && (
-                <video src={previewUrl} controls playsInline preload="metadata" className="mx-auto block w-full max-h-[55vh] object-contain rounded-2xl bg-[#F5EEDF]" />
-              )}
-              {caption.trim() && <p className="mt-3 text-sm whitespace-pre-wrap">{caption.trim()}</p>}
-              {musicTrack && (
-                <div className="mt-3 rounded-2xl border border-[#E8DEC9] bg-white p-3">
-                  <p className="text-xs font-bold text-[#5B21B6]">♫ {musicTrack.title}{musicTrack.artist ? ` · ${musicTrack.artist}` : ''}</p>
-                  {musicTrack.preview_url || musicTrack.previewUrl || musicTrack.url ? (
-                    <audio className="mt-2 w-full" controls preload="none" src={musicTrack.preview_url || musicTrack.previewUrl || musicTrack.url} />
-                  ) : <p className="mt-1 text-xs text-[#766E63]">Track selected. An in-app preview is unavailable for this track.</p>}
-                </div>
-              )}
-              {file?.type.startsWith('audio/') && previewUrl && (
-                <div className="mt-3 rounded-2xl border border-[#E8DEC9] bg-white p-3">
-                  <p className="mb-2 text-xs font-bold">Audio file preview</p>
-                  <audio className="w-full" controls preload="metadata" src={previewUrl} />
-                </div>
-              )}
-              {type === 'music' && (
-                <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled track'}{artist.trim() ? ` · ${artist.trim()}` : ''}</p>
-              )}
-              {type === 'sermon' && (
-                <>
-                  <p className="mt-3 text-sm font-bold">{title.trim() || 'Untitled sermon'}</p>
-                  {artist.trim() && <p className="text-xs text-[#766E63]">{artist.trim()}</p>}
-                  {scripture.trim() && <p className="text-xs text-[#766E63]">{scripture.trim()}</p>}
-                </>
-              )}
-              <div className="mt-4 flex gap-2">
-                <button onClick={() => setShowPreview(false)} className="flex-1 py-3 rounded-2xl border border-[#E8DEC9] font-bold text-sm">Keep editing</button>
-                <button onClick={() => { setShowPreview(false); void submit() }} disabled={busy} className="flex-1 py-3 rounded-2xl bg-[#7C3AED] text-white font-bold text-sm disabled:opacity-50">
-                  {busy ? 'Sharing…' : 'Share now'}
-                </button>
-              </div>
-            </div>
-          </div>
+    <main className="flex min-h-[calc(100dvh-72px)] flex-col bg-surface text-ink">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-xl">
+        <div className="flex h-14 items-center gap-2 px-3">
+          <button onClick={onDone} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface-sunken" aria-label="Close composer">
+            <Icon name="close" size={20} />
+          </button>
+          <p className="min-w-0 flex-1 truncate text-base font-extrabold text-ink">{heading}</p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void submit()}
+            loading={busy}
+            disabled={busy || (needsFile && !file) || !canCreate}
+            className="shrink-0 rounded-full px-5"
+          >
+            Share
+          </Button>
         </div>
-      )}
-      <section className="px-4 pt-5 max-w-xl mx-auto">
         {available.length > 1 && (
-          <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
-            <p className="text-xs font-bold text-[#766E63] mb-3">WHAT ARE YOU SHARING?</p>
-            <div className="grid grid-cols-2 gap-2">
-              {available.map(item => (
-                <button key={item} onClick={() => { setType(item); setFile(null); setPreviewUrl(null); setMusicTrack(null); setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setShowPreview(false) }} className={`text-left p-3 rounded-2xl border ${type === item ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>
-                  <span className="block text-sm font-bold">{labels[item]}</span>
-                  <span className="block text-[11px] text-[#766E63] mt-1">{hints[item]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {available.length === 1 && (
-          <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
-            <p className="text-sm font-bold">{labels[type]}</p>
-            <p className="text-[11px] text-[#766E63] mt-1">{hints[type]}</p>
-          </div>
-        )}
-
-        {needsFile && (
-          <div className="mt-3 rounded-3xl bg-white border border-[#E8DEC9] overflow-hidden shadow-sm">
-            {previewUrl ? (
-              <div className="relative bg-[#F5EEDF] max-h-[60vh] min-h-[180px] flex items-center justify-center overflow-hidden">
-                {file?.type.startsWith('video/') ? <video src={previewUrl} controls playsInline preload="metadata" className="w-full max-h-[60vh] object-contain bg-[#F5EEDF]" /> : file?.type.startsWith('audio/') ? <div className="text-center p-6"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div> : <img src={previewUrl} alt="Preview" className="w-full max-h-[60vh] object-contain" />}
-                {file?.type.startsWith('video/') && (
-                  <button onClick={() => setVideoAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-[#141210]/60 text-white text-xs font-bold" aria-label="Edit video">✎ Edit video</button>
-                )}
-                {file?.type.startsWith('image/') && (
-                  <button onClick={() => setAdjusting(true)} className="absolute top-3 left-3 px-3 py-2 rounded-full bg-[#141210]/60 text-white text-xs font-bold" aria-label="Adjust image">✎ Adjust</button>
-                )}
-                <button onClick={() => { setFile(null); setPreviewUrl(null) }} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90" aria-label="Remove media">×</button>
-              </div>
-            ) : (
-              <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center hover:bg-[#FFFBF0]">
-                <span className="w-14 h-14 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-2xl">＋</span>
-                <strong className="mt-3 text-sm">{type === 'music' ? 'Choose an audio file' : type === 'video' ? 'Choose a video' : 'Choose a photo or video'}</strong>
-                <span className="text-xs text-[#766E63] mt-1">{type === 'video' ? 'Up to 100 MB' : type === 'music' ? 'Up to 20 MB' : type === 'sermon' ? 'Audio up to 2 GB · video up to 5 GB' : 'Up to 10 MB'}</span>
+          <div className="flex gap-2 overflow-x-auto px-3 pb-3" role="tablist" aria-label="What are you sharing">
+            {available.map(item => (
+              <button
+                key={item}
+                role="tab"
+                aria-selected={type === item}
+                onClick={() => resetFor(item)}
+                className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-2xs font-extrabold transition ${type === item ? 'border-ink bg-ink text-white' : 'border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
+              >
+                <Icon name={typeIcons[item]} size={14} /> {shortLabels[item]}
               </button>
-            )}
-            <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
+            ))}
+          </div>
+        )}
+      </header>
+
+      <section className="flex-1 pb-6">
+        {/* media stage — the canvas is the preview */}
+        {needsFile && (
+          audioOnlyStage ? (
+            <div className="px-3 pt-3">
+              <button
+                type="button"
+                onClick={() => fileInput.current?.click()}
+                className="flex w-full items-center gap-3 rounded-card border border-line bg-surface-raised p-3 text-left transition hover:bg-surface-sunken"
+              >
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+                  {file ? <Icon name={file.type.startsWith('video/') ? 'reels' : 'music'} size={20} /> : <Icon name="plus" size={22} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-extrabold text-ink">{file ? file.name : type === 'music' ? 'Choose an audio file' : 'Choose an audio or video file'}</span>
+                  <span className="mt-0.5 block text-2xs text-ink-muted">{file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : type === 'music' ? 'Up to 20 MB' : 'Audio up to 2 GB · video up to 5 GB'}</span>
+                </span>
+                {file && <span className="shrink-0 text-2xs font-bold text-accent">Replace</span>}
+              </button>
+              {file && file.type.startsWith('video/') && previewUrl && (
+                <video src={previewUrl} controls playsInline preload="metadata" className="mt-3 max-h-[38vh] w-full rounded-card bg-surface-sunken object-contain" />
+              )}
+              {file && !file.type.startsWith('video/') && previewUrl && (
+                <audio controls preload="metadata" src={previewUrl} className="mt-3 w-full" />
+              )}
+              <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
+            </div>
+          ) : (
+            <div
+              onDragOver={event => { event.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              className={`relative w-full overflow-hidden bg-surface-sunken ${dragging ? 'ring-2 ring-inset ring-accent' : ''}`}
+              style={{ aspectRatio: stageRatio(type), maxHeight: '62vh' }}
+            >
+              {previewUrl ? (
+                <>
+                  {file?.type.startsWith('video/') ? (
+                    <video src={previewUrl} controls playsInline preload="metadata" className="h-full w-full bg-surface-sunken object-contain" />
+                  ) : (
+                    <img src={previewUrl} alt="Selected media preview" className="h-full w-full object-contain" />
+                  )}
+                  <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3">
+                    <button
+                      onClick={() => { setFile(null); setPreviewUrl(null); setVideoCover(null) }}
+                      className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-ink/60 text-white backdrop-blur-sm"
+                      aria-label="Remove media"
+                    >
+                      <Icon name="close" size={18} />
+                    </button>
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-ink/70 to-transparent p-3">
+                    <button
+                      onClick={() => (file?.type.startsWith('video/') ? setVideoAdjusting(true) : setAdjusting(true))}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-2xs font-extrabold text-white backdrop-blur-sm"
+                    >
+                      <Icon name="pencil" size={14} /> {file?.type.startsWith('video/') ? 'Cover & trim' : 'Edit'}
+                    </button>
+                    <button
+                      onClick={() => fileInput.current?.click()}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-2xs font-extrabold text-white backdrop-blur-sm"
+                    >
+                      <Icon name="retry" size={14} /> Replace
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button type="button" onClick={() => fileInput.current?.click()} className="flex h-full w-full flex-col items-center justify-center gap-2 px-6 text-center transition hover:bg-surface-raised">
+                  <span className="grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-card">
+                    <Icon name="plus" size={26} />
+                  </span>
+                  <span className="mt-1 text-sm font-extrabold text-ink">{type === 'video' ? 'Add your reel' : type === 'story' ? 'Add to your story' : 'Add a photo or video'}</span>
+                  <span className="text-2xs text-ink-muted">{type === 'video' ? 'Up to 100 MB' : 'Up to 30 MB · drop a file here'}</span>
+                  <span className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3.5 py-2 text-2xs font-extrabold text-accent-strong">
+                    <Icon name="camera" size={14} /> Choose from device
+                  </span>
+                </button>
+              )}
+              {/* No `capture` hint: Android would jump straight to the camera and
+                  hide the gallery. The picker must offer both. */}
+              <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
+            </div>
+          )
+        )}
+
+        {!needsFile && (
+          <div className="px-3 pt-3">
+            <div className="flex items-start gap-2.5 rounded-card border border-line bg-surface-raised p-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-sunken text-ink-muted"><Icon name="bell" size={17} /></span>
+              <p className="min-w-0 text-2xs leading-relaxed text-ink-muted">{hints[type]}</p>
+            </div>
           </div>
         )}
 
-        <div className="mt-3 p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
-          <label className="text-xs font-bold text-[#766E63]">{type === 'music' ? 'TRACK DETAILS' : type === 'sermon' ? 'SERMON DETAILS' : type === 'announcement' ? 'ANNOUNCEMENT' : 'YOUR MESSAGE'}</label>
-          {type === 'music' && (
-            <div className="mt-2 space-y-2">
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Track title" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-              <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+        {/* caption + options */}
+        <div className="px-3 pt-3">
+          {(type === 'music' || type === 'sermon') ? (
+            <div className="space-y-2">
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'music' ? 'Track title' : 'Sermon title (e.g. The Power of Persistence)'} className="input-base" />
+              <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={type === 'music' ? 'Artist (optional)' : 'Speaker / preacher (optional)'} className="input-base" />
+              {type === 'sermon' && <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="input-base" />}
+              <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder={captions[type]} className="input-base resize-none" />
             </div>
+          ) : (
+            <>
+              <textarea
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                maxLength={2000}
+                rows={3}
+                placeholder={captions[type]}
+                className="w-full resize-none border-0 bg-transparent px-0 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none"
+              />
+              <div className="flex items-center justify-between gap-3 border-t border-line pt-2">
+                <span className={`text-2xs ${caption.length > 1900 ? 'font-bold text-gold-strong' : 'text-ink-subtle'}`}>{caption.length}/2000</span>
+                {['post', 'video', 'story'].includes(type) && (
+                  <button
+                    type="button"
+                    onClick={() => setMusicOpen(true)}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line px-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken"
+                  >
+                    <Icon name="music" size={14} /> {musicTrack ? 'Change music' : 'Add music'}
+                  </button>
+                )}
+              </div>
+            </>
           )}
-          {type === 'sermon' && (
-            <div className="mt-2 space-y-2">
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Sermon title (e.g. The Power of Persistence)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-              <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Speaker / preacher (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-              <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-              <p className="text-[11px] text-[#766E63]">Audio (MP3/M4A) or video (MP4) — up to 2 GB audio / 5 GB video, suitable for full-length services. Members will be able to stream it and download the original file.</p>
-            </div>
-          )}
-          {type !== 'music' && type !== 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} maxLength={2000} rows={type === 'announcement' ? 6 : 4} placeholder={type === 'announcement' ? 'Write the official church announcement…' : type === 'story' ? 'What is happening in this moment?' : 'Share the message with your church family…'} className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
-          {type === 'sermon' && <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Short description (optional) — what is this teaching about?" className="mt-2 w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />}
-          {['post','video','story'].includes(type) && <div className="mt-4 pt-4 border-t border-[#E8DEC9]">
-            <div className="flex items-center justify-between"><label className="text-xs font-bold text-[#766E63]">ADD MUSIC (OPTIONAL)</label><button onClick={() => setMusicOpen(v => !v)} className="text-xs font-bold text-[#7C3AED]">{musicOpen ? 'Close' : 'Choose'}</button></div>
-            {musicTrack && <div className="mt-2 flex items-center gap-3 p-2 rounded-2xl bg-[#F3E8FF]"><div className="w-10 h-10 rounded-xl bg-[#EDE9FE] flex items-center justify-center">🎵</div><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{musicTrack.title}</p><p className="text-[11px] text-[#766E63] truncate">{musicTrack.artist}</p></div><button onClick={() => setMusicTrack(null)} className="text-xs font-bold">×</button></div>}
-            {musicOpen && <div className="mt-2"><input value={musicQuery} onChange={e => setMusicQuery(e.target.value)} placeholder="Search worship music..." className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm" /> <div className="mt-2 max-h-40 overflow-auto space-y-1">{musicResults.map((m:any) => <button key={m.id} onClick={() => { setMusicTrack(m); setMusicOpen(false) }} className="w-full text-left p-3 rounded-xl bg-[#FFFBF0] border border-[#E8DEC9]"><p className="text-xs font-bold">{m.title}</p><p className="text-[11px] text-[#766E63]">{m.artist}</p></button>)}</div></div>}
-          </div>}
-          {!isAdmin && !isVerified && <p className="text-[11px] text-[#766E63] mt-2">Members can share stories. Verification unlocks posts, videos, music and sermons.</p>}
-          {!isAdmin && isVerified && <p className="text-[11px] text-[#766E63] mt-2">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
-        </div>
 
-        {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
+          {musicTrack && ['post', 'video', 'story'].includes(type) && (
+            <div className="mt-2 flex items-center gap-2.5 rounded-card border border-line bg-surface-raised p-2">
+              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent-soft text-accent">
+                {musicTrack.cover_url ? <img src={musicTrack.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-2xs font-extrabold text-ink">{musicTrack.title}</span>
+                <span className="block truncate text-2xs text-ink-muted">{musicTrack.artist}</span>
+              </span>
+              <button onClick={() => setMusicTrack(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Remove music">
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+          )}
+
+          {type === 'story' && (
+            <div className="mt-4">
+              <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-subtle">Story length</p>
+              <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Story length in seconds">
+                {STORY_DURATIONS.map(s => (
+                  <button
+                    key={s}
+                    role="radio"
+                    aria-checked={duration === s}
+                    onClick={() => setDuration(s)}
+                    className={`min-h-10 flex-1 rounded-xl border text-2xs font-extrabold transition ${duration === s ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
+                  >
+                    {s}s
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-2xs text-ink-muted">Photos hold for {duration} seconds, then the next story plays.</p>
+            </div>
+          )}
+
+          {!isAdmin && !isVerified && <p className="mt-3 text-2xs text-ink-muted">Members can share stories. Verification unlocks posts, reels, music and sermons.</p>}
+          {!isAdmin && isVerified && <p className="mt-3 text-2xs text-ink-muted">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
+
+          {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
+        </div>
       </section>
 
-      </>
+      <Dialog open={musicOpen} onClose={() => setMusicOpen(false)} title="Add music" description="Pick a song from the church worship library." size="sm">
+        <input
+          value={musicQuery}
+          onChange={e => setMusicQuery(e.target.value)}
+          placeholder="Search song or artist…"
+          className="input-base"
+          autoFocus
+        />
+        <div className="mt-3 flex items-baseline justify-between gap-2">
+          <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-subtle">Church library</p>
+          {!musicLoading && musicResults.length > 0 && <span className="text-2xs text-ink-muted">{musicResults.length} track{musicResults.length === 1 ? '' : 's'}</span>}
+        </div>
+        <div className="mt-1 max-h-[45vh] space-y-1 overflow-auto">
+          {musicLoading && <p className="flex items-center gap-2 px-1 py-3 text-2xs text-ink-muted"><Spinner size={13} /> Loading the church library…</p>}
+          {!musicLoading && musicResults.length === 0 && (
+            <p className="px-1 py-3 text-2xs text-ink-muted">
+              {musicQuery.trim() ? 'No tracks match that search.' : 'The library is empty — upload a track in the Music tab first.'}
+            </p>
+          )}
+          {musicResults.map((m: any) => {
+            const selected = String(musicTrack?.id) === String(m.id)
+            return (
+              <button
+                key={m.id}
+                onClick={() => { setMusicTrack(m); setMusicOpen(false); setMusicQuery('') }}
+                aria-pressed={selected}
+                className={`flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition ${selected ? 'border-accent bg-accent-wash' : 'border-transparent hover:bg-surface-sunken'}`}
+              >
+                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-sunken text-ink-muted">
+                  {m.cover_url ? <img src={m.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-2xs font-extrabold text-ink">{m.title}</span>
+                  <span className="block truncate text-2xs text-ink-muted">{m.artist}</span>
+                </span>
+                {selected && <Icon name="check" size={16} className="shrink-0 text-accent" />}
+              </button>
+            )
+          })}
+        </div>
+      </Dialog>
+
       {adjusting && file && file.type.startsWith('image/') && (
         <ImageAdjuster
           file={file}

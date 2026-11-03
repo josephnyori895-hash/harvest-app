@@ -203,8 +203,8 @@ export default function ImageAdjuster({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#FFFBF0] flex flex-col" role="dialog" aria-label="Adjust image">
-      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-[#E8DEC9] bg-[#FFFBF0]">
+    <div className="fixed inset-0 z-[60] bg-surface flex flex-col" role="dialog" aria-label="Adjust image">
+      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-line bg-surface">
         <button onClick={onCancel} className="text-sm text-stone-300 px-2 py-2" aria-label="Cancel">✕ Cancel</button>
         <p className="text-sm font-bold text-white">Adjust</p>
         <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-[#C4B5FD] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">Save</button>
@@ -212,7 +212,7 @@ export default function ImageAdjuster({
 
       <div
         ref={viewportRef}
-        className="relative flex-1 overflow-hidden touch-none select-none bg-[#F4E8D0]"
+        className="relative flex-1 overflow-hidden touch-none select-none bg-surface-sunken"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
         style={{ cursor: 'grab' }}
@@ -264,7 +264,7 @@ export default function ImageAdjuster({
         })()}
       </div>
 
-      <div className="shrink-0 border-t border-[#E8DEC9] px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-[#FFFBF0]">
+      <div className="shrink-0 border-t border-line px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-surface">
         <div className="flex items-center gap-3">
           <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍−</span>
           <input

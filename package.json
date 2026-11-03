@@ -13,7 +13,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
     "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs",
-    "test:all": "npm run test:admin && npm run test:security && npm run test:reels && npm run test:posting && npm run test:music && npm run test:chat-media && npm run test:chat-realtime && npm run test:media-bounds && npm run test:feed-music-autoplay && npm run test:stories && npm run test:giving && npm run test:notifications && npm run test:reliability",
+    "test:all": "npm run test:admin && npm run test:security && npm run test:reels && npm run test:posting && npm run test:music && npm run test:chat-media && npm run test:chat-realtime && npm run test:media-bounds && npm run test:feed-music-autoplay && npm run test:stories && npm run test:giving && npm run test:notifications && npm run test:reliability && npm run test:group2-upload && npm run test:ui && npm run test:comments && npm run test:chat-reliability",
     "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs",
     "test:reels": "node scripts/test-reels-regression.mjs",
     "validate:release": "node scripts/validate-release.mjs",
@@ -28,7 +28,11 @@
     "test:media-bounds": "node --test scripts/test-media-bounds.mjs",
     "test:feed-music-autoplay": "node --test scripts/test-feed-music-autoplay.mjs",
     "test:chat-responsive": "node --test scripts/test-chat-responsive.mjs",
-    "test:reliability": "node --test scripts/test-reliability-refresh.mjs"
+    "test:reliability": "node --test scripts/test-reliability-refresh.mjs",
+    "test:group2-upload": "node --test scripts/test-group2-upload.mjs",
+    "test:ui": "node --test scripts/test-ui-system.mjs",
+    "test:comments": "node --test scripts/test-comments-wiring.mjs",
+    "test:chat-reliability": "node --test scripts/test-chat-reliability.mjs"
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.5.2",

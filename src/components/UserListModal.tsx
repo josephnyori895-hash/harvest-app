@@ -38,34 +38,34 @@ export default function UserListModal({ type, userId, users, onBack }: { type: s
   }
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] flex flex-col">
-      <div className="flex items-center gap-3 h-16 border-b border-[#E8DEC9] px-4">
-        <button onClick={onBack} className="w-10 h-10 rounded-full hover:bg-[#F5EEDF] text-xl" aria-label="Back">‹</button>
-        <div><p className="text-[10px] uppercase tracking-widest text-[#766E63]">Harvest Family</p><h1 className="font-bold text-sm capitalize">{type}</h1></div>
-        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-2 py-1 rounded-full font-bold">{filteredUsers.length}</span>
+    <div className="bg-surface text-ink min-h-[70vh] flex flex-col">
+      <div className="flex items-center gap-3 h-16 border-b border-line px-4">
+        <button onClick={onBack} className="w-10 h-10 rounded-full hover:bg-surface-sunken text-xl" aria-label="Back">‹</button>
+        <div><p className="text-[10px] uppercase tracking-widest text-ink-muted">Harvest Family</p><h1 className="font-bold text-sm capitalize">{type}</h1></div>
+        <span className="ml-auto text-xs bg-accent-soft text-accent-strong px-2 py-1 rounded-full font-bold">{filteredUsers.length}</span>
       </div>
 
       {msg && <div role="alert" className="mx-4 mt-2 p-2 rounded-lg bg-rose-100 border border-rose-200 text-xs text-rose-700">{msg}</div>}
 
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {filteredUsers.map((u: any) => (
-          <div key={u.username} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-[#E8DEC9]">
+          <div key={u.username} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-line">
             <div className="flex gap-3 items-center min-w-0">
-              <div className="w-10 h-10 rounded-full bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center text-sm font-bold">{String(u.username)?.[0]?.toUpperCase() || 'H'}</div>
+              <div className="w-10 h-10 rounded-full bg-accent-soft text-accent flex items-center justify-center text-sm font-bold">{String(u.username)?.[0]?.toUpperCase() || 'H'}</div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-[#0F766E]" aria-label="Verified">✓</span>}</p>
-                <p className="text-[11px] text-[#766E63]">@{u.username} · {u.role === 'admin' ? 'Admin' : u.verified ? 'Verified member' : 'Member'}</p>
+                <p className="text-[11px] text-ink-muted">@{u.username} · {u.role === 'admin' ? 'Admin' : u.verified ? 'Verified member' : 'Member'}</p>
               </div>
             </div>
             {isAdmin && u.username !== viewerName && (
               <div className="flex gap-2 shrink-0">
                 <button disabled={busy} onClick={() => handleToggleVerify(u)} className="px-2.5 py-1.5 rounded-full bg-[#E6FFFA] text-[#0F766E] text-[10px] font-bold disabled:opacity-50">{u.verified ? 'Unverify' : 'Verify'}</button>
-                <button disabled={busy} onClick={() => handleToggleAdmin(u)} className="px-2.5 py-1.5 rounded-full bg-[#F3E8FF] text-[#5B21B6] text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Member' : 'Admin'}</button>
+                <button disabled={busy} onClick={() => handleToggleAdmin(u)} className="px-2.5 py-1.5 rounded-full bg-accent-soft text-accent-strong text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Member' : 'Admin'}</button>
               </div>
             )}
           </div>
         ))}
-        {filteredUsers.length === 0 && <p className="text-sm text-[#766E63] text-center py-8">No {type} yet</p>}
+        {filteredUsers.length === 0 && <p className="text-sm text-ink-muted text-center py-8">No {type} yet</p>}
       </div>
     </div>
   )

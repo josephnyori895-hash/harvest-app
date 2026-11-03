@@ -11,14 +11,81 @@
   font-display: swap;
 }
 
-:root { color-scheme: light; }
+/* ── Design tokens ──────────────────────────────────────────────────────────
+   RGB channels so Tailwind's `<alpha-value>` modifiers work (bg-accent/10).
+   Every colour in the product resolves to one of these. Dark mode is a
+   variable swap, not a second stylesheet. */
+:root {
+  color-scheme: light;
+
+  --surface: 255 251 240;         /* cream page */
+  --surface-raised: 255 255 255;  /* cards */
+  --surface-sunken: 245 238 223;  /* wells, chips */
+  --surface-inverse: 41 37 31;
+
+  --ink: 41 37 31;                /* primary text */
+  --ink-muted: 107 98 87;         /* secondary text */
+  --ink-subtle: 139 129 117;      /* tertiary / placeholder */
+  --ink-inverse: 255 255 255;
+
+  --line: 232 222 201;            /* hairline */
+  --line-strong: 217 205 180;
+
+  --accent: 124 58 237;           /* brand purple #7C3AED */
+  --accent-strong: 91 33 182;
+  --accent-soft: 237 233 254;
+  --accent-wash: 245 240 255;
+
+  --gold: 245 158 11;             /* brand amber #F59E0B */
+  --gold-strong: 180 83 9;
+  --gold-soft: 255 251 235;
+
+  --success: 5 150 105;
+  --success-soft: 236 253 245;
+
+  --danger: 185 28 28;
+  --danger-soft: 254 242 242;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface: 24 22 20;
+  --surface-raised: 34 31 28;
+  --surface-sunken: 45 41 37;
+  --surface-inverse: 255 251 240;
+
+  --ink: 244 241 235;
+  --ink-muted: 190 182 170;
+  --ink-subtle: 148 140 128;
+  --ink-inverse: 24 22 20;
+
+  --line: 58 53 47;
+  --line-strong: 78 71 63;
+
+  --accent: 167 139 250;
+  --accent-strong: 196 181 253;
+  --accent-soft: 49 40 74;
+  --accent-wash: 38 32 56;
+
+  --gold: 251 191 36;
+  --gold-strong: 252 211 77;
+  --gold-soft: 48 40 22;
+
+  --success: 52 211 153;
+  --success-soft: 20 43 36;
+
+  --danger: 248 113 113;
+  --danger-soft: 45 24 24;
+}
+
 * { font-family: 'Outfit', 'Inter', system-ui, sans-serif; box-sizing: border-box; }
 html, body, #root { min-height: 100%; width: 100%; }
 html, body { overflow-x: hidden; }
 /* Android edge-to-edge safety: keep normal app content clear of display cutouts.
    Full-bleed media can still use their own viewport when explicitly positioned. */
 #root { padding-left: var(--safe-area-inset-left, env(safe-area-inset-left)); padding-right: var(--safe-area-inset-right, env(safe-area-inset-right)); }
-body { margin: 0; background: #FFFBF0; color: #29251F; }
+body { margin: 0; background: rgb(var(--surface)); color: rgb(var(--ink)); }
 
 @layer base {
   h1,h2,h3,h4 { letter-spacing: -0.02em; }
@@ -26,47 +93,65 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   button,input,textarea,select { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   button:disabled { cursor: not-allowed; }
-  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(124,58,237,.35); outline-offset: 2px; }
+  :focus-visible { outline: 3px solid rgb(var(--accent) / .35); outline-offset: 2px; }
+  /* Honour the OS setting for every animation, not just the create flow. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
   .touch-target { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
-  .text-gradient-warm { @apply bg-gradient-to-r from-amber-600 via-purple-600 to-purple-800 bg-clip-text text-transparent font-bold; }
-  .text-gradient-cool { @apply bg-gradient-to-r from-teal-700 to-purple-700 bg-clip-text text-transparent font-bold; }
-  .text-gradient-worship { @apply bg-gradient-to-r from-amber-500 via-purple-600 to-teal-700 bg-clip-text text-transparent font-bold; }
-  .bg-gradient-church { background: linear-gradient(180deg,#FFFBF0 0%,#F8F1E3 100%); }
-  .bg-gradient-premium { @apply bg-white/90 backdrop-blur-md border border-amber-100; }
-  .bg-card-dark { @apply bg-white border border-stone-200 shadow-sm; }
-  .card-base { @apply rounded-3xl bg-white border border-stone-200 shadow-sm transition-all duration-200; }
-  .card-spiritual { @apply rounded-3xl bg-gradient-to-br from-purple-50 via-white to-amber-50 border border-purple-100 shadow-sm; }
-  .card-elevated { @apply rounded-2xl bg-white border border-stone-200 shadow-md; }
-  .btn-primary { @apply px-5 py-3 bg-purple-700 text-white font-bold rounded-2xl hover:bg-purple-800 transition focus:outline-none focus:ring-2 focus:ring-purple-400; }
-  .btn-primary-lg { @apply px-7 py-4 bg-purple-700 text-white font-bold rounded-2xl hover:bg-purple-800 transition; }
-  .btn-secondary { @apply px-5 py-3 bg-amber-50 border border-amber-200 text-amber-900 font-semibold rounded-2xl hover:bg-amber-100 transition; }
-  .btn-ghost { @apply px-4 py-2 text-purple-700 hover:bg-purple-50 rounded-xl transition; }
-  .btn-sm { @apply px-3 py-1.5 text-xs font-bold rounded-xl bg-purple-100 text-purple-800; }
-  .input-base { @apply w-full px-4 py-3 rounded-2xl bg-white border border-stone-300 text-stone-900 placeholder-stone-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 transition; }
-  .input-premium { @apply w-full px-4 py-3.5 rounded-2xl bg-white border border-stone-200 text-stone-900 placeholder-stone-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-100; }
-  .badge-admin { @apply inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full bg-purple-100 text-purple-800; }
-  .badge-leader { @apply inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full bg-teal-100 text-teal-800; }
-  .badge-member { @apply inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full bg-stone-100 text-stone-700 border border-stone-200; }
-  .badge-verified { @apply inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800; }
-  .badge-worship { @apply inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800; }
-  .spiritual-container { @apply rounded-3xl p-5 bg-white border border-stone-200 shadow-sm; }
-  .harvest-container { @apply rounded-3xl p-5 bg-white border border-stone-200 shadow-sm; }
-  .story-overlay { @apply absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent; }
-  .transition-smooth { @apply transition-all duration-200 ease-out; }
-  .hover-lift { @apply hover:-translate-y-0.5 hover:shadow-md transition; }
-  /* Horizontal scroll strips without a visible scrollbar (Home, Stories). */
-  .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
-  .scrollbar-none::-webkit-scrollbar { display: none; }
-  .skeleton { @apply animate-pulse rounded-xl bg-stone-200; }
-  .skeleton-avatar { @apply w-12 h-12 rounded-2xl bg-stone-200 animate-pulse; }
-  .skeleton-text { @apply h-4 rounded-full bg-stone-200 animate-pulse; }
-  .hf-error-message { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px 12px; border:1px solid #F1D2D5; border-radius:14px; background:#FFF5F5; color:#7F1D1D; }
-  .hf-error-message[data-kind="network"] { border-color:#E7D7B1; background:#FFFBEB; color:#854D0E; }
-  .hf-error-icon { width:22px; height:22px; flex:0 0 22px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#FEE2E2; color:#B91C1C; font-size:13px; font-weight:800; line-height:1; }
-  .hf-error-message[data-kind="network"] .hf-error-icon { background:#FEF3C7; color:#A16207; }
+
+  /* Cards */
+  .card { @apply rounded-card bg-surface-raised border border-line shadow-card; }
+  .card-muted { @apply rounded-card bg-surface-sunken border border-line; }
+  .card-accent { @apply rounded-card bg-accent-wash border border-accent-soft; }
+
+  /* Buttons (legacy names preserved so existing screens inherit the new look) */
+  .btn-primary, .btn-primary-lg {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent font-semibold text-white
+           transition-colors hover:bg-accent-strong disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply px-5 py-3 text-sm; }
+  .btn-primary-lg { @apply px-6 py-3.5 text-base; }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-surface-raised
+           px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-surface-sunken;
+  }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-accent transition-colors hover:bg-accent-soft; }
+  .btn-sm { @apply inline-flex items-center gap-1.5 rounded-lg bg-accent-soft px-3 py-1.5 text-2xs font-bold text-accent-strong; }
+
+  /* Fields */
+  .input-base, .input-premium {
+    @apply w-full rounded-xl border border-line bg-surface-raised px-4 text-ink placeholder:text-ink-subtle
+           transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20;
+  }
+  .input-base { @apply py-3 text-sm; }
+  .input-premium { @apply py-3 text-sm; }
+
+  /* Badges */
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-bold; }
+  .badge-admin, .badge-worship { @apply badge bg-accent-soft text-accent-strong; }
+  .badge-leader, .badge-verified { @apply badge bg-success-soft text-success; }
+  .badge-member { @apply badge border border-line bg-surface-sunken text-ink-muted; }
+
+  .label-caps { @apply text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-muted; }
+  .chip { @apply inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-semibold text-ink-muted; }
+
+  .skeleton { @apply animate-pulse rounded-lg bg-surface-sunken; }
+  .skeleton-avatar { @apply skeleton h-12 w-12 rounded-full; }
+  .skeleton-text { @apply skeleton h-3.5 w-full rounded-full; }
+
+  .hf-error-message { display:flex; align-items:flex-start; gap:10px; width:100%; padding:10px 12px; border:1px solid rgb(var(--danger) / .28); border-radius:14px; background:rgb(var(--danger-soft)); color:rgb(var(--danger)); }
+  .hf-error-message[data-kind="network"] { border-color: rgb(var(--gold) / .35); background: rgb(var(--gold-soft)); color: rgb(var(--gold-strong)); }
+  .hf-error-icon { width:22px; height:22px; flex:0 0 22px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:rgb(var(--danger) / .12); color:rgb(var(--danger)); font-size:12px; font-weight:800; line-height:1; }
+  .hf-error-message[data-kind="network"] .hf-error-icon { background: rgb(var(--gold) / .16); color: rgb(var(--gold-strong)); }
   .hf-error-copy { min-width:0; flex:1; }
   .hf-error-title { margin:0; font-size:13px; line-height:1.25; font-weight:800; color:inherit; }
   .hf-error-text { margin:2px 0 0; font-size:12px; line-height:1.4; font-weight:500; color:inherit; }
@@ -74,8 +159,8 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
 }
 
 ::-webkit-scrollbar { width: 7px; height: 7px; }
-::-webkit-scrollbar-track { background: #F5EEDF; }
-::-webkit-scrollbar-thumb { background: #C4B5A5; border-radius: 999px; }
+::-webkit-scrollbar-track { background: rgb(var(--surface-sunken)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--line-strong)); border-radius: 999px; }
 
 @media (max-width:640px) {
   body { font-size: 16px; }
@@ -98,12 +183,20 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
   100% { transform: scale(1.25) translateY(-30px); opacity: 0; }
 }
 
-
 /* Music chip equalizer bars (playing state on feed posts + worship room). */
 @keyframes eqbar {
   0%, 100% { transform: scaleY(0.45); }
   35% { transform: scaleY(1); }
   65% { transform: scaleY(0.7); }
+}
+
+/* Album-art disc on feed media turns while its track plays. Rotation is paused
+   (not removed) so the cover freezes at its current angle instead of snapping
+   back to the top every time the song stops. */
+@keyframes hfSpin { to { transform: rotate(360deg); } }
+.music-disc-spin { animation: hfSpin 9s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .music-disc-spin { animation: none !important; }
 }
 
 /* Harvest Family creation flow — directional screen motion and state feedback. */
@@ -134,18 +227,6 @@ body { margin: 0; background: #FFFBF0; color: #29251F; }
 .hf-create-success { animation: hfCreateSuccess 220ms cubic-bezier(.22,1,.36,1) both; }
 .hf-create-success-icon { animation: hfCreateSuccessIcon 240ms cubic-bezier(.22,1,.36,1) 40ms both; }
 
-@media (prefers-reduced-motion: reduce) {
-  .hf-create-screen-forward,
-  .hf-create-screen-back,
-  .hf-create-alert,
-  .hf-create-success,
-  .hf-create-success-icon {
-    animation-duration: 1ms !important;
-    animation-delay: 0ms !important;
-  }
-}
-
-
 /* App-wide mobile layout hardening.
    Keep safe-area insets and fixed chrome out of scrollable content, prevent
    flex children from forcing horizontal overflow, and use dynamic viewport
@@ -158,8 +239,7 @@ body { min-height: 100%; overscroll-behavior-x: none; }
 .app-scroll { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
 .app-scroll-bottom-safe { padding-bottom: calc(64px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
 .app-fixed-nav { padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom)); min-height: calc(56px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
-.app-fixed-nav > button { min-width: 44px; min-height: 44px; flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center; }
+.app-fixed-nav > button { flex: 1 1 0; }
 @media (max-width: 640px) {
   .app-fixed-nav { min-height: calc(60px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))); }
-  .app-fixed-nav > button { padding: 8px 2px; }
 }

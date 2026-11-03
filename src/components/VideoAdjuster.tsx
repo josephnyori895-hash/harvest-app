@@ -57,7 +57,7 @@ export default function VideoAdjuster({ file, onCancel, onDone }: Props) {
           {coverUrl && <div className="absolute left-3 bottom-3 rounded-xl overflow-hidden border border-white/30 w-20 aspect-[9/16] pointer-events-none"><img src={coverUrl} alt="" className="w-full h-full object-cover" /></div>}
         </div>
       </main>
-      <section className="shrink-0 border-t border-white/10 bg-[#141210] px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
+      <section className="shrink-0 border-t border-white/10 bg-ink px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="flex items-center justify-between mb-2"><p className="text-xs font-bold">Cover frame</p><span className="text-[11px] text-white/50">{label}</span></div>
         <input type="range" min={0} max={Math.max(duration, 0.01)} step={0.05} value={time} onChange={e => { const t = Number(e.target.value); setTime(t) }} onPointerUp={() => void capture(time)} onKeyUp={() => void capture(time)} className="w-full accent-white" aria-label="Choose video cover frame" />
         <div className="flex items-center justify-between mt-3 gap-2">

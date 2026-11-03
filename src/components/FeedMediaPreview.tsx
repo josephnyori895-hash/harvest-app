@@ -4,8 +4,9 @@
 // single retry path resets whichever leg failed. Media is never stretched.
 import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
+import { Icon } from '../ui'
 
-const MIN_RATIO = 0.5625 // 9:16 — reel-style portrait floor; tighter crops get pushed to the nearest portrait frame
+const MIN_RATIO = 0.8 // 4:5 — the same portrait floor as photos, so feed media is one shape
 const MAX_RATIO = 1.91
 const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
 // iOS Safari (and a few Android WebViews) play HLS natively in <video>;
@@ -48,11 +49,13 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
     const video = event.currentTarget
     if (video.videoWidth > 0 && video.videoHeight > 0) setRatio(video.videoWidth / video.videoHeight)
   }
-  // Constrain the stage to the media's natural ratio. Portrait media should not
-  // sit in a full-width empty stage on desktop; on small screens it fills width.
+  // Constrain the stage to the media's natural ratio, clamped to the same 4:5
+  // window as photos so a post is one shape from top to bottom.
   const boundedRatio = ratio ? clampRatio(ratio) : null
+  // Full-bleed and cropped: the stage spans the column and the video fills it.
+  // No letterbox band, so there is no strip of any colour framing the post.
   const frameStyle = boundedRatio
-    ? { aspectRatio: String(boundedRatio), width: `min(100%, ${Math.round(boundedRatio * 70)}vh)` }
+    ? { aspectRatio: String(boundedRatio), width: '100%' }
     : { width: '100%' }
   const validPoster = Boolean(poster && !posterFailed)
   // Browsers/WebViews can refuse a sound-on play() even after a tap. Retry
@@ -85,7 +88,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
 
   if (playing) {
     return (
-      <div className="relative mx-auto w-full max-h-[70vh] overflow-hidden bg-[#F4E8D0]" style={frameStyle}>
+      <div className="relative w-full max-h-[70vh] overflow-hidden bg-surface-sunken" style={frameStyle}>
         <video
           ref={videoRef}
           src={src}
@@ -96,7 +99,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
           preload="metadata"
           onLoadedMetadata={onMetadata}
           onError={() => setVideoFailed(true)}
-          className="block h-full max-h-[70vh] w-full object-contain"
+          className="block h-full max-h-[70vh] w-full object-cover"
           aria-label="Video playback"
         />
         {videoFailed && (
@@ -111,7 +114,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
 
   return (
     <div
-      className="relative mx-auto w-full max-h-[70vh] overflow-hidden bg-[#F4E8D0] cursor-pointer"
+      className="relative w-full max-h-[70vh] overflow-hidden bg-surface-sunken cursor-pointer"
       style={frameStyle}
       onClick={() => { setVideoFailed(false); setPlaying(true) }}
       role="button"
@@ -120,16 +123,16 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setVideoFailed(false); setPlaying(true) } }}
     >
       {validPoster
-        ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-contain mx-auto" />
+        ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-cover" />
         : <div className="aspect-[4/5] max-h-[70vh] w-full">
             {/* No poster: capture a real frame on a canvas. A bare <video> here
                 painted black (Chromium) or the native play glyph (WebView). */}
             {src
               ? <VideoThumb src={src} className="h-full w-full" />
-              : <div className="flex h-full w-full items-center justify-center text-4xl" aria-label="Video preview unavailable">🎥</div>}
+              : <div className="flex h-full w-full items-center justify-center text-white/60" aria-label="Video preview unavailable"><Icon name="reels" size={34} /></div>}
           </div>}
       <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-2xl text-white shadow-lg">▶</span>
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white shadow-lg"><Icon name="play" size={26} className="fill-current" /></span>
       </span>
     </div>
   )

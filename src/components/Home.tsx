@@ -13,35 +13,37 @@ import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
+import { Icon, Spinner, type IconName } from '../ui'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
 
 // Shared centered-notice dialog scaffold (pastor notices and similar blockers).
-function CenterNotice({ label, icon, kicker = 'bg-gradient-to-br from-violet-100 to-amber-100', title, body, primary, onClose }: {
-  label: string; icon: string; kicker?: string; title: string; body: React.ReactNode; primary: React.ReactNode; onClose: () => void
+function CenterNotice({ label, icon, kicker = 'bg-accent-soft text-accent', title, body, primary, onClose }: {
+  label: string; icon: React.ReactNode; kicker?: string; title: string; body: React.ReactNode; primary: React.ReactNode; onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={onClose} role="dialog" aria-modal="true" aria-label={label}>
-      <div className="w-full max-w-[350px] bg-white rounded-[24px] p-6 text-center shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className={`mx-auto rounded-full ${kicker} flex items-center justify-center w-16 h-16 text-3xl`}>{icon}</div>
-        <h2 className="mt-4 text-center text-base font-extrabold text-stone-900">{title}</h2>
-        <p className="mt-2 text-center text-sm leading-6 text-stone-500">{body}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-6 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label={label}>
+      <div className="w-full max-w-[350px] rounded-[24px] border border-line bg-surface-raised p-6 text-center shadow-raised" onClick={e => e.stopPropagation()}>
+        <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${kicker}`}>{icon}</div>
+        <h2 className="mt-4 text-center text-base font-extrabold text-ink">{title}</h2>
+        <p className="mt-2 text-center text-sm leading-6 text-ink-muted">{body}</p>
         <div className="mt-5 flex flex-col gap-2">
           {primary}
-          <button type="button" onClick={onClose} className="w-full py-3 rounded-full border border-stone-200 text-stone-600 text-sm font-bold">Close</button>
+          <button type="button" onClick={onClose} className="min-h-11 w-full rounded-full border border-line text-sm font-bold text-ink-muted transition hover:bg-surface-sunken">Close</button>
         </div>
       </div>
     </div>
   )
 }
 
-const quickLinks = [
-  { tab: 'pastor', icon: '🙏', title: 'Prayer', text: 'Talk privately with a pastor' },
-  { tab: 'groups', icon: '👥', title: 'Groups', text: 'Find your community' },
-  { tab: 'departments', icon: '🤝', title: 'Departments', text: 'Become a volunteer' },
-  { tab: 'give', icon: '🤲', title: 'Give', text: 'Support the ministry' },
-  { tab: 'music', icon: '🎶', title: 'Worship', text: 'Listen & worship' },
+// One navigation surface, listed once. Prayer lives in the hero CTA and the
+// listen/watch destinations live in the media section, so nothing appears twice.
+const quickLinks: { tab: string; icon: IconName; title: string }[] = [
+  { tab: 'chat', icon: 'chat', title: 'Chats' },
+  { tab: 'groups', icon: 'users', title: 'Groups' },
+  { tab: 'departments', icon: 'building', title: 'Departments' },
+  { tab: 'give', icon: 'gift', title: 'Give' },
 ]
 
 export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
@@ -382,7 +384,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         setLivePosts(ps => ps.map((p: any) => `api_${p.kind}_${p.id}` === key
           ? { ...p, liked: Boolean(data.liked), likes: Number(data.likes) || 0 }
           : p))
-        showToast(data.liked ? 'Added to your gratitude ❤️' : 'Appreciation removed', 'success', 1000)
+        showToast(data.liked ? 'Added to your gratitude' : 'Appreciation removed', 'success', 1000)
       } catch (e: any) {
         setLivePosts(ps => ps.map((p: any) => `api_${p.kind}_${p.id}` === key
           ? { ...p, liked: wasLiked, likes: Number(post.likes) || 0 }
@@ -395,7 +397,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     }
     toggleLikeKey(key)
     setLikesTick(x => x + 1)
-    showToast('Added to your gratitude ❤️', 'success', 1000)
+    showToast('Added to your gratitude', 'success', 1000)
   }
   const toggleSave = async (key: string) => {
     if (!api) return
@@ -415,7 +417,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       })
       if (!res.ok) { revert(); showToast('Could not update Saved — try again', 'error', 1800); return }
-      showToast(wasSaved ? 'Removed from Saved' : 'Saved — find it on your profile 🔖', 'success', 1400)
+      showToast(wasSaved ? 'Removed from Saved' : 'Saved — find it in your profile', 'success', 1400)
     } catch {
       revert()
       showToast('Network problem — could not update Saved', 'error', 1800)
@@ -460,48 +462,48 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     if (dy > 80 && containerRef.current && containerRef.current.scrollTop < 5 && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
   }
 
-  return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-[#FFFBF0] text-[#29251F]">
+  return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-surface text-ink">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {showPastorPicker && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
-        <div className="w-full sm:max-w-lg max-h-[82dvh] overflow-auto bg-white rounded-t-[28px] p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-2xl" onClick={e => e.stopPropagation()}>
-          <div className="w-10 h-1 rounded-full bg-stone-200 mx-auto mb-4" />
-          <div className="flex items-center justify-between gap-3 mb-1">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-violet-600 font-bold">Prayer</p>
-              <h2 className="text-lg font-extrabold text-stone-900">Choose a pastor</h2>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 backdrop-blur-sm" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
+        <div className="max-h-[82dvh] w-full overflow-auto rounded-t-[28px] border-t border-line bg-surface-raised p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-raised sm:max-w-lg sm:rounded-[28px]" onClick={e => e.stopPropagation()}>
+          <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-2xs font-bold uppercase tracking-[0.16em] text-accent">Prayer</p>
+              <h2 className="truncate text-heading font-extrabold text-ink">Choose a pastor</h2>
             </div>
-            <button type="button" onClick={() => setShowPastorPicker(false)} aria-label="Close pastor picker" className="w-10 h-10 rounded-full bg-stone-100 text-stone-600">✕</button>
+            <button type="button" onClick={() => setShowPastorPicker(false)} aria-label="Close pastor picker" className="touch-target shrink-0 rounded-full bg-surface-sunken text-ink-muted transition hover:text-ink"><Icon name="close" size={18} /></button>
           </div>
-          <p className="text-xs text-stone-500 mb-4">Choose someone you'd like to pray with.</p>
+          <p className="mb-4 text-2xs text-ink-muted">Choose someone you'd like to pray with.</p>
           {directoryLoading ? (
             <div className="py-8 text-center" role="status" aria-live="polite">
-              <div className="mx-auto w-8 h-8 rounded-full border-2 border-stone-200 border-t-violet-600 animate-spin" />
-              <p className="mt-3 text-xs font-semibold text-stone-500">Checking pastor availability…</p>
+              <Spinner size={28} className="mx-auto text-accent" />
+              <p className="mt-3 text-2xs font-semibold text-ink-muted">Checking pastor availability…</p>
             </div>
           ) : directoryError && availablePastors.length === 0 ? (
-            <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4">
-              <p className="text-sm font-extrabold text-stone-900">Couldn't load pastors</p>
-              <p className="mt-1 text-xs leading-5 text-stone-500">Check your connection and try again.</p>
-              <button type="button" onClick={onRefreshDirectory} className="mt-3 px-4 py-2 rounded-full bg-violet-600 text-white text-xs font-extrabold">Retry</button>
+            <div className="rounded-2xl border border-line bg-surface-sunken p-4">
+              <p className="text-sm font-extrabold text-ink">Couldn't load pastors</p>
+              <p className="mt-1 text-2xs leading-5 text-ink-muted">Check your connection and try again.</p>
+              <button type="button" onClick={onRefreshDirectory} className="mt-3 inline-flex min-h-10 items-center rounded-full bg-accent px-4 text-2xs font-extrabold text-white">Retry</button>
             </div>
-           ) : !contentLoaded ? (
+          ) : !contentLoaded ? (
             <div className="py-8 text-center" role="status" aria-live="polite">
-              <div className="mx-auto w-8 h-8 rounded-full border-2 border-stone-200 border-t-violet-600 animate-spin" />
-              <p className="mt-3 text-xs font-semibold text-stone-500">Loading pastor support…</p>
+              <Spinner size={28} className="mx-auto text-accent" />
+              <p className="mt-3 text-2xs font-semibold text-ink-muted">Loading pastor support…</p>
             </div>
           ) : effectivePastors.length === 0 ? (
-            <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4 text-center">
-              <p className="text-sm font-extrabold text-stone-900">Pastor support isn't configured yet</p>
-              <p className="mt-1 text-xs leading-5 text-stone-500">You can still ask the Harvest Family to pray with you in Chats.</p>
-              <button type="button" onClick={() => { setShowPastorPicker(false); setShowNoPastor(true) }} className="mt-3 w-full py-2.5 rounded-full bg-violet-600 text-white text-xs font-extrabold">🙏 Ask for prayer in Chats</button>
+            <div className="rounded-2xl border border-line bg-surface-sunken p-4 text-center">
+              <p className="text-sm font-extrabold text-ink">Pastor support isn't configured yet</p>
+              <p className="mt-1 text-2xs leading-5 text-ink-muted">You can still ask the Harvest Family to pray with you in Chats.</p>
+              <button type="button" onClick={() => { setShowPastorPicker(false); setShowNoPastor(true) }} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-2xs font-extrabold text-white"><Icon name="heart" size={15} /> Ask for prayer in Chats</button>
             </div>
           ) : (
             <>
               {availablePastors.length === 0 && (
-                <div className="mb-3 rounded-2xl bg-amber-50 border border-amber-100 p-3">
-                  <p className="text-xs font-extrabold text-amber-900">No pastors are available right now.</p>
-                  <p className="mt-1 text-[11px] leading-5 text-amber-800">The configured pastors haven't joined Harvest yet.</p>
+                <div className="mb-3 rounded-2xl border border-gold/30 bg-gold-soft p-3">
+                  <p className="text-2xs font-extrabold text-gold-strong">No pastors are available right now.</p>
+                  <p className="mt-1 text-2xs leading-5 text-ink-muted">The configured pastors haven't joined Harvest yet.</p>
                 </div>
               )}
               <div className="space-y-2">
@@ -519,15 +521,15 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                         setShowPastorPicker(false)
                         onOpenDm?.({ id: String(pastor.id), username: pastor.username, name: pastor.name || pastor.username })
                       }}
-                      className={`w-full min-h-14 flex items-center gap-3 rounded-2xl border px-3 text-left transition-colors ${pastor ? 'border-stone-200 bg-stone-50 active:bg-stone-100' : 'border-stone-100 bg-stone-50/60 opacity-60 cursor-not-allowed'}`}
+                      className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border px-3 text-left transition-colors ${pastor ? 'border-line bg-surface-sunken hover:bg-accent-wash' : 'cursor-not-allowed border-line bg-surface-sunken/60 opacity-60'}`}
                     >
-                      <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-violet-100 to-amber-100 flex items-center justify-center text-sm font-extrabold text-stone-700">{initials}</div>
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">{initials}</div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-stone-900 truncate">{pastor?.name || entry.username}</p>
-                        <p className="text-[11px] text-stone-500 truncate">@{entry.username}</p>
-                        {!pastor && <p className="text-[10px] font-semibold text-amber-700 mt-0.5">Not on Harvest yet</p>}
+                        <p className="truncate text-sm font-bold text-ink">{pastor?.name || entry.username}</p>
+                        <p className="truncate text-2xs text-ink-muted">@{entry.username}</p>
+                        {!pastor && <p className="mt-0.5 text-2xs font-semibold text-gold-strong">Not on Harvest yet</p>}
                       </div>
-                      {pastor ? <span className="text-violet-600 font-bold" aria-hidden="true">›</span> : <span className="text-[10px] font-bold text-stone-400">Unavailable</span>}
+                      {pastor ? <Icon name="chevron-right" size={16} className="shrink-0 text-accent" /> : <span className="text-2xs font-bold text-ink-subtle">Unavailable</span>}
                     </button>
                   )
                 })}
@@ -539,26 +541,26 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     )}
     {showPastorUnavailable && (
       <CenterNotice
-        label="Pastor unavailable" icon="🙏" title="Pastor isn't on Harvest yet"
+        label="Pastor unavailable" icon={<Icon name="heart" size={26} />} title="Pastor isn't on Harvest yet"
         body={<>@{showPastorUnavailable} hasn't joined the app yet. You can still ask the Harvest Family to pray with you in Chats.</>}
         onClose={() => setShowPastorUnavailable(null)}
-        primary={<button type="button" onClick={() => { setShowPastorUnavailable(null); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>}
+        primary={<button type="button" onClick={() => { setShowPastorUnavailable(null); setTab('chat') }} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-extrabold text-white">Ask for prayer in Chats</button>}
       />
     )}
     {showDirectoryError && (
       <CenterNotice
-        label="Pastor directory unavailable" icon="↯" kicker="bg-stone-100" title="Couldn't load pastors"
+        label="Pastor directory unavailable" icon={<Icon name="alert" size={26} />} kicker="bg-danger-soft text-danger" title="Couldn't load pastors"
         body="Check your connection and try again. We won't assume a pastor hasn't joined when the directory is unavailable."
         onClose={() => setShowDirectoryError(false)}
-        primary={<button type="button" onClick={() => { setShowDirectoryError(false); onRefreshDirectory?.() }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">Retry</button>}
+        primary={<button type="button" onClick={() => { setShowDirectoryError(false); onRefreshDirectory?.() }} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-extrabold text-white">Retry</button>}
       />
     )}
     {showNoPastor && (
       <CenterNotice
-        label="Pastor support unavailable" icon="🙏" title="Pastor support isn't available yet"
+        label="Pastor support unavailable" icon={<Icon name="heart" size={26} />} title="Pastor support isn't available yet"
         body="You can still share a prayer request in Chats — the Harvest Family is ready to pray with you."
         onClose={() => setShowNoPastor(false)}
-        primary={<button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="w-full py-3 rounded-full bg-violet-600 text-white text-sm font-extrabold">🙏 Ask for prayer in Chats</button>}
+        primary={<button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-extrabold text-white">Ask for prayer in Chats</button>}
       />
     )}
     {commentTarget && (
@@ -572,83 +574,97 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       />
     )}
 
-    <header className="sticky top-0 z-20 bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#E8DEC9]">
-      <div className="px-4 py-3 flex items-center justify-between">
-        <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher"><img src="/logo.png" alt="" className="w-10 h-10 rounded-2xl object-contain bg-[#F5F1E8] shadow-sm" /><span><span className="block text-[10px] uppercase tracking-[0.18em] text-[#7C3AED] font-bold">Harvest Family</span><span className="block text-[17px] font-extrabold text-[#29251F] leading-tight">Nyeri</span></span></button>
-        <div className="flex items-center gap-2"><button onClick={() => setTab('chat')} className="w-10 h-10 rounded-2xl bg-white border border-[#E8DEC9]" aria-label="Messages">💬</button>{isAdmin && <button onClick={clearCache} className="w-10 h-10 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9]" aria-label="Clear local cache">🧹</button>}</div>
+    <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
+      {/* pr-14 reserves the footprint of the shell's floating notification bell,
+          so the header's own actions never sit underneath it. */}
+      <div className="flex items-center justify-between gap-2 py-3 pl-4 pr-14">
+        <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher">
+          <img src="/logo.png" alt="" className="h-10 w-10 rounded-2xl border border-line bg-surface-sunken object-contain" />
+          <span>
+            <span className="block text-2xs font-bold uppercase tracking-[0.18em] text-accent">Harvest Family</span>
+            <span className="block truncate text-heading font-extrabold leading-tight text-ink">Nyeri</span>
+          </span>
+        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setTab('music')} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken" aria-label="Songs & worship" title="Songs & worship"><Icon name="music" size={16} />Songs &amp; worship</button>
+        </div>
       </div>
     </header>
 
     <main className="px-4 pb-8">
-      <nav aria-label="Quick actions" className="sticky top-16 z-10 -mx-4 px-4 pt-2 pb-2 bg-[#FFFBF0]/95 backdrop-blur-md border-b border-[#E8DEC9]/60">
+      <nav aria-label="Quick actions" className="sticky top-16 z-10 -mx-4 border-b border-line/60 bg-surface/90 px-4 py-2 backdrop-blur-xl">
         <div className="flex gap-2 overflow-x-auto scrollbar-none">
-          {quickLinks.map(q => <button key={q.tab} onClick={() => q.tab === 'pastor' ? openPastorChat() : setTab(q.tab)} className="shrink-0 px-3.5 py-2 rounded-full bg-white border border-[#E8DEC9] text-[11px] font-extrabold text-[#29251F] shadow-sm whitespace-nowrap"><span className="text-sm">{q.icon}</span> {q.title}</button>)}
+          {quickLinks.map(q => (
+            <button
+              key={q.tab}
+              onClick={() => setTab(q.tab)}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3.5 py-2 text-2xs font-extrabold text-ink transition hover:border-accent/40 hover:text-accent-strong"
+            >
+              <Icon name={q.icon} size={15} className="text-accent" />
+              {q.title}
+            </button>
+          ))}
         </div>
       </nav>
-      <section className="pt-5"><div className="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#5B21B6] via-[#6D28D9] to-[#B45309] text-white p-5 shadow-lg shadow-purple-900/10"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">{heroKicker}</p><h1 className="mt-1 text-[28px] leading-tight font-extrabold text-white">{heroTitle}</h1><p className="mt-2 text-sm leading-5 text-purple-50 max-w-[280px]">{heroSubtitle}</p></div><div className="text-5xl select-none" aria-hidden="true">🌿</div></div><div className="mt-5 flex gap-2"><button onClick={openPastorChat} className="px-4 py-2.5 rounded-xl bg-white text-[#5B21B6] text-xs font-extrabold">Ask for prayer</button><button onClick={() => setTab('groups')} className="px-4 py-2.5 rounded-xl bg-white/15 border border-white/25 text-white text-xs font-bold">Find my group</button></div></div></section>
 
-      <section className="mt-7"><div className="mb-3"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">What’s happening at Harvest</p><h2 className="text-lg font-extrabold">What’s happening</h2></div><div className="grid grid-cols-3 gap-3"><button onClick={() => setTab('chat')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🙏</span><p className="mt-2 font-extrabold text-sm">Chats</p><p className="mt-1 text-[11px] text-[#766E63]">Messages, prayer & announcements.</p></button><button onClick={() => setTab('sermons')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎙</span><p className="mt-2 font-extrabold text-sm">Sermons</p><p className="mt-1 text-[11px] text-[#766E63]">Listen, watch & download.</p></button><button onClick={() => setTab('music')} className="rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm"><span className="text-2xl">🎶</span><p className="mt-2 font-extrabold text-sm">Worship room</p><p className="mt-1 text-[11px] text-[#766E63]">Songs for your week.</p></button></div></section>
+      <section className="pt-4">
+        <div className="overflow-hidden rounded-card bg-gradient-to-br from-accent-strong via-accent to-accent-strong p-4 text-white shadow-raised">
+          <p className="text-2xs font-bold uppercase tracking-[0.18em] text-gold-soft">{heroKicker}</p>
+          <h1 className="mt-1 text-title font-extrabold text-white">{heroTitle}</h1>
+          <p className="mt-1 text-2xs leading-5 text-white/75">{heroSubtitle}</p>
+          {/* The week's verse lives here instead of taking a section of its own. */}
+          <div className="mt-3 rounded-2xl bg-white/10 p-3">
+            <p className="text-caption font-semibold leading-6 text-white">“{verseText}”</p>
+            <p className="mt-1 text-2xs font-semibold text-white/70">{verseRef}</p>
+          </div>
+          <button onClick={openPastorChat} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-2xs font-extrabold text-accent-strong shadow-card"><Icon name="heart" size={15} /> Ask for prayer</button>
+        </div>
+      </section>
 
       <section className="mt-7">
         <div className="mb-3">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Watch & listen</p>
-          <h2 className="text-lg font-extrabold">Media that feeds the soul</h2>
-          <p className="text-xs text-[#766E63] mt-1">Sermons, community videos and worship — real recordings from Harvest Family.</p>
+          <h2 className="text-heading font-extrabold text-ink">Listen &amp; watch</h2>
+          <p className="mt-0.5 text-2xs text-ink-muted">Recordings from Harvest Family.</p>
         </div>
-        <div className="grid gap-3">
-          <button type="button" onClick={() => setTab('sermons')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
-            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎙</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-extrabold text-[#29251F]">Sermons</span>
-              <span className="block text-[11px] text-[#766E63] mt-0.5">Listen & watch</span>
-            </span>
-            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
-          </button>
-          <button type="button" onClick={() => setTab('reels')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
-            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎥</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-extrabold text-[#29251F]">Community videos &amp; reels</span>
-              <span className="block text-[11px] text-[#766E63] mt-0.5">{reelCount} in your feed</span>
-            </span>
-            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
-          </button>
-          <button type="button" onClick={() => setTab('music')} className="flex items-center gap-3 rounded-2xl bg-white border border-[#E8DEC9] p-4 text-left shadow-sm min-h-14">
-            <span className="w-11 h-11 shrink-0 rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] flex items-center justify-center text-xl">🎶</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-extrabold text-[#29251F]">Songs &amp; worship</span>
-              <span className="block text-[11px] text-[#766E63] mt-0.5">Worship room</span>
-            </span>
-            <span className="text-[#A49A8E]" aria-hidden="true">›</span>
-          </button>
+        <div className="grid grid-cols-3 gap-2.5">
+          {([
+            { tab: 'sermons', icon: 'mic', title: 'Sermons', text: 'Listen & watch' },
+            { tab: 'reels', icon: 'reels', title: 'Videos', text: `${reelCount} in feed` },
+            { tab: 'music', icon: 'music', title: 'Worship', text: 'Songs for you' },
+          ] as { tab: string; icon: IconName; title: string; text: string }[]).map(item => (
+            <button key={item.tab} type="button" onClick={() => setTab(item.tab)} className="rounded-2xl border border-line bg-surface-raised px-2 py-3.5 text-center shadow-card transition hover:bg-surface-sunken active:scale-[.99]">
+              <span className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent"><Icon name={item.icon} size={18} /></span>
+              <span className="mt-2 block truncate text-caption font-extrabold text-ink">{item.title}</span>
+              <span className="mt-0.5 block truncate text-2xs text-ink-muted">{item.text}</span>
+            </button>
+          ))}
         </div>
       </section>
 
 
-      <section className="mt-6"><div className="flex items-end justify-between mb-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Stories</p><h2 className="text-lg font-extrabold">Live for 24 hours</h2></div><button onClick={() => setTab('post')} className="text-xs font-extrabold text-[#7C3AED]">+ Add your story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+      <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
-        <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; const firstUnviewed = myStoryGroup.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || myStoryGroup.items[0]).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-stone-300' : 'bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-[#F4E8D0]">{myStoryGroup?.items[0]?.img
+        <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; const firstUnviewed = myStoryGroup.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || myStoryGroup.items[0]).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-surface-sunken">{myStoryGroup?.items[0]?.img
           ? <img src={myStoryGroup.items[0].img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-          : myStoryGroup ? <span className="relative text-lg">🎥</span>
-          : <span className="relative text-sm font-extrabold text-[#5B21B6]">+</span>}
-        </span></span></button><p className="mt-1.5 text-[11px] font-bold truncate max-w-[88px]">Your story</p><p className="text-[10px] text-[#8B8175]">{myStoryGroup ? `${myStoryGroup.items.length} live` : 'Tap to share'}</p></div>
+          : myStoryGroup ? <Icon name="reels" size={22} className="relative text-ink-subtle" />
+          : <Icon name="plus" size={22} className="relative text-accent" />}
+        </span></span></button><p className="mt-1.5 max-w-[88px] truncate text-2xs font-bold text-ink">Your story</p><p className="truncate text-2xs text-ink-subtle">{myStoryGroup ? `${myStoryGroup.items.length} live` : 'Tap to share'}</p></div>
         {/* One ring per person (all their stories play in sequence) */}
-        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); const isVideo = Boolean(first.video); const allViewed = g.items.every((item: any) => viewedStoryIds.has(String(item.id))); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => { const firstUnviewed = g.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || first).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${allViewed ? 'bg-stone-300' : 'bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600'} shadow-sm`} aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-[#FFFBF0] overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]">{hasPhoto
+        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); const isVideo = Boolean(first.video); const allViewed = g.items.every((item: any) => viewedStoryIds.has(String(item.id))); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => { const firstUnviewed = g.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || first).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${allViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft">{hasPhoto
           ? <img src={first.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-          : isVideo ? <span className="relative text-lg">🎥</span>
-          : <span className="relative text-sm font-extrabold text-[#5B21B6]">{g.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span>}
-          </span>{isVideo && hasPhoto && <span className="absolute bottom-1 left-1 w-4 h-4 rounded-full bg-black/60 text-white text-[8px] flex items-center justify-center">▶</span>}{g.items.length > 1 && <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded-full bg-black/60 text-white text-[9px] font-extrabold">×{g.items.length}</span>}
-        </span></button><p className="mt-1.5 text-[11px] font-bold truncate max-w-[88px]">{g.name}</p><p className="text-[10px] text-[#8B8175]">{allViewed ? 'Viewed' : (g.items.length > 1 ? `${g.items.length} stories` : (first.label || 'Story'))}</p></div> })}
-        {storyGroups.length === 0 && <p className="text-sm text-[#8B8175] py-6">No stories yet — be the first to share a moment.</p>}
+          : isVideo ? <Icon name="reels" size={22} className="relative text-ink-subtle" />
+          : <span className="relative text-base font-extrabold text-accent-strong">{g.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span>}
+          </span>{isVideo && hasPhoto && <span className="absolute bottom-1 left-1 grid h-5 w-5 place-items-center rounded-full bg-ink/70 text-white"><Icon name="play" size={10} /></span>}{g.items.length > 1 && <span className="absolute right-1 top-1 rounded-full bg-ink/70 px-1.5 py-0.5 text-2xs font-extrabold text-white">{g.items.length}</span>}
+        </span></button><p className="mt-1.5 max-w-[88px] truncate text-2xs font-bold text-ink">{g.name}</p><p className="truncate text-2xs text-ink-subtle">{allViewed ? 'Viewed' : (g.items.length > 1 ? `${g.items.length} stories` : (first.label || 'Story'))}</p></div> })}
+        {storyGroups.length === 0 && <p className="text-sm text-ink-subtle py-6">No stories yet — be the first to share a moment.</p>}
       </div></section>
 
-      <section className="mt-6"><div className="rounded-2xl bg-[#F4E8D0] border border-[#E8DEC9] p-4"><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-extrabold">This week’s encouragement</p><p className="mt-2 text-base font-bold leading-6 text-[#3D352B]">“{verseText}”</p><p className="mt-2 text-[11px] font-semibold text-[#766E63]">{verseRef}</p></div></section>
-
       {feedLoadFailed && <div className="mt-5"><ErrorMessage message="We couldn’t load the latest community updates." action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} className="text-xs font-bold underline">Retry</button>} /></div>}
+      {liveProjects.length > 0 && (
       <section className="mt-7">
         <div className="mb-3">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-[#B45309] font-bold">Featured in your feed</p>
-          <h2 className="text-lg font-extrabold">Church projects</h2>
-          <p className="text-xs text-[#766E63] mt-1">Sponsored community projects from Harvest Family.</p>
+          <h2 className="text-heading font-extrabold text-ink">Church projects</h2>
+          <p className="mt-0.5 text-2xs text-ink-muted">Shared goals from Harvest Family.</p>
         </div>
         <div className="space-y-3">
           {liveProjects.map((p: any) => {
@@ -660,45 +676,54 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             const barW = pct > 0 ? Math.max(4, pct) : 0
             const daysLeft = project.deadline ? Math.ceil((new Date(project.deadline).getTime() - Date.now()) / 86400000) : null
             const urgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 14
-            return <article key={p.id} className="relative overflow-hidden rounded-[24px] border border-[#D8C7F5] bg-gradient-to-br from-[#FBF8FF] via-white to-[#FFF9ED] shadow-sm">
-              <button type="button" onClick={() => setTab('give')} className="block w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-[#7C3AED] focus:ring-inset" aria-label={`Open sponsored project: ${project.name || p.name}`}>
+            return <article key={p.id} className="relative overflow-hidden rounded-card border border-accent-soft bg-gradient-to-br from-accent-wash via-surface-raised to-gold-soft shadow-card">
+              <button type="button" onClick={() => setTab('give')} className="block w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-inset" aria-label={`Open sponsored project: ${project.name || p.name}`}>
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EDE9FE] px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#5B21B6]">Sponsored · Church project</span>
-                  <span className="text-[11px] font-bold text-[#7C3AED] shrink-0">Learn more →</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-accent-strong">Sponsored · Church project</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-2xs font-bold text-accent">Learn more <Icon name="chevron-right" size={13} /></span>
                 </div>
                 <div className="flex items-start gap-3">
-                  <span className="w-12 h-12 shrink-0 rounded-2xl bg-white border border-[#E8DEC9] flex items-center justify-center text-2xl shadow-sm">{project.icon || '🤲'}</span>
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-accent-soft bg-surface-raised text-accent">{project.icon ? <span className="text-xl">{project.icon}</span> : <Icon name="gift" size={20} />}</span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold text-[16px] leading-5 truncate">{project.name || p.name}</h3>
-                    <p className="mt-1 text-xs leading-5 text-[#5F564B] line-clamp-2">{project.description || p.caption}</p>
+                    <h3 className="truncate text-body font-extrabold leading-5 text-ink">{project.name || p.name}</h3>
+                    <p className="mt-1 line-clamp-2 text-caption leading-5 text-ink-muted">{project.description || p.caption}</p>
                   </div>
                 </div>
-                <div className="mt-4 rounded-2xl bg-white/80 border border-[#E8DEC9] p-3">
-                  <div className="flex items-center justify-between gap-3 text-[11px] font-bold">
+                <div className="mt-4 rounded-2xl border border-line bg-surface-raised p-3">
+                  <div className="flex items-center justify-between gap-3 text-2xs font-bold text-ink">
                     <span>KES {raised.toLocaleString()} raised</span>
                     <span>{pct}% of goal</span>
                   </div>
-                  <div className="mt-2 h-2.5 rounded-full bg-[#F0E9DC] overflow-hidden">
-                    <div className={`h-full rounded-full ${urgent && pct < 100 ? 'bg-gradient-to-r from-[#F59E0B] to-[#B45309]' : 'bg-[#7C3AED]'}`} style={{ width: `${barW}%` }} />
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-line">
+                    <div className={`h-full rounded-full ${urgent && pct < 100 ? 'bg-gradient-to-r from-gold to-gold-strong' : 'bg-accent'}`} style={{ width: `${barW}%` }} />
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[#766E63]">
+                  <div className="mt-2 flex items-center justify-between gap-3 text-2xs text-ink-muted">
                     <span>{Number(project.participants || 0)} participating</span>
-                    {project.deadline ? <span className={urgent ? 'font-bold text-[#B45309]' : ''}>{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? `⏳ ${daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : `Ends ${timeAgo(project.deadline)}`}</span> : <span>Open participation</span>}
+                    {project.deadline ? <span className={`inline-flex items-center gap-1 ${urgent ? 'font-bold text-gold-strong' : ''}`}>{urgent && <Icon name="clock" size={12} />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? (daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`) : `Ends ${timeAgo(project.deadline)}`}</span> : <span>Open participation</span>}
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-[10px] text-[#8B8175]">Support a shared church goal</span>
-                  <span className="inline-flex items-center justify-center rounded-full bg-[#5B21B6] px-4 py-2 text-xs font-extrabold text-white shadow-sm">View project</span>
+                  <span className="text-2xs text-ink-subtle">Support a shared church goal</span>
+                  <span className="inline-flex min-h-9 items-center justify-center rounded-full bg-accent px-4 text-2xs font-extrabold text-white shadow-card">View project</span>
                 </div>
               </button>
             </article>
           })}
-          {liveProjects.length === 0 && <div className="rounded-2xl border border-dashed border-[#D9CEBC] bg-[#FFFCF6] p-4 text-sm text-[#8B8175]">No featured projects right now.</div>}
         </div>
       </section>
+      )}
 
-      <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-[#7C3AED] font-bold">Church life</p><h2 className="text-lg font-extrabold">Community updates</h2></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="shrink-0 mr-11 px-3 py-1.5 rounded-full border border-[#E8DEC9] bg-white text-[10px] font-extrabold text-[#5B21B6] disabled:opacity-40">↻ Refresh</button></div><div className="space-y-5">{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
-        if (p.kind === 'advert') return <div key={String(p.id)}><AdvertCard advert={p} /></div>
+      <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div><div className="-mx-4 divide-y divide-line border-t border-line">{!feedLoaded && !feedLoadFailed && [0, 1].map(i => (
+          <div key={`sk_${i}`} className="bg-surface py-4" aria-hidden="true">
+            <div className="flex items-center gap-2.5 px-3">
+              <div className="skeleton h-8 w-8 rounded-full" />
+              <div className="min-w-0 flex-1"><div className="skeleton h-3 w-1/3 rounded-full" /><div className="skeleton mt-2 h-2.5 w-1/2 rounded-full" /></div>
+            </div>
+            <div className="skeleton mt-3 aspect-[4/3] w-full" />
+            <div className="px-3"><div className="skeleton mt-3 h-3 w-4/5 rounded-full" /></div>
+          </div>
+        ))}{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
+        if (p.kind === 'advert') return <div key={String(p.id)} className="px-4 py-4"><AdvertCard advert={p} /></div>
         const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
         <FeedCard
           key={key}
@@ -716,24 +741,35 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         />
       ) })}</div>
         {feedHasMore && (
-          <button type="button" onClick={() => void loadMoreFeed()} disabled={!api || feedLoadingMore} className="mt-5 w-full min-h-11 rounded-2xl bg-white border border-[#E8DEC9] text-[11px] font-extrabold text-[#5B21B6] disabled:opacity-40">
-            {feedLoadingMore ? 'Loading more…' : 'Load more updates'}
+          <button type="button" onClick={() => void loadMoreFeed()} disabled={!api || feedLoadingMore} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface-raised text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40">
+            {feedLoadingMore ? <><Spinner size={14} /> Loading more…</> : 'Load more updates'}
           </button>
         )}
       </section>
 
-      <div className="pt-8 text-center"><p className="text-[11px] font-bold text-[#8B8175]">Harvest Family Church · Nyeri</p><p className="text-[10px] text-[#A49A8E] mt-1">A place to belong, grow and serve.</p></div>
+      <div className="pt-8 text-center">
+        <p className="text-2xs font-bold text-ink-subtle">Harvest Family Church · Nyeri</p>
+        <p className="mt-1 text-2xs text-ink-subtle">A place to belong, grow and serve.</p>
+        {/* Admin-only maintenance, kept out of the header so it can never read as
+            an action on the content beside it. */}
+        {isAdmin && (
+          <button type="button" onClick={clearCache} className="mt-3 text-2xs font-semibold text-ink-subtle underline underline-offset-2">
+            Clear local cache
+          </button>
+        )}
+      </div>
     </main>
     {menuPost && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
-        <div className="w-full sm:max-w-lg bg-white rounded-t-[28px] p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))]" onClick={e => e.stopPropagation()}>
-          <div className="w-10 h-1 rounded-full bg-[#E8DEC9] mx-auto my-2" />
-          {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="w-full py-3.5 text-center font-bold border-b border-[#F4E8D0] active:bg-[#FAF6EC]">✎ Edit</button> : null}{menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="w-full py-3.5 text-center text-red-600 font-bold border-b border-[#F4E8D0] active:bg-red-50">🗑 Delete</button> : null}
-          <button onClick={() => { const m = menuPost; setMenuPost(null); sharePostToWhatsApp({ author: m.user, caption: m.caption, id: m.id, kind: m.kind }) }} className="w-full py-3.5 text-center text-[#128C4A] font-bold border-b border-[#F4E8D0] active:bg-green-50">↗ Share to WhatsApp</button>
-          <button onClick={() => setMenuPost(null)} className="w-full py-3.5 text-center font-bold text-[#766E63] active:bg-[#FAF6EC]">Cancel</button>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 backdrop-blur-sm" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
+        <div className="w-full rounded-t-[24px] border-t border-line bg-surface-raised p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shadow-raised sm:max-w-lg sm:rounded-[24px]" onClick={e => e.stopPropagation()}>
+          <div className="mx-auto my-2 h-1 w-10 rounded-full bg-line" />
+          {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-ink transition hover:bg-surface-sunken active:bg-surface-sunken"><Icon name="copy" size={17} className="text-ink-muted" /> Edit caption</button> : null}
+          {menuPost.mine || isAdmin ? <button onClick={() => { const m = menuPost; setMenuPost(null); void deleteMedia(m.kind, m.id) }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-danger transition hover:bg-danger-soft active:bg-danger-soft"><Icon name="trash" size={17} /> Delete</button> : null}
+          <button onClick={() => { const m = menuPost; setMenuPost(null); sharePostToWhatsApp({ author: m.user, caption: m.caption, id: m.id, kind: m.kind }) }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-success transition hover:bg-success-soft active:bg-success-soft"><Icon name="share" size={17} /> Share to WhatsApp</button>
+          <button onClick={() => setMenuPost(null)} className="flex min-h-12 w-full items-center justify-center rounded-xl text-sm font-bold text-ink-muted transition hover:bg-surface-sunken active:bg-surface-sunken">Cancel</button>
         </div>
       </div>
     )}
-    {editPost && <SocialEditor kind={editPost.kind} id={editPost.id} caption={editPost.caption || ''} onDone={() => { setEditPost(null); setFeedTick(x => x + 1) }} />} {refreshing && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-[#29251F] text-white text-xs font-bold shadow-xl">Refreshing community…</div>}
+    {editPost && <SocialEditor kind={editPost.kind} id={editPost.id} caption={editPost.caption || ''} onDone={() => { setEditPost(null); setFeedTick(x => x + 1) }} />} {refreshing && <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-ink text-white text-xs font-bold shadow-xl">Refreshing community…</div>}
   </div>
 }

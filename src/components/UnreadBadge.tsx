@@ -18,7 +18,7 @@ export default function UnreadBadge({ count, className = '', ...props }: UnreadB
       {...props}
       role="status"
       aria-label={label}
-      className={`inline-flex min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff3040] text-white text-[9px] leading-none font-extrabold items-center justify-center border-2 border-stone-950 shadow-sm ${className}`}
+      className={`inline-flex min-w-[20px] h-[20px] px-1 rounded-full bg-danger text-white text-2xs leading-none font-extrabold items-center justify-center border-2 border-surface ${className}`}
     >
       {display}
     </span>

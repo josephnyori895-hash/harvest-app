@@ -36,7 +36,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <p className="text-sm text-stone-500 mt-2">Harvest hit an error — your data is safe in local storage.</p>
           {this.state.error && <pre className="text-xs text-left bg-stone-50 border border-stone-200 rounded-xl p-3 mt-4 overflow-auto">{this.state.error.message}</pre>}
           <div className="flex gap-3 mt-6">
-            <button onClick={this.handleReset} className="flex-1 py-3 rounded-full bg-[#7C3AED] text-white font-semibold">Reload</button>
+            <button onClick={this.handleReset} className="flex-1 py-3 rounded-full bg-accent text-white font-semibold">Reload</button>
             <button onClick={this.handleClearCache} className="flex-1 py-3 rounded-full bg-stone-100 text-stone-700 font-semibold border border-stone-200">Clear cache & reload</button>
           </div>
           <p className="text-xs text-stone-400 mt-3">If this repeats, update the app or contact the admin.</p>

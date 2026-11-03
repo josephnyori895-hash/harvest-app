@@ -25,8 +25,11 @@ assert.match(media, /SELECT id FROM reels WHERE hls_master_key=\?/)
 assert.match(media, /SELECT id FROM tracks WHERE original_key=\?/)
 
 // Composer must provide a review step and enforce the same caption limit in
-// the UI before handing work to the background uploader.
-assert.match(postCreate, /Final preview/)
+// the UI before handing work to the background uploader. The review step is the
+// live canvas itself (media + caption + music on one screen) — the old separate
+// "Final preview" modal duplicated it and was removed.
+assert.match(postCreate, /aspectRatio: stageRatio\(type\)/, 'the media canvas is the live preview')
+assert.doesNotMatch(postCreate, /Final preview/, 'no duplicate preview modal')
 assert.match(postCreate, /maxLength=\{2000\}/)
 assert.match(postCreate, /caption\.trim\(\)\.length > 2000/)
 assert.match(postCreate, /startBackgroundUpload/)

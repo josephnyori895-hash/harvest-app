@@ -37,7 +37,7 @@ function HoverPreviewTile({ videoSrc, fallback, ariaLabel, onClick, overlay }: {
     else if (!v.paused) v.pause()
   }, [visible, hot])
   return (
-    <button ref={btnRef} onClick={onClick} onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave} aria-label={ariaLabel} className="aspect-square bg-[#F4E8D0] overflow-hidden relative group">
+    <button ref={btnRef} onClick={onClick} onMouseEnter={enter} onMouseLeave={leave} onFocus={enter} onBlur={leave} aria-label={ariaLabel} className="aspect-square bg-surface-sunken overflow-hidden relative group">
       {videoSrc
         ? <video ref={vidRef} src={videoSrc} className="w-full h-full object-cover" muted loop playsInline preload="metadata" />
         : fallback}
@@ -254,24 +254,24 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   const openPost = (p: any) => { onOpenUser?.({ username: p.username, name: p.name }) }
 
   const SectionTitle = ({ children, count }: { children: React.ReactNode; count: number }) => count > 0 && (
-    <p className="text-xs text-[#8B8175] px-1 mt-4 mb-1 font-bold uppercase tracking-wider">{children} · {count}</p>
+    <p className="text-xs text-ink-subtle px-1 mt-4 mb-1 font-bold uppercase tracking-wider">{children} · {count}</p>
   )
 
   const MemberRow = ({ u }: { u: any }) => (
-    <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
-      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-sm font-bold text-[#5B21B6] border-2 border-white shadow-sm">{String(u.username)[0].toUpperCase()}</div></div>
-      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <span className="w-3 h-3 rounded-full bg-[#0F766E] flex items-center justify-center text-[8px] text-white shrink-0">✓</span>}</p><p className="text-xs text-[#766E63] truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
-      <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
+    <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
+      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-sm font-bold text-accent-strong border-2 border-white shadow-sm">{String(u.username)[0].toUpperCase()}</div></div>
+      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <span className="w-3 h-3 rounded-full bg-[#0F766E] flex items-center justify-center text-[8px] text-white shrink-0">✓</span>}</p><p className="text-xs text-ink-muted truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
+      <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
     </button>
   )
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-2 pb-8">
+    <div className="bg-surface text-ink min-h-[70vh] p-2 pb-8">
       {/* Search bar — pr-14 keeps clear of the fixed notifications bell */}
-      <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 pr-0 mr-14 border border-[#E8DEC9] shadow-sm">
+      <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 pr-0 mr-14 border border-line shadow-sm">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8175" strokeWidth="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" aria-label="Search the church" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-[#A49A8E]" />
-        {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-[#766E63] text-base" aria-label="Clear search">✕</button>}
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" aria-label="Search the church" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-ink-subtle" />
+        {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-ink-muted text-base" aria-label="Clear search">✕</button>}
       </div>
       {/* Screen-reader announcement of result counts as the query changes. */}
       <p aria-live="polite" className="sr-only">{showGrid ? '' : loading ? 'Searching…' : `${totalHits} results found`}</p>
@@ -284,7 +284,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             role="tab"
             aria-selected={filter === f.id}
             onClick={() => setFilter(f.id)}
-            className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${filter === f.id ? 'bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm' : 'bg-white text-[#5C554C] border-[#E8DEC9]'}`}
+            className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${filter === f.id ? 'bg-accent text-white border-accent shadow-sm' : 'bg-white text-ink-muted border-line'}`}
           >
             <span aria-hidden="true" className="mr-1">{f.icon}</span>{f.label}
           </button>
@@ -296,18 +296,18 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {recentSearches.length > 0 && (
             <div className="mt-3">
               <div className="flex items-center justify-between px-1">
-                <p className="text-xs text-[#8B8175] font-bold uppercase tracking-wider">Recent searches</p>
-                <button onClick={clearRecent} className="text-[11px] font-bold text-[#7C3AED] px-2 py-1.5 rounded-full active:bg-[#F4E8D0]" aria-label="Clear recent searches">Clear</button>
+                <p className="text-xs text-ink-subtle font-bold uppercase tracking-wider">Recent searches</p>
+                <button onClick={clearRecent} className="text-[11px] font-bold text-accent px-2 py-1.5 rounded-full active:bg-surface-sunken" aria-label="Clear recent searches">Clear</button>
               </div>
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {recentSearches.map(entry => (
-                  <span key={entry} className="flex items-center gap-0.5 pl-1 pr-1 py-1 rounded-full bg-white border border-[#E8DEC9]">
+                  <span key={entry} className="flex items-center gap-0.5 pl-1 pr-1 py-1 rounded-full bg-white border border-line">
                     <button
                       onClick={() => setQ(entry)}
-                      className="pl-2 pr-1 py-1 rounded-full text-xs font-semibold text-[#29251F] active:bg-[#F4E8D0]"
+                      className="pl-2 pr-1 py-1 rounded-full text-xs font-semibold text-ink active:bg-surface-sunken"
                       aria-label={`Search for ${entry}`}
                     >{entry}</button>
-                    <button onClick={() => removeRecent(entry)} className="w-8 h-8 flex items-center justify-center rounded-full text-[#A49A8E] text-xs" aria-label={`Remove ${entry} from recent searches`}>✕</button>
+                    <button onClick={() => removeRecent(entry)} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-subtle text-xs" aria-label={`Remove ${entry} from recent searches`}>✕</button>
                   </span>
                 ))}
               </div>
@@ -315,7 +315,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           )}
           {filter === 'reels' ? (
             <div className="mt-4">
-              <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Reels • {reelHits.length}</p>
+              <p className="text-xs text-ink-subtle px-1 mb-2 font-bold uppercase tracking-wider">Reels • {reelHits.length}</p>
               {reelHits.length > 0 ? (
                 <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
                   {reelHits.map((r, i) => (
@@ -324,30 +324,30 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                       videoSrc={r.hls_url || undefined}
                       ariaLabel={`Reel by ${r.username}`}
                       onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
-                      fallback={<>{r.thumb_url ? <TileImg src={r.thumb_url} /> : null}{!r.thumb_url && r.hls_url ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : null}{!r.thumb_url && !r.hls_url && <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}</>}
+                      fallback={<>{r.thumb_url ? <TileImg src={r.thumb_url} /> : null}{!r.thumb_url && r.hls_url ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : null}{!r.thumb_url && !r.hls_url && <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}</>}
                       overlay={<span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
                     />
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-[#8B8175] py-6 text-center">No reels yet — be the first to share one.</p>
+                <p className="text-sm text-ink-subtle py-6 text-center">No reels yet — be the first to share one.</p>
               )}
             </div>
           ) : (
           <>
-                    <p className="text-xs text-[#8B8175] px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
+                    <p className="text-xs text-ink-subtle px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
           <div className="mt-2 space-y-1">
             {users.slice(0, 5).map(u => (
-              <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-2 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-xs font-extrabold text-[#5B21B6]">{String(u.username)[0].toUpperCase()}</div>
-                <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{u.name || u.username}</p><p className="text-xs text-[#8B8175] truncate">@{u.username}{u.group_name ? ` • ${u.group_name}` : ''}</p></div>
-                <span className="text-[#7C3AED] text-sm font-bold shrink-0">View</span>
+              <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-2 hover:bg-surface-sunken/60 rounded-2xl text-left">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-xs font-extrabold text-accent-strong">{String(u.username)[0].toUpperCase()}</div>
+                <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{u.name || u.username}</p><p className="text-xs text-ink-subtle truncate">@{u.username}{u.group_name ? ` • ${u.group_name}` : ''}</p></div>
+                <span className="text-accent text-sm font-bold shrink-0">View</span>
               </button>
             ))}
           </div>
           {recentFeed.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs text-[#8B8175] px-1 mb-2 font-bold uppercase tracking-wider">Recent from the community</p>
+              <p className="text-xs text-ink-subtle px-1 mb-2 font-bold uppercase tracking-wider">Recent from the community</p>
               <div className="grid grid-cols-3 gap-[3px] rounded-2xl overflow-hidden">
                 {recentFeed.map((p, i) => (
                   <HoverPreviewTile
@@ -355,7 +355,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                     videoSrc={p.kind === 'reel' && p.hls_url ? p.hls_url : undefined}
                     ariaLabel={`Post by ${p.name || p.username}`}
                     onClick={() => openPost(p)}
-                    fallback={<>{p.thumb_url ? <TileImg src={p.thumb_url} /> : <div className="w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7]" aria-hidden="true">🙏</div>}</>}
+                    fallback={<>{p.thumb_url ? <TileImg src={p.thumb_url} /> : <div className="w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br from-accent-soft to-gold-soft" aria-hidden="true">🙏</div>}</>}
                     overlay={p.kind === 'reel' ? <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span> : null}
                   />
                 ))}
@@ -367,11 +367,11 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
         </>
       ) : (
         <div className="mt-1">
-          {loading && <p className="text-sm text-[#8B8175] text-center py-8">Searching…</p>}
+          {loading && <p className="text-sm text-ink-subtle text-center py-8">Searching…</p>}
           {!loading && failedCorpora.length > 0 && (
             <div role="alert" className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 mt-2 flex items-center gap-3">
               <span className="flex-1">Some results may be missing ({failedCorpora.map(([k]) => k).join(', ')}) — couldn't reach the directory.</span>
-              <button onClick={() => setBump(b => b + 1)} className="shrink-0 px-3 py-2 rounded-full bg-[#7C3AED] text-white text-xs font-bold">Retry</button>
+              <button onClick={() => setBump(b => b + 1)} className="shrink-0 px-3 py-2 rounded-full bg-accent text-white text-xs font-bold">Retry</button>
             </div>
           )}
 
@@ -388,10 +388,10 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'groups') && (
             <div className="space-y-1">
               {(filter === 'all' ? groupHits.slice(0, 3) : groupHits).map(g => (
-                <button key={g.slug || g.id} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-sm font-extrabold text-[#5B21B6] shrink-0">{String(g.name).split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{g.name}{g.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">MEMBER</span>}</p><p className="text-xs text-[#766E63] truncate">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p></div>
-                  <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
+                <button key={g.slug || g.id} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-sm font-extrabold text-accent-strong shrink-0">{String(g.name).split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{g.name}{g.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">MEMBER</span>}</p><p className="text-xs text-ink-muted truncate">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p></div>
+                  <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
               ))}
             </div>
@@ -402,10 +402,10 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'departments') && (
             <div className="space-y-1">
               {(filter === 'all' ? departmentHits.slice(0, 3) : departmentHits).map(d => (
-                <button key={d.slug || d.id} onClick={() => onOpenDepartments?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-[#F3E8FF] flex items-center justify-center text-lg shrink-0">🏛️</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{d.name}{d.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">JOINED</span>}</p><p className="text-xs text-[#766E63] truncate">{d.member_count} serving{d.description ? ` · ${d.description}` : ''}</p></div>
-                  <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
+                <button key={d.slug || d.id} onClick={() => onOpenDepartments?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
+                  <div className="w-10 h-10 rounded-2xl bg-accent-soft flex items-center justify-center text-lg shrink-0">🏛️</div>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{d.name}{d.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">JOINED</span>}</p><p className="text-xs text-ink-muted truncate">{d.member_count} serving{d.description ? ` · ${d.description}` : ''}</p></div>
+                  <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
               ))}
             </div>
@@ -423,7 +423,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                   onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
                   fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
                     ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                    : <div className="w-full h-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
+                    : <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
                   overlay={<>
                     <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
                     <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
@@ -438,10 +438,10 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'sermons') && (
             <div className="space-y-1">
               {(filter === 'all' ? sermonHits.slice(0, 3) : sermonHits).map(s => (
-                <button key={s.id} onClick={() => onOpenSermons?.(String(s.id))} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FEF3C7] flex items-center justify-center text-lg shrink-0">📖</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{s.title}</p><p className="text-xs text-[#766E63] truncate">{[s.speaker, s.scripture, fmtDuration(s.duration_secs)].filter(Boolean).join(' · ') || 'Sermon'}</p></div>
-                  <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">Listen</span>
+                <button key={s.id} onClick={() => onOpenSermons?.(String(s.id))} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
+                  <div className="w-10 h-10 rounded-2xl bg-gold-soft flex items-center justify-center text-lg shrink-0">📖</div>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{s.title}</p><p className="text-xs text-ink-muted truncate">{[s.speaker, s.scripture, fmtDuration(s.duration_secs)].filter(Boolean).join(' · ') || 'Sermon'}</p></div>
+                  <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Listen</span>
                 </button>
               ))}
             </div>
@@ -452,16 +452,16 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
           {(filter === 'all' || filter === 'places') && (
             <div className="space-y-1">
               {(filter === 'all' ? placeHits.slice(0, 4) : placeHits).map(({ kind, item }) => kind === 'member' ? (
-                <button key={`m_${item.username}`} onClick={() => onView(item)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
+                <button key={`m_${item.username}`} onClick={() => onView(item)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
                   <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-lg shrink-0">📍</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name || item.username}</p><p className="text-xs text-[#766E63] truncate">{[item.location, item.group_name || item.group, item.constituency].filter(Boolean).join(' · ')}</p></div>
-                  <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name || item.username}</p><p className="text-xs text-ink-muted truncate">{[item.location, item.group_name || item.group, item.constituency].filter(Boolean).join(' · ')}</p></div>
+                  <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
                 </button>
               ) : (
-                <button key={`g_${item.slug || item.id}`} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-[#F4E8D0]/60 rounded-2xl text-left">
+                <button key={`g_${item.slug || item.id}`} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
                   <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-lg shrink-0">📍</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name}</p><p className="text-xs text-[#766E63] truncate">{[item.location_label, item.community].filter(Boolean).join(' · ')}</p></div>
-                  <span className="text-xs bg-[#F4E8D0] text-[#5B21B6] px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name}</p><p className="text-xs text-ink-muted truncate">{[item.location_label, item.community].filter(Boolean).join(' · ')}</p></div>
+                  <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
               ))}
             </div>
@@ -479,14 +479,14 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             <div className="text-center py-10">
               <div className="text-3xl mb-2">🔍</div>
               <p className="text-sm font-bold">Nothing found for "{q}"</p>
-              <p className="text-xs text-[#8B8175] mt-1">Try another spelling, or search All.</p>
+              <p className="text-xs text-ink-subtle mt-1">Try another spelling, or search All.</p>
             </div>
           )}
           {!loading && filter === 'all' && totalHits === 0 && failedCorpora.length === 0 && (
             <div className="text-center py-10">
               <div className="text-3xl mb-2">🔍</div>
               <p className="text-sm font-bold">Nothing found for "{q}"</p>
-              <p className="text-xs text-[#8B8175] mt-1">Try a member, group, department, reel, sermon or place.</p>
+              <p className="text-xs text-ink-subtle mt-1">Try a member, group, department, reel, sermon or place.</p>
             </div>
           )}
         </div>

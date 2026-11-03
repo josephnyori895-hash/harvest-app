@@ -159,18 +159,18 @@ export default function AdminMedia({ onBack }: Props) {
   const shown = tab === 'upload' ? [] : items.filter(x => x.kind === tab)
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-4">
+    <div className="bg-surface text-ink min-h-[70vh] p-4">
       <div className="flex items-center gap-3 mb-4">
-        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-[#E8DEC9]" aria-label="Back">‹</button>
+        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-line" aria-label="Back">‹</button>
         <div>
           <h1 className="font-extrabold">Media studio</h1>
-          <p className="text-xs text-[#766E63]">Upload · edit · pin · delete anything</p>
+          <p className="text-xs text-ink-muted">Upload · edit · pin · delete anything</p>
         </div>
       </div>
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {(['upload', 'posts', 'reels', 'tracks', 'stories'] as const).map(value => (
-          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
+          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-accent text-white shadow' : 'bg-white border border-line text-ink-muted'}`}>
             {value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
@@ -181,25 +181,25 @@ export default function AdminMedia({ onBack }: Props) {
 
       {tab === 'upload' && (
         <div className="space-y-3 max-w-xl">
-          <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
-            <p className="text-xs font-bold text-[#766E63] mb-3">WHAT ARE YOU PUBLISHING?</p>
+          <div className="p-4 rounded-3xl bg-white border border-line shadow-sm">
+            <p className="text-xs font-bold text-ink-muted mb-3">WHAT ARE YOU PUBLISHING?</p>
             <div className="grid grid-cols-3 gap-2">
               {([['post', '📷 Photo post'], ['reel', '🎬 Reel / sermon'], ['track', '🎵 Worship track']] as const).map(([value, label]) => (
-                <button key={value} onClick={() => { setUpType(value); setFile(null) }} className={`p-3 rounded-2xl border text-sm font-bold ${upType === value ? 'border-[#7C3AED] bg-[#F3E8FF]' : 'border-[#E8DEC9] bg-[#FFFBF0]'}`}>{label}</button>
+                <button key={value} onClick={() => { setUpType(value); setFile(null) }} className={`p-3 rounded-2xl border text-sm font-bold ${upType === value ? 'border-accent bg-accent-soft' : 'border-line bg-surface'}`}>{label}</button>
               ))}
             </div>
           </div>
 
-          <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm">
+          <div className="p-4 rounded-3xl bg-white border border-line shadow-sm">
             {file ? (
-              <div className="relative bg-[#F5EEDF] aspect-[4/3] rounded-2xl overflow-hidden flex items-center justify-center">
+              <div className="relative bg-surface-sunken aspect-[4/3] rounded-2xl overflow-hidden flex items-center justify-center">
                 {file.type.startsWith('video/') ? <video src={URL.createObjectURL(file)} controls className="w-full h-full object-cover" />
                   : file.type.startsWith('audio/') ? <div className="text-center"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div>
                   : <img src={URL.createObjectURL(file)} alt="Preview" className="w-full h-full object-cover" />}
                 <button onClick={() => setFile(null)} className="absolute top-2 right-2 w-10 h-10 rounded-full bg-white/90" aria-label="Remove selected media">×</button>
               </div>
             ) : (
-              <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center rounded-2xl bg-[#FFFBF0] border border-dashed border-[#E8DEC9]">
+              <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center rounded-2xl bg-surface border border-dashed border-line">
                 <span className="text-3xl">＋</span>
                 <span className="text-sm font-bold mt-2">{upType === 'track' ? 'Choose audio' : upType === 'reel' ? 'Choose video' : 'Choose photo'}</span>
               </button>
@@ -207,32 +207,32 @@ export default function AdminMedia({ onBack }: Props) {
             <input ref={fileInput} type="file" accept={upType === 'reel' ? 'video/*' : upType === 'track' ? 'audio/*' : 'image/*'} onChange={e => setFile(e.target.files?.[0] || null)} className="hidden" />
           </div>
 
-          <div className="p-4 rounded-3xl bg-white border border-[#E8DEC9] shadow-sm space-y-2">
+          <div className="p-4 rounded-3xl bg-white border border-line shadow-sm space-y-2">
             {upType === 'track' && (
               <>
-                <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Track title" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
-                <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist (optional)" className="w-full bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" />
+                <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Track title" className="w-full bg-surface border border-line rounded-2xl px-4 py-3 text-sm outline-none focus:border-accent" />
+                <input value={artist} onChange={e => setArtist(e.target.value)} placeholder="Artist (optional)" className="w-full bg-surface border border-line rounded-2xl px-4 py-3 text-sm outline-none focus:border-accent" />
               </>
             )}
-            <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Caption / message…" className="w-full resize-none bg-[#FFFBF0] border border-[#E8DEC9] rounded-2xl p-3 text-sm outline-none focus:border-[#7C3AED]" />
-            <button disabled={upBusy} onClick={() => void doUpload()} className="w-full py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{upBusy ? 'Publishing…' : 'Publish to the church'}</button>
+            <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder="Caption / message…" className="w-full resize-none bg-surface border border-line rounded-2xl p-3 text-sm outline-none focus:border-accent" />
+            <button disabled={upBusy} onClick={() => void doUpload()} className="w-full py-3 rounded-2xl bg-accent text-white text-sm font-bold disabled:opacity-50">{upBusy ? 'Publishing…' : 'Publish to the church'}</button>
           </div>
         </div>
       )}
 
       {tab !== 'upload' && (
-        loading ? <p className="text-sm text-[#766E63] text-center py-10">Loading…</p>
-          : shown.length === 0 ? <p className="text-sm text-[#766E63] text-center py-10">Nothing here yet.</p>
+        loading ? <p className="text-sm text-ink-muted text-center py-10">Loading…</p>
+          : shown.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">Nothing here yet.</p>
             : shown.map(item => (
-              <div key={`${item.kind}-${item.id}`} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 mb-3 shadow-sm">
+              <div key={`${item.kind}-${item.id}`} className="bg-white border border-line rounded-3xl p-4 mb-3 shadow-sm">
                 <div className="flex gap-3">
-                  {item.preview_url && <img src={item.preview_url} alt="" className="w-16 h-16 rounded-2xl object-cover bg-[#F5EEDF]" />}
+                  {item.preview_url && <img src={item.preview_url} alt="" className="w-16 h-16 rounded-2xl object-cover bg-surface-sunken" />}
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-[#766E63]">@{item.username} · {timeAgo(item.created_at)}</p>
+                    <p className="text-xs text-ink-muted">@{item.username} · {timeAgo(item.created_at)}</p>
                     {editing === item.id ? (
                       <div className="mt-1 flex gap-2">
-                        <input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-1.5 text-sm outline-none focus:border-[#7C3AED]" />
-                        <button disabled={busy === item.id} onClick={() => void saveEdit(item)} className="px-3 rounded-xl bg-[#7C3AED] text-white text-xs font-bold">Save</button>
+                        <input value={editText} onChange={e => setEditText(e.target.value)} className="flex-1 bg-surface border border-line rounded-xl px-3 py-1.5 text-sm outline-none focus:border-accent" />
+                        <button disabled={busy === item.id} onClick={() => void saveEdit(item)} className="px-3 rounded-xl bg-accent text-white text-xs font-bold">Save</button>
                       </div>
                     ) : (
                       <p className="text-sm font-semibold truncate">{item.kind === 'tracks' ? `${item.title || 'Untitled'}${item.artist ? ` — ${item.artist}` : ''}` : (item.caption || 'No caption')}</p>
@@ -240,9 +240,9 @@ export default function AdminMedia({ onBack }: Props) {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-3 flex-wrap">
-                  <button disabled={busy === item.id} onClick={() => { setEditing(item.id); setEditText(item.kind === 'tracks' ? (item.title || '') : (item.caption || '')) }} className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#F5EEDF] border border-[#E8DEC9]">Edit</button>
+                  <button disabled={busy === item.id} onClick={() => { setEditing(item.id); setEditText(item.kind === 'tracks' ? (item.title || '') : (item.caption || '')) }} className="px-3 py-1.5 rounded-full text-xs font-bold bg-surface-sunken border border-line">Edit</button>
                   {(item.kind === 'posts' || item.kind === 'reels') && (
-                    <button disabled={busy === item.id} onClick={() => void togglePin(item)} className={`px-3 py-1.5 rounded-full text-xs font-bold ${item.is_pinned ? 'bg-[#7C3AED] text-white' : 'bg-[#F5EEDF] border border-[#E8DEC9]'}`}>{item.is_pinned ? '📌 Pinned' : 'Pin'}</button>
+                    <button disabled={busy === item.id} onClick={() => void togglePin(item)} className={`px-3 py-1.5 rounded-full text-xs font-bold ${item.is_pinned ? 'bg-accent text-white' : 'bg-surface-sunken border border-line'}`}>{item.is_pinned ? '📌 Pinned' : 'Pin'}</button>
                   )}
                   <button disabled={busy === item.id} onClick={() => void remove(item)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">Delete</button>
                 </div>

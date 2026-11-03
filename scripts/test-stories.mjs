@@ -33,7 +33,11 @@ test('composer decorations are BURNED INTO the image at submit (never preview-on
 })
 
 test('video stories hide decoration controls (cannot burn into video without re-encode)', () => {
-  assert.match(stories, /fileUrl && !isVideoFile && <div className="px-4 pb-2 bg-white border-t border-stone-200"><button onClick=\{\(\) => \{ setShowStickers/)
+  // The tool rail drops the photo-only tools for a video pick, and the filter
+  // panel is gated on !isVideoFile, so nothing offers an effect that the
+  // submit path cannot bake in.
+  assert.match(stories, /showFilters && !isVideoFile/)
+  assert.match(stories, /\.filter\(t => !\(isVideoFile && t\.photoOnly\)\)/)
   assert.match(stories, /new picks reset decorations|setFilter\('Original'\); setTextOverlay\(''\); setStickers\(\[\]\)/)
 })
 

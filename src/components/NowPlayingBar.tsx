@@ -20,7 +20,7 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
   }
   return (
     <div className="fixed left-0 right-0 z-40 px-3" style={{ bottom: 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 58px)' }}>
-      <div className="mx-auto max-w-lg rounded-2xl bg-[#29251F] text-[#FFFBF0] shadow-2xl border border-[#3E362C] px-3 py-2" role="group" aria-label="Now playing">
+      <div className="mx-auto max-w-lg rounded-2xl bg-ink text-surface shadow-2xl border border-[#3E362C] px-3 py-2" role="group" aria-label="Now playing">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -38,7 +38,7 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
             type="button"
             onClick={() => void togglePlay()}
             aria-label={player.playing ? 'Pause' : 'Play'}
-            className="w-9 h-9 shrink-0 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white flex items-center justify-center font-bold"
+            className="w-9 h-9 shrink-0 rounded-full bg-accent hover:bg-accent-strong text-white flex items-center justify-center font-bold"
           >
             {player.playing ? '⏸' : '▶'}
           </button>
@@ -58,7 +58,7 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
           onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seekToFraction((e.clientX - r.left) / r.width) }}
           className="mt-2 h-1 rounded-full bg-[#3E362C] overflow-hidden cursor-pointer"
         >
-          <div className="h-full rounded-full bg-gradient-to-r from-[#F59E0B] to-[#7C3AED]" style={{ width: `${pct}%` }} />
+          <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: `${pct}%` }} />
         </div>
       </div>
     </div>

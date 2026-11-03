@@ -31,3 +31,17 @@ test('Give screen shows a whole-KES pending amount in the ledger (not just a cou
   assert.match(giveUi, /KES \{Number\(adminData\?\.totals\?\.pending_kes\|\|0\)\.toLocaleString\(\)/)
   assert.match(giveUi, /awaiting M-Pesa/)
 })
+
+test('RS-105: STK polling survives past 120 s and re-checks when the tab returns', () => {
+  assert.doesNotMatch(giveUi, /setTimeout\(\(\) => setPollingId\(null\), 120_000\)/, 'the fixed 120 s cut-off must be gone')
+  assert.match(giveUi, /document\.addEventListener\('visibilitychange', onVisible\)/)
+  assert.match(giveUi, /if \(tx && tx\.status !== 'pending'\)/)
+  assert.match(giveUi, /Date\.now\(\) - startedAt < 60_000 \? 4000 : 15_000/, 'poll backs off instead of stopping')
+})
+
+test('RS-106: a failed giving-history load is surfaced with a retry', () => {
+  assert.doesNotMatch(giveUi, /fetchMyGiving\(\)\.then\(setTransactions\)\.catch\(\(\) => \{\}\)/, 'silent swallow must be gone')
+  assert.match(giveUi, /setHistoryError\(e instanceof Error \? e\.message/)
+  assert.match(giveUi, /Could not load your giving history\./)
+  assert.match(giveUi, /onClick=\{\(\) => void loadMyGiving\(\)\}/)
+})

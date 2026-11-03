@@ -40,7 +40,9 @@ test('5. Reels consumes harvest:feed-updated → reels refetch', () => {
 
 test('6. Sermons consumes harvest:sermons-updated → list refetch', () => {
   assert.match(sermons, /addEventListener\('harvest:sermons-updated' as any, bump\)/)
-  assert.match(sermons, /const bump = \(\) => \{ load\(\) \}/)
+  // Silent refetch: an upload landing must never blank the list the member is
+  // already reading (see test-group2-upload for the same contract).
+  assert.match(sermons, /const bump = \(\) => \{ void load\(true, \{ limit: PAGE \}\) \}/)
   assert.match(sermons, /\}, \[load\]\)/)
 })
 
@@ -53,9 +55,9 @@ test('8. Chat clears the retry file on every success path', () => {
   assert.ok((chat.match(/failedFileRef\.current = null/g) || []).length >= 2, 'REST and socket success paths both clear the ref')
 })
 
-test('9. Chat retry resends with the preserved file — never a bare text 	📷 message', () => {
-  assert.match(chat, /void send\(body, file\)/)
-  assert.match(chat, /const send = async \(bodyOverride\?: string, fileOverride\?: File \| null\) =>/)
+test('9. Chat retry resends with the preserved file — never a bare text placeholder', () => {
+  assert.match(chat, /void send\(body, file, `chat_/)
+  assert.match(chat, /const send = async \(bodyOverride\?: string, fileOverride\?: File \| null, idempotencyKey\?: string\) =>/)
   assert.match(chat, /const attach = fileOverride !== undefined \? fileOverride : attachRef\.current/)
 })
 

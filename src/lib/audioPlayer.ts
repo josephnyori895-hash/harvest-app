@@ -38,12 +38,12 @@ export const audioAutoplayReady = (): boolean => audioUnlocked
 export const markAudioUnlocked = (): void => { audioUnlocked = true }
 /** True when a global (worship / sermon) track currently owns the audio element. */
 export const isGlobalPlayerPlaying = (): boolean => Boolean(state.track && state.playing)
-/** Member-level feed autoplay opt-in. Off by default — the first-use control sets it. */
-// Member-level feed autoplay opt-in. Off by default — the first-use control sets
-// it. Persisted: the choice must survive reloads and app restarts.
+/** Member-level feed autoplay. On by default, like a feed app: attached music
+ *  previews itself while you scroll. Pausing the disc is the mute, stored as
+ *  '0' so the choice survives reloads and app restarts. */
 const FEED_AUTOPLAY_KEY = 'harvest_feed_autoplay'
 let feedAutoplayPref = (() => {
-  try { return (typeof localStorage !== 'undefined' && localStorage.getItem(FEED_AUTOPLAY_KEY)) === '1' } catch { return false }
+  try { return typeof localStorage !== 'undefined' ? localStorage.getItem(FEED_AUTOPLAY_KEY) !== '0' : true } catch { return true }
 })()
 export const getFeedAutoplayPref = (): boolean => feedAutoplayPref
 export const setFeedAutoplayPref = (v: boolean): void => {

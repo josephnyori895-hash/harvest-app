@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
+import { Icon } from '../ui'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Comment = {
@@ -9,9 +10,18 @@ type Comment = {
   likes?: number; liked?: boolean; parent_id?: string | null
 }
 
-// Inline comments sheet (posts + reels) on post_comments. Members can like
-// comments and reply one level deep — parity with the common social pattern,
-// rendered in the app's cream style.
+const initials = (name: string) => {
+  const parts = String(name || '?').replace(/^@/, '').split(/[\s._-]+/).filter(Boolean)
+  const out = parts.map(p => p[0]).slice(0, 2).join('').toUpperCase()
+  return out || '?'
+}
+
+// Comments sheet for posts and reels, on post_comments.
+//
+// Row grammar follows a feed comment: avatar, "username body", a quiet meta
+// line (time · likes · Reply), and the reaction on the right edge. One level of
+// replies nests under its parent. Members can react and reply; authors and
+// admins can delete. The composer is pinned above the safe area.
 export default function Comments({
   scope,
   postId,
@@ -20,7 +30,7 @@ export default function Comments({
   onCountChange,
   onClose,
 }: {
-  scope: 'post' | 'reel'
+  scope: 'post' | 'reel' | 'sermon'
   postId: string | number
   me: string
   isAdmin: boolean
@@ -62,8 +72,8 @@ export default function Comments({
 
   useEffect(() => { void load() }, [load])
 
-  // Show parents NEWEST FIRST (IG-style) with each reply nested directly under
-  // its parent, replies kept in chronological order under the parent.
+  // Show parents NEWEST FIRST with each reply nested directly under its parent,
+  // replies kept in chronological order under the parent.
   const grouped = (() => {
     const parents: Comment[] = comments.filter(c => !c.parent_id)
     const byParent: Record<string, Comment[]> = {}
@@ -88,7 +98,6 @@ export default function Comments({
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data?.comment) {
-        // Newest-first list: a fresh comment takes the top slot immediately.
         setComments(prev => [data.comment as Comment, ...prev])
         setText('')
         setReplyTo(null)
@@ -139,7 +148,6 @@ export default function Comments({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || `Could not delete comment (${res.status})`)
     } catch (e: any) {
-      setComments(c => c) /* re-render only */
       void load()
       setRemoveError(e?.message || 'Could not delete comment — try again')
     }
@@ -148,60 +156,98 @@ export default function Comments({
   const startReply = (c: Comment) => {
     const target = c.parent_id ? comments.find(x => x.id === c.parent_id) || c : c
     setReplyTo(target)
-    setText(prev => prev) /* keep draft */
     setSendError('')
     requestAnimationFrame(() => inputRef.current?.focus())
   }
 
-  const Row = ({ c, nested = false }: { c: Comment; nested?: boolean }) => (
-    <div className={`flex gap-2.5 ${nested ? 'ml-8' : ''}`}>
-      <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-br from-[#EDE9FE] to-[#FEF3C7] flex items-center justify-center text-[10px] font-extrabold text-[#5B21B6]">
-        {String(c.username).charAt(0).toUpperCase()}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs">
-          <span className="font-extrabold text-[#29251F]">{c.username}</span>
-          {c.verified && <span className="ml-1 text-[#0F766E]">✓</span>}
-          <span className="ml-2 text-[#8B8175]">{timeAgo(c.created_at)}</span>
-        </p>
-        <p className="text-sm text-[#4B433A] break-words">{c.body}</p>
-        <div className="mt-0.5 -ml-1 flex items-center gap-1 text-[11px] text-[#766E63]">
-          <button
-            type="button"
-            onClick={() => void toggleLike(c)}
-            disabled={!!busyLike[c.id]}
-            className={`min-w-9 min-h-7 px-2 rounded-full font-bold active:scale-95 transition disabled:opacity-50 ${c.liked ? 'text-[#B45309]' : 'text-[#766E63]'}`}
-            aria-pressed={!!c.liked}
-            aria-label={c.liked ? 'Unlike comment' : 'Like comment'}
-          >{c.liked ? '♥' : '♡'}{c.likes ? ` ${c.likes}` : ''}</button>
-          <button type="button" onClick={() => startReply(c)} className="min-h-7 px-2 rounded-full font-bold hover:bg-[#F5F1E8]" aria-label={`Reply to ${c.username}`}>Reply</button>
+  const Row = ({ c, nested = false }: { c: Comment; nested?: boolean }) => {
+    const mine = c.username === me
+    return (
+      <div className={`flex items-start gap-2.5 ${nested ? 'ml-9' : ''}`}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+          {initials(c.username)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm leading-5 text-ink">
+            <span className="font-extrabold">{c.username}</span>
+            {c.verified && (
+              <span role="img" aria-label="Verified account" className="ml-1 inline-grid h-[13px] w-[13px] translate-y-[-1px] place-items-center rounded-full bg-accent text-white">
+                <Icon name="check" size={8} strokeWidth={3.2} />
+              </span>
+            )}
+            <span className="ml-1.5 break-words text-ink-muted">{c.body}</span>
+          </p>
+          <div className="mt-1 flex items-center gap-3 text-2xs text-ink-subtle">
+            <span>{timeAgo(c.created_at)}</span>
+            {Number(c.likes) > 0 && <span>{Number(c.likes)} like{Number(c.likes) === 1 ? '' : 's'}</span>}
+            <button type="button" onClick={() => startReply(c)} className="min-h-7 font-extrabold text-ink-muted" aria-label={`Reply to ${c.username}`}>Reply</button>
+            {(isAdmin || mine) && (
+              <button type="button" onClick={() => void remove(c.id)} className="ml-auto grid h-7 w-7 place-items-center rounded-full text-ink-subtle transition hover:text-danger" aria-label="Delete comment">
+                <Icon name="trash" size={13} />
+              </button>
+            )}
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => void toggleLike(c)}
+          disabled={!!busyLike[c.id]}
+          className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full transition active:scale-90 disabled:opacity-50"
+          aria-pressed={!!c.liked}
+          aria-label={c.liked ? `Unlike comment by ${c.username}` : `Like comment by ${c.username}`}
+        >
+          <Icon name="heart" size={15} strokeWidth={c.liked ? 2.4 : 1.7} className={c.liked ? 'fill-current text-danger' : 'text-ink-subtle'} />
+        </button>
       </div>
-      {(isAdmin || c.username === me) && (
-        <button onClick={() => remove(c.id)} className="shrink-0 self-start min-w-9 min-h-9 text-[11px] text-[#B45309] font-bold px-2 rounded-lg" aria-label="Delete comment">🗑</button>
-      )}
-    </div>
-  )
+    )
+  }
+
+  const total = comments.length
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={onClose} role="dialog" aria-label="Comments">
-      <div className="comments-sheet w-full sm:max-w-lg bg-[#FFFBF0] rounded-t-[28px] max-h-[min(75dvh,680px)] min-h-0 flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-4 pt-3 pb-2 border-b border-[#E8DEC9] flex items-center justify-between shrink-0">
-          <div className="w-10 h-1 rounded-full bg-[#E8DEC9] absolute left-1/2 -translate-x-1/2 top-2" />
-          <p className="text-sm font-extrabold mx-auto">Comments</p>
-          {/* 44px tap target (audit #10) — was 28px, thumbs kept missing it */}
-          <button onClick={onClose} className="absolute -right-1 -top-1 w-12 h-12 flex items-center justify-center text-[#766E63]" aria-label="Close comments"><span className="w-9 h-9 rounded-full bg-[#F4E8D0] flex items-center justify-center text-sm font-bold">✕</span></button>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-label="Comments">
+      <div
+        className="comments-sheet flex max-h-[min(82dvh,720px)] w-full min-h-0 flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-raised sm:max-w-lg sm:rounded-3xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="relative shrink-0 border-b border-line px-3 pb-2 pt-2">
+          <span className="mx-auto mb-1.5 block h-1 w-10 rounded-full bg-line sm:hidden" />
+          <div className="flex items-center gap-2">
+            <p className="flex-1 text-center text-sm font-extrabold text-ink">
+              Comments{total > 0 && <span className="ml-1.5 text-2xs font-bold text-ink-subtle">{total}</span>}
+            </p>
+            <button onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Close comments">
+              <Icon name="close" size={18} />
+            </button>
+          </div>
         </div>
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-4">
-          {loading && <p className="text-xs text-[#8B8175] text-center py-6">Loading comments…</p>}
-          {!loading && !loadError && comments.length === 0 && (
-            <div className="text-center py-10">
-              <div className="text-3xl mb-2">💬</div>
-              <p className="text-sm font-bold">No comments yet</p>
-              <p className="text-xs text-[#8B8175] mt-1">Be the first to encourage someone.</p>
+
+        <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-3">
+          {loading && (
+            <div className="space-y-4" aria-label="Loading comments">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <div className="skeleton h-8 w-8 shrink-0 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="skeleton h-2.5 w-1/3 rounded-full" />
+                    <div className="skeleton h-2.5 w-4/5 rounded-full" />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-          {!loading && loadError && <ErrorMessage message={loadError} action={<button type="button" onClick={() => void load()} className="text-xs font-bold underline">Retry</button>} />}
+          {!loading && loadError && (
+            <ErrorMessage message={loadError} action={<button type="button" onClick={() => void load()} className="text-2xs font-extrabold underline">Retry</button>} />
+          )}
+          {!loadError && comments.length === 0 && !loading && (
+            <div className="flex flex-col items-center px-4 py-10 text-center">
+              <span className="mb-2 grid h-11 w-11 place-items-center rounded-full bg-surface-sunken text-ink-muted">
+                <Icon name="chat" size={20} />
+              </span>
+              <p className="text-sm font-bold text-ink">No comments yet</p>
+              <p className="mt-1 text-2xs text-ink-muted">Be the first to encourage someone.</p>
+            </div>
+          )}
           {grouped.map(({ parent, replies }) => (
             <div key={parent.id} className="space-y-3">
               <Row c={parent} />
@@ -209,16 +255,27 @@ export default function Comments({
             </div>
           ))}
         </div>
+
         {removeError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={removeError} /></div>}
         {sendError && <div className="mx-3 mb-1 shrink-0"><ErrorMessage message={sendError} /></div>}
+
         {replyTo && (
-          <div className="mx-3 mb-1 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F5F1E8] border border-[#E8DEC9] text-xs">
-            <span className="text-[#7C3AED] font-bold shrink-0">↳</span>
-            <span className="truncate text-[#4B433A]">Replying to <b>@{replyTo.username}</b> · {replyTo.body.slice(0, 40)}{replyTo.body.length > 40 ? '…' : ''}</span>
-            <button onClick={() => setReplyTo(null)} className="ml-auto w-7 h-7 rounded-full bg-white border border-[#E8DEC9] text-[#766E63]" aria-label="Cancel reply">✕</button>
+          <div className="mx-3 mb-1 flex shrink-0 items-center gap-2 rounded-xl border border-line bg-surface-sunken px-2.5 py-1.5 text-2xs">
+            <Icon name="reply" size={13} className="shrink-0 text-accent" />
+            <span className="truncate text-ink-muted">Replying to <b>@{replyTo.username}</b></span>
+            <button onClick={() => setReplyTo(null)} className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-muted" aria-label="Cancel reply">
+              <Icon name="close" size={13} />
+            </button>
           </div>
         )}
-        <div className="p-3 border-t border-[#E8DEC9] flex gap-2 shrink-0 bg-[#FFFBF0] rounded-b-[28px]" style={{ paddingBottom: `calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}>
+
+        <div
+          className="flex shrink-0 items-center gap-2 border-t border-line bg-surface-raised px-3 pt-2"
+          style={{ paddingBottom: 'calc(0.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))' }}
+        >
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+            {initials(me)}
+          </span>
           <input
             ref={inputRef}
             value={text}
@@ -226,14 +283,15 @@ export default function Comments({
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
             placeholder={replyTo ? `Reply to @${replyTo.username}…` : 'Add a comment…'}
             maxLength={1000}
-            className="flex-1 min-w-0 px-4 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-sm focus:outline-none focus:border-[#7C3AED]"
+            aria-label={replyTo ? `Reply to ${replyTo.username}` : 'Add a comment'}
+            className="min-h-11 min-w-0 flex-1 rounded-full border border-line bg-surface px-4 text-sm text-ink placeholder:text-ink-subtle focus:border-accent focus:outline-none"
           />
           <button
             onClick={() => void send()}
             disabled={!text.trim() || sending}
-            className="px-4 py-2.5 rounded-2xl bg-[#7C3AED] text-white text-xs font-extrabold disabled:opacity-40"
+            className="min-h-11 shrink-0 px-2 text-2xs font-extrabold text-accent disabled:opacity-40"
           >
-            {sending ? '…' : 'Post'}
+            {sending ? 'Posting…' : 'Post'}
           </button>
         </div>
       </div>

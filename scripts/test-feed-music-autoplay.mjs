@@ -33,12 +33,14 @@ test('4. posts without music → no playback', () => {
 
 test('5. autoplay disabled → no automatic playback', () => {
   assert.match(playback, /if \(!getFeedAutoplayPref\(\)\) (return false|\{[^}]*return false[^}]*\})/)
-  assert.match(feed, /getFeedAutoplayPref/)
+  // The post no longer renders its own enable button: the disc is the control,
+  // and stopping it is what records the mute.
+  assert.match(feed, /setFeedAutoplayPref\(false\)/)
 })
 
-test('6. browser rejects autoplay → manual enable/play action appears', () => {
-  assert.match(feed, /Enable music autoplay/)
-  assert.match(feed, /markAudioUnlocked/)
+test('6. browser rejects autoplay → the media disc is the manual play action', () => {
+  assert.match(feed, /data-music-disc/)
+  assert.match(feed, /markAudioUnlocked\(\)/)
   assert.match(inline, /await audio\.play\(\)/)
 })
 
@@ -58,7 +60,8 @@ test('9. rapid scrolling → no overlapping audio', () => {
 })
 
 test('10. playback failure → useful retry state', () => {
-  assert.match(feed, /Retry music/)
+  // Same disc turns into a retry target instead of a broken control.
+  assert.match(feed, /failed \? `Retry \$\{title\}`/)
   assert.match(inline, /toggleInlineMediaTrack/)
 })
 

@@ -3,6 +3,7 @@ import type { TouchEvent } from 'react'
 import { useAuth } from '../state/auth'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 import { onSocket, emitSocket, connectSocket, realtimeEnabled } from '../lib/realtime'
+import { Icon, Spinner } from '../ui'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -14,24 +15,17 @@ const API = import.meta.env.VITE_API_URL || ''
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '🔥'] as const
 
 function VerifiedBadge({ size = 'sm', className = '' }: { size?: 'sm' | 'md'; className?: string }) {
-  const sizeClasses = size === 'md' ? 'h-5 w-5 text-[12px]' : 'h-[18px] w-[18px] text-[10px]'
+  const sizeClasses = size === 'md' ? 'h-5 w-5' : 'h-[18px] w-[18px]'
   return (
     <span
       role="img"
       aria-label="Verified account"
       title="Verified account"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-blue-500 text-white font-black leading-none ring-2 ring-blue-500/15 shadow-sm ${sizeClasses} ${className}`} style={{ verticalAlign: 'middle' }}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-accent text-white ring-2 ring-accent/15 ${sizeClasses} ${className}`} style={{ verticalAlign: 'middle' }}
     >
-      ✓
+      <Icon name="check" size={size === 'md' ? 13 : 11} strokeWidth={3} />
     </span>
   )
-}
-
-const sectionMeta: Record<Section, { label: string; icon: string; description: string }> = {
-  personal: { label: 'Personal', icon: '💬', description: 'Private conversations with your church family' },
-  groups: { label: 'Groups', icon: '👥', description: 'Chat with people in your Harvest group' },
-  ministry: { label: 'Ministry', icon: '⛪', description: 'Worship and ministry connections' },
-  prayer: { label: 'Prayer', icon: '🙏', description: 'Pray with and encourage one another' },
 }
 
 const keyFor = (a: string, b: string) => `harvest:chat:${[a, b].sort().join(':')}`
@@ -60,28 +54,79 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T
 }
 
+// Returns the SAME array reference when nothing actually changed. Callers feed
+// this into setState; without identity preservation every poll produced a new
+// array, which re-rendered the screen and re-created the history-loading
+// callback — the loop that refetched /api/chat/history continuously.
 function mergeMessages(current: any[], incoming: any[]) {
   const byId = new Map(current.map(m => [String(m.id), m]))
-  incoming.forEach(m => byId.set(String(m.id), m))
+  let changed = false
+  incoming.forEach(m => {
+    const id = String(m.id)
+    const prev = byId.get(id)
+    if (!prev || JSON.stringify(prev) !== JSON.stringify(m)) changed = true
+    byId.set(id, m)
+  })
+  if (!changed) return current
   return [...byId.values()].sort((a, b) => new Date(a.created_at || a.at).getTime() - new Date(b.created_at || b.at).getTime())
 }
 
+// localStorage holds roughly 5 MB. Keep only the freshest slice of each
+// conversation so a busy church chat cannot blow the quota.
+function trimMessagesForStorage(all: Record<string, any[]>, perConversation = 60) {
+  const out: Record<string, any[]> = {}
+  for (const [key, list] of Object.entries(all)) {
+    out[key] = Array.isArray(list) ? list.slice(-perConversation) : []
+  }
+  return out
+}
+
 // Chat photos are served as HMAC-signed URLs minted by the server for participants.
-const signedUrlCache: Record<string, string> = {}
-async function fetchSignedMediaUrl(messageId: string): Promise<string | null> {
-  if (signedUrlCache[messageId]) return signedUrlCache[messageId]
+// Those URLs EXPIRE, so caching one forever guarantees a broken image a few
+// minutes into a conversation. Track age, refresh before it goes stale, and
+// recover from a failed load instead of leaving a dead <img>.
+const SIGNED_URL_TTL_MS = 8 * 60 * 1000
+const signedUrlCache: Record<string, { url: string; at: number }> = {}
+function cachedSignedUrl(messageId: string): string | null {
+  const hit = signedUrlCache[messageId]
+  return hit && Date.now() - hit.at < SIGNED_URL_TTL_MS ? hit.url : null
+}
+function invalidateSignedUrl(messageId: string) { delete signedUrlCache[messageId] }
+async function fetchSignedMediaUrl(messageId: string, force = false): Promise<string | null> {
+  if (!force) { const hit = cachedSignedUrl(messageId); if (hit) return hit }
   try {
     const r = await api<{ url: string }>(`/api/chat/media/${encodeURIComponent(messageId)}`)
-    signedUrlCache[messageId] = r.url
+    if (!r?.url) return null
+    signedUrlCache[messageId] = { url: r.url, at: Date.now() }
     return r.url
   } catch { return null }
 }
 
 function ChatPhoto({ messageId }: { messageId: string }) {
-  const [src, setSrc] = useState<string | null>(signedUrlCache[messageId] || null)
-  useEffect(() => { let live = true; if (!src) void fetchSignedMediaUrl(messageId).then(u => { if (live && u) setSrc(u) }); return () => { live = false } }, [messageId, src])
-  if (!src) return <div className="w-56 h-40 rounded-xl bg-stone-800 animate-pulse" />
-  return <img src={src} alt="photo" className="rounded-xl max-h-72 w-auto mb-1.5" loading="lazy" />
+  const [src, setSrc] = useState<string | null>(() => cachedSignedUrl(messageId))
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    setFailed(false)
+    const fresh = cachedSignedUrl(messageId)
+    if (fresh) { setSrc(fresh); return () => { live = false } }
+    setSrc(null)
+    void fetchSignedMediaUrl(messageId, true).then(u => { if (live) setSrc(u) })
+    return () => { live = false }
+  }, [messageId])
+  const retry = () => {
+    invalidateSignedUrl(messageId)
+    setFailed(false)
+    setSrc(null)
+    void fetchSignedMediaUrl(messageId, true).then(u => setSrc(u))
+  }
+  if (failed) return (
+    <button type="button" onClick={retry} className="mb-1.5 flex h-32 w-52 items-center justify-center rounded-xl bg-surface-sunken px-3 text-center text-xs font-semibold text-ink-muted">
+      Photo unavailable — tap to retry
+    </button>
+  )
+  if (!src) return <div className="mb-1.5 h-40 w-56 animate-pulse rounded-xl bg-surface-sunken" />
+  return <img src={src} alt="photo" className="mb-1.5 max-h-72 w-auto rounded-xl" loading="lazy" onError={() => { invalidateSignedUrl(messageId); setFailed(true) }} />
 }
 
 function dayLabel(iso: string) {
@@ -95,10 +140,16 @@ function dayLabel(iso: string) {
 
 function Ticks({ status, mine }: { status: string; mine: boolean }) {
   if (!mine) return null
-  if (status === 'sending') return <span className="text-white/55" aria-label="Sending">◷</span>
-  if (status === 'failed') return <span className="text-rose-200" aria-label="Failed to send">!</span>
+  if (status === 'sending') return <Icon name="clock" size={12} strokeWidth={2} className="opacity-70" title="Sending" />
+  if (status === 'failed') return <Icon name="alert" size={12} strokeWidth={2.2} className="text-danger" title="Failed to send" />
   const seen = status === 'seen'
-  return <span className={seen ? 'text-sky-300' : 'text-white/70'} aria-label={seen ? 'Seen' : status === 'delivered' ? 'Delivered' : 'Sent'}>{seen || status === 'delivered' ? '✓✓' : '✓'}</span>
+  const label = seen ? 'Seen' : status === 'delivered' ? 'Delivered' : 'Sent'
+  return (
+    <span className={`inline-flex items-center gap-0.5 ${seen ? 'text-gold-soft' : 'opacity-70'}`} aria-label={label} title={label}>
+      <Icon name="check" size={12} strokeWidth={2.6} />
+      {(seen || status === 'delivered') && <Icon name="check" size={12} strokeWidth={2.6} className="-ml-2" />}
+    </span>
+  )
 }
 
 // Instagram-style compact list timestamps: h:mm / weekday / date.
@@ -225,6 +276,36 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   )
   const cursorRef = useRef<Record<string, string>>({})
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const messagesRef = useRef<HTMLDivElement | null>(null)
+  // Wide layout: the conversation list stays docked beside the thread instead
+  // of being covered by it. Tracked in JS (not only CSS) so the list pane is
+  // not even mounted on a phone — it polls every 3s and must not double up
+  // with the open conversation's polling.
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = () => setWide(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  // Reading position: follow new messages only while the reader is at the
+  // bottom. Scrolling up must never yank them back down.
+  const [atBottom, setAtBottom] = useState(true)
+  const [unseenBelow, setUnseenBelow] = useState(0)
+  const prevThreadLen = useRef(0)
+  const syncScrollState = () => {
+    const el = messagesRef.current
+    if (!el) return
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    setAtBottom(atEnd)
+    if (atEnd) setUnseenBelow(0)
+  }
+  const jumpToLatest = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    setUnseenBelow(0)
+    setAtBottom(true)
+  }
   // Android IME can resize the WebView viewport without reliably updating 100dvh.
   // Track the visual viewport so the composer remains inside the visible area.
   const [chatViewportHeight, setChatViewportHeight] = useState<number | null>(null)
@@ -347,10 +428,24 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     return () => { off() }
   }, [conversationKey, team, active, currentUser, realtimeEnabled])
 
+  // Mirror of the thread map so loaders can read the latest messages WITHOUT
+  // taking `msgs` as a dependency (see mergeMessages).
+  const msgsRef = useRef(msgs)
+  useEffect(() => { msgsRef.current = msgs }, [msgs])
+
   const saveMessages = useCallback((updater: Record<string, any[]> | ((c: Record<string, any[]>) => Record<string, any[]>)) => {
     setMsgs(current => {
       const next = typeof updater === 'function' ? updater(current) : updater
-      localStorage.setItem('harvest_msgs', JSON.stringify(next))
+      if (next === current) return current
+      // Persistence is best-effort: a quota error used to escape the state
+      // updater and take the whole screen down. Trim, retry once, then run
+      // memory-only for the rest of the session.
+      try {
+        localStorage.setItem('harvest_msgs', JSON.stringify(trimMessagesForStorage(next)))
+      } catch {
+        try { localStorage.setItem('harvest_msgs', JSON.stringify(trimMessagesForStorage(next, 20))) }
+        catch { /* memory-only this session */ }
+      }
       return next
     })
   }, [])
@@ -428,7 +523,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         const result = await api<{ messages: any[]; conversation_key: string }>(`/api/chat/history?${q}`)
         const k = result.conversation_key || (team.kind === 'group' ? `group:${team.slug}` : `department:${team.slug}`)
         saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
-        const existing = mergeMessages(msgs[k] || [], result.messages || [])
+        const existing = mergeMessages(msgsRef.current[k] || [], result.messages || [])
         cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
         void markSeen()
         void refreshInbox()
@@ -443,14 +538,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       const result = await api<{ messages: any[]; conversation_key: string }>(`/api/chat/history?peer=${encodeURIComponent(active.username)}`)
       const k = result.conversation_key || conversationKey
       saveMessages(current => ({ ...current, [k]: mergeMessages(current[k] || [], result.messages || []) }))
-      const existing = mergeMessages(msgs[k] || [], result.messages || [])
+      const existing = mergeMessages(msgsRef.current[k] || [], result.messages || [])
       cursorRef.current[k] = existing[existing.length - 1]?.created_at || new Date(Date.now() - 5000).toISOString()
       void markSeen()
       void refreshInbox()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to load conversation')
     }
-  }, [active, team, currentUser, conversationKey, msgs, saveMessages, markSeen, refreshInbox])
+  }, [active, team, currentUser, conversationKey, saveMessages, markSeen, refreshInbox])
 
   const refreshUpdates = useCallback(async () => {
     if (!active && !team) return
@@ -483,9 +578,25 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
   }, [active?.username, team?.kind, team?.slug, loadConversation, refreshUpdates])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
+  useEffect(() => {
+    const before = prevThreadLen.current
+    prevThreadLen.current = thread.length
+    if (thread.length <= before) return
+    const added = thread.length - before
+    if (atBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    else setUnseenBelow(n => n + added)
+  }, [thread.length, atBottom])
+  // A different conversation starts at its newest message, not wherever the
+  // previous one was scrolled to.
+  useEffect(() => {
+    prevThreadLen.current = 0
+    setUnseenBelow(0)
+    setAtBottom(true)
+    const el = messagesRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [conversationKey])
 
-  const send = async (bodyOverride?: string, fileOverride?: File | null) => {
+  const send = async (bodyOverride?: string, fileOverride?: File | null, idempotencyKey?: string) => {
     const attach = fileOverride !== undefined ? fileOverride : attachRef.current
     const body = (bodyOverride ?? text).trim()
     if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
@@ -510,7 +621,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     try {
       let media_key: string | undefined
       if (attach) {
-        const pre = await api<any>('/api/media/presign', { method: 'POST', body: JSON.stringify({ type: 'chat', contentType: attach.type || 'image/jpeg', bytes: attach.size }) })
+        const pre = await api<any>('/api/media/presign', { method: 'POST', body: JSON.stringify({ type: 'chat', contentType: attach.type || 'image/jpeg', bytes: attach.size, ext: (attach.name.split('.').pop() || 'jpg').toLowerCase(), idempotencyKey: idempotencyKey || `chat_${tempId}` }) })
         const target = /^https?:\/\//.test(pre.url) ? pre.url : `${API}${pre.url}`
         const isDirectR2 = /^https?:\/\//.test(pre.url)
         let up
@@ -592,7 +703,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
     setReplyTo(null)
     setError('')
-    void send(body, file)
+    void send(body, file, `chat_${String(message.id)}`)
   }
 
   const react = async (msg: any, emoji: string) => {
@@ -715,202 +826,32 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     return searched
   }, [users, currentUser, section, peopleQuery])
 
-  if (active || team) {
-    let lastDay = ''
-    let unreadDividerShown = false
-    const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
-    const isTeam = Boolean(team)
-    return (
-      <main
-        className="chat-screen min-h-0 w-full bg-[#1C1917] text-white flex flex-col overflow-hidden"
-        style={{ height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
-      >
-        <header className="h-[72px] shrink-0 border-b border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl flex items-center gap-3 px-3 z-20 shadow-lg shadow-stone-950/20">
-          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition text-xl text-white shrink-0" aria-label="Back">‹</button>
-          <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-[#7C3AED]/90 to-[#A855F7]/90 text-white flex items-center justify-center font-bold shrink-0 shadow-lg">
-            <div className="w-full h-full rounded-full bg-stone-900 border-2 border-stone-950 flex items-center justify-center font-bold text-white overflow-hidden">
-              {isTeam ? (team!.kind === 'department' ? '🤝' : '👥') : active.avatar_url ? <img src={active.avatar_url} alt="" className="w-full h-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
-            </div>
-            {!isTeam && presence[active.username]?.online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-emerald-400 border-[3px] border-stone-950" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-bold truncate text-white">{isTeam ? team!.name : active.name || active.username}{!isTeam && active.verified && <span className="ml-1 text-blue-400">✓</span>}</p>
-            <p className="text-xs text-stone-400">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="text-green-400 font-semibold">Active now</span> : 'Harvest church family'}</p>
-          </div>
-          {isTeam && (team!.kind === 'department' ? onOpenDepartments : onOpenGroups) && (
-            <button
-              type="button"
-              onClick={() => (team!.kind === 'department' ? onOpenDepartments?.() : onOpenGroups?.())}
-              className="shrink-0 w-10 h-10 rounded-full bg-white/5 border border-stone-800 text-sm text-stone-200 active:bg-white/10"
-              aria-label={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
-              title={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
-            >
-              ⚙️
-            </button>
-          )}
-          {sending ? <span className="text-[10px] text-stone-400">···</span> : null}
-        </header>
-
-        <div className="chat-messages flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4">
-          {thread.length === 0 ? (
-            <div className="min-h-full flex items-center justify-center py-12">
-              <div className="w-full max-w-sm text-center px-6">
-                <div className="mx-auto w-20 h-20 rounded-[28px] bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/20 border border-white/10 flex items-center justify-center text-3xl shadow-xl">💬</div>
-                <h2 className="font-extrabold mt-5 text-lg text-white">{isTeam ? 'Start the team conversation' : 'Start a conversation'}</h2>
-                <p className="text-sm leading-6 text-stone-400 mt-2">Share an encouragement, prayer, or simple hello. Your conversation will appear here.</p>
-              </div>
-            </div>
-          ) : thread.map((m: any, index: number) => {
-            const mine = m.from === currentUser
-            const day = dayLabel(m.created_at || m.at)
-            const showDay = day !== lastDay; lastDay = day
-            const isReactionOpen = reactingFor === String(m.id)
-            return (
-              <div key={m.id}>
-                {showDay && <div className="flex items-center gap-3 my-5"><div className="h-px flex-1 bg-stone-800" /><span className="px-3 py-1 rounded-full bg-stone-900/90 border border-stone-800 text-[10px] uppercase tracking-wider font-bold text-stone-500">{day}</span><div className="h-px flex-1 bg-stone-800" /></div>}
-                {firstUnreadIndex === index && !unreadDividerShown && !mine && (unreadDividerShown = true) && (
-                  <div className="flex items-center gap-3 my-4" aria-label="Unread messages">
-                    <div className="h-px flex-1 bg-blue-500/40" /><span className="px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-[10px] uppercase tracking-wider font-extrabold text-blue-400">New messages</span><div className="h-px flex-1 bg-blue-500/40" />
-                  </div>
-                )}
-                {isTeam && !mine && <p className="text-[11px] font-bold text-stone-400 mb-1 ml-1">{m.from}</p>}
-                <div className={`flex mb-2 ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className="relative max-w-[80%]">
-                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 min-w-9 min-h-9 flex items-center justify-center px-2 rounded-full bg-stone-800 border border-stone-700 shadow text-xs`} aria-label="Remove reaction">{m.reaction}</button>}
-                    <div
-                      onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
-                      onTouchStart={e => startSwipe(e, m)} onTouchEnd={e => endSwipe(e, m)} onTouchMove={e => moveSwipe(e, mine)}
-                      onClick={() => setActionFor(actionFor === String(m.id) ? null : String(m.id))}
-                      style={{ transform: !mine && swipeOffset ? `translateX(${swipeOffset}px)` : undefined, transition: swipeOffset ? 'none' : 'transform 160ms ease-out' }}
-                      className={`px-3.5 py-2.5 rounded-3xl text-[15px] leading-snug cursor-pointer select-none shadow-sm ${mine ? 'bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white rounded-br-md shadow-purple-950/30' : 'bg-stone-800/95 text-stone-100 rounded-bl-md border border-stone-700/50'}`}
-                    >
-                      {m.reply_preview && (
-                        <div className={`mb-1.5 pl-2 border-l-2 rounded px-2 py-1 text-xs ${mine ? 'border-white/60 bg-white/10 text-white/85' : 'border-blue-400 bg-stone-700/60 text-stone-200'}`}>
-                          {m.reply_preview}
-                        </div>
-                      )}
-                      {m.media_type === 'image' && m.media_key && !String(m.id).startsWith('tmp_') && (
-                        <ChatPhoto messageId={String(m.id)} />
-                      )}
-                      {m.media_type === 'image' && !m.media_key && <div className="text-3xl mb-1">📷</div>}
-                      {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                      <div className={`text-[10px] mt-1.5 flex items-center justify-end gap-1 ${mine ? 'text-white/65' : 'text-stone-500'}`}>
-                        <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>
-                        {mine && m.status === 'sending' && <span className="text-white/60">Sending…</span>}
-                        {mine && m.status === 'failed' && (
-                          <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); void retryMessage(m) }}
-                            disabled={sending}
-                            className="font-extrabold text-rose-200 underline underline-offset-2 disabled:opacity-50"
-                            aria-label="Retry sending message"
-                          >
-                            Retry
-                          </button>
-                        )}
-                        <Ticks status={m.status} mine={mine} />
-                      </div>
-                    </div>
-                    {(isReactionOpen || actionFor === String(m.id)) && (
-                      <div className={`chat-message-actions absolute ${mine ? 'right-0' : 'left-0'} z-30 flex items-center gap-1 bg-stone-900/95 backdrop-blur border border-stone-700 shadow-2xl rounded-2xl px-2 py-1.5`}>
-                        {REACTIONS.map(r => (
-                          <button key={r} type="button" aria-label={`React ${r}`} onClick={e => { e.stopPropagation(); react(m, r); setActionFor(null) }} className="w-8 h-8 rounded-full text-lg hover:bg-stone-800 active:scale-90 transition">{r}</button>
-                        ))}
-                        <span className="h-6 w-px bg-stone-700 mx-0.5" />
-                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null); setActionFor(null) }} className="w-8 h-8 rounded-full hover:bg-stone-800 text-blue-400 font-bold" aria-label="Reply">↩</button>
-                        <button type="button" onClick={e => { e.stopPropagation(); void copyMessage(m) }} className="w-8 h-8 rounded-full hover:bg-stone-800 text-stone-300 font-bold" aria-label="Copy message">⧉</button>
-                      </div>
-                    )}
-                    {actionFor === String(m.id) && (
-                      <div className={`chat-message-menu absolute ${mine ? 'right-0' : 'left-0'} top-full mt-2 z-30 w-48 max-w-[calc(100vw-2rem)] rounded-2xl bg-stone-900/98 border border-stone-700 shadow-2xl p-1.5 backdrop-blur`}>
-                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 active:bg-stone-700 text-sm flex items-center gap-3">↩ Reply</button>
-                        <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 text-sm">😊 React</button>
-                        <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 text-sm">⧉ Copy</button>
-                        {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-stone-800 active:bg-stone-700 text-sm flex items-center gap-3">↗ Share photo</button>}
-                        {isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="w-full min-h-11 text-left px-3 py-2.5 rounded-xl hover:bg-rose-950/60 active:bg-rose-950 text-sm text-rose-300 flex items-center gap-3">🗑 Remove for everyone</button>}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          <div ref={bottomRef} />
-        </div>
-
-        {error ? <div className="px-4 py-2 shrink-0"><ErrorMessage message={error} /></div> : notice ? <div className="px-4 py-2 text-xs shrink-0 bg-stone-900 text-amber-300">{notice}</div> : null}
-
-        <div
-          className="chat-composer relative z-40 border-t border-stone-800/80 bg-[#1C1917]/95 backdrop-blur-xl px-3 pt-2.5 pb-[max(0.65rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.25)]"
-          style={{ paddingBottom: `max(0.65rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}
-        >
-          {replyTo && (
-            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 pl-3 border-l-4 border-blue-400 bg-stone-900 rounded-r-xl py-1.5 pr-2">
-              <div className="min-w-0 flex-1 text-xs text-stone-300">
-                <p className="font-bold">Replying to {replyTo.from === currentUser ? 'yourself' : replyTo.from}</p>
-                <p className="truncate">{replyTo.media_type && !replyTo.text ? '📷 Photo' : String(replyTo.text || '')}</p>
-              </div>
-              <button type="button" onClick={() => setReplyTo(null)} className="w-7 h-7 rounded-full bg-stone-800 border border-stone-700 text-sm" aria-label="Cancel reply">✕</button>
-            </div>
-          )}
-          {attach && (
-            <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 text-xs bg-stone-900 border border-stone-800 rounded-xl px-3 py-2">
-              <span>🖼 {attach.name.slice(0, 32)}</span>
-              <button type="button" onClick={() => { setAttach(null); attachRef.current = null }} className="ml-auto text-stone-400" aria-label="Remove attachment">✕</button>
-            </div>
-          )}
-          {(() => {
-            const typingRow = Object.keys(typingPeers[conversationKey] || {}).filter(u => u && u !== currentUser)
-            if (!typingRow.length) return null
-            const label = team
-              ? `${typingRow.length === 1 ? typingRow[0] : `${typingRow.length} teammates are`} typing…`
-              : `${(active?.name || active?.username || typingRow[0]).trim().split(/\s+/)[0]} is typing…`
-            return (
-              <div className="max-w-3xl w-full mx-auto px-2 pb-1 text-[11px] text-white/60 flex items-center gap-1.5" aria-live="polite">
-                <span className="flex gap-0.5" aria-hidden>{[0, 1, 2].map(i => <span key={i} className="w-1.5 h-1.5 rounded-full bg-white/50" style={{ animation: 'harvest-typing 1.2s infinite', animationDelay: `${i * 0.18}s` }} />)}</span>
-                <span>{label}</span>
-              </div>
-            )
-          })()}
-          <div className="max-w-3xl w-full min-w-0 mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
-            <label className="w-10 h-10 rounded-full text-stone-300 hover:text-white hover:bg-white/10 flex items-center justify-center text-lg cursor-pointer shrink-0" title="Send a photo">
-              📷
-              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] || null; setAttach(f); attachRef.current = f }} />
-            </label>
-            <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
-              className="flex-1 min-w-0 resize-none min-h-11 max-h-24 overflow-y-auto bg-stone-900/90 border border-stone-700/80 rounded-3xl px-4 py-3 text-sm text-white outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 placeholder:text-stone-500 transition" />
-            <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
-              className="h-10 w-10 rounded-full bg-gradient-to-tr from-blue-500 via-purple-500 to-fuchsia-500 text-white text-base font-bold shadow-lg shadow-purple-900/30 disabled:opacity-30 disabled:shadow-none active:scale-95 transition shrink-0" aria-label="Send">
-              {sending ? '…' : '↑'}
-            </button>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  return (
-    <main className="h-full min-h-0 bg-[#1C1917] text-white overflow-y-auto overflow-x-hidden">
-      <header className="px-4 pt-4 pb-3 bg-[#1C1917]/95 backdrop-blur-xl border-b border-stone-800/80 sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto">
+  // ── Conversation list ────────────────────────────────────────────────────
+  // Rendered on its own (mobile) and as the left pane of the desktop
+  // master/detail layout (wide screens), so it lives here rather than in a
+  // duplicated return branch.
+  const inboxPane = (
+    <>
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">
+        <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <button type="button" onClick={onBack} className="w-10 h-10 shrink-0 rounded-full bg-stone-900 border border-stone-800 hover:bg-stone-800 text-xl text-white" aria-label="Back">‹</button>
+            <div className="flex min-w-0 items-center gap-2">
+              <button type="button" onClick={onBack} className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink lg:hidden" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-extrabold">Harvest Family</p>
-                <h1 className="text-xl font-extrabold text-white truncate">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
+                <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family</p>
+                <h1 className="truncate text-xl font-extrabold text-ink">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
               </div>
             </div>
-            <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="w-10 h-10 rounded-full bg-stone-900 border border-stone-800 text-lg" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>{tab === 'people' ? '←' : '＋'}</button>
+            <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="touch-target shrink-0 rounded-full border border-line bg-surface-raised text-ink transition hover:bg-surface-sunken" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>
+              <Icon name={tab === 'people' ? 'arrow-left' : 'plus'} size={20} />
+            </button>
           </div>
           {tab === 'inbox' && (
             <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
-              <button type="button" onClick={() => setChatView('chats')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'chats' ? 'bg-white text-black shadow-sm' : 'bg-stone-900 text-stone-400 border border-stone-800'}`}>Chats{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
-              <button type="button" onClick={() => onOpenGroups?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-stone-900 text-stone-300 border border-stone-800">Groups</button>
-              <button type="button" onClick={() => onOpenDepartments?.()} className="px-4 py-2 rounded-full text-xs font-extrabold shrink-0 bg-stone-900 text-stone-300 border border-stone-800">Departments</button>
-              <button type="button" onClick={() => setChatView('community')} className={`px-4 py-2 rounded-full text-xs font-extrabold shrink-0 ${chatView === 'community' ? 'bg-amber-400 text-black' : 'bg-stone-900 text-stone-300 border border-stone-800'}`}>Community</button>
+              <button type="button" onClick={() => setChatView('chats')} className={`shrink-0 rounded-full px-4 py-2 text-2xs font-extrabold transition ${chatView === 'chats' ? 'bg-accent text-white shadow-card' : 'border border-line bg-surface-raised text-ink-muted hover:bg-surface-sunken'}`}>Chats{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
+              <button type="button" onClick={() => onOpenGroups?.()} className="shrink-0 rounded-full border border-line bg-surface-raised px-4 py-2 text-2xs font-extrabold text-ink-muted transition hover:bg-surface-sunken">Groups</button>
+              <button type="button" onClick={() => onOpenDepartments?.()} className="shrink-0 rounded-full border border-line bg-surface-raised px-4 py-2 text-2xs font-extrabold text-ink-muted transition hover:bg-surface-sunken">Departments</button>
+              <button type="button" onClick={() => setChatView('community')} className={`shrink-0 rounded-full px-4 py-2 text-2xs font-extrabold transition ${chatView === 'community' ? 'bg-accent text-white shadow-card' : 'border border-line bg-surface-raised text-ink-muted hover:bg-surface-sunken'}`}>Community</button>
             </div>
           )}
         </div>
@@ -929,84 +870,92 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             onOpen={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
           />
           {/* Instagram-style avatar rail */}
-          <section className="px-4 pt-4 pb-1 border-b border-stone-800">
+          <section className="border-b border-line px-4 pb-1 pt-4">
             <div className="flex gap-4 overflow-x-auto pb-3">
               {inbox.slice(0, 12).map(c => (
-                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }} className="shrink-0 w-[68px] text-center" aria-label={`Open chat with ${c.peer_name}`}>
-                  <div className="relative p-[2.5px] rounded-full" style={{ background: c.unread > 0 ? 'linear-gradient(45deg,#f59e0b,#ec4899,#7c3aed)' : 'transparent', border: c.unread > 0 ? 'none' : '2px solid #3f3f46' }}>
-                    <div className="w-[58px] h-[58px] rounded-full bg-stone-800 border-2 border-black overflow-hidden flex items-center justify-center font-extrabold text-lg text-stone-300">{c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
-                    {presence[c.peer]?.online && <span className="absolute right-0.5 bottom-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }} className="w-[68px] shrink-0 text-center" aria-label={`Open chat with ${c.peer_name}`}>
+                  <div className={`relative mx-auto w-[62px] rounded-full p-[2.5px] ${c.unread > 0 ? 'bg-gradient-to-br from-gold to-accent' : 'border-2 border-line'}`}>
+                    <div className="flex h-[54px] w-[54px] items-center justify-center overflow-hidden rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{c.avatar_url ? <img src={c.avatar_url} alt="" className="h-full w-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
+                    {presence[c.peer]?.online && <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
                   </div>
-                  <p className="text-[11px] text-stone-400 mt-1 truncate">{c.peer_name?.split(' ')[0] || c.peer}</p>
+                  <p className="mt-1 truncate text-2xs text-ink-muted">{c.peer_name?.split(' ')[0] || c.peer}</p>
                 </button>
               ))}
             </div>
           </section>
           {/* Search + tab pill row */}
-          <section className="px-4 py-3 border-b border-stone-800">
-            <div className="flex items-center gap-2 bg-stone-900 rounded-xl px-3 py-2.5">
-              <span className="text-stone-500">⌕</span>
-              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-stone-500" />
+          <section className="border-b border-line px-4 py-3">
+            <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2.5">
+              <Icon name="search" size={17} className="text-ink-subtle" />
+              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle" />
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">Inbox{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
-              <button type="button" onClick={() => setTab('people')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">People</button>
-              <span className="ml-auto text-xs text-stone-500 self-center">{visibleInbox.length} chat{visibleInbox.length === 1 ? '' : 's'}</span>
+              <button type="button" onClick={() => setTab('inbox')} className="rounded-full bg-accent px-4 py-1.5 text-2xs font-bold text-white shadow-card">Inbox{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
+              <button type="button" onClick={() => setTab('people')} className="rounded-full border border-line bg-surface-raised px-4 py-1.5 text-2xs font-bold text-ink-muted transition hover:bg-surface-sunken">People</button>
+              <span className="ml-auto self-center text-2xs text-ink-subtle">{visibleInbox.length} chat{visibleInbox.length === 1 ? '' : 's'}</span>
             </div>
           </section>
           <section className="px-3 pb-7">
             {inboxLoading ? (
-              <div role="status" aria-live="polite" className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 px-5 py-8 text-center">
-                <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
-                <p className="mt-3 text-xs font-semibold text-stone-400">Loading conversations…</p>
+              <div role="status" aria-live="polite" className="mx-1 mt-4">
+                {[0, 1, 2, 3, 4, 5].map(i => (
+                  <div key={i} className="flex items-center gap-3 rounded-2xl px-3 py-3.5" aria-hidden="true">
+                    <div className="skeleton h-14 w-14 shrink-0 rounded-full" />
+                    <div className="min-w-0 flex-1">
+                      <div className="skeleton h-3.5 w-1/3 rounded-full" />
+                      <div className="skeleton mt-2.5 h-3 w-2/3 rounded-full" />
+                    </div>
+                  </div>
+                ))}
+                <span className="sr-only">Loading conversations…</span>
               </div>
             ) : inboxError ? (
               <div className="mx-3 mt-6">
                 <ErrorMessage
                   message={inboxError}
                   kind="network"
-                  action={<button type="button" onClick={() => void refreshInbox()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>}
+                  action={<button type="button" onClick={() => void refreshInbox()} className="rounded-full bg-accent px-3 py-1.5 text-2xs font-extrabold text-white">Retry</button>}
                 />
               </div>
             ) : inbox.length === 0 ? (
-              <div className="mx-3 mt-6 rounded-3xl border border-stone-800 bg-stone-950 px-5 py-10 text-center">
-                <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">💬</div>
-                <h2 className="mt-4 text-sm font-extrabold text-white">Your conversations</h2>
-                <p className="mt-2 text-xs leading-5 text-stone-500">Private chats with your Harvest church family will appear here.</p>
-                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-white px-5 py-2.5 text-xs font-extrabold text-black">Find someone</button>
+              <div className="mx-3 mt-6 rounded-3xl border border-line bg-surface-raised px-5 py-10 text-center">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent" aria-hidden="true"><Icon name="chat" size={26} /></div>
+                <h2 className="mt-4 text-sm font-extrabold text-ink">Your conversations</h2>
+                <p className="mt-2 text-2xs leading-5 text-ink-muted">Private chats with your Harvest church family will appear here.</p>
+                <button type="button" onClick={() => setTab('people')} className="mt-5 rounded-full bg-accent px-5 py-2.5 text-2xs font-extrabold text-white shadow-card">Find someone</button>
               </div>
             ) : visibleInbox.length === 0 ? (
-              <div className="mx-3 mt-6 rounded-2xl border border-stone-800 bg-stone-950 p-6 text-center text-sm text-stone-500">No conversations match “{peopleQuery}”.</div>
+              <div className="mx-3 mt-6 rounded-2xl border border-line bg-surface-raised p-6 text-center text-sm text-ink-muted">No conversations match “{peopleQuery}”.</div>
             ) : sortedInbox.map(c => {
               const online = Boolean(presence[c.peer]?.online)
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
               return (
-                <div key={c.conversation_key} className={`w-full flex items-center gap-3 rounded-2xl px-3 py-3.5 mb-1 transition ${unread > 0 ? 'bg-stone-900/80' : 'hover:bg-stone-900/50'}`}>
+                <div key={c.conversation_key} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 transition ${unread > 0 ? 'bg-accent-wash' : 'hover:bg-surface-sunken'}`}>
                   <button
                     type="button"
                     onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified })}
-                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                     aria-label={`View ${c.peer_name || c.peer}'s profile`}
                   >
-                    <div className={`w-14 h-14 rounded-full flex items-center justify-center font-extrabold text-stone-300 ${unread > 0 ? 'bg-gradient-to-br from-purple-600 to-fuchsia-600 p-[2px]' : 'bg-stone-800'}`}>
-                      <div className={`w-full h-full rounded-full flex items-center justify-center ${unread > 0 ? 'bg-stone-900' : 'bg-stone-800'}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
+                    <div className={`flex h-14 w-14 items-center justify-center rounded-full font-extrabold ${unread > 0 ? 'bg-gradient-to-br from-gold to-accent p-[2px] text-white' : 'bg-accent-soft text-accent-strong'}`}>
+                      <div className={`flex h-full w-full items-center justify-center rounded-full ${unread > 0 ? 'bg-surface-raised text-ink' : ''}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
                     </div>
-                    {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                    {online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
                   </button>
                   <button type="button" onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified }) }} className="min-w-0 flex-1 text-left">
                     <div className="flex items-center gap-2">
-                      <p className={`font-extrabold text-[15px] truncate ${unread > 0 ? 'text-white' : 'text-stone-200'}`}>{c.peer_name}{c.peer_verified && <VerifiedBadge />}</p>
-                      <span className={`ml-2 shrink-0 text-[10px] font-medium ${unread > 0 ? 'text-fuchsia-300' : 'text-stone-500'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
+                      <p className={`text-[15px] font-extrabold truncate ${unread > 0 ? 'text-ink' : 'text-ink'}`}>{c.peer_name}{c.peer_verified && <VerifiedBadge />}</p>
+                      <span className={`ml-2 shrink-0 text-2xs font-medium ${unread > 0 ? 'text-accent-strong' : 'text-ink-subtle'}`}>{c.last_at ? chatListTime(c.last_at) : ''}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
-                      <p className={`text-[13px] truncate flex-1 ${unread > 0 ? 'text-stone-100 font-semibold' : 'text-stone-400'}`}>
+                      <p className={`flex-1 truncate text-[13px] ${unread > 0 ? 'font-semibold text-ink' : 'text-ink-muted'}`}>
                         {c.last_from === currentUser ? 'You: ' : ''}{preview}
                       </p>
                       {unread > 0 && <UnreadBadge count={unread} />}
                     </div>
                   </button>
-                  <button type="button" onClick={() => togglePinned(c.conversation_key)} className="shrink-0 w-9 h-9 rounded-full text-xs text-stone-500 hover:text-amber-300 hover:bg-stone-800/70" aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}>{pinnedChats.includes(c.conversation_key) ? '★' : '☆'}</button>
+                  <button type="button" onClick={() => togglePinned(c.conversation_key)} className={`grid h-9 w-9 shrink-0 place-items-center rounded-full transition hover:bg-surface-raised ${pinnedChats.includes(c.conversation_key) ? 'text-gold-strong' : 'text-ink-subtle hover:text-gold-strong'}`} aria-label={`${pinnedChats.includes(c.conversation_key) ? 'Unpin' : 'Pin'} conversation`}><Icon name="star" size={16} strokeWidth={2} /></button>
                 </div>
               )
             })}
@@ -1014,60 +963,304 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         </>
       ) : (
         <>
-          <section className="px-4 py-3 border-b border-stone-800">
-            <div className="flex items-center gap-2 bg-stone-900 rounded-xl px-3 py-2.5">
-              <span className="text-stone-500">⌕</span>
-              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search people" className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-stone-500" />
+          <section className="border-b border-line px-4 py-3">
+            <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2.5">
+              <Icon name="search" size={17} className="text-ink-subtle" />
+              <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search people" className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle" />
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => setTab('inbox')} className="px-4 py-1.5 rounded-full text-xs font-bold bg-stone-900 text-stone-300 border border-stone-700">Inbox</button>
-              <button type="button" className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-black">People</button>
-              <span className="ml-auto text-xs text-stone-500 self-center">{usersForSection.length} member{usersForSection.length === 1 ? '' : 's'}</span>
+              <button type="button" onClick={() => setTab('inbox')} className="rounded-full border border-line bg-surface-raised px-4 py-1.5 text-2xs font-bold text-ink-muted transition hover:bg-surface-sunken">Inbox</button>
+              <button type="button" className="rounded-full bg-accent px-4 py-1.5 text-2xs font-bold text-white shadow-card">People</button>
+              <span className="ml-auto self-center text-2xs text-ink-subtle">{usersForSection.length} member{usersForSection.length === 1 ? '' : 's'}</span>
             </div>
           </section>
           {/* Notes-style presence row */}
-          <section className="px-4 py-4 border-b border-stone-800">
+          <section className="border-b border-line px-4 py-4">
             <div className="flex gap-4 overflow-x-auto pb-1">
-              <div className="shrink-0 w-[68px] text-center">
-                <div className="p-[2.5px] rounded-full border-2 border-dashed border-stone-600 w-fit mx-auto">
-                  <div className="w-[58px] h-[58px] rounded-full bg-stone-800 flex items-center justify-center font-extrabold text-lg text-stone-300">{(currentUser?.[0] || '?').toUpperCase()}</div>
+              <div className="w-[68px] shrink-0 text-center">
+                <div className="mx-auto w-fit rounded-full border-2 border-dashed border-line-strong p-[2.5px]">
+                  <div className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-accent-soft font-extrabold text-accent-strong">{(currentUser?.[0] || '?').toUpperCase()}</div>
                 </div>
-                <p className="text-[11px] text-stone-400 mt-1 truncate">Your note</p>
+                <p className="mt-1 truncate text-2xs text-ink-muted">Your note</p>
               </div>
               {usersForSection.filter((u: any) => presence[u.username]?.online).slice(0, 12).map((u: any) => (
-                <button key={`note_${u.username}`} type="button" onClick={() => onOpenUser?.(u)} className="shrink-0 w-[68px] text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded-xl" aria-label={`View ${u.name || u.username}'s profile`}>
-                  <div className="p-[2.5px] rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600">
-                    <div className="w-[58px] h-[58px] rounded-full bg-stone-800 border-2 border-black flex items-center justify-center font-extrabold text-lg text-stone-300">{(u.username?.[0] || '?').toUpperCase()}</div>
+                <button key={`note_${u.username}`} type="button" onClick={() => onOpenUser?.(u)} className="w-[68px] shrink-0 rounded-xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40" aria-label={`View ${u.name || u.username}'s profile`}>
+                  <div className="rounded-full bg-gradient-to-tr from-gold to-accent p-[2.5px]">
+                    <div className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{(u.username?.[0] || '?').toUpperCase()}</div>
                   </div>
-                  <p className="text-[11px] text-stone-400 mt-1 truncate">{u.username}</p>
+                  <p className="mt-1 truncate text-2xs text-ink-muted">{u.username}</p>
                 </button>
               ))}
             </div>
           </section>
           <section className="pb-8">
             {usersForSection.length === 0 ? (
-              <div className="p-10 text-center text-sm text-stone-400">No people in this section yet.</div>
+              <div className="p-10 text-center text-sm text-ink-muted">No people in this section yet.</div>
             ) : usersForSection.map((u: any) => {
               const online = Boolean(presence[u.username]?.online)
               const inInbox = inbox.find(c => c.peer === u.username)
               return (
                 <button type="button" key={u.username} onClick={() => { setError(''); setActive(u) }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-stone-900/60 active:bg-stone-900 transition">
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface-sunken active:bg-surface-sunken">
                   <div className="relative shrink-0">
-                    <div className="w-14 h-14 rounded-full bg-stone-800 flex items-center justify-center font-extrabold text-stone-300">{(u.username?.[0] || '?').toUpperCase()}</div>
-                    {online && <span className="absolute right-0 bottom-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-black" />}
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft font-extrabold text-accent-strong">{(u.username?.[0] || '?').toUpperCase()}</div>
+                    {online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-1.5 font-semibold text-[15px] text-white">\n                      <span className="truncate">{u.name || u.username}</span>\n                      {u.verified && <VerifiedBadge />}\n                    </div>
-                    <p className="text-[13px] text-stone-400 truncate mt-0.5">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
+                    <div className="flex min-w-0 items-center gap-1.5 text-[15px] font-semibold text-ink">
+                      <span className="truncate">{u.name || u.username}</span>
+                      {u.verified && <VerifiedBadge />}
+                    </div>
+                    <p className="mt-0.5 truncate text-[13px] text-ink-muted">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
                   </div>
-                  {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="w-2.5 min-w-2.5 h-2.5 p-0 border-0 bg-blue-500" />}
+                  {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="h-2.5 min-w-2.5 w-2.5 border-0 bg-accent p-0" />}
                 </button>
               )
             })}
           </section>
         </>
       )}
+    </>
+  )
+
+  if (active || team) {
+    let lastDay = ''
+    let unreadDividerShown = false
+    const firstUnreadIndex = thread.findIndex((m: any) => m.from !== currentUser && m.status === 'sent')
+    const isTeam = Boolean(team)
+    return (
+      <main
+        className="chat-screen flex min-h-0 w-full overflow-hidden bg-surface text-ink"
+        style={{ height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
+      >
+        {wide && (
+          <aside className="w-[336px] shrink-0 overflow-hidden border-r border-line">
+            <div className="h-full overflow-y-auto overflow-x-hidden">{inboxPane}</div>
+          </aside>
+        )}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="z-20 flex h-[68px] shrink-0 items-center gap-3 border-b border-line bg-surface/80 pl-3 pr-14 backdrop-blur-xl">
+          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 lg:hidden" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
+          <div className="relative h-11 w-11 shrink-0">
+            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent-soft font-bold text-accent-strong">
+              {isTeam ? <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} /> : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
+            </div>
+            {!isTeam && presence[active.username]?.online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface-raised bg-success" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="flex min-w-0 items-center gap-1.5 font-bold text-ink">
+              <span className="truncate">{isTeam ? team!.name : active.name || active.username}</span>
+              {!isTeam && active.verified && <VerifiedBadge />}
+            </p>
+            <p className="truncate text-2xs text-ink-muted">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="font-semibold text-success">Active now</span> : 'Harvest church family'}</p>
+          </div>
+          {isTeam && (team!.kind === 'department' ? onOpenDepartments : onOpenGroups) && (
+            <button
+              type="button"
+              onClick={() => (team!.kind === 'department' ? onOpenDepartments?.() : onOpenGroups?.())}
+              className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink"
+              aria-label={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+              title={team!.kind === 'department' ? 'Manage department' : 'Manage group'}
+            >
+              <Icon name="dots" size={20} />
+            </button>
+          )}
+          {sending ? <Spinner size={14} className="text-ink-subtle" /> : null}
+        </header>
+
+        <div className="relative min-h-0 min-w-0 flex-1">
+        <div ref={messagesRef} onScroll={syncScrollState} className="chat-messages h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4">
+          {thread.length === 0 ? (
+            <div className="flex min-h-full items-center justify-center py-12">
+              <div className="w-full max-w-sm px-6 text-center">
+                <div className="mx-auto grid h-20 w-20 place-items-center rounded-[28px] border border-accent-soft bg-accent-wash text-accent"><Icon name="chat" size={34} /></div>
+                <h2 className="mt-5 text-lg font-extrabold text-ink">{isTeam ? 'Start the team conversation' : 'Start a conversation'}</h2>
+                <p className="mt-2 text-sm leading-6 text-ink-muted">Share an encouragement, prayer, or simple hello. Your conversation will appear here.</p>
+              </div>
+            </div>
+          ) : thread.map((m: any, index: number) => {
+            const mine = m.from === currentUser
+            const day = dayLabel(m.created_at || m.at)
+            const showDay = day !== lastDay; lastDay = day
+            const isReactionOpen = reactingFor === String(m.id)
+            // Run-grouping: consecutive messages from one sender inside five
+            // minutes read as a single block — tight spacing, one timestamp,
+            // one avatar, and the rounded "tail" only on the last bubble.
+            const sameRun = (other: any) => {
+              if (!other || other.from !== m.from) return false
+              const a = new Date(other.created_at || other.at).getTime()
+              const b = new Date(m.created_at || m.at).getTime()
+              return Math.abs(b - a) < 5 * 60 * 1000
+            }
+            const groupStart = showDay || !sameRun(thread[index - 1])
+            const groupEnd = !sameRun(thread[index + 1])
+            const showMeta = groupEnd
+            const showAvatar = isTeam && !mine && groupStart
+            return (
+              <div key={m.id}>
+                {showDay && <div className="my-5 flex items-center gap-3"><div className="h-px flex-1 bg-line" /><span className="rounded-full border border-line bg-surface-raised px-3 py-1 text-2xs font-bold uppercase tracking-wider text-ink-subtle">{day}</span><div className="h-px flex-1 bg-line" /></div>}
+                {firstUnreadIndex === index && !unreadDividerShown && !mine && (unreadDividerShown = true) && (
+                  <div className="my-4 flex items-center gap-3" aria-label="Unread messages">
+                    <div className="h-px flex-1 bg-accent/30" /><span className="rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-wider text-accent-strong">New messages</span><div className="h-px flex-1 bg-accent/30" />
+                  </div>
+                )}
+                {isTeam && !mine && groupStart && <p className="mb-1 ml-1 text-2xs font-bold text-ink-muted">{m.from}</p>}
+                <div className={`flex ${groupStart ? 'mt-3' : 'mt-[3px]'} ${mine ? 'justify-end' : 'justify-start'}`}>
+                  {isTeam && !mine && (
+                    showAvatar
+                      ? <div className="mr-1.5 mb-1 grid h-7 w-7 shrink-0 place-items-center self-end rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{(m.from?.[0] || '?').toUpperCase()}</div>
+                      : <div className="mr-1.5 w-7 shrink-0" aria-hidden="true" />
+                  )}
+                  <div className="group/msg relative max-w-[min(78%,34rem)]">
+                    {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 inline-flex min-h-9 min-w-9 items-center justify-center rounded-full border border-line bg-surface-raised px-2 text-xs shadow-card`} aria-label="Remove reaction">{m.reaction}</button>}
+                    <div
+                      onContextMenu={e => { e.preventDefault(); setReactingFor(null); setActionFor(actionFor === String(m.id) ? null : String(m.id)) }}
+                      onTouchStart={e => startSwipe(e, m)} onTouchEnd={e => endSwipe(e, m)} onTouchMove={e => moveSwipe(e, mine)}
+                      style={{ transform: !mine && swipeOffset ? `translateX(${swipeOffset}px)` : undefined, transition: swipeOffset ? 'none' : 'transform 160ms ease-out' }}
+                      className={`select-none rounded-[20px] px-3.5 py-2.5 text-[15px] leading-snug shadow-card ${mine
+                        ? `bg-accent text-white ${groupEnd ? 'rounded-br-[6px]' : ''}`
+                        : `border border-line bg-surface-raised text-ink ${groupEnd ? 'rounded-bl-[6px]' : ''}`}`}
+                    >
+                      {m.reply_preview && (
+                        <div className={`mb-1.5 rounded-lg border-l-2 px-2 py-1 text-2xs ${mine ? 'border-white/70 bg-white/15 text-white/90' : 'border-accent bg-accent-wash text-ink-muted'}`}>
+                          {m.reply_preview}
+                        </div>
+                      )}
+                      {m.media_type === 'image' && m.media_key && !String(m.id).startsWith('tmp_') && (
+                        <ChatPhoto messageId={String(m.id)} />
+                      )}
+                      {m.media_type === 'image' && !m.media_key && <div className="mb-1.5 grid h-28 w-40 place-items-center rounded-xl bg-surface-sunken text-ink-subtle"><Icon name="camera" size={26} /></div>}
+                      {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+                      {(showMeta || (mine && (m.status === 'sending' || m.status === 'failed'))) && (
+                      <div className={`mt-1 flex items-center justify-end gap-1 text-2xs ${mine ? 'text-white/75' : 'text-ink-subtle'}`}>
+                        {showMeta && <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>}
+                        {mine && m.status === 'sending' && <span className="text-white/75">Sending…</span>}
+                        {mine && m.status === 'failed' && (
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); void retryMessage(m) }}
+                            disabled={sending}
+                            className="font-extrabold text-white underline underline-offset-2 disabled:opacity-50"
+                            aria-label="Retry sending message"
+                          >
+                            Retry
+                          </button>
+                        )}
+                        {showMeta && <Ticks status={m.status} mine={mine} />}
+                      </div>
+                      )}
+                    </div>
+                    <div className={`absolute top-1/2 z-20 hidden -translate-y-1/2 items-center gap-0.5 rounded-pill border border-line bg-surface-raised p-0.5 shadow-raised opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/msg:opacity-100 md:flex ${mine ? 'right-full mr-2' : 'left-full ml-2'}`}>
+                      <button type="button" onClick={e => { e.stopPropagation(); react(m, '🙏') }} className="grid h-8 w-8 place-items-center rounded-full text-sm transition hover:bg-surface-sunken active:scale-90" aria-label="React with 🙏">🙏</button>
+                      <button type="button" onClick={e => { e.stopPropagation(); react(m, '❤️') }} className="grid h-8 w-8 place-items-center rounded-full text-sm transition hover:bg-surface-sunken active:scale-90" aria-label="React with ❤️">❤️</button>
+                      <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); setReactingFor(null); setReplyTo(m) }} className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Reply"><Icon name="reply" size={15} /></button>
+                      <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(null); setActionFor(String(m.id)) }} className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="More actions"><Icon name="dots" size={15} /></button>
+                    </div>
+                    {(isReactionOpen || actionFor === String(m.id)) && (
+                      <div className={`chat-message-actions absolute ${mine ? 'right-0' : 'left-0'} z-30 flex items-center gap-0.5 rounded-pill border border-line bg-surface-raised/95 p-1 shadow-raised backdrop-blur`}>
+                        {REACTIONS.map(r => (
+                          <button key={r} type="button" aria-label={`React ${r}`} onClick={e => { e.stopPropagation(); react(m, r); setActionFor(null) }} className="grid h-9 w-9 place-items-center rounded-full text-lg transition hover:bg-surface-sunken active:scale-90">{r}</button>
+                        ))}
+                        <span className="mx-0.5 h-6 w-px bg-line" />
+                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setReactingFor(null); setActionFor(null) }} className="grid h-9 w-9 place-items-center rounded-full text-accent transition hover:bg-accent-soft" aria-label="Reply"><Icon name="reply" size={17} /></button>
+                        <button type="button" onClick={e => { e.stopPropagation(); void copyMessage(m) }} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Copy message"><Icon name="copy" size={16} /></button>
+                      </div>
+                    )}
+                    {actionFor === String(m.id) && (
+                      <div className={`chat-message-menu absolute ${mine ? 'right-0' : 'left-0'} top-full z-30 mt-2 w-52 max-w-[calc(100vw-2rem)] rounded-2xl border border-line bg-surface-raised p-1.5 shadow-raised`}>
+                        <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="reply" size={16} className="text-ink-muted" /> Reply</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="smile" size={16} className="text-ink-muted" /> React</button>
+                        <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="copy" size={16} className="text-ink-muted" /> Copy</button>
+                        {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="share" size={16} className="text-ink-muted" /> Share photo</button>}
+                        {isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"><Icon name="trash" size={16} /> Remove for everyone</button>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <div ref={bottomRef} />
+        </div>
+          {!atBottom && (
+            <button
+              type="button"
+              onClick={jumpToLatest}
+              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-pill border border-line bg-surface-raised px-3.5 py-2 text-2xs font-bold text-ink shadow-raised transition hover:bg-surface-sunken"
+            >
+              <Icon name="chevron-down" size={14} strokeWidth={2.2} />
+              {unseenBelow > 0 ? `${unseenBelow} new message${unseenBelow === 1 ? '' : 's'}` : 'Jump to latest'}
+            </button>
+          )}
+        </div>
+
+        {error ? <div className="shrink-0 px-4 py-2"><ErrorMessage message={error} /></div> : notice ? <div role="status" className="shrink-0 border-t border-line bg-gold-soft px-4 py-2 text-2xs font-semibold text-gold-strong">{notice}</div> : null}
+
+        <div
+          className="chat-composer relative z-40 shrink-0 border-t border-line bg-surface-raised/95 px-3 pt-2.5 backdrop-blur-xl"
+          style={{ paddingBottom: `max(0.65rem, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))` }}
+        >
+          {replyTo && (
+            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border-l-2 border-accent bg-accent-wash py-1.5 pl-3 pr-2">
+              <div className="min-w-0 flex-1 text-2xs text-ink-muted">
+                <p className="font-bold text-ink">Replying to {replyTo.from === currentUser ? 'yourself' : replyTo.from}</p>
+                <p className="truncate">{replyTo.media_type && !replyTo.text ? 'Photo' : String(replyTo.text || '')}</p>
+              </div>
+              <button type="button" onClick={() => setReplyTo(null)} className="grid h-8 w-8 place-items-center rounded-full text-ink-muted transition hover:bg-surface-raised" aria-label="Cancel reply"><Icon name="close" size={15} /></button>
+            </div>
+          )}
+          {attach && (
+            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-line bg-surface-sunken px-3 py-2 text-2xs text-ink-muted">
+              <Icon name="camera" size={15} />
+              <span className="truncate">{attach.name.slice(0, 32)}</span>
+              <button type="button" onClick={() => { setAttach(null); attachRef.current = null }} className="ml-auto grid h-7 w-7 place-items-center rounded-full text-ink-muted" aria-label="Remove attachment"><Icon name="close" size={14} /></button>
+            </div>
+          )}
+          {(() => {
+            const typingRow = Object.keys(typingPeers[conversationKey] || {}).filter(u => u && u !== currentUser)
+            if (!typingRow.length) return null
+            const label = team
+              ? `${typingRow.length === 1 ? typingRow[0] : `${typingRow.length} teammates are`} typing…`
+              : `${(active?.name || active?.username || typingRow[0]).trim().split(/\s+/)[0]} is typing…`
+            return (
+              <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2 pb-1 text-2xs text-ink-subtle" aria-live="polite">
+                <span className="flex gap-0.5" aria-hidden>{[0, 1, 2].map(i => <span key={i} className="h-1.5 w-1.5 rounded-full bg-accent/60" style={{ animation: 'harvest-typing 1.2s infinite', animationDelay: `${i * 0.18}s` }} />)}</span>
+                <span>{label}</span>
+              </div>
+            )
+          })()}
+          <div className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-1.5 rounded-pill border border-line bg-surface-sunken p-1.5 transition focus-within:border-accent/50 focus-within:bg-surface-raised">
+            <label className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-accent" title="Send a photo">
+              <Icon name="camera" size={20} />
+              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] || null; setAttach(f); attachRef.current = f }} />
+            </label>
+            <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
+              rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
+              className="min-h-11 max-h-28 min-w-0 flex-1 resize-none overflow-y-auto rounded-3xl bg-transparent px-2 py-3 text-sm text-ink outline-none placeholder:text-ink-subtle" />
+            <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-white shadow-card transition hover:bg-accent-strong active:scale-95 disabled:opacity-35 disabled:shadow-none" aria-label="Send">
+              {sending ? <Spinner size={16} /> : <Icon name="send" size={18} strokeWidth={2} />}
+            </button>
+          </div>
+        </div>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main className="flex h-full min-h-0 w-full overflow-hidden bg-surface text-ink">
+      <div className="flex h-full w-full flex-col overflow-y-auto overflow-x-hidden lg:w-[336px] lg:shrink-0 lg:border-r lg:border-line">
+        {inboxPane}
+      </div>
+      <div className="hidden flex-1 items-center justify-center px-10 lg:flex">
+        <div className="max-w-xs text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-[22px] border border-accent-soft bg-accent-wash text-accent"><Icon name="chat" size={28} /></div>
+          <h2 className="mt-5 text-lg font-extrabold text-ink">Select a conversation</h2>
+          <p className="mt-2 text-sm leading-6 text-ink-muted">Pick a chat from the list, or start a new one with someone from your church family.</p>
+        </div>
+      </div>
     </main>
   )
 }
@@ -1114,55 +1307,55 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
   }, [])
 
   return (
-    <section className="px-4 pt-5 pb-10 bg-gradient-to-b from-stone-950 via-black to-black min-h-[calc(100vh-150px)]">
-      <div className="max-w-3xl mx-auto">
-        <div className="rounded-[28px] p-5 border border-amber-400/20 bg-gradient-to-br from-amber-400/15 via-purple-500/10 to-fuchsia-500/10 shadow-xl shadow-purple-950/20">
+    <section className="min-h-[calc(100vh-150px)] bg-surface px-4 pb-10 pt-5">
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-[28px] border border-line bg-gradient-to-br from-accent-wash via-gold-soft to-surface-raised p-5 shadow-card">
           <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-300 to-orange-500 flex items-center justify-center text-2xl shadow-lg">⛪</div>
+            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-accent text-white shadow-card"><Icon name="building" size={24} /></div>
             <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-amber-300 font-extrabold">Harvest Family Community</p>
-              <h2 className="mt-1 text-2xl font-extrabold text-white">One church. One family.</h2>
-              <p className="mt-2 text-sm leading-5 text-stone-300">Stay connected through announcements, departments, groups, prayer and everyday conversations.</p>
+              <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family Community</p>
+              <h2 className="mt-1 text-2xl font-extrabold text-ink">One church. One family.</h2>
+              <p className="mt-2 text-sm leading-5 text-ink-muted">Stay connected through announcements, departments, groups, prayer and everyday conversations.</p>
             </div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2">
-            <button type="button" onClick={onOpenGroups} className="rounded-2xl bg-white text-black py-3 text-xs font-extrabold">👥 Explore groups</button>
-            <button type="button" onClick={onOpenDepartments} className="rounded-2xl bg-stone-900/80 border border-stone-700 text-white py-3 text-xs font-extrabold">🏛 Departments</button>
+            <button type="button" onClick={onOpenGroups} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-2xs font-extrabold text-white shadow-card transition hover:bg-accent-strong"><Icon name="users" size={16} /> Explore groups</button>
+            <button type="button" onClick={onOpenDepartments} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-surface-raised px-4 py-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken"><Icon name="building" size={16} /> Departments</button>
           </div>
         </div>
 
         <div className="mt-5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500 font-bold">Your spaces</p>
-              <h3 className="text-lg font-extrabold text-white">Groups & departments</h3>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-2xs font-bold uppercase tracking-[0.16em] text-ink-subtle">Your spaces</p>
+              <h3 className="truncate text-lg font-extrabold text-ink">Groups &amp; departments</h3>
             </div>
-            <span className="text-xs text-stone-500">{teams.length} spaces</span>
+            <span className="shrink-0 text-2xs text-ink-subtle">{teams.length} spaces</span>
           </div>
           {teams.length === 0 ? (
-            <div className="rounded-2xl border border-stone-800 bg-stone-950 p-6 text-center text-sm text-stone-500">Your joined groups and departments will appear here.</div>
+            <div className="rounded-2xl border border-line bg-surface-raised p-6 text-center text-sm text-ink-muted">Your joined groups and departments will appear here.</div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {teams.map(t => (
-                <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpenTeam(t)} className="text-left rounded-2xl border border-stone-800 bg-stone-950 p-4 hover:bg-stone-900 active:scale-[.99] transition">
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl ${t.kind === 'department' ? 'bg-amber-400/15' : 'bg-purple-500/15'}`}>{t.kind === 'department' ? '🏛️' : '👥'}</div>
-                  <p className="mt-3 text-sm font-extrabold text-white truncate">{t.name}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-stone-500">{t.kind}</p>
+                <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpenTeam(t)} className="rounded-2xl border border-line bg-surface-raised p-4 text-left shadow-card transition hover:bg-surface-sunken active:scale-[.99]">
+                  <div className={`grid h-11 w-11 place-items-center rounded-xl ${t.kind === 'department' ? 'bg-gold-soft text-gold-strong' : 'bg-accent-soft text-accent-strong'}`}>{t.kind === 'department' ? <Icon name="building" size={20} /> : <Icon name="users" size={20} />}</div>
+                  <p className="mt-3 truncate text-sm font-extrabold text-ink">{t.name}</p>
+                  <p className="mt-1 text-2xs uppercase tracking-wide text-ink-subtle">{t.kind}</p>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        <div className="mt-5 rounded-2xl border border-stone-800 bg-stone-950 p-4">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500 font-bold">Community feed</p>
+        <div className="mt-5 rounded-2xl border border-line bg-surface-raised p-4 shadow-card">
+          <p className="text-2xs font-bold uppercase tracking-[0.16em] text-ink-subtle">Community feed</p>
           <div className="mt-3 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-amber-400/15 flex items-center justify-center">📢</div>
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gold-soft text-gold-strong"><Icon name="bell" size={18} /></div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-white">Church announcements</p>
-              <p className="text-xs text-stone-500 truncate">Important updates from Harvest Family will appear here.</p>
+              <p className="text-sm font-bold text-ink">Church announcements</p>
+              <p className="truncate text-2xs text-ink-muted">Important updates from Harvest Family will appear here.</p>
             </div>
-            <span className="text-stone-600">›</span>
+            <Icon name="chevron-right" size={16} className="shrink-0 text-ink-subtle" />
           </div>
         </div>
       </div>
@@ -1232,24 +1425,24 @@ function TeamChatsRail({ onOpen }: {
     }
   }, [])
   return (
-    <section className="px-4 pt-4 pb-1 border-b border-stone-800">
-      <p className="text-[10px] uppercase tracking-[0.16em] text-stone-500 font-bold mb-2">Your community</p>
+    <section className="border-b border-line px-4 pb-1 pt-4">
+      <p className="mb-2 text-2xs font-bold uppercase tracking-[0.16em] text-ink-subtle">Your community</p>
       {teams.length > 0 && (
         <div className="flex gap-4 overflow-x-auto pb-3">
           {teams.map(t => (
-          <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="shrink-0 w-[68px] text-center" aria-label={`Open ${t.name} chat`}>
-            <div className="relative w-[62px] h-[62px] mx-auto">
-              <div className="w-full h-full rounded-2xl bg-gradient-to-br from-purple-600 to-fuchsia-600 flex items-center justify-center text-2xl shadow-lg">{t.kind === 'department' ? '🤝' : '👥'}</div>
+          <button type="button" key={`${t.kind}_${t.slug}`} onClick={() => onOpen(t)} className="w-[72px] shrink-0 text-center" aria-label={`Open ${t.name} chat`}>
+            <div className="relative mx-auto h-[62px] w-[62px]">
+              <div className={`grid h-full w-full place-items-center rounded-2xl text-white shadow-card ${t.kind === 'department' ? 'bg-gradient-to-br from-gold to-gold-strong' : 'bg-gradient-to-br from-accent to-accent-strong'}`}>{t.kind === 'department' ? <Icon name="building" size={24} /> : <Icon name="users" size={24} />}</div>
               {Number(t.unread) > 0 && <UnreadBadge count={Number(t.unread)} className="absolute -right-1.5 -top-1.5" />}
             </div>
-            <p className="text-[11px] text-stone-200 mt-1 truncate">{t.name}</p>
-            <p className="text-[9px] uppercase tracking-wide text-stone-600">{t.kind === 'department' ? 'Department' : 'Group'}</p>
+            <p className="mt-1 truncate text-2xs font-semibold text-ink">{t.name}</p>
+            <p className="text-2xs uppercase tracking-wide text-ink-subtle">{t.kind === 'department' ? 'Department' : 'Group'}</p>
           </button>
           ))}
         </div>
       )}
       {teamsLoaded && teams.length === 0 && (
-        <p className="text-[11px] text-stone-500 pb-3">No groups or departments you belong to yet — browse Groups or Departments in the tabs above.</p>
+        <p className="pb-3 text-2xs text-ink-muted">No groups or departments you belong to yet — browse Groups or Departments in the tabs above.</p>
       )}
     </section>
   )

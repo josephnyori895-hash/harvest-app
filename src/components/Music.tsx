@@ -303,7 +303,7 @@ export default function Music() {
           {track.artwork
             ? <img src={track.artwork} alt="" className="w-14 h-14 rounded-xl object-cover shadow-md" />
             : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white text-xl">🎵</div>}
-          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-[#141210]/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
+          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-ink/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
             <span className="text-white text-xl">{isPlaying ? '⏸' : '▶'}</span>
           </button>
         </div>
@@ -340,7 +340,7 @@ export default function Music() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-49px)] bg-[#FFFBF0] text-[#29251F]">
+    <div className="min-h-[calc(100vh-49px)] bg-surface text-ink">
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-3 gap-3">
           <div className="flex items-center gap-3 min-w-0">

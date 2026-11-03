@@ -32,26 +32,32 @@ export async function handleSermons(request, env, ctx) {
   const user = ctx.user
   const qp = searchParams(url)
 
-  // GET /api/sermons — list (auth not required to browse; URLs are signed).
+  // GET /api/sermons?limit&offset — list (auth not required to browse; URLs are
+  // signed). Paged so the screen is never silently capped at one page: `total`
+  // is the real library size and the client keeps loading past the first 50.
   if (path === '/api/sermons' && method === 'GET') {
-    const limit = Math.min(parseInt(qp.limit || '50', 10), 100)
+    const limit = Math.min(Math.max(parseInt(qp.limit || '50', 10) || 50, 1), 200)
+    const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
+    const countRow = await query(env, 'SELECT COUNT(*) AS total FROM sermons')
+    const total = Number(countRow.rows[0]?.total) || 0
     const { rows } = await query(
       env,
-      `SELECT s.id, s.title, s.speaker, s.scripture, s.description, s.kind, s.duration_secs, s.bytes, s.plays, s.downloads, s.created_at, s.media_key, s.cover_key
-         FROM sermons s ORDER BY s.created_at DESC LIMIT ?`,
-      [limit],
+      `SELECT s.id, s.title, s.speaker, s.scripture, s.description, s.kind, s.duration_secs, s.bytes, s.plays, s.downloads, s.comments, s.created_at, s.media_key, s.cover_key
+         FROM sermons s ORDER BY s.created_at DESC LIMIT ? OFFSET ?`,
+      [limit, offset],
     )
     const out = await Promise.all(rows.map(async s => ({
       ...s,
       plays: Number(s.plays) || 0,
       downloads: Number(s.downloads) || 0,
+      comments: Number(s.comments) || 0,
       // long TTL so playback doesn't cut out mid-sermon
       media_url: await mediaUrlOrNull(env, s.media_key, 24 * 3600),
       cover_url: s.cover_key ? await mediaUrlOrNull(env, s.cover_key, 24 * 3600) : null,
       media_key: undefined,
       cover_key: undefined,
     })))
-    return jsonResponse({ sermons: out })
+    return jsonResponse({ sermons: out, total, hasMore: offset + rows.length < total })
   }
 
   // POST /api/sermons — edit metadata. Admins and delegated sermon managers may edit.

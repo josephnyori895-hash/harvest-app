@@ -31,7 +31,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
 
   const ok = USE_API ? (!checking && (needAdmin ? cur === 'admin' : cur !== 'guest')) : localOk
   if (ok) return <>{children}</>
-  if (checking) return <div className="min-h-[50vh] flex items-center justify-center text-sm text-[#766E63]">Checking your access…</div>
+  if (checking) return <div className="min-h-[50vh] flex items-center justify-center text-sm text-ink-muted">Checking your access…</div>
 
   const tryLogin = async () => {
     const trimmed = pin.trim()
@@ -64,13 +64,13 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
 
   if (fallback) return <>{fallback}</>
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-[#7C3AED] text-white flex items-center justify-center text-xl mb-3">🔒</div>
+    <div className="bg-surface text-ink min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-accent text-white flex items-center justify-center text-xl mb-3">🔒</div>
       <h2 className="font-bold text-lg">{needAdmin ? 'Admin access required' : 'Member access required'}</h2>
-      <p className="text-sm text-[#766E63] mt-1 max-w-[300px]">{needAdmin ? 'Sign in with an administrator account to continue.' : 'Enter your account PIN to continue.'}</p>
-      <div className="w-full max-w-[300px] mt-4 flex gap-2"><input type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" className="flex-1 bg-white border border-[#E8DEC9] rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#7C3AED]" onKeyDown={e => e.key === 'Enter' && void tryLogin()} /><button onClick={() => void tryLogin()} className="px-5 py-3 rounded-2xl bg-[#7C3AED] text-white text-sm font-semibold">Unlock</button></div>
+      <p className="text-sm text-ink-muted mt-1 max-w-[300px]">{needAdmin ? 'Sign in with an administrator account to continue.' : 'Enter your account PIN to continue.'}</p>
+      <div className="w-full max-w-[300px] mt-4 flex gap-2"><input type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" className="flex-1 bg-white border border-line rounded-2xl px-4 py-3 text-sm outline-none focus:border-accent" onKeyDown={e => e.key === 'Enter' && void tryLogin()} /><button onClick={() => void tryLogin()} className="px-5 py-3 rounded-2xl bg-accent text-white text-sm font-semibold">Unlock</button></div>
       {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
-      {!USE_API && <p className="text-[11px] text-[#766E63] mt-3">Offline demo mode</p>}
+      {!USE_API && <p className="text-[11px] text-ink-muted mt-3">Offline demo mode</p>}
     </div>
   )
 }

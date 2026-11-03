@@ -67,6 +67,19 @@ type QueueRecord = {
 const MAX_ATTEMPTS = 5
 const BACKOFF_MS = [15_000, 60_000, 180_000, 600_000]
 
+// Per-task completion signal. startBackgroundUpload's promise must stay
+// pending while a task is retrying (status 'waiting') and settle only at a
+// terminal state: resolve on confirmed success, reject on final failure.
+type DeferredHandle = { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void }
+const deferreds = new Map<string, DeferredHandle>()
+const getDeferred = (id: string): DeferredHandle => {
+  const h = deferreds.get(id)
+  if (h) return h
+  const handle: DeferredHandle = { promise: new Promise<void>((resolve, reject) => { handle.resolve = resolve; handle.reject = reject }), resolve: () => {}, reject: () => {} }
+  deferreds.set(id, handle)
+  return handle
+}
+
 // Client-side mirror of the server's MAX_BYTES (workers/src/lib/media.js).
 // Checking before the background queue starts avoids a member waiting on a
 // multi-hour upload that can only fail at presign time.
@@ -298,6 +311,7 @@ async function runAttempt(id: string) {
     return
   }
   running.add(id)
+  const deferred = getDeferred(id)
   states.set(id, { ...(states.get(id)!), status: 'uploading', pct: 0, attempt: rec.attempts + 1 })
   emit()
   try {
@@ -308,6 +322,8 @@ async function runAttempt(id: string) {
     const st = states.get(id)
     if (st) { states.set(id, { ...st, pct: 100 }); emit() }
     showToast(rec.successMsg, 'success', 3500)
+    deferred.resolve()
+    deferreds.delete(id)
     records.delete(id)
     states.delete(id)
     await idbDelete(id)
@@ -330,6 +346,8 @@ async function runAttempt(id: string) {
       if (st) { states.set(id, { ...st, status: 'failed', pct: 0, attempt: rec.attempts }); emit() }
       void pushHistory({ id, label: rec.label, status: 'failed', at: Date.now(), detail })
       showToast(`${rec.label} failed — tap Retry to try again`, 'error', 5000)
+      deferred.reject(new Error(detail))
+      deferreds.delete(id)
       emit()
     }
   } finally {
@@ -355,8 +373,8 @@ export function startBackgroundUpload(opts: { label: string; successMsg: string;
   records.set(id, { id, label: opts.label, successMsg: opts.successMsg, task, attempts: 0, nextAttemptAt: 0, owner: currentOwner() })
   states.set(id, { id, label: opts.label, pct: 0, status: 'uploading', attempt: 1, startedAt: Date.now() })
   emit()
-  const promise = runAttempt(id)
-  promise.catch(() => {})
+  const promise = getDeferred(id).promise
+  void runAttempt(id).catch(() => {})
   return promise
 }
 

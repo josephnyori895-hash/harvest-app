@@ -117,11 +117,11 @@ export default function HarvestMap({ users, onOpenUser }: { users: any[], onOpen
   }
 
   return (
-    <div className="bg-[#141210] text-white min-h-[70vh] flex flex-col min-w-0 overflow-x-hidden">
+    <div className="bg-ink text-white min-h-[70vh] flex flex-col min-w-0 overflow-x-hidden">
       <div className="p-4 border-b border-stone-800">
         <h1 className="font-bold">Harvest Map</h1>
         <p className="text-xs text-stone-500 mt-1">Find Harvest members and congregations nearby. Precise member locations are only shared with mutual follows and admins.</p>
-        <button onClick={updateMyLocation} disabled={locating} className="mt-3 px-3 py-2 rounded-full text-[11px] font-bold bg-[#7C3AED] text-white disabled:opacity-50">
+        <button onClick={updateMyLocation} disabled={locating} className="mt-3 px-3 py-2 rounded-full text-[11px] font-bold bg-accent text-white disabled:opacity-50">
           {locating ? 'Getting your location…' : '📍 Share my location'}
         </button>
         {locationError && (

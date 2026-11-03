@@ -405,25 +405,25 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => { setAccountsPage(1) }, [q])
 
   return (
-    <div className="bg-[#FFFBF0] text-[#29251F] min-h-[70vh] p-4">
+    <div className="bg-surface text-ink min-h-[70vh] p-4">
       <div className="flex items-center gap-3 mb-4">
-        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-[#E8DEC9]" aria-label="Back">‹</button>
+        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-line" aria-label="Back">‹</button>
         <div className="min-w-0">
           <h1 className="font-extrabold">Harvest Admin</h1>
-          <p className="text-xs text-[#766E63]">Church-wide controls · Moderation · Accounts · Content · Audit</p>
+          <p className="text-xs text-ink-muted">Church-wide controls · Moderation · Accounts · Content · Audit</p>
         </div>
-        <span className="ml-auto text-xs bg-[#F3E8FF] text-[#5B21B6] px-3 py-1.5 rounded-full font-bold whitespace-nowrap">            {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : tab === 'home' ? '🏠 Edit' : 'Audit'}</span>
+        <span className="ml-auto text-xs bg-accent-soft text-accent-strong px-3 py-1.5 rounded-full font-bold whitespace-nowrap">            {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : tab === 'home' ? '🏠 Edit' : 'Audit'}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-4">
-        <button type="button" onClick={() => setTab('dashboard')} className="px-3 py-2.5 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold">📊 Dashboard</button>
-        <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">👥 Manage Groups</button>
-        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🏢 Manage Departments</button>
-        <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-[#E8DEC9] text-[#5C554C] text-xs font-bold">🎙 Manage Sermons</button>
+        <button type="button" onClick={() => setTab('dashboard')} className="px-3 py-2.5 rounded-2xl bg-accent text-white text-xs font-bold">📊 Dashboard</button>
+        <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">👥 Manage Groups</button>
+        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">🏢 Manage Departments</button>
+        <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">🎙 Manage Sermons</button>
       </div>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {(['dashboard', 'moderation', 'media', 'accounts', 'announce', 'home', 'give', 'adverts', 'chat', 'audit'] as const).map(value => (
-          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-[#7C3AED] text-white shadow' : 'bg-white border border-[#E8DEC9] text-[#5C554C]'}`}>
+          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-accent text-white shadow' : 'bg-white border border-line text-ink-muted'}`}>
             {value === 'dashboard' ? '📊 Today' : value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'adverts' ? '📢 Adverts' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
@@ -436,37 +436,37 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Daily operations dashboard ── */}
       {tab === 'dashboard' && (
         <div className="space-y-3">
-          {loadingDashboard ? <p className="text-sm text-[#766E63] text-center py-10">Loading today’s operations…</p> : <>
+          {loadingDashboard ? <p className="text-sm text-ink-muted text-center py-10">Loading today’s operations…</p> : <>
             <div className="grid grid-cols-2 gap-2">
               {[
                 ['Pending approvals', dashboard.pending, 'moderation', '🛡️'],
                 ['New members (7d)', dashboard.members, 'accounts', '👥'],
                 ['Active groups', dashboard.groups, 'groups', '🟣'],
                 ['Departments', dashboard.departments, 'departments', '🏢'],
-              ].map(([label,count,target,icon]) => <button key={String(label)} onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="text-left bg-white border border-[#E8DEC9] rounded-2xl p-4"><span className="text-lg">{icon}</span><p className="text-2xl font-extrabold mt-1">{count}</p><p className="text-[11px] text-[#766E63]">{label}</p></button>)}
+              ].map(([label,count,target,icon]) => <button key={String(label)} onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="text-left bg-white border border-line rounded-2xl p-4"><span className="text-lg">{icon}</span><p className="text-2xl font-extrabold mt-1">{count}</p><p className="text-[11px] text-ink-muted">{label}</p></button>)}
             </div>
-            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
-              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">⚡ Quick actions</h2><button onClick={() => void loadDashboard()} className="text-xs font-bold text-[#7C3AED]">Refresh</button></div>
+            <div className="bg-white border border-line rounded-2xl p-4">
+              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">⚡ Quick actions</h2><button onClick={() => void loadDashboard()} className="text-xs font-bold text-accent">Refresh</button></div>
               <div className="grid grid-cols-2 gap-2 mt-3">
-                <button onClick={() => setTab('moderation')} className="py-3 rounded-xl bg-[#F3E8FF] text-[#5B21B6] text-xs font-bold">Review approvals</button>
-                <button onClick={() => setTab('accounts')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage members</button>
-                <button onClick={() => onOpenGroups?.()} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage groups</button>
-                <button onClick={() => onOpenDepartments?.()} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Manage departments</button>
-                <button onClick={() => setTab('announce')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Send announcement</button>
-                <button onClick={() => setTab('chat')} className="py-3 rounded-xl bg-[#F5EEDF] text-xs font-bold">Moderate chat</button>
+                <button onClick={() => setTab('moderation')} className="py-3 rounded-xl bg-accent-soft text-accent-strong text-xs font-bold">Review approvals</button>
+                <button onClick={() => setTab('accounts')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage members</button>
+                <button onClick={() => onOpenGroups?.()} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage groups</button>
+                <button onClick={() => onOpenDepartments?.()} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage departments</button>
+                <button onClick={() => setTab('announce')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Send announcement</button>
+                <button onClick={() => setTab('chat')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Moderate chat</button>
               </div>
             </div>
-            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+            <div className="bg-white border border-line rounded-2xl p-4">
               <h2 className="font-extrabold text-sm mb-3">📰 Recent content</h2>
-              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-[#766E63]">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p></div>) : <p className="text-xs text-[#766E63]">No recent content.</p>}
+              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-ink-muted">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p></div>) : <p className="text-xs text-ink-muted">No recent content.</p>}
             </div>
-            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
+            <div className="bg-white border border-line rounded-2xl p-4">
               <h2 className="font-extrabold text-sm mb-3">💬 Recent chat activity</h2>
-              {dashboard.chats.length ? dashboard.chats.map((x:any) => <div key={x.conversation_key} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.name}</p><p className="text-[10px] text-[#766E63] truncate">{x.last_from ? '@'+x.last_from+' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p></div>) : <p className="text-xs text-[#766E63]">No recent team chat activity.</p>}
+              {dashboard.chats.length ? dashboard.chats.map((x:any) => <div key={x.conversation_key} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.name}</p><p className="text-[10px] text-ink-muted truncate">{x.last_from ? '@'+x.last_from+' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p></div>) : <p className="text-xs text-ink-muted">No recent team chat activity.</p>}
             </div>
-            <div className="bg-white border border-[#E8DEC9] rounded-2xl p-4">
-              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">🧾 Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-xs font-bold text-[#7C3AED]">View all</button></div>
-              {dashboard.audit.length ? dashboard.audit.map((x:any) => <div key={x.id} className="py-2 border-b border-[#F5EEDF] last:border-0"><p className="text-xs font-bold">{x.action}</p><p className="text-[10px] text-[#766E63]">{x.actor_username || 'system'} → {x.target_type} {x.target_id || ''} · {new Date(x.created_at).toLocaleString()}</p></div>) : <p className="text-xs text-[#766E63] mt-2">No admin actions recorded yet.</p>}
+            <div className="bg-white border border-line rounded-2xl p-4">
+              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">🧾 Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-xs font-bold text-accent">View all</button></div>
+              {dashboard.audit.length ? dashboard.audit.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.action}</p><p className="text-[10px] text-ink-muted">{x.actor_username || 'system'} → {x.target_type} {x.target_id || ''} · {new Date(x.created_at).toLocaleString()}</p></div>) : <p className="text-xs text-ink-muted mt-2">No admin actions recorded yet.</p>}
             </div>
           </>}
         </div>
@@ -478,30 +478,30 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Announce tab ── */}
       {tab === 'announce' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
             <div>
               <h2 className="font-extrabold text-sm">📣 Announce to members</h2>
-              <p className="text-xs text-[#766E63] mt-0.5">Lands as a direct message in every member's chat — with an unread badge. Members can reply straight back to you.</p>
+              <p className="text-xs text-ink-muted mt-0.5">Lands as a direct message in every member's chat — with an unread badge. Members can reply straight back to you.</p>
             </div>
             <div>
-              <label htmlFor="ann-body" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Announcement</label>
+              <label htmlFor="ann-body" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Announcement</label>
               <textarea
                 id="ann-body"
                 value={annText}
                 onChange={e => setAnnText(e.target.value.slice(0, 2000))}
                 rows={5}
                 placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend! 🙏"
-                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-3 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171] resize-y"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle resize-y"
               />
-              <p className="text-[10px] text-[#766E63] text-right mt-1">{annText.length}/2000</p>
+              <p className="text-[10px] text-ink-muted text-right mt-1">{annText.length}/2000</p>
             </div>
             <div>
-              <label htmlFor="ann-group" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Send to</label>
+              <label htmlFor="ann-group" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Send to</label>
               <select
                 id="ann-group"
                 value={annGroup}
                 onChange={e => setAnnGroup(e.target.value)}
-                className="w-full rounded-xl border border-[#E8DEC9] bg-white px-3 py-3 text-sm font-medium outline-none focus:border-[#7C3AED]"
+                className="w-full rounded-xl border border-line bg-white px-3 py-3 text-sm font-medium outline-none focus:border-accent"
               >
                 <option value="">All members (every congregation)</option>
                 {GROUPS.map(g => <option key={g} value={g}>{g} only</option>)}
@@ -510,7 +510,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             <button
               onClick={sendAnnounce}
               disabled={annBusy || annText.trim().length < 2}
-              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
             >
               {annBusy ? 'Sending…' : annGroup ? `📣 Send to ${annGroup}` : '📣 Send to all members'}
             </button>
@@ -524,7 +524,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 <span aria-hidden>🟢</span> Share this on WhatsApp
               </button>
             )}
-            <p className="text-[10px] text-[#766E63]">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
+            <p className="text-[10px] text-ink-muted">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
           </div>
         </div>
       )}
@@ -532,21 +532,21 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Home text tab: edit the banner + weekly verse ── */}
       {tab === 'home' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
             <div>
               <h2 className="font-extrabold text-sm">🏠 Home screen text</h2>
-              <p className="text-xs text-[#766E63] mt-0.5">Edits what every member sees at the top of the Community screen — the purple banner and the weekly encouragement. Changes go live for everyone immediately.</p>
+              <p className="text-xs text-ink-muted mt-0.5">Edits what every member sees at the top of the Community screen — the purple banner and the weekly encouragement. Changes go live for everyone immediately.</p>
             </div>
             {CONTENT_FIELDS.map(f => (
               <div key={f.key}>
-                <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
+                <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
                 {f.key === 'pastor_usernames' ? (
                   <div>
                     <textarea id={`ct-${f.key}`} value={content[f.key] ?? content.pastor_username ?? ''}
                       onChange={e => setContent(c => ({ ...c, pastor_usernames: e.target.value.slice(0, f.max) }))}
                       rows={3} placeholder={f.hint}
-                      className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 resize-y" />
-                    <p className="text-[10px] text-[#766E63] mt-1">Use real usernames, not display names. Multiple pastors are supported.</p>
+                      className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 resize-y" />
+                    <p className="text-[10px] text-ink-muted mt-1">Use real usernames, not display names. Multiple pastors are supported.</p>
                   </div>
                 ) : f.textarea ? (
                   <textarea
@@ -555,7 +555,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                     onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
                     rows={2}
                     placeholder={f.hint}
-                    className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171] resize-y"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle resize-y"
                   />
                 ) : (
                   <input
@@ -563,20 +563,20 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                     value={content[f.key] ?? ''}
                     onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
                     placeholder={f.hint}
-                    className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/20 placeholder:text-[#8A8171]"
+                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle"
                   />
                 )}
-                <p className="text-[10px] text-[#766E63] text-right mt-0.5">{(content[f.key] ?? '').length}/{f.max}</p>
+                <p className="text-[10px] text-ink-muted text-right mt-0.5">{(content[f.key] ?? '').length}/{f.max}</p>
               </div>
             ))}
             <button
               onClick={() => void saveContent()}
               disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
             >
               {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
             </button>
-            <p className="text-[10px] text-[#766E63]">Tip: clear a field to restore the original default wording. Members see changes the next time they open the Community screen.</p>
+            <p className="text-[10px] text-ink-muted">Tip: clear a field to restore the original default wording. Members see changes the next time they open the Community screen.</p>
           </div>
         </div>
       )}
@@ -584,41 +584,41 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Give text tab: edit the giving screen ── */}
       {tab === 'give' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
             <div>
               <h2 className="font-extrabold text-sm">💰 Give screen</h2>
-              <p className="text-xs text-[#766E63] mt-0.5">Edit the giving headline, the Paybill fallback details, the giving funds (buttons) and the quick amounts. Saves go live for every member immediately.</p>
+              <p className="text-xs text-ink-muted mt-0.5">Edit the giving headline, the Paybill fallback details, the giving funds (buttons) and the quick amounts. Saves go live for every member immediately.</p>
             </div>
             {GIVE_FIELDS.map(f => (
               <div key={f.key}>
-                <label htmlFor={`gv-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">{f.label}</label>
+                <label htmlFor={`gv-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
                 {f.textarea ? (
-                  <textarea id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED] resize-y" />
+                  <textarea id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent resize-y" />
                 ) : (
-                  <input id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} placeholder={f.hint} className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
+                  <input id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent" />
                 )}
               </div>
             ))}
             <div>
-              <label htmlFor="gv-funds" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Giving funds (one per line: id | Label | sub-text | icon)</label>
+              <label htmlFor="gv-funds" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Giving funds (one per line: id | Label | sub-text | icon)</label>
               <textarea
                 id="gv-funds"
                 value={fundsDraft ?? fundsJson}
                 onChange={e => setFundsDraft(e.target.value)}
                 rows={5}
                 placeholder="tithe | Tithe | First fruits | 💰"
-                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
               />
-              <p className="text-[10px] text-[#766E63] mt-0.5">Max 12 funds. The id is one word (tithe, offering, building…). Icon is any emoji. Clear to restore the defaults.</p>
+              <p className="text-[10px] text-ink-muted mt-0.5">Max 12 funds. The id is one word (tithe, offering, building…). Icon is any emoji. Clear to restore the defaults.</p>
             </div>
             <div>
-              <label htmlFor="gv-quick" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Quick amounts (comma separated KES)</label>
+              <label htmlFor="gv-quick" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Quick amounts (comma separated KES)</label>
               <input
                 id="gv-quick"
                 value={quickDraft ?? (() => { try { return (JSON.parse(content.giving_quick || '[]') as number[]).join(', ') } catch { return '' } })()}
                 onChange={e => setQuickDraft(e.target.value)}
                 placeholder="100, 200, 500, 1000, 2500, 5000"
-                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
               />
             </div>
             <button
@@ -655,11 +655,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 }, 0)
               }}
               disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
             >
               {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
             </button>
-            <p className="text-[10px] text-[#766E63]">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
+            <p className="text-[10px] text-ink-muted">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
           </div>
         </div>
       )}
@@ -667,34 +667,34 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Sponsored adverts tab ── */}
       {tab === 'adverts' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9] space-y-3">
+          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
             <div>
               <h2 className="font-extrabold text-sm">📢 Sponsored adverts</h2>
-              <p className="text-xs text-[#766E63] mt-0.5">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
+              <p className="text-xs text-ink-muted mt-0.5">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
             </div>
             <div>
-              <label htmlFor="ad-settings" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Placement and limits</label>
+              <label htmlFor="ad-settings" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Placement and limits</label>
               <textarea
                 id="ad-settings"
                 value={settingsDraft ?? settingsJson}
                 onChange={e => setSettingsDraft(e.target.value)}
                 rows={4}
                 placeholder={ADVERT_SETTINGS_EXAMPLE}
-                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
               />
-              <p className="text-[10px] text-[#766E63] mt-0.5">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
+              <p className="text-[10px] text-ink-muted mt-0.5">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
             </div>
             <div>
-              <label htmlFor="ad-list" className="block text-[10px] font-extrabold uppercase tracking-wider text-[#766E63] mb-1">Adverts (JSON array)</label>
+              <label htmlFor="ad-list" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Adverts (JSON array)</label>
               <textarea
                 id="ad-list"
                 value={advertsDraft ?? advertsJson}
                 onChange={e => setAdvertsDraft(e.target.value)}
                 rows={10}
                 placeholder={ADVERT_EXAMPLE}
-                className="w-full rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-2.5 text-xs font-mono outline-none focus:border-[#7C3AED] resize-y"
+                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
               />
-              <p className="text-[10px] text-[#766E63] mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
+              <p className="text-[10px] text-ink-muted mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
             </div>
             <button
               onClick={() => {
@@ -719,11 +719,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 })()
               }}
               disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-[#7C3AED] text-white text-sm font-extrabold disabled:opacity-50"
+              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
             >
               {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
             </button>
-            <p className="text-[10px] text-[#766E63]">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
+            <p className="text-[10px] text-ink-muted">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
           </div>
         </div>
       )}
@@ -732,16 +732,16 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {tab === 'moderation' && (
         <>
           <div className="flex gap-2 mb-4 overflow-auto">
-            {(['pending', 'transcoding', 'rejected'] as const).map(value => <button key={value} onClick={() => setStatus(value)} className={`px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap ${status === value ? 'bg-[#7C3AED] text-white' : 'bg-white border border-[#E8DEC9]'}`}>{value[0].toUpperCase() + value.slice(1)}</button>)}
-            <button onClick={() => void cleanup()} disabled={cleanupBusy} className="ml-auto px-3 py-2 rounded-full text-xs font-bold bg-[#F5EEDF] border border-[#E8DEC9] disabled:opacity-50">{cleanupBusy ? 'Cleaning…' : 'Clean orphaned uploads'}</button>
+            {(['pending', 'transcoding', 'rejected'] as const).map(value => <button key={value} onClick={() => setStatus(value)} className={`px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap ${status === value ? 'bg-accent text-white' : 'bg-white border border-line'}`}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+            <button onClick={() => void cleanup()} disabled={cleanupBusy} className="ml-auto px-3 py-2 rounded-full text-xs font-bold bg-surface-sunken border border-line disabled:opacity-50">{cleanupBusy ? 'Cleaning…' : 'Clean orphaned uploads'}</button>
           </div>
-          {pending.length === 0 ? <p className="text-sm text-[#766E63] text-center py-12">No {status} media — all caught up.</p> : pending.map(item => (
-            <div key={item.id} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 mb-3 shadow-sm">
-              <div className="flex justify-between items-center"><span className="text-xs font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-[#F3E8FF] text-[#5B21B6]">{item.type}</span><span className="text-xs text-[#766E63]">{new Date(item.created_at).toLocaleString()}</span></div>
+          {pending.length === 0 ? <p className="text-sm text-ink-muted text-center py-12">No {status} media — all caught up.</p> : pending.map(item => (
+            <div key={item.id} className="bg-white border border-line rounded-3xl p-4 mb-3 shadow-sm">
+              <div className="flex justify-between items-center"><span className="text-xs font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-accent-soft text-accent-strong">{item.type}</span><span className="text-xs text-ink-muted">{new Date(item.created_at).toLocaleString()}</span></div>
               <p className="text-sm font-semibold mt-3">{item.name || item.username || 'Harvest member'}</p>
-              <p className="text-sm text-[#5C554C] mt-1">{item.caption || 'No caption'}</p>
-              {item.thumb_url && <img src={item.thumb_url} alt="Pending media" className="w-full max-h-72 object-cover rounded-2xl mt-3 bg-[#F5EEDF]" />}
-              {status === 'pending' && <div className="flex gap-2 mt-3"><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'approve')} className="flex-1 py-2.5 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{busy === String(item.id) ? 'Working…' : 'Approve & publish'}</button><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'reject')} className="flex-1 py-2.5 rounded-2xl bg-[#F5EEDF] text-[#BE185D] text-sm font-bold disabled:opacity-50">Reject</button></div>}
+              <p className="text-sm text-ink-muted mt-1">{item.caption || 'No caption'}</p>
+              {item.thumb_url && <img src={item.thumb_url} alt="Pending media" className="w-full max-h-72 object-cover rounded-2xl mt-3 bg-surface-sunken" />}
+              {status === 'pending' && <div className="flex gap-2 mt-3"><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'approve')} className="flex-1 py-2.5 rounded-2xl bg-accent text-white text-sm font-bold disabled:opacity-50">{busy === String(item.id) ? 'Working…' : 'Approve & publish'}</button><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'reject')} className="flex-1 py-2.5 rounded-2xl bg-surface-sunken text-[#BE185D] text-sm font-bold disabled:opacity-50">Reject</button></div>}
               {status === 'rejected' && item.reject_reason && <p className="text-xs text-[#BE185D] mt-3">Reason: {item.reject_reason}</p>}
             </div>
           ))}
@@ -752,55 +752,55 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {tab === 'accounts' && (
         <>
           <div className="flex gap-2 mb-3">
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" className="flex-1 bg-white border border-[#E8DEC9] rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-[#7C3AED]" />
-            <button onClick={() => setShowCreate(v => !v)} className="px-4 py-2.5 rounded-2xl bg-[#7C3AED] text-white text-xs font-bold whitespace-nowrap">＋ New account</button>
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" className="flex-1 bg-white border border-line rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-accent" />
+            <button onClick={() => setShowCreate(v => !v)} className="px-4 py-2.5 rounded-2xl bg-accent text-white text-xs font-bold whitespace-nowrap">＋ New account</button>
           </div>
 
           {showCreate && (
-            <div className="bg-white border border-[#E8DEC9] rounded-3xl p-4 mb-3 space-y-2">
+            <div className="bg-white border border-line rounded-3xl p-4 mb-3 space-y-2">
               <p className="text-sm font-bold">Create member account</p>
               <div className="flex gap-2">
-                <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#7C3AED]" />
-                <input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Full name" className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#7C3AED]" />
+                <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
+                <input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Full name" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
               </div>
               <div className="flex gap-2">
-                <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#7C3AED]" />
-                <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))} className="bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none">
+                <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
+                <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))} className="bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none">
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
                 </select>
-                <select value={newUser.group_name} onChange={e => setNewUser(u => ({ ...u, group_name: e.target.value }))} className="bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none max-w-[45%]">
+                <select value={newUser.group_name} onChange={e => setNewUser(u => ({ ...u, group_name: e.target.value }))} className="bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none max-w-[45%]">
                   {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
-              <button onClick={() => void createUser()} disabled={busy === 'create'} className="w-full py-2.5 rounded-2xl bg-[#7C3AED] text-white text-sm font-bold disabled:opacity-50">{busy === 'create' ? 'Creating…' : 'Create account'}</button>
+              <button onClick={() => void createUser()} disabled={busy === 'create'} className="w-full py-2.5 rounded-2xl bg-accent text-white text-sm font-bold disabled:opacity-50">{busy === 'create' ? 'Creating…' : 'Create account'}</button>
             </div>
           )}
 
-          {loadingAccounts ? <p className="text-sm text-[#766E63] text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-[#766E63] text-center py-10">No members found.</p> : pagedAccounts.map(u => (
-            <div key={u.username} className="bg-white border border-[#E8DEC9] rounded-3xl p-4 mb-2">
+          {loadingAccounts ? <p className="text-sm text-ink-muted text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No members found.</p> : pagedAccounts.map(u => (
+            <div key={u.username} className="bg-white border border-line rounded-3xl p-4 mb-2">
               <button onClick={() => setExpanded(expanded === u.username ? null : u.username)} className="w-full flex gap-3 items-center justify-between text-left">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-[#7C3AED]">✓</span>}</p>
-                  <p className="text-xs text-[#766E63] truncate">@{u.username} · {u.group_name}</p>
-                  {u.phone && <p className="text-xs text-[#766E63] truncate">📞 {u.phone}</p>}
+                  <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-accent">✓</span>}</p>
+                  <p className="text-xs text-ink-muted truncate">@{u.username} · {u.group_name}</p>
+                  {u.phone && <p className="text-xs text-ink-muted truncate">📞 {u.phone}</p>}
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-[#F3E8FF] text-[#5B21B6]' : 'bg-[#F5EEDF] text-[#766E63]'}`}>{(u.role || 'member').toUpperCase()}</span>
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-accent-soft text-accent-strong' : 'bg-surface-sunken text-ink-muted'}`}>{(u.role || 'member').toUpperCase()}</span>
               </button>
               {expanded === u.username && (
-                <div className="mt-3 pt-3 border-t border-[#F5EEDF] space-y-2">
+                <div className="mt-3 pt-3 border-t border-surface-sunken space-y-2">
                   <div className="flex gap-2 flex-wrap">
-                    <select value={u.group_name || GROUPS[0]} onChange={e => void patchUser(u.username, { group_name: e.target.value })} className="flex-1 min-w-[140px] bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-xs outline-none">
+                    <select value={u.group_name || GROUPS[0]} onChange={e => void patchUser(u.username, { group_name: e.target.value })} className="flex-1 min-w-[140px] bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none">
                       {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
-                    <select value={u.role || 'member'} onChange={e => void patchUser(u.username, { role: e.target.value })} className="bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-xs outline-none">
+                    <select value={u.role || 'member'} onChange={e => void patchUser(u.username, { role: e.target.value })} className="bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none">
                       <option value="member">Member role</option>
                       <option value="admin">Admin role</option>
                     </select>
                   </div>
                   {u.role !== 'admin' && (
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#766E63] mb-1">Leader powers (grants)</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted mb-1">Leader powers (grants)</p>
                       <div className="flex gap-1.5 flex-wrap">
                       {([
                         ['post_media', 'Post media'],
@@ -813,17 +813,17 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                       ] as const).map(([cap, label]) => {
                         const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
                         return (
-                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-[#7C3AED] text-white border-[#7C3AED]' : 'bg-white text-[#766E63] border-[#E8DEC9]'}`}>{label}</button>
+                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-accent text-white border-accent' : 'bg-white text-ink-muted border-line'}`}>{label}</button>
                         )
                       })}
                       </div>
-                      <p className="text-[10px] text-[#766E63] mt-1">Pastors/leaders: tap to grant. Sermon Manager gives full control of the Sermons tab; other grants control their respective areas.</p>
+                      <p className="text-[10px] text-ink-muted mt-1">Pastors/leaders: tap to grant. Sermon Manager gives full control of the Sermons tab; other grants control their respective areas.</p>
                     </div>
                   )}
                   <div className="flex gap-2 flex-wrap">
-                    <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F5EEDF] text-[#5C554C] disabled:opacity-50">Reset PIN</button>
-                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { verified: !u.verified })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F3E8FF] text-[#5B21B6] disabled:opacity-50">{u.verified ? 'Remove ✓' : 'Verify ✓'}</button>
-                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-[#F5EEDF] text-[#5C554C] disabled:opacity-50">{u.active === false ? 'Reactivate' : 'Deactivate'}</button>
+                    <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-surface-sunken text-ink-muted disabled:opacity-50">Reset PIN</button>
+                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { verified: !u.verified })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-accent-soft text-accent-strong disabled:opacity-50">{u.verified ? 'Remove ✓' : 'Verify ✓'}</button>
+                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-surface-sunken text-ink-muted disabled:opacity-50">{u.active === false ? 'Reactivate' : 'Deactivate'}</button>
                     <button disabled={busy === u.username} onClick={() => void removeUser(u.username)} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">Delete</button>
                   </div>
                 </div>
@@ -837,23 +837,23 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               <button
                 onClick={() => setAccountsPage(p => Math.max(1, p - 1))}
                 disabled={safeAccountsPage <= 1}
-                className="px-4 py-2 rounded-full bg-white border border-[#E8DEC9] text-xs font-bold text-[#5C554C] disabled:opacity-40"
+                className="px-4 py-2 rounded-full bg-white border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
               >← Prev</button>
-              <p className="text-xs text-[#766E63] font-semibold">Page {safeAccountsPage} of {accountsPages} · {filteredAccounts.length} members</p>
+              <p className="text-xs text-ink-muted font-semibold">Page {safeAccountsPage} of {accountsPages} · {filteredAccounts.length} members</p>
               <button
                 onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))}
                 disabled={safeAccountsPage >= accountsPages}
-                className="px-4 py-2 rounded-full bg-white border border-[#E8DEC9] text-xs font-bold text-[#5C554C] disabled:opacity-40"
+                className="px-4 py-2 rounded-full bg-white border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
               >Next →</button>
             </div>
           )}
 
-          <div className="mt-4 bg-white border border-[#E8DEC9] rounded-3xl p-4">
+          <div className="mt-4 bg-white border border-line rounded-3xl p-4">
             <p className="text-sm font-bold">Restore a deactivated account</p>
-            <p className="text-xs text-[#766E63] mt-1">Deactivated members can't sign in until restored.</p>
+            <p className="text-xs text-ink-muted mt-1">Deactivated members can't sign in until restored.</p>
             <div className="flex gap-2 mt-2">
-              <input value={restoreName} onChange={e => setRestoreName(e.target.value)} placeholder="username" className="flex-1 bg-[#FFFBF0] border border-[#E8DEC9] rounded-xl px-3 py-2 text-sm outline-none focus:border-[#7C3AED]" />
-              <button onClick={() => void restoreUser()} disabled={busy === 'restore'} className="px-4 py-2 rounded-xl bg-[#7C3AED] text-white text-xs font-bold disabled:opacity-50">{busy === 'restore' ? '…' : 'Restore'}</button>
+              <input value={restoreName} onChange={e => setRestoreName(e.target.value)} placeholder="username" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
+              <button onClick={() => void restoreUser()} disabled={busy === 'restore'} className="px-4 py-2 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">{busy === 'restore' ? '…' : 'Restore'}</button>
             </div>
           </div>
         </>
@@ -862,32 +862,32 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Chat moderation tab ── */}
       {tab === 'chat' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-[#E8DEC9]">
+          <div className="p-4 rounded-2xl bg-white border border-line">
             <h2 className="font-extrabold text-sm">💬 Chat moderation</h2>
-            <p className="text-xs text-[#766E63] mt-1">Review and remove messages from church group and department conversations.</p>
+            <p className="text-xs text-ink-muted mt-1">Review and remove messages from church group and department conversations.</p>
             {loadingChats ? <p className="text-xs py-4">Loading conversations…</p> : (
-              <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} className="w-full mt-3 rounded-xl border border-[#E8DEC9] bg-[#FFFBF0] px-3 py-3 text-sm">
+              <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} className="w-full mt-3 rounded-xl border border-line bg-surface px-3 py-3 text-sm">
                 <option value="">Choose a conversation</option>
                 {chatConversations.map((x: any) => <option key={x.key} value={x.key}>{x.name || x.key}</option>)}
               </select>
             )}
           </div>
-          {selectedChat && (loadingChatMessages ? <p className="text-xs text-center py-8">Loading messages…</p> : chatMessages.length === 0 ? <p className="text-xs text-center py-8 text-[#766E63]">No messages in this conversation.</p> : (
-            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-white border border-[#E8DEC9] rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-[#766E63]">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-[#8A8171]' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
+          {selectedChat && (loadingChatMessages ? <p className="text-xs text-center py-8">Loading messages…</p> : chatMessages.length === 0 ? <p className="text-xs text-center py-8 text-ink-muted">No messages in this conversation.</p> : (
+            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-white border border-line rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-ink-muted">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-ink-subtle' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
           ))}
         </div>
       )}
 
       {/* ── Audit tab ── */}
       {tab === 'audit' && (
-        loadingAudit ? <p className="text-sm text-[#766E63] text-center py-10">Loading audit log…</p> : audit.length === 0 ? <p className="text-sm text-[#766E63] text-center py-10">No admin activity recorded yet.</p> : (
+        loadingAudit ? <p className="text-sm text-ink-muted text-center py-10">Loading audit log…</p> : audit.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No admin activity recorded yet.</p> : (
           <div className="space-y-2">
             {audit.map(entry => (
-              <div key={entry.id} className="bg-white border border-[#E8DEC9] rounded-2xl px-4 py-3 flex gap-3 items-start">
-                <span className="text-xs font-bold px-2 py-1 rounded-full bg-[#F5EEDF] text-[#5C554C] whitespace-nowrap">{entry.action}</span>
+              <div key={entry.id} className="bg-white border border-line rounded-2xl px-4 py-3 flex gap-3 items-start">
+                <span className="text-xs font-bold px-2 py-1 rounded-full bg-surface-sunken text-ink-muted whitespace-nowrap">{entry.action}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{entry.actor_username || 'system'} → {entry.target_type} {String(entry.target_id).slice(0, 8)}</p>
-                  <p className="text-[11px] text-[#766E63]">{new Date(entry.created_at).toLocaleString()}</p>
+                  <p className="text-[11px] text-ink-muted">{new Date(entry.created_at).toLocaleString()}</p>
                 </div>
               </div>
             ))}
