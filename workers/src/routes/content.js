@@ -23,6 +23,12 @@ const EDITABLE = {
   giving_subtitle: 300,
   paybill_number: 20,
   paybill_name: 120,
+  // Give screen is fully admin-run: limits, closing note and the history title
+  // are church copy, not code.
+  giving_min_kes: 10,
+  giving_max_kes: 10,
+  giving_note: 300,
+  giving_history_title: 120,
   // JSON array: [{ id, label, sub, icon }] (max 12 funds)
   giving_funds: 4000,
   // JSON object keyed by fund id; purpose-specific payment instructions (no secrets).
@@ -164,6 +170,11 @@ export async function handleContent(request, env, ctx) {
           if (cfg.method === 'bank' && (!String(cfg.bank_name || '').trim() || !String(cfg.bank_account_name || '').trim() || !String(cfg.bank_account_number || '').trim())) return errorResponse('giving_payment_methods: bank name, account name and account number are required', 400)
         }
       } catch { return errorResponse('giving_payment_methods must be valid JSON', 400) }
+    }
+    for (const limitKey of ['giving_min_kes', 'giving_max_kes']) {
+      if (!(limitKey in body)) continue
+      const n = Number(body[limitKey])
+      if (!Number.isInteger(n) || n < 1 || n > 1_000_000) return errorResponse(`${limitKey}: whole shillings between 1 and 1000000`, 400)
     }
     if ('giving_quick' in body) {
       try {

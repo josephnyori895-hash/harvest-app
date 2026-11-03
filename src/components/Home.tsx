@@ -64,11 +64,30 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [contentLoaded, setContentLoaded] = useState(false)
   useEffect(() => {
     const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-    fetch(`${API}/api/content?view=home&t=${Date.now()}`, { cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => setContent(d?.content || {}))
-      .catch(() => { /* defaults stay */ })
-      .finally(() => setContentLoaded(true))
+    let alive = true
+    const load = () => {
+      fetch(`${API}/api/content?view=home&t=${Date.now()}`, { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => { if (alive) setContent(d?.content || {}) })
+        .catch(() => { /* defaults stay */ })
+        .finally(() => { if (alive) setContentLoaded(true) })
+    }
+    load()
+    // Admin saves publish new copy while this screen stays mounted — repaint
+    // from the event payload (or refetch) instead of waiting for an app restart.
+    const onUpdated = (e: Event) => {
+      const next = (e as CustomEvent)?.detail
+      if (next && typeof next === 'object') setContent(next as Record<string, string>)
+      else load()
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    window.addEventListener('harvest:content-updated', onUpdated)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      alive = false
+      window.removeEventListener('harvest:content-updated', onUpdated)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [])
   const heroKicker = content.hero_kicker || 'Karibu, family'
   const heroTitle = content.hero_title || 'Compel. Raise. Release.'

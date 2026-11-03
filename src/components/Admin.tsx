@@ -9,6 +9,8 @@ import { Icon } from '../ui'
 import { showToast } from './Toast'
 import { runAction } from '../lib/actionFeedback'
 import { presign, uploadToMinio } from '../lib/api'
+import GivingFundsEditor from './GivingFundsEditor'
+import { parseFunds, parseQuick } from '../lib/givingDefaults'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
@@ -109,10 +111,15 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     { key: 'giving_subtitle', label: 'Giving sub-text', hint: 'e.g. Secure M-Pesa giving for Harvest Family Church.', max: 300, textarea: true },
     { key: 'paybill_number', label: 'Paybill number (manual fallback)', hint: 'e.g. 4138895', max: 20 },
     { key: 'paybill_name', label: 'Paybill account name', hint: 'e.g. Harvest Family Church', max: 120 },
+    { key: 'giving_min_kes', label: 'Minimum gift (KES)', hint: 'e.g. 1', max: 10 },
+    { key: 'giving_max_kes', label: 'Largest single gift the app accepts (KES)', hint: 'e.g. 1000000', max: 10 },
+    { key: 'giving_note', label: 'Note under the give button', hint: 'e.g. Giving is secure and receipted by the church treasurer.', max: 300, textarea: true },
+    { key: 'giving_history_title', label: '“My giving” heading', hint: 'e.g. My giving', max: 120 },
   ]
-  const fundsJson = (() => { try { return JSON.stringify(JSON.parse(content.giving_funds || '[]'), null, 1) } catch { return (content.giving_funds || '') } })()
-  const [fundsDraft, setFundsDraft] = useState<string | null>(null)
-  const [quickDraft, setQuickDraft] = useState<string | null>(null)
+  // Funds and quick amounts are edited as real rows (GivingFundsEditor), never
+  // as JSON in a textarea. Both write into the same draft as every other field.
+  const adminFunds = parseFunds(contentValue('giving_funds'))
+  const adminQuick = parseQuick(contentValue('giving_quick'))
   // ── Sponsored adverts in the Home feed ──
   // Stored as JSON in site_content; the feed worker interleaves them and caps
   // appearances per member per day, so saving here goes live on next refresh.
@@ -175,17 +182,20 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       })
       .catch(() => { /* empty form is fine — placeholders show defaults */ })
   }, [])
-  const saveContent = async () => {
+  const saveContent = async (extra?: Record<string, string>) => {
     if (contentBusy) return
+    // Send only what actually changed. The old panel PUT the whole content map
+    // on every save; once the church had more than 40 copy rows the worker
+    // rejected the request outright, which is why admin edits never landed.
+    const draft: Record<string, string> = { ...(contentDraft || {}), ...(extra || {}) }
+    const changed = Object.fromEntries(Object.entries(draft).filter(([k, v]) => String(content[k] ?? '') !== String(v)))
+    if (!Object.keys(changed).length) { flash('Nothing has changed yet'); return }
     setContentBusy(true)
     setError('')
-    // Merge the Everything draft over the loaded content so a single save
-    // publishes every edit, including keys added on the spot.
-    const payload: Record<string, string> = { ...content, ...(contentDraft || {}) }
     const res = await runAction('Saving changes', async () => {
       const r = await fetch(`${API}/api/content`, {
         method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(changed),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
@@ -195,9 +205,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       const d: any = res.data
       setContent(d.content || {})
       if (d.editable) setEditable(d.editable)
-      setFundsDraft(null); setQuickDraft(null)
       setAdvertsDraft(null); setSettingsDraft(null); setContentDraft(null)
-      flash('Saved — live for everyone ✓')
+      flash(`Saved ${Object.keys(changed).length} change${Object.keys(changed).length === 1 ? '' : 's'} — live for everyone ✓`)
+      // Screens already mounted (Home, Give…) hold the content they loaded at
+      // startup. Announce the new values so they repaint without a reload.
+      if (d?.content) window.dispatchEvent(new CustomEvent('harvest:content-updated', { detail: d.content }))
     } else {
       setError(res.error?.message || 'Could not save')
     }
@@ -488,45 +500,51 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
   return (
     <div className="bg-surface text-ink min-h-[70vh] p-4">
-      <div className="mb-4 flex items-start gap-3">
-        <button onClick={onBack} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink" aria-label="Back"><Icon name="arrow-left" size={18} /></button>
+      <div className="mb-5 flex items-start gap-3">
+        <button onClick={onBack} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink" aria-label="Back to profile"><Icon name="arrow-left" size={18} /></button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-extrabold tracking-tight">Admin</h1>
-          <p className="text-2xs text-ink-muted">Run the church: members, media, money, copy and chats</p>
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-accent">Harvest admin</p>
+          <h1 className="mt-0.5 text-xl font-extrabold tracking-tight">Control centre</h1>
+          <p className="text-2xs text-ink-muted">People, content, money and messages — every change publishes on save.</p>
         </div>
-        <span className="shrink-0 rounded-full bg-accent-soft px-3 py-1.5 text-2xs font-extrabold text-accent-strong">
-          {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? 'Notify' : tab === 'content' ? 'Everything' : 'Admin'}
+        <span className="shrink-0 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-ink-muted">
+          {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? 'Notify' : tab === 'content' ? 'All text' : tab === 'give' ? 'Giving' : 'Overview'}
         </span>
       </div>
 
-      {/* Direct reach into every surface — no dead ends, no hunting. */}
-      <div className="mb-4 grid grid-cols-2 gap-2">
+      {/* The screens that are member-facing but have no admin tab get their own
+          direct row, so managing them never means guessing where they live. */}
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {([
-          ['Members', 'users', () => setTab('accounts')],
-          ['Approvals', 'shield', () => setTab('moderation')],
           ['Groups', 'users', () => onOpenGroups?.()],
           ['Departments', 'building', () => onOpenDepartments?.()],
           ['Sermons', 'mic', () => onOpenSermons?.()],
           ['Worship', 'music', () => onOpenMusic?.()],
-          ['Giving', 'coins', () => onOpenGive?.()],
-          ['All text', 'sparkle', () => setTab('content')],
         ] as const).map(([label, icon, action]) => (
-          <button key={label} type="button" onClick={action} className="flex min-h-11 items-center gap-2 rounded-2xl border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken">
-            <Icon name={icon} size={16} className="text-accent" /> {label}
+          <button key={label} type="button" onClick={action} className="flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken">
+            <Icon name={icon} size={15} className="text-accent" /> {label}
           </button>
         ))}
       </div>
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Admin sections">
-        {([
-          ['dashboard', 'Today'], ['moderation', 'Approvals'], ['media', 'Studio'], ['accounts', 'Members'],
-          ['announce', 'Announce'], ['content', 'Everything'], ['home', 'Home text'], ['give', 'Give text'],
-          ['adverts', 'Adverts'], ['chat', 'Chats'], ['audit', 'Audit'],
-        ] as const).map(([value, label]) => (
-          <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3.5 text-2xs font-extrabold transition ${tab === value ? 'bg-ink text-white shadow' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Grouped sections read like a control centre, not eleven loose pills. */}
+      {([
+        ['Today', [['dashboard', 'Overview']]],
+        ['People', [['moderation', 'Approvals'], ['accounts', 'Members']]],
+        ['Content', [['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
+        ['Community', [['chat', 'Chats'], ['announce', 'Announce']]],
+        ['System', [['audit', 'Audit']]],
+      ] as [string, [Tab, string][]][]).map(([group, entries]) => (
+        <div key={group} className="mb-2.5">
+          <p className="mb-1.5 px-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-ink-subtle">{group}</p>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={`${group} admin sections`}>
+            {entries.map(([value, label]) => (
+              <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3.5 text-2xs font-extrabold transition ${tab === value ? 'bg-ink text-white shadow' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {/* ── Everything: every editable display string, one editor ── */}
       {tab === 'content' && (
@@ -606,15 +624,21 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         <div className="space-y-3">
           {loadingDashboard ? <p className="text-sm text-ink-muted text-center py-10">Loading today’s operations…</p> : <>
             <div className="grid grid-cols-2 gap-2">
-              {[
-                ['Pending approvals', dashboard.pending, 'moderation', '🛡️'],
-                ['New members (7d)', dashboard.members, 'accounts', '👥'],
-                ['Active groups', dashboard.groups, 'groups', '🟣'],
-                ['Departments', dashboard.departments, 'departments', '🏢'],
-              ].map(([label,count,target,icon]) => <button key={String(label)} onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="text-left bg-white border border-line rounded-2xl p-4"><span className="text-lg">{icon}</span><p className="text-2xl font-extrabold mt-1">{count}</p><p className="text-[11px] text-ink-muted">{label}</p></button>)}
+              {([
+                ['Pending approvals', dashboard.pending, 'moderation', 'shield'],
+                ['New members · 7d', dashboard.members, 'accounts', 'users'],
+                ['Active groups', dashboard.groups, 'groups', 'users'],
+                ['Departments', dashboard.departments, 'departments', 'building'],
+              ] as const).map(([label, count, target, icon]) => (
+                <button key={label} type="button" onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="rounded-card border border-line bg-surface-raised p-4 text-left transition hover:bg-surface-sunken">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent-strong"><Icon name={icon} size={17} /></span>
+                  <p className="mt-2 text-2xl font-extrabold leading-none tabular-nums">{count}</p>
+                  <p className="mt-1 text-2xs font-bold text-ink-muted">{label}</p>
+                </button>
+              ))}
             </div>
-            <div className="bg-white border border-line rounded-2xl p-4">
-              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">⚡ Quick actions</h2><button onClick={() => void loadDashboard()} className="text-xs font-bold text-accent">Refresh</button></div>
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <div className="flex items-center justify-between"><h2 className="text-sm font-extrabold">Quick actions</h2><button onClick={() => void loadDashboard()} className="text-2xs font-extrabold text-accent">Refresh</button></div>
               <div className="grid grid-cols-2 gap-2 mt-3">
                 <button onClick={() => setTab('moderation')} className="py-3 rounded-xl bg-accent-soft text-accent-strong text-xs font-bold">Review approvals</button>
                 <button onClick={() => setTab('accounts')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage members</button>
@@ -624,16 +648,16 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 <button onClick={() => setTab('chat')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Moderate chat</button>
               </div>
             </div>
-            <div className="bg-white border border-line rounded-2xl p-4">
-              <h2 className="font-extrabold text-sm mb-3">📰 Recent content</h2>
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="mb-3 text-sm font-extrabold">Recent content</h2>
               {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-ink-muted">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p></div>) : <p className="text-xs text-ink-muted">No recent content.</p>}
             </div>
-            <div className="bg-white border border-line rounded-2xl p-4">
-              <h2 className="font-extrabold text-sm mb-3">💬 Recent chat activity</h2>
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="mb-3 text-sm font-extrabold">Recent chat activity</h2>
               {dashboard.chats.length ? dashboard.chats.map((x:any) => <div key={x.conversation_key} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.name}</p><p className="text-[10px] text-ink-muted truncate">{x.last_from ? '@'+x.last_from+' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p></div>) : <p className="text-xs text-ink-muted">No recent team chat activity.</p>}
             </div>
-            <div className="bg-white border border-line rounded-2xl p-4">
-              <div className="flex items-center justify-between"><h2 className="font-extrabold text-sm">🧾 Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-xs font-bold text-accent">View all</button></div>
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <div className="flex items-center justify-between"><h2 className="text-sm font-extrabold">Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-2xs font-extrabold text-accent">View all</button></div>
               {dashboard.audit.length ? dashboard.audit.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.action}</p><p className="text-[10px] text-ink-muted">{x.actor_username || 'system'} → {x.target_type} {x.target_id || ''} · {new Date(x.created_at).toLocaleString()}</p></div>) : <p className="text-xs text-ink-muted mt-2">No admin actions recorded yet.</p>}
             </div>
           </>}
@@ -646,9 +670,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Announce tab ── */}
       {tab === 'announce' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
+          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
             <div>
-              <h2 className="font-extrabold text-sm">📣 Announce to members</h2>
+              <h2 className="text-sm font-extrabold">Announce to members</h2>
               <p className="text-xs text-ink-muted mt-0.5">Lands as a direct message in every member's chat — with an unread badge. Members can reply straight back to you.</p>
             </div>
             <div>
@@ -680,7 +704,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               disabled={annBusy || annText.trim().length < 2}
               className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
             >
-              {annBusy ? 'Sending…' : annGroup ? `📣 Send to ${annGroup}` : '📣 Send to all members'}
+              {annBusy ? 'Sending…' : annGroup ? `Send to ${annGroup}` : 'Send to all members'}
             </button>
             {annCount !== null && <p className="text-xs text-emerald-700 font-bold text-center">✓ Last announcement delivered to {annCount} members</p>}
             {annText.trim().length >= 2 && (
@@ -689,7 +713,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 className="w-full py-3.5 rounded-xl bg-[#25D366] text-white text-sm font-extrabold flex items-center justify-center gap-2"
                 title="Opens WhatsApp — pick the church group to post it in"
               >
-                <span aria-hidden>🟢</span> Share this on WhatsApp
+                Share this on WhatsApp
               </button>
             )}
             <p className="text-[10px] text-ink-muted">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
@@ -701,9 +725,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* (The Everything tab above covers every key; these stay as guided forms.) */}
       {tab === 'home' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
+          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
             <div>
-              <h2 className="font-extrabold text-sm">🏠 Home screen text</h2>
+              <h2 className="text-sm font-extrabold">Home screen text</h2>
               <p className="text-xs text-ink-muted mt-0.5">Edits what every member sees at the top of the Community screen — the purple banner and the weekly encouragement. Changes go live for everyone immediately.</p>
             </div>
             {CONTENT_FIELDS.map(f => (
@@ -711,8 +735,8 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
                 {f.key === 'pastor_usernames' ? (
                   <div>
-                    <textarea id={`ct-${f.key}`} value={content[f.key] ?? content.pastor_username ?? ''}
-                      onChange={e => setContent(c => ({ ...c, pastor_usernames: e.target.value.slice(0, f.max) }))}
+                    <textarea id={`ct-${f.key}`} value={contentValue(f.key) || content.pastor_username || ''}
+                      onChange={e => setContentValue('pastor_usernames', e.target.value.slice(0, f.max))}
                       rows={3} placeholder={f.hint}
                       className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 resize-y" />
                     <p className="text-[10px] text-ink-muted mt-1">Use real usernames, not display names. Multiple pastors are supported.</p>
@@ -720,8 +744,8 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 ) : f.textarea ? (
                   <textarea
                     id={`ct-${f.key}`}
-                    value={content[f.key] ?? ''}
-                    onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
+                    value={contentValue(f.key)}
+                    onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))}
                     rows={2}
                     placeholder={f.hint}
                     className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle resize-y"
@@ -729,23 +753,23 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 ) : (
                   <input
                     id={`ct-${f.key}`}
-                    value={content[f.key] ?? ''}
-                    onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))}
+                    value={contentValue(f.key)}
+                    onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))}
                     placeholder={f.hint}
                     className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle"
                   />
                 )}
-                <p className="text-[10px] text-ink-muted text-right mt-0.5">{(content[f.key] ?? '').length}/{f.max}</p>
+                <p className="text-[10px] text-ink-muted text-right mt-0.5">{contentValue(f.key).length}/{f.max}</p>
               </div>
             ))}
             <button
               onClick={() => void saveContent()}
               disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
+              className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40"
             >
-              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+              {contentBusy ? 'Saving…' : 'Save home text — live for everyone'}
             </button>
-            <p className="text-[10px] text-ink-muted">Tip: clear a field to restore the original default wording. Members see changes the next time they open the Community screen.</p>
+            <p className="text-[10px] text-ink-muted">Clear a field to fall back to the shipped wording. Saved changes reach every open screen immediately.</p>
           </div>
         </div>
       )}
@@ -753,80 +777,35 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Give text tab: edit the giving screen ── */}
       {tab === 'give' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
+          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
             <div>
-              <h2 className="font-extrabold text-sm">💰 Give screen</h2>
+              <h2 className="text-sm font-extrabold">Give screen</h2>
               <p className="text-xs text-ink-muted mt-0.5">Edit the giving headline, the Paybill fallback details, the giving funds (buttons) and the quick amounts. Saves go live for every member immediately.</p>
             </div>
             {GIVE_FIELDS.map(f => (
               <div key={f.key}>
                 <label htmlFor={`gv-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
                 {f.textarea ? (
-                  <textarea id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent resize-y" />
+                  <textarea id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent resize-y" />
                 ) : (
-                  <input id={`gv-${f.key}`} value={content[f.key] ?? ''} onChange={e => setContent(c => ({ ...c, [f.key]: e.target.value.slice(0, f.max) }))} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent" />
+                  <input id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent" />
                 )}
               </div>
             ))}
-            <div>
-              <label htmlFor="gv-funds" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Giving funds (one per line: id | Label | sub-text | icon)</label>
-              <textarea
-                id="gv-funds"
-                value={fundsDraft ?? fundsJson}
-                onChange={e => setFundsDraft(e.target.value)}
-                rows={5}
-                placeholder="tithe | Tithe | First fruits | 💰"
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
-              />
-              <p className="text-[10px] text-ink-muted mt-0.5">Max 12 funds. The id is one word (tithe, offering, building…). Icon is any emoji. Clear to restore the defaults.</p>
-            </div>
-            <div>
-              <label htmlFor="gv-quick" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Quick amounts (comma separated KES)</label>
-              <input
-                id="gv-quick"
-                value={quickDraft ?? (() => { try { return (JSON.parse(content.giving_quick || '[]') as number[]).join(', ') } catch { return '' } })()}
-                onChange={e => setQuickDraft(e.target.value)}
-                placeholder="100, 200, 500, 1000, 2500, 5000"
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
-              />
-            </div>
-            <button
-              onClick={() => {
-                if (!window.confirm('Save and publish these giving changes to every member?')) return
-                // Parse the friendly funds format (id | Label | sub | icon) into JSON.
-                const next: Record<string, string> = { ...content }
-                if (fundsDraft !== null) {
-                  const lines = fundsDraft.split('\n').map(l => l.trim()).filter(Boolean)
-                  if (lines.length) {
-                    const funds = lines.map(l => {
-                      const [id, label, sub, icon] = l.split('|').map(x => (x || '').trim())
-                      return { id: (id || '').toLowerCase().replace(/[^a-z0-9_]/g, '_'), label: label || id, sub: sub || '', icon: icon || '💝' }
-                    }).filter(f => f.id && f.label)
-                    next.giving_funds = JSON.stringify(funds)
-                  } else next.giving_funds = ''
-                }
-                if (quickDraft !== null) {
-                  const nums = quickDraft.split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0)
-                  next.giving_quick = nums.length ? JSON.stringify(nums) : ''
-                }
-                setContent(next)
-                setTimeout(() => {
-                  void (async () => {
-                    setContentBusy(true)
-                    try {
-                      const r = await fetch(`${API}/api/content`, { method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify(next) })
-                      const d = await r.json().catch(() => ({}))
-                      if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
-                      setContent(d.content || {}); setFundsDraft(null); setQuickDraft(null)
-                      flash('Give screen updated — live for everyone ✓')
-                    } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
-                  })()
-                }, 0)
+            <GivingFundsEditor
+              funds={adminFunds}
+              quick={adminQuick}
+              onChange={(nextFunds, nextQuick) => {
+                setContentValue('giving_funds', JSON.stringify(nextFunds))
+                setContentValue('giving_quick', JSON.stringify(nextQuick))
               }}
-              disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
+            />
+            <button
+              onClick={() => void saveContent()}
+              disabled={contentBusy || !contentDraft}
+              className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40"
             >
-              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+              {contentBusy ? 'Saving…' : 'Save giving changes — live for everyone'}
             </button>
             <p className="text-[10px] text-ink-muted">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
           </div>
@@ -836,9 +815,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Sponsored adverts tab ── */}
       {tab === 'adverts' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-line space-y-3">
+          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
             <div>
-              <h2 className="font-extrabold text-sm">📢 Sponsored adverts</h2>
+              <h2 className="text-sm font-extrabold">Sponsored adverts</h2>
               <p className="text-xs text-ink-muted mt-0.5">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
             </div>
             <div>
@@ -975,7 +954,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-accent">✓</span>}</p>
                   <p className="text-xs text-ink-muted truncate">@{u.username} · {u.group_name}</p>
-                  {u.phone && <p className="text-xs text-ink-muted truncate">📞 {u.phone}</p>}
+                  {u.phone && <p className="text-xs text-ink-muted truncate">{u.phone}</p>}
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-accent-soft text-accent-strong' : 'bg-surface-sunken text-ink-muted'}`}>{(u.role || 'member').toUpperCase()}</span>
               </button>
@@ -1055,7 +1034,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {tab === 'chat' && (
         <div className="space-y-3">
           <div className="p-4 rounded-2xl bg-white border border-line">
-            <h2 className="font-extrabold text-sm">💬 Chat moderation</h2>
+            <h2 className="text-sm font-extrabold">Chat moderation</h2>
             <p className="text-xs text-ink-muted mt-1">Review and remove messages from church group and department conversations.</p>
             {loadingChats ? <p className="text-xs py-4">Loading conversations…</p> : (
               <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} className="w-full mt-3 rounded-xl border border-line bg-surface px-3 py-3 text-sm">
@@ -1085,6 +1064,18 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             ))}
           </div>
         )
+      )}
+
+      {/* Unsaved work stays visible wherever the admin has scrolled to. */}
+      {contentDraft && Object.keys(contentDraft).length > 0 && (
+        <div className="pointer-events-none sticky bottom-3 z-20 mt-4 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-ink bg-ink px-3 py-1.5 text-white shadow-card">
+            <span className="text-2xs font-extrabold">{Object.keys(contentDraft).length} unsaved change{Object.keys(contentDraft).length === 1 ? '' : 's'}</span>
+            <button type="button" onClick={() => void saveContent()} disabled={contentBusy} className="min-h-9 rounded-full bg-gold px-3.5 text-2xs font-extrabold text-ink disabled:opacity-40">
+              {contentBusy ? 'Saving…' : 'Save now'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

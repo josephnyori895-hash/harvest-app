@@ -29,12 +29,21 @@ test('the Admin screen edits every key in one place and saves them together', ()
   assert.match(admin, /'content'/, 'Everything tab is part of the tab set')
   assert.match(admin, /data-testid="admin-content"/)
   assert.match(admin, /data-testid="admin-content-save"/)
-  assert.match(admin, /const payload: Record<string, string> = \{ \.\.\.content, \.\.\.\(contentDraft \|\| \{\}\) \}/)
+  // Saves publish the edited keys only. Sending the whole map used to exceed the
+  // worker's 40-key cap, so every admin edit silently failed to land.
+  assert.match(admin, /const changed = Object\.fromEntries\(Object\.entries\(draft\)\.filter\(\(\[k, v\]\) => String\(content\[k\] \?\? ''\) !== String\(v\)\)\)/)
+  assert.match(admin, /body: JSON\.stringify\(changed\)/, 'saves send only the edited keys')
+  assert.match(admin, /harvest:content-updated/, 'open screens repaint after a save')
   assert.match(admin, /copy_new_heading/, 'admins can add a new key on the spot')
 })
 
 test('admin can reach every church surface from its own screen', () => {
-  for (const label of ['Members', 'Approvals', 'Groups', 'Departments', 'Sermons', 'Worship', 'Giving', 'All text']) {
+  // Grouped sections: People, Content, Community, System.
+  for (const label of ['Overview', 'Approvals', 'Members', 'All text', 'Home text', 'Giving copy', 'Adverts', 'Chats', 'Announce', 'Audit']) {
+    assert.match(admin, new RegExp(`'${label}'`), `${label} tab missing`)
+  }
+  // Member-facing screens with no admin tab get a direct row.
+  for (const label of ['Groups', 'Departments', 'Sermons', 'Worship']) {
     assert.match(admin, new RegExp(`\\['${label}',`), `${label} shortcut missing`)
   }
   assert.match(app, /<Admin[\s\S]*onOpenMusic=\{\(\) => setTab\('music'\)\}/)
