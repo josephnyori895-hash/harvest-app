@@ -5,6 +5,7 @@ import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
 import { timeAgo } from '../lib/time'
 
 import ErrorMessage from './ErrorMessage'
+import { Icon } from '../ui'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
@@ -21,7 +22,7 @@ const ADVERT_EXAMPLE = JSON.stringify([{
   advertise_until: '2026-12-24T23:59:59Z',
 }], null, 2)
 
-type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content'
 
 type Props = {
   onBack: () => void
@@ -30,9 +31,11 @@ type Props = {
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
   onOpenSermons?: () => void
+  onOpenMusic?: () => void
+  onOpenGive?: () => void
 }
 
-export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons }: Props) {
+export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons, onOpenMusic, onOpenGive }: Props) {
   const { congregations: GROUPS } = useCongregations()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [busy, setBusy] = useState<string | null>(null)
@@ -74,6 +77,15 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   // ── Home content state (hero banner + weekly verse) ──
   const [content, setContent] = useState<Record<string, string>>({})
   const [contentBusy, setContentBusy] = useState(false)
+  // Everything editor: the server decides which keys are editable, the admin
+  // edits them all in one place instead of hunting through six tabs.
+  const [editable, setEditable] = useState<Record<string, number>>({})
+  const [customLimit, setCustomLimit] = useState(1000)
+  const [contentDraft, setContentDraft] = useState<Record<string, string> | null>(null)
+  const [contentQuery, setContentQuery] = useState('')
+  const [newKey, setNewKey] = useState('')
+  const contentValue = (k: string) => contentDraft?.[k] ?? content[k] ?? ''
+  const setContentValue = (k: string, v: string) => setContentDraft(d => ({ ...(d ?? content), [k]: v }))
   const CONTENT_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [
     { key: 'hero_kicker', label: 'Small heading (top of banner)', hint: 'e.g. Karibu, family', max: 120 },
     { key: 'hero_title', label: 'Main banner title', hint: 'e.g. Compel. Raise. Release.', max: 120 },
@@ -102,22 +114,29 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => {
     fetch(`${API}/api/content`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => setContent(d?.content || {}))
+      .then(d => {
+        setContent(d?.content || {})
+        if (d?.editable && typeof d.editable === 'object') setEditable(d.editable)
+        if (Number(d?.customLimit) > 0) setCustomLimit(Number(d.customLimit))
+      })
       .catch(() => { /* empty form is fine — placeholders show defaults */ })
   }, [])
   const saveContent = async () => {
     if (contentBusy) return
     setContentBusy(true)
+    // Merge the Everything draft over the loaded content so a single save
+    // publishes every edit, including keys added on the spot.
+    const payload: Record<string, string> = { ...content, ...(contentDraft || {}) }
     try {
       const r = await fetch(`${API}/api/content`, {
         method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(content),
+        body: JSON.stringify(payload),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
       setContent(d.content || {})
       setFundsDraft(null); setQuickDraft(null)
-      setAdvertsDraft(null); setSettingsDraft(null)
+      setAdvertsDraft(null); setSettingsDraft(null); setContentDraft(null)
       flash('Saved — live for everyone ✓')
     } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
   }
@@ -406,28 +425,114 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
   return (
     <div className="bg-surface text-ink min-h-[70vh] p-4">
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-line" aria-label="Back">‹</button>
-        <div className="min-w-0">
-          <h1 className="font-extrabold">Harvest Admin</h1>
-          <p className="text-xs text-ink-muted">Church-wide controls · Moderation · Accounts · Content · Audit</p>
+      <div className="mb-4 flex items-start gap-3">
+        <button onClick={onBack} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink" aria-label="Back"><Icon name="arrow-left" size={18} /></button>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-extrabold tracking-tight">Admin</h1>
+          <p className="text-2xs text-ink-muted">Run the church: members, media, money, copy and chats</p>
         </div>
-        <span className="ml-auto text-xs bg-accent-soft text-accent-strong px-3 py-1.5 rounded-full font-bold whitespace-nowrap">            {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? '📣 Notify' : tab === 'home' ? '🏠 Edit' : 'Audit'}</span>
+        <span className="shrink-0 rounded-full bg-accent-soft px-3 py-1.5 text-2xs font-extrabold text-accent-strong">
+          {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? 'Notify' : tab === 'content' ? 'Everything' : 'Admin'}
+        </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        <button type="button" onClick={() => setTab('dashboard')} className="px-3 py-2.5 rounded-2xl bg-accent text-white text-xs font-bold">📊 Dashboard</button>
-        <button type="button" onClick={onOpenGroups} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">👥 Manage Groups</button>
-        <button type="button" onClick={onOpenDepartments} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">🏢 Manage Departments</button>
-        <button type="button" onClick={onOpenSermons} className="px-3 py-2.5 rounded-2xl bg-white border border-line text-ink-muted text-xs font-bold">🎙 Manage Sermons</button>
-      </div>
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(['dashboard', 'moderation', 'media', 'accounts', 'announce', 'home', 'give', 'adverts', 'chat', 'audit'] as const).map(value => (
-          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-accent text-white shadow' : 'bg-white border border-line text-ink-muted'}`}>
-            {value === 'dashboard' ? '📊 Today' : value === 'announce' ? '📣 Announce' : value === 'home' ? '🏠 Home text' : value === 'give' ? '💰 Give text' : value === 'adverts' ? '📢 Adverts' : value === 'chat' ? '💬 Chat moderation' : value[0].toUpperCase() + value.slice(1)}
+      {/* Direct reach into every surface — no dead ends, no hunting. */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        {([
+          ['Members', 'users', () => setTab('accounts')],
+          ['Approvals', 'shield', () => setTab('moderation')],
+          ['Groups', 'users', () => onOpenGroups?.()],
+          ['Departments', 'building', () => onOpenDepartments?.()],
+          ['Sermons', 'mic', () => onOpenSermons?.()],
+          ['Worship', 'music', () => onOpenMusic?.()],
+          ['Giving', 'coins', () => onOpenGive?.()],
+          ['All text', 'sparkle', () => setTab('content')],
+        ] as const).map(([label, icon, action]) => (
+          <button key={label} type="button" onClick={action} className="flex min-h-11 items-center gap-2 rounded-2xl border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken">
+            <Icon name={icon} size={16} className="text-accent" /> {label}
           </button>
         ))}
       </div>
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Admin sections">
+        {([
+          ['dashboard', 'Today'], ['moderation', 'Approvals'], ['media', 'Studio'], ['accounts', 'Members'],
+          ['announce', 'Announce'], ['content', 'Everything'], ['home', 'Home text'], ['give', 'Give text'],
+          ['adverts', 'Adverts'], ['chat', 'Chats'], ['audit', 'Audit'],
+        ] as const).map(([value, label]) => (
+          <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3.5 text-2xs font-extrabold transition ${tab === value ? 'bg-ink text-white shadow' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Everything: every editable display string, one editor ── */}
+      {tab === 'content' && (
+        <div className="space-y-3" data-testid="admin-content">
+          <div className="rounded-card border border-line bg-surface-raised p-4">
+            <h2 className="text-sm font-extrabold">Every word the church reads</h2>
+            <p className="mt-1 text-2xs text-ink-muted">
+              Home banner, giving copy, page titles, contact details, community rules — plus any new
+              <b> copy_</b> or <b>app_</b> key you add below. One save publishes all of it.
+            </p>
+            <div className="mt-3 flex items-center gap-2 rounded-full border border-line bg-surface px-3.5">
+              <Icon name="search" size={16} className="text-ink-subtle" />
+              <input value={contentQuery} onChange={e => setContentQuery(e.target.value)} placeholder="Find a setting…" className="min-h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-subtle" aria-label="Find a content setting" />
+              {contentDraft && <span className="shrink-0 rounded-full bg-gold-soft px-2 py-0.5 text-[10px] font-extrabold text-gold-strong">{Object.keys(contentDraft).length} edited</span>}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {[...new Set([...Object.keys(editable), ...Object.keys(content), ...Object.keys(contentDraft || {})])]
+              .filter(k => !contentQuery.trim() || k.includes(contentQuery.trim().toLowerCase().replace(/\s+/g, '_')))
+              .sort()
+              .map(k => {
+                const limit = editable[k] || customLimit
+                const value = contentValue(k)
+                const isJson = /^(giving_funds|giving_quick|giving_payment_methods|sponsor_adverts|advert_settings)$/.test(k)
+                return (
+                  <div key={k} className="rounded-card border border-line bg-surface-raised p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <label htmlFor={`all-${k}`} className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">{k.replace(/_/g, ' ')}</label>
+                      <span className="shrink-0 text-[10px] text-ink-subtle">{value.length}/{limit}</span>
+                    </div>
+                    <textarea
+                      id={`all-${k}`}
+                      value={value}
+                      onChange={e => setContentValue(k, e.target.value.slice(0, limit))}
+                      rows={isJson ? 5 : value.length > 90 ? 4 : 2}
+                      spellCheck={false}
+                      className={`mt-1.5 w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent ${isJson ? 'font-mono text-xs' : ''}`}
+                    />
+                  </div>
+                )
+              })}
+          </div>
+
+          <div className="rounded-card border border-line bg-surface-raised p-3">
+            <label htmlFor="new-content-key" className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Add a new key</label>
+            <div className="mt-2 flex gap-2">
+              <input id="new-content-key" value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="copy_new_heading" className="input-base min-w-0 flex-1" />
+              <button
+                type="button"
+                onClick={() => {
+                  const k = newKey.trim().toLowerCase()
+                  if (!/^(copy|app)_[a-z0-9_]{1,40}$/.test(k)) { setError('Custom keys must start with copy_ or app_ (a–z, 0–9, _)'); return }
+                  setError('')
+                  setContentValue(k, '')
+                  setNewKey('')
+                  flash(`${k} added — edit it above, then save`)
+                }}
+                className="shrink-0 rounded-full bg-accent px-4 text-2xs font-extrabold text-white"
+              >Add</button>
+            </div>
+            <p className="mt-1.5 text-[10px] text-ink-muted">Use this for new surfaces so no wording ever waits on a code change.</p>
+          </div>
+
+          <button onClick={() => void saveContent()} disabled={contentBusy} data-testid="admin-content-save" className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-50">
+            {contentBusy ? 'Saving…' : 'Save every change — live for everyone'}
+          </button>
+        </div>
+      )}
 
       {error && <ErrorMessage message={error} />}
       {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
@@ -530,6 +635,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       )}
 
       {/* ── Home text tab: edit the banner + weekly verse ── */}
+      {/* (The Everything tab above covers every key; these stay as guided forms.) */}
       {tab === 'home' && (
         <div className="space-y-3">
           <div className="p-4 rounded-2xl bg-white border border-line space-y-3">

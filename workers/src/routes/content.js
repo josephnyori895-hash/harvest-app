@@ -33,7 +33,33 @@ const EDITABLE = {
   sponsor_adverts: 20000,
   // JSON object: { placement: 'feed'|'none', interval: 3-20, daily_cap: 1-10 }
   advert_settings: 400,
+  // ── Church identity and page copy ──
+  // The admin account runs the church app: every display string the members
+  // read is editable here, not just the home banner.
+  church_name: 120,
+  church_tagline: 200,
+  service_times: 400,
+  church_address: 300,
+  church_phone: 60,
+  church_email: 120,
+  welcome_title: 120,
+  welcome_body: 600,
+  sermons_title: 120,
+  sermons_subtitle: 300,
+  music_title: 120,
+  music_subtitle: 300,
+  reels_title: 120,
+  chat_welcome: 400,
+  feed_empty: 300,
+  announcement_banner: 400,
+  community_rules: 1200,
 }
+
+// Free-form copy for surfaces added later: `copy_<slug>` / `app_<slug>`. The
+// admin must not need a code change to rename a heading somewhere.
+const CUSTOM_KEY = /^(copy|app)_[a-z0-9_]{1,40}$/
+const CUSTOM_LIMIT = 1000
+const limitFor = (key) => (key in EDITABLE ? EDITABLE[key] : (CUSTOM_KEY.test(key) ? CUSTOM_LIMIT : 0))
 
 function isAbsoluteUrl(value, required) {
   if (value === undefined || value === null) return !required
@@ -55,15 +81,20 @@ export async function handleContent(request, env, ctx) {
     const { rows } = await readAll(env)
     const out = {}
     for (const r of rows) out[r.key] = r.value
-    return jsonResponse({ content: out }, 200, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+    // Hand the admin UI its own map of what is editable, so the "Everything"
+    // editor is driven by the server and cannot fall behind the whitelist.
+    return jsonResponse({ content: out, editable: EDITABLE, customLimit: CUSTOM_LIMIT }, 200, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 
   if (path === '/api/content' && request.method === 'PUT') {
     const fresh = await requireAdmin(env, ctx.user)
     const body = await readJson(request)
-    const entries = Object.entries(body || {}).filter(([k]) => k in EDITABLE)
+    const entries = Object.entries(body || {}).filter(([k]) => limitFor(k) > 0)
     if (!entries.length) return errorResponse('no editable keys provided', 400)
-    if (entries.length > 20) return errorResponse('too many keys (max 20)', 400)
+    if (entries.length > 40) return errorResponse('too many keys (max 40)', 400)
+    for (const [k, v] of entries) {
+      if (typeof v === 'string' && v.length > limitFor(k)) return errorResponse(`${k}: too long (max ${limitFor(k)} chars)`, 400)
+    }
     // JSON-typed keys are validated here so a bad save can never break the app.
     if ('giving_funds' in body) {
       try {
@@ -133,7 +164,7 @@ export async function handleContent(request, env, ctx) {
       } catch { return errorResponse('giving_quick must be a JSON array of numbers', 400) }
     }
     for (const [k, v] of entries) {
-      const value = String(v ?? '').trim().slice(0, EDITABLE[k])
+      const value = String(v ?? '').trim().slice(0, limitFor(k))
       await query(
         env,
         `INSERT INTO site_content (key, value, updated_by) VALUES (?,?,?)

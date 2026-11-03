@@ -608,6 +608,8 @@ function InnerApp() {
                 onOpenGroups={() => setTab('groups')}
                 onOpenDepartments={() => setTab('departments')}
                 onOpenSermons={() => setTab('sermons')}
+                onOpenMusic={() => setTab('music')}
+                onOpenGive={() => setTab('give')}
               />
             </RequireRole>
           )}
