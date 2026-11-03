@@ -75,6 +75,14 @@ export default function Sermons({ isAdmin, verified, focusId, onFocused }: { isA
 
   useEffect(load, [load])
 
+  // A background upload (or the local upload path below) just registered a
+  // sermon — refetch so it appears without the user leaving the screen.
+  useEffect(() => {
+    const bump = () => { load() }
+    window.addEventListener('harvest:sermons-updated' as any, bump)
+    return () => window.removeEventListener('harvest:sermons-updated' as any, bump)
+  }, [load])
+
   // Deep link (e.g. from search): auto-open the requested sermon once loaded.
   // Audio sermons start straight in the global player; videos open inline.
   useEffect(() => {

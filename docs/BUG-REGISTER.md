@@ -1,0 +1,32 @@
+# Harvest Family — Bug Register
+
+Permanent register. Rule: **every defect and client complaint becomes a reproducible test case** — no isolated patches.
+
+- Severity: `P0` (data loss/breakage, unauthorised access) · `P1` (core journey broken) · `P2` (degraded UX) · `P3` (polish).
+- Status: `open` · `in-progress` · `fixed` · `verified` · `wontfix`.
+- Pentest note: findings from device testing (QA devices) get `REP-DEVICE` steps; browser findings `REP-WEB`.
+
+Key: every `confirmed` finding must reference a test in the suite before its status may become `fixed`.
+
+| ID | Date | Found-by | Area | Severity | Status | File:line | Summary | Repro | Root cause | Fix commit | Regression test |
+|----|------|----------|------|----------|--------|-----------|---------|-------|------------|------------|-----------------|
+| RS-001 | 2026-11-02 | user | Feed music | P1 | verified | src/lib/audioPlayer.ts:42 | Autoplay pref stored in module var only — reset on reload; big Enable reappeared; autoplay dead after refresh | Open Home → enable autoplay → reload (web) | pref never written to localStorage | d4ca561 | scripts/test-feed-music-autoplay.mjs t.10 |
+| RS-002 | 2026-11-02 | user | Feed music | P1 | verified | src/lib/inlineMediaAudio.ts:14 | SWITCH-by-id treated re-arm of same track as toggle → stopped own audio during scroll cycles | enable → scroll away/back | toggle started/cancelled semantics conflated | d4ca561 (startInlineMediaTrack) | t.9 |
+| RS-003 | 2026-11-02 | user | Feed music | P2 | verified | src/components/FeedCard.tsx:97 | Enabled UI flipped before play() resolved → dishonest state | enable tap on strict policy | setAutoplayAllowed in enableAutoplay pre-play | d4ca561 | t.6 |
+| RS-004 | 2026-11-02 | user | Feed music | P2 | verified | src/components/FeedCard.tsx:165 | Unscoped scroll-out stop killed playing track (cross-post race) | fast scroll past video post with music | coordinator stop unscoped | d4ca561 (scoped stop) | t.9 |
+| RS-005 | 2026-11-02 | manual | Sermons | P2 | wontfix (seed data) | QA (local R2) | QA track objects held 4KB filler → NotSupportedError "no supported source" | play QA direct track | Broken seed object — replaced with real mp3 | local R2 manual | runtime qa (no prod exposure) |
+
+<!-- Blank line marker for new entries. Registration policy:
+1. Confirm the defect exists in the REAL journeys (not assumptions).
+2. Always file even P3; not everything needs the same priority.
+-->
+| RS-101 | 2026-11-03 | audit | Home/Reels | P1 | in-progress | src/lib/backgroundUploads.ts (completeUpload) | New post/reel never shown after upload — feed screens listen only to harvest:approved | Upload photo post in PostCreate → composer closes → Home shows no new post until manual refresh | post/reel completions dispatched no event; listeners absent on Home + Reels | *this commit* | scripts/test-reliability-refresh.mjs t1-t3, t5 |
+| RS-102 | 2026-11-03 | audit | PostCreate | P2 | open | src/components/PostCreate.tsx:~170 | Composer closes/succeeds even when the upload later fails (hand-off promise resolves unconditionally) | Upload with network killed after accept → onDone fires → composer closed, upload failed silently in pill | `.then(() => onDone())` runs on manager failure too | — | e2e hand-off on failure |
+| RS-103 | 2026-11-03 | audit | Sermons | P1 | open | src/components/Sermons.tsx:192 uploadSermon | Sermon uploads bypass background manager: no progress for 5 GB, no retry queue, no idempotency_key (server replay protection absent), duplicate-sermon risk on manual retry | Sermon video 3-5 GB on flaky link: no progress, refresh loses transfer, retry uploads whole file again | separate fetch path vs backgroundUploads | planned: migrate uploadSermon to manager | e2e sermon upload retry |
+| RS-104 | 2026-11-03 | audit | Home | P1 | in-progress | src/components/Home.tsx (feed fetch) | Feed images/videos dead after tab return — signed URLs expire (thumbs 600 s) but Home stays mounted | Home → other tab >10 min → return → feed media 403 | no re-sign on visibility return | *this commit* visibilitychange refetch ≥9 min stale; Reels+Sermons still open | t4 |
+| RS-105 | 2026-11-03 | audit | Giving | P2 | open | src/components/Give.tsx STK poll | STK polling stops after 120 s — "pending" never flips if user approves later or callback is slow; no re-poll on return | Initiate STK → approve at 150 s → transaction stays pending on screen | pollingId cleared by fixed timeout | planned: poll on visibility + status endpoint | e2e giving poll |
+| RS-106 | 2026-11-03 | audit | Giving | P2 | open | src/components/Give.tsx (fetchMyGiving load) | Giving history load failure silently swallowed → user sees empty history with no error/retry | Kill API mid-load → Giving screen blank, no retry UI | `.catch(() => {})` | planned: error state + retry | e2e |
+| RS-107 | 2026-11-03 | audit | Giving | P2 | suspected | workers giving STK init | Double M-Pesa submission not proven safe (no client disable evidence on slow network + no server idempotency evidence) | Not simulated per audit rules — investigate via code review | — | — | code-review + (no real STK) |
+| RS-120 | 2026-11-03 | audit | Chat | P1 | in-progress | src/components/Chat.tsx retryMessage | Media-only message retry sent as fake text: retry Message Media-only bubble retried → re-sends as TEXT '📷', attachment lost | Attach photo → message fails → tap Retry → server records plain text message | retry lost file; '📷' body passes `if (!body)` guard | *this commit* failedFileRef restore | t7-t10 |
+| RS-121 | 2026-11-03 | audit | Chat | P2 | open | src/components/Chat.tsx send() presign | Chat presign has no idempotency_key (other kinds have one) — double-submit risk on retry after success | Slow link → upload succeeds → confirm times out → retry re-uploads (harmless, key differs; DB row dup possible at confirm replay race) | client omits key for chat type | planned: include idempotency key | e2e + worker test |
+| RS-122 | 2026-11-03 | audit | Chat | P2 | open | src/components/Chat.tsx send() | Attachment is cleared from composer BEFORE upload completes: a failed send loses the file from the picker (user re-picks manually if they notice) | Attach → send → failure → composer shows no attachment chip | setAttach(null) in pre-send cleanup | *this commit*: retry restores file; composer chip still cleared by design | t7 |

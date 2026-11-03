@@ -268,7 +268,11 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
     })
   }
   onPct(100)
+  // Completion events: every upload kind that lands in a browsable list must
+  // notify the screen showing that list. Post/reel feed — Home + Reels; story —
+  // Home (harvest:approved); track — Music; sermon — Sermons; avatar — profile.
   if (task.kind === 'story') window.dispatchEvent(new Event('harvest:approved'))
+  if (task.kind === 'post' || task.kind === 'reel') window.dispatchEvent(new Event('harvest:feed-updated'))
   if (task.kind === 'track') window.dispatchEvent(new Event('harvest:tracks-updated'))
   if (task.kind === 'sermon_audio' || task.kind === 'sermon_video') window.dispatchEvent(new Event('harvest:sermons-updated'))
   if (task.kind === 'avatar') window.dispatchEvent(new Event('harvest:profile-updated'))

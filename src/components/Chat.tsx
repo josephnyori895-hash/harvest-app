@@ -196,6 +196,12 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const swipeStartX = useRef<number | null>(null)
   const [swipeOffset, setSwipeOffset] = useState(0)
   const [attach, setAttach] = useState<File | null>(null)
+  // Mirror of `attach` for retry paths: retryMessage must be able to hand the
+  // exact file back to send() even though setAttach setState is asynchronous.
+  const attachRef = useRef<File | null>(null)
+  // File preserved from a failed send so Retry re-uploads the media instead
+  // of silently converting an attachment into a plain-text message.
+  const failedFileRef = useRef<{ tempId: string; file: File } | null>(null)
   // Instagram-style people search on the chats list.
   const [peopleQuery, setPeopleQuery] = useState('')
   const [pinnedChats, setPinnedChats] = useState<string[]>(() => {
@@ -479,13 +485,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread.length, active?.username])
 
-  const send = async (bodyOverride?: string) => {
+  const send = async (bodyOverride?: string, fileOverride?: File | null) => {
+    const attach = fileOverride !== undefined ? fileOverride : attachRef.current
     const body = (bodyOverride ?? text).trim()
     if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
     if (!localStorage.getItem('harvest_token')) { setError('Your session has expired. Please sign in again.'); return }
 
     const tempId = `tmp_${Date.now()}`
+    if (attach) failedFileRef.current = { tempId, file: attach }
     const optimistic: any = {
       id: tempId, from: currentUser, to: team ? null : active.username,
       text: attach && !body ? '📷' : body, status: 'sending',
@@ -496,7 +504,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       media_type: attach ? 'image' : null,
     }
     saveMessages(c => ({ ...c, [conversationKey]: [...(c[conversationKey] || []), optimistic] }))
-    const sentReply = replyTo; setText(''); setReplyTo(null); setAttach(null); setSending(true); setError('')
+    const sentReply = replyTo; setText(''); setReplyTo(null); setAttach(null); attachRef.current = null; setSending(true); setError('')
     sendTyping(false)
 
     try {
@@ -539,6 +547,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           socketConfirmed = { ...optimistic, id: String(ackRes.id || ackRes.serverId || tempId), status: 'sent', created_at: new Date().toISOString(), at: ackRes.at || optimistic.at }
           saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [socketConfirmed]) }))
           cursorRef.current[conversationKey] = socketConfirmed.created_at || cursorRef.current[conversationKey]
+          failedFileRef.current = null
           void refreshInbox()
           return
         }
@@ -555,6 +564,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       const confirmed = { ...result.message, status: result.message?.status === 'seen' ? 'seen' : 'sent' }
       saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [confirmed]) }))
       cursorRef.current[conversationKey] = confirmed.created_at || cursorRef.current[conversationKey]
+      failedFileRef.current = null
       void refreshInbox()
     } catch (e) {
       const messageError = e instanceof Error ? e.message : 'Message could not be sent'
@@ -568,15 +578,21 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const retryMessage = async (message: any) => {
     if (sending || !message || String(message.id).startsWith('tmp_') === false) return
     const body = String(message.text || '').trim()
-    if (!body) {
-      setError('This message needs to be sent again from the composer.')
-      return
+    const failed = failedFileRef.current
+    const file = failed && String(failed.tempId) === String(message.id) ? failed.file : null
+    if (message.media_type && !file) {
+      // Original attachment is gone (e.g. after reload) — cannot safely resend.
+      if (!body || body === '📷') {
+        setError('The attachment was lost when the message failed — please attach it again.')
+        saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
+        return
+      }
     }
     // Reuse the normal send path so auth, limits, replies and server handling stay consistent.
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
     setReplyTo(null)
     setError('')
-    void send(body)
+    void send(body, file)
   }
 
   const react = async (msg: any, emoji: string) => {
@@ -840,7 +856,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           {attach && (
             <div className="max-w-3xl mx-auto flex items-center gap-2 mb-2 text-xs bg-stone-900 border border-stone-800 rounded-xl px-3 py-2">
               <span>🖼 {attach.name.slice(0, 32)}</span>
-              <button type="button" onClick={() => setAttach(null)} className="ml-auto text-stone-400" aria-label="Remove attachment">✕</button>
+              <button type="button" onClick={() => { setAttach(null); attachRef.current = null }} className="ml-auto text-stone-400" aria-label="Remove attachment">✕</button>
             </div>
           )}
           {(() => {
@@ -859,7 +875,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           <div className="max-w-3xl w-full min-w-0 mx-auto flex items-end gap-2 rounded-[28px] bg-white/[0.055] border border-white/10 p-1.5 focus-within:border-white/20 focus-within:bg-white/[0.07] transition">
             <label className="w-10 h-10 rounded-full text-stone-300 hover:text-white hover:bg-white/10 flex items-center justify-center text-lg cursor-pointer shrink-0" title="Send a photo">
               📷
-              <input type="file" accept="image/*" className="hidden" onChange={e => setAttach(e.target.files?.[0] || null)} />
+              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] || null; setAttach(f); attachRef.current = f }} />
             </label>
             <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}

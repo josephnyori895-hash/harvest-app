@@ -92,6 +92,14 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
   const retryReels = () => setReelsLoadKey(x => x + 1)
 
+  // A background upload just published a new post/reel — refetch so the
+  // composer's success actually lands on screen instead of staying invisible.
+  useEffect(() => {
+    const bump = () => setReelsLoadKey(x => x + 1)
+    window.addEventListener('harvest:feed-updated' as any, bump)
+    return () => window.removeEventListener('harvest:feed-updated' as any, bump)
+  }, [])
+
   const flash = useCallback((text: string) => {
     setNotice(text)
     window.setTimeout(() => setNotice(''), 1800)

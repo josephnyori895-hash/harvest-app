@@ -157,6 +157,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [feedLoadingMore, setFeedLoadingMore] = useState(false)
   const pendingLikesRef = useRef(new Set<string>())
   const pendingSavesRef = useRef(new Set<string>())
+  const lastFeedFetchRef = useRef(0)
 
   const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
   const approvedPosts: any[] = []
@@ -190,11 +191,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         setFeedLoaded(true)
         setFeedOffset(Number(d?.nextOffset) || 20)
         setFeedHasMore(Boolean(d?.hasMore))
+        lastFeedFetchRef.current = Date.now()
       })
       .catch((e: any) => {
         if (cancelled) return
         setFeedLoadFailed(true)
         setFeedLoaded(true)
+        lastFeedFetchRef.current = Date.now()
         console.warn('[feed] load failed', e?.message || e)
       })
     return () => { cancelled = true }
@@ -232,9 +235,25 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
   useEffect(() => {
     const bump = () => setApprovedTick(x => x + 1)
+    const bumpFeed = () => setFeedTick(x => x + 1)
     window.addEventListener('storage', bump); window.addEventListener('harvest:approved' as any, bump); window.addEventListener('harvest:verified' as any, bump)
-    return () => { window.removeEventListener('storage', bump); window.removeEventListener('harvest:approved' as any, bump); window.removeEventListener('harvest:verified' as any, bump) }
+    window.addEventListener('harvest:feed-updated' as any, bumpFeed)
+    return () => { window.removeEventListener('storage', bump); window.removeEventListener('harvest:approved' as any, bump); window.removeEventListener('harvest:verified' as any, bump); window.removeEventListener('harvest:feed-updated' as any, bumpFeed) }
   }, [])
+
+  // Signed media URLs in the feed expire after ~10 minutes (thumbs; 30 min
+  // video; 1 h music). Home stays mounted across tabs, so when the member
+  // returns from >9 min away the old URLs are dead — refetch to re-sign.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!api) return
+      if (Date.now() - lastFeedFetchRef.current < 540_000) return
+      setFeedTick(x => x + 1)
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [api])
 
   useEffect(() => {
     if (!refreshKey) return
