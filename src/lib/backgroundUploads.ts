@@ -258,13 +258,37 @@ async function uploadOne(
   return presign.key as string
 }
 
+/** Cover art is a thumbnail, not a full-resolution photo. Downscale before the
+ *  upload so `cover_thumb_key` really holds a small image: lists fill fast and
+ *  the worship screen never ships a 4 MB camera shot for a 56px tile. Falls
+ *  back to the original whenever the device cannot decode images. */
+async function coverThumbnail(file: File | Blob, max = 720, quality = 0.85): Promise<File | Blob> {
+  if (typeof document === 'undefined' || typeof createImageBitmap === 'undefined') return file
+  if (file.type && !file.type.startsWith('image/')) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height))
+    const w = Math.max(1, Math.round(bitmap.width * scale))
+    const h = Math.max(1, Math.round(bitmap.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', quality))
+    if (!blob) return file
+    return new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+  } catch { return file }
+}
+
 // presign → upload (with progress) → confirm, for any task kind.
 export async function performUpload(task: UploadTask, onPct: (p: number) => void) {
   const idempotencyKey = task.idempotency_key || newUploadId()
   const audioKey = await uploadOne(task.file, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
   let coverKey: string | undefined
   if (task.kind === 'track' && task.cover) {
-    coverKey = await uploadOne(task.cover, 'post', (task.cover as File)?.name, onPct, 88, 95, idempotencyKey)
+    const cover = await coverThumbnail(task.cover)
+    coverKey = await uploadOne(cover, 'post', 'cover.jpg', onPct, 88, 95, idempotencyKey)
   }
   if (task.kind === 'avatar') {
     // Avatars are attached to the profile with a follow-up PATCH /api/me.

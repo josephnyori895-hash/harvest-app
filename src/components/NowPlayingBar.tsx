@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { subscribePlayer, seekToFraction, togglePlay, closePlayer, previousTrack, nextTrack, type PlayerState } from '../lib/audioPlayer'
 import { Icon } from '../ui'
+import TrackArt from './TrackArt'
 
 /**
  * Floating "now playing" strip above the bottom nav. Rendered once in App.jsx
@@ -27,10 +28,8 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
     >
       <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl" role="group" aria-label="Now playing">
         <div className="flex items-center gap-2">
-          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface/10">
-            {track.artwork
-              ? <img src={track.artwork} alt="" className="h-full w-full object-cover" />
-              : <span className="grid h-full w-full place-items-center text-gold"><Icon name="music" size={16} /></span>}
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg">
+            <TrackArt src={track.artwork} title={track.title} className="h-full w-full" iconSize={16} />
           </div>
           <button
             type="button"

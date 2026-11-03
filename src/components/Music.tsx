@@ -10,6 +10,7 @@ import {
 } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
 import { Icon } from '../ui'
+import TrackArt from './TrackArt'
 
 // Worship room — the church library, daily listening and online search.
 //
@@ -318,9 +319,7 @@ export default function Music() {
           aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
           className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-sunken"
         >
-          {track.artwork
-            ? <img src={track.artwork} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-            : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={20} /></span>}
+          <TrackArt src={track.artwork} title={track.title} className="h-full w-full" iconSize={20} />
           <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/45' : 'bg-ink/25'}`}>
             <Icon name={isPlaying ? 'pause' : 'play'} size={18} className="text-white" />
           </span>
@@ -447,9 +446,7 @@ export default function Music() {
           <section className="overflow-hidden rounded-card border border-line bg-surface-raised" data-testid="continue-listening">
             <div className="flex items-center gap-3 p-3">
               <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-surface-sunken">
-                {lastPlayed.track.artwork
-                  ? <img src={lastPlayed.track.artwork} alt="" className="h-full w-full object-cover" />
-                  : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={22} /></span>}
+                <TrackArt src={lastPlayed.track.artwork} title={lastPlayed.track.title} className="h-full w-full" iconSize={22} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Continue listening</p>
@@ -481,7 +478,7 @@ export default function Music() {
                 return (
                   <button key={t.id} onClick={() => playShelf(todaysWorship, i)} className="w-28 shrink-0 text-left" aria-label={`Play ${t.title}`}>
                     <span className="relative block h-28 w-28 overflow-hidden rounded-xl bg-surface-sunken">
-                      {t.artwork ? <img src={t.artwork} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={22} /></span>}
+                      <TrackArt src={t.artwork} title={t.title} className="h-full w-full" iconSize={22} />
                       <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/40' : 'bg-transparent'}`}>
                         {isPlaying && <Icon name="pause" size={18} className="text-white" />}
                       </span>
@@ -555,9 +552,7 @@ export default function Music() {
           <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-sunken">
-                {activeTrack?.artwork
-                  ? <img src={activeTrack.artwork} alt="" className="h-full w-full object-cover" />
-                  : <span className="grid h-full w-full place-items-center bg-gold/20 text-gold"><Icon name="music" size={16} /></span>}
+                <TrackArt src={activeTrack?.artwork} title={activeTrack?.title} className="h-full w-full" iconSize={16} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-extrabold">{activeTrack?.title}</p>

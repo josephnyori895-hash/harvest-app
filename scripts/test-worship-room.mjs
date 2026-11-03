@@ -10,6 +10,9 @@ const music = await readFile(new URL('../src/components/Music.tsx', import.meta.
 const bar = await readFile(new URL('../src/components/NowPlayingBar.tsx', import.meta.url), 'utf8')
 const feed = await readFile(new URL('../src/components/FeedCard.tsx', import.meta.url), 'utf8')
 const home = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
+const art = await readFile(new URL('../src/components/TrackArt.tsx', import.meta.url), 'utf8')
+const uploads = await readFile(new URL('../src/lib/backgroundUploads.ts', import.meta.url), 'utf8')
+const composer = await readFile(new URL('../src/components/PostCreate.tsx', import.meta.url), 'utf8')
 
 test('worship plays as a queue that advances on its own', () => {
   assert.match(player, /export async function playFromQueue\(tracks: PlayerTrack\[\], startIndex = 0\)/)
@@ -43,6 +46,20 @@ test('the now-playing bar is queue-aware on every screen', () => {
   assert.match(bar, /player\.hasPrev/)
   // The bar renders once in App, above the bottom nav.
   assert.match(player, /hasNext\?: boolean/)
+})
+
+test('every track surface renders artwork, even without a cover', () => {
+  // One shared tile: uploaded cover when present, deterministic generated art
+  // otherwise — never a bare grey box or a missing thumbnail.
+  assert.match(art, /export default function TrackArt/)
+  assert.match(art, /data-generated-artwork/)
+  assert.match(art, /linear-gradient\(135deg, hsl\(\$\{hue\} 42% 34%\)/)
+  for (const [name, file] of [['music', music], ['now-playing bar', bar], ['feed disc', feed], ['composer', composer]]) {
+    assert.match(file, /TrackArt/, `${name} must use TrackArt`)
+  }
+  // Covers are downscaled before upload, so the stored thumbnail is a thumbnail.
+  assert.match(uploads, /async function coverThumbnail\(file: File \| Blob, max = 720, quality = 0\.85\): Promise<File \| Blob>/)
+  assert.match(uploads, /const cover = await coverThumbnail\(task\.cover\)/)
 })
 
 test('the sponsored project is a campaign card, not a banner', () => {

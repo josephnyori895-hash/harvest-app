@@ -15,6 +15,7 @@ import { setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio } from '../lib/inlineMediaAudio'
 import { startFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
 import FeedMediaPreview from './FeedMediaPreview'
+import TrackArt from './TrackArt'
 import { Icon, Spinner } from '../ui'
 
 export type FeedCardPost = {
@@ -198,17 +199,7 @@ function MusicDisc({ music, playing, loading, failed, onToggle, raised = false }
       className={`absolute right-3 z-10 h-11 w-11 rounded-full bg-white/25 p-[2px] shadow-lg ring-1 ring-white/20 transition active:scale-95 ${raised ? 'bottom-14' : 'bottom-3'}`}
     >
       <span className="relative block h-full w-full overflow-hidden rounded-full bg-ink">
-        {music?.cover_url ? (
-          <img
-            src={music.cover_url}
-            alt=""
-            decoding="async"
-            className="music-disc-spin h-full w-full object-cover"
-            style={{ animationPlayState: playing ? 'running' : 'paused' }}
-          />
-        ) : (
-          <span className="grid h-full w-full place-items-center text-white/85"><Icon name="music" size={16} /></span>
-        )}
+        <TrackArt src={music?.cover_url} title={music?.title} className="h-full w-full" iconSize={16} spin={{ playing }} />
         <span className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
           <span className="h-2 w-2 rounded-full bg-white/85 shadow-sm" />
         </span>

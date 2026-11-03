@@ -17,6 +17,7 @@ import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
 import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 import VideoAdjuster from './VideoAdjuster'
+import TrackArt from './TrackArt'
 
 import ErrorMessage from './ErrorMessage'
 import { Button, Dialog, Icon, Spinner, type IconName } from '../ui'
@@ -458,8 +459,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
             {musicTrack && ['post', 'video', 'story'].includes(type) && (
               <div className="mt-3 flex items-center gap-2.5 rounded-card border border-line bg-surface-raised p-2">
-                <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent-soft text-accent">
-                  {musicTrack.cover_url ? <img src={musicTrack.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
+                <span className="h-9 w-9 shrink-0 overflow-hidden rounded-lg">
+                  <TrackArt src={musicTrack.cover_url} title={musicTrack.title} className="h-full w-full" iconSize={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-2xs font-extrabold text-ink">{musicTrack.title}</span>
@@ -554,8 +555,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
                 aria-pressed={selected}
                 className={`flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition ${selected ? 'border-accent bg-accent-wash' : 'border-transparent hover:bg-surface-sunken'}`}
               >
-                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-sunken text-ink-muted">
-                  {m.cover_url ? <img src={m.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
+                <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg">
+                  <TrackArt src={m.cover_url} title={m.title} className="h-full w-full" iconSize={16} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-2xs font-extrabold text-ink">{m.title}</span>
