@@ -75,7 +75,13 @@ const deferreds = new Map<string, DeferredHandle>()
 const getDeferred = (id: string): DeferredHandle => {
   const h = deferreds.get(id)
   if (h) return h
-  const handle: DeferredHandle = { promise: new Promise<void>((resolve, reject) => { handle.resolve = resolve; handle.reject = reject }), resolve: () => {}, reject: () => {} }
+  // Wire the promise after construction: assignments to `handle` inside the
+  // executor would hit the temporal dead zone while the const is still
+  // initializing ("Cannot access 'handle' before initialization").
+  const handle: DeferredHandle = { promise: Promise.resolve(), resolve: () => {}, reject: () => {} }
+  handle.promise = new Promise<void>((resolve, reject) => { handle.resolve = resolve; handle.reject = reject })
+  deferreds.set(id, handle)
+  return handle
   deferreds.set(id, handle)
   return handle
 }
