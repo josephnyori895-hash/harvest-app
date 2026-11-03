@@ -58,6 +58,8 @@ const fmtCount = (n: number): string => {
   return String(n)
 }
 
+import { VerifiedBadge } from './VerifiedBadge'
+
 // Sponsored project slot — a 2026 advert, not a banner. Full-bleed artwork,
 // one loud number (progress toward the goal), the human detail underneath and
 // a single action. It is always labelled Sponsored and never mimics an organic
@@ -79,6 +81,7 @@ export type ProjectAdvert = {
     committed_kes?: number
     participants?: number
     deadline?: string | null
+    image_url?: string | null
   } | null
 }
 
@@ -96,6 +99,7 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
     : null
   const open = () => { if (onOpen) onOpen(); else if (advert.cta_url) window.open(advert.cta_url, '_blank', 'noopener') }
   const initials = title.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+  const cover = advert.image_url || project?.image_url || null
 
   // Church project → dark campaign card: one number, a thin gold progress line,
   // the human detail in small caps, one action. No pastel chips, no stacked
@@ -104,6 +108,12 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
     return (
       <article className="overflow-hidden rounded-3xl bg-ink text-surface shadow-card" data-advert-id={advert.advert_id || advert.id}>
         <button type="button" onClick={open} className="block w-full text-left" aria-label={`Open ${title}`}>
+          {cover && (
+            <div className="relative aspect-[16/9] w-full overflow-hidden">
+              <img src={cover} alt={title} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/10 to-transparent" />
+            </div>
+          )}
           <div className="p-4 pb-0">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">
@@ -328,11 +338,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
           <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="min-w-0 text-left">
             <p className="flex min-w-0 items-center gap-1 text-caption font-extrabold leading-tight text-ink">
               <span className="truncate">{p.user}</span>
-              {p.verified ? (
-                <span role="img" aria-label="Verified account" className="grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full bg-accent text-white">
-                  <Icon name="check" size={9} strokeWidth={3.2} />
-                </span>
-              ) : null}
+              {p.verified ? <VerifiedBadge size={15} /> : null}
             </p>
             <p className="truncate text-2xs text-ink-subtle">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
           </button>

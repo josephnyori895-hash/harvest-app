@@ -7,26 +7,13 @@ import { Icon, Spinner } from '../ui'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
+import { VerifiedBadge } from './VerifiedBadge'
 type Section = 'personal' | 'groups' | 'ministry' | 'prayer'
 type ChatUser = any
 type Presence = { online: boolean; lastSeen: string }
 
 const API = import.meta.env.VITE_API_URL || ''
 const REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '🔥'] as const
-
-function VerifiedBadge({ size = 'sm', className = '' }: { size?: 'sm' | 'md'; className?: string }) {
-  const sizeClasses = size === 'md' ? 'h-5 w-5' : 'h-[18px] w-[18px]'
-  return (
-    <span
-      role="img"
-      aria-label="Verified account"
-      title="Verified account"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-accent text-white ring-2 ring-accent/15 ${sizeClasses} ${className}`} style={{ verticalAlign: 'middle' }}
-    >
-      <Icon name="check" size={size === 'md' ? 13 : 11} strokeWidth={3} />
-    </span>
-  )
-}
 
 const keyFor = (a: string, b: string) => `harvest:chat:${[a, b].sort().join(':')}`
 

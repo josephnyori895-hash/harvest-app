@@ -54,7 +54,7 @@ export async function handleFeed(request, env, ctx) {
          FROM reels r JOIN users u ON u.id = r.user_id
         WHERE r.approved_at IS NOT NULL`,
     )
-    const projectRows = await query(env, `SELECT p.id,p.name,p.description,p.goal_kes,p.deadline,p.status,p.icon,p.created_at,
+    const projectRows = await query(env, `SELECT p.id,p.name,p.description,p.goal_kes,p.deadline,p.status,p.icon,p.image_key,p.created_at,
       COALESCE((SELECT SUM(pc.amount_kes) FROM project_contributions pc WHERE pc.project_id=p.id),0) AS raised_kes,
       COALESCE((SELECT SUM(pp.commitment_kes) FROM project_participants pp WHERE pp.project_id=p.id),0) AS committed_kes,
       (SELECT COUNT(*) FROM project_participants pp WHERE pp.project_id=p.id) AS participants
@@ -75,12 +75,13 @@ export async function handleFeed(request, env, ctx) {
         : false
       return { ...normalized, liked, saved: savedSet.has(String(r.id)) }
     }))
-    const projects = projectRows.rows.map(p => ({
+    const projects = await Promise.all(projectRows.rows.map(async p => ({
       id: p.id, kind: 'project', username: 'harvest_family', name: p.name, verified: true,
       caption: p.description || 'Give with purpose and help us complete this project.',
       created_at: p.created_at, likes: 0, comments: 0, group_name: 'Harvest Family Church',
-      project: { id:p.id, name:p.name, description:p.description || '', goal_kes:Number(p.goal_kes)||0, raised_kes:Number(p.raised_kes)||0, committed_kes:Number(p.committed_kes)||0, participants:Number(p.participants)||0, deadline:p.deadline, status:p.status, icon:p.icon || '🤲' }
-    }))
+      image_url: p.image_key ? await mediaUrlOrNull(env, p.image_key, 6 * 3600) : null,
+      project: { id:p.id, name:p.name, description:p.description || '', goal_kes:Number(p.goal_kes)||0, raised_kes:Number(p.raised_kes)||0, committed_kes:Number(p.committed_kes)||0, participants:Number(p.participants)||0, deadline:p.deadline, status:p.status, icon:p.icon || '🤲', image_url: p.image_key ? await mediaUrlOrNull(env, p.image_key, 6 * 3600) : null }
+    })))
     const maxEngRaw = Math.max(...items.map(i => Math.log(1 + (i.likes || 0) + (i.comments || 0) * 3)), 0)
     const ranked = items
       .map(i => ({ ...i, rank_score: scoreOne(i, viewer, maxEngRaw) }))

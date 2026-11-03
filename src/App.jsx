@@ -26,6 +26,7 @@ import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
 import { Icon } from './ui'
+import { VerifiedBadge } from './components/VerifiedBadge'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 import { describeError } from './lib/actionFeedback'
 
@@ -1047,7 +1048,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
         <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>
-          {role === 'admin' ? '★ Admin' : me?.verified ? '✓ Verified' : 'Member'}
+          {role === 'admin' ? '★ Admin' : me?.verified ? <span className="inline-flex items-center gap-1">Verified <VerifiedBadge size={12} /></span> : 'Member'}
         </span>
       </div>
 
@@ -1063,7 +1064,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         </div>
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
-          <p className="text-ink-muted text-xs">{me?.verified ? '✓ Verified member' : 'Account pending verification by admin'}</p>
+          <p className="inline-flex items-center gap-1 text-xs text-ink-muted">{me?.verified ? <><VerifiedBadge size={13} /> Verified member</> : 'Account pending verification by admin'}</p>
           <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-surface-sunken border border-line text-xs font-bold text-ink active:opacity-70">✏️ Edit profile</button>
         </div>
       </div>
@@ -1085,7 +1086,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       {isAdmin && (
         <div className="mt-4 border-t border-line pt-3">
-          <h3 className="text-sm font-bold px-4 text-accent mb-2">✓ Verified Accounts</h3>
+          <h3 className="mb-2 px-4 text-sm font-bold text-accent">Verified accounts</h3>
           <div className="space-y-2 px-4">
             {users.filter(u => u.verified).map(u => (
               <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-white border border-line">

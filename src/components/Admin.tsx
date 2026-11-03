@@ -10,6 +10,7 @@ import { showToast } from './Toast'
 import { runAction } from '../lib/actionFeedback'
 import { presign, uploadToMinio } from '../lib/api'
 import GivingFundsEditor from './GivingFundsEditor'
+import { VerifiedBadge } from './VerifiedBadge'
 import { parseFunds, parseQuick } from '../lib/givingDefaults'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
@@ -693,7 +694,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 id="ann-group"
                 value={annGroup}
                 onChange={e => setAnnGroup(e.target.value)}
-                className="w-full rounded-xl border border-line bg-white px-3 py-3 text-sm font-medium outline-none focus:border-accent"
+                className="w-full rounded-xl border border-line bg-surface-raised px-3 py-3 text-sm font-medium outline-none focus:border-accent"
               >
                 <option value="">All members (every congregation)</option>
                 {GROUPS.map(g => <option key={g} value={g}>{g} only</option>)}
@@ -903,11 +904,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {tab === 'moderation' && (
         <>
           <div className="flex gap-2 mb-4 overflow-auto">
-            {(['pending', 'transcoding', 'rejected'] as const).map(value => <button key={value} onClick={() => setStatus(value)} className={`px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap ${status === value ? 'bg-accent text-white' : 'bg-white border border-line'}`}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+            {(['pending', 'transcoding', 'rejected'] as const).map(value => <button key={value} onClick={() => setStatus(value)} className={`px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap ${status === value ? 'bg-accent text-white' : 'bg-surface-raised border border-line'}`}>{value[0].toUpperCase() + value.slice(1)}</button>)}
             <button onClick={() => void cleanup()} disabled={cleanupBusy} className="ml-auto px-3 py-2 rounded-full text-xs font-bold bg-surface-sunken border border-line disabled:opacity-50">{cleanupBusy ? 'Cleaning…' : 'Clean orphaned uploads'}</button>
           </div>
           {pending.length === 0 ? <p className="text-sm text-ink-muted text-center py-12">No {status} media — all caught up.</p> : pending.map(item => (
-            <div key={item.id} className="bg-white border border-line rounded-3xl p-4 mb-3 shadow-sm">
+            <div key={item.id} className="bg-surface-raised border border-line rounded-card p-4 mb-3 shadow-sm">
               <div className="flex justify-between items-center"><span className="text-xs font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-accent-soft text-accent-strong">{item.type}</span><span className="text-xs text-ink-muted">{new Date(item.created_at).toLocaleString()}</span></div>
               <p className="text-sm font-semibold mt-3">{item.name || item.username || 'Harvest member'}</p>
               <p className="text-sm text-ink-muted mt-1">{item.caption || 'No caption'}</p>
@@ -923,12 +924,12 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {tab === 'accounts' && (
         <>
           <div className="flex gap-2 mb-3">
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" className="flex-1 bg-white border border-line rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-accent" />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" className="flex-1 bg-surface-raised border border-line rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-accent" />
             <button onClick={() => setShowCreate(v => !v)} className="px-4 py-2.5 rounded-2xl bg-accent text-white text-xs font-bold whitespace-nowrap">＋ New account</button>
           </div>
 
           {showCreate && (
-            <div className="bg-white border border-line rounded-3xl p-4 mb-3 space-y-2">
+            <div className="bg-surface-raised border border-line rounded-card p-4 mb-3 space-y-2">
               <p className="text-sm font-bold">Create member account</p>
               <div className="flex gap-2">
                 <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
@@ -949,10 +950,10 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           )}
 
           {loadingAccounts ? <p className="text-sm text-ink-muted text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No members found.</p> : pagedAccounts.map(u => (
-            <div key={u.username} className="bg-white border border-line rounded-3xl p-4 mb-2">
+            <div key={u.username} className="bg-surface-raised border border-line rounded-card p-4 mb-2">
               <button onClick={() => setExpanded(expanded === u.username ? null : u.username)} className="w-full flex gap-3 items-center justify-between text-left">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <span className="text-accent">✓</span>}</p>
+                  <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={14} />}</p>
                   <p className="text-xs text-ink-muted truncate">@{u.username} · {u.group_name}</p>
                   {u.phone && <p className="text-xs text-ink-muted truncate">{u.phone}</p>}
                 </div>
@@ -984,7 +985,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                       ] as const).map(([cap, label]) => {
                         const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
                         return (
-                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-accent text-white border-accent' : 'bg-white text-ink-muted border-line'}`}>{label}</button>
+                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-accent text-white border-accent' : 'bg-surface-raised text-ink-muted border-line'}`}>{label}</button>
                         )
                       })}
                       </div>
@@ -1008,18 +1009,18 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               <button
                 onClick={() => setAccountsPage(p => Math.max(1, p - 1))}
                 disabled={safeAccountsPage <= 1}
-                className="px-4 py-2 rounded-full bg-white border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
+                className="px-4 py-2 rounded-full bg-surface-raised border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
               >← Prev</button>
               <p className="text-xs text-ink-muted font-semibold">Page {safeAccountsPage} of {accountsPages} · {filteredAccounts.length} members</p>
               <button
                 onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))}
                 disabled={safeAccountsPage >= accountsPages}
-                className="px-4 py-2 rounded-full bg-white border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
+                className="px-4 py-2 rounded-full bg-surface-raised border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
               >Next →</button>
             </div>
           )}
 
-          <div className="mt-4 bg-white border border-line rounded-3xl p-4">
+          <div className="mt-4 bg-surface-raised border border-line rounded-card p-4">
             <p className="text-sm font-bold">Restore a deactivated account</p>
             <p className="text-xs text-ink-muted mt-1">Deactivated members can't sign in until restored.</p>
             <div className="flex gap-2 mt-2">
@@ -1033,7 +1034,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       {/* ── Chat moderation tab ── */}
       {tab === 'chat' && (
         <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-white border border-line">
+          <div className="p-4 rounded-2xl bg-surface-raised border border-line">
             <h2 className="text-sm font-extrabold">Chat moderation</h2>
             <p className="text-xs text-ink-muted mt-1">Review and remove messages from church group and department conversations.</p>
             {loadingChats ? <p className="text-xs py-4">Loading conversations…</p> : (
@@ -1044,7 +1045,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             )}
           </div>
           {selectedChat && (loadingChatMessages ? <p className="text-xs text-center py-8">Loading messages…</p> : chatMessages.length === 0 ? <p className="text-xs text-center py-8 text-ink-muted">No messages in this conversation.</p> : (
-            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-white border border-line rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-ink-muted">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-ink-subtle' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
+            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-surface-raised border border-line rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-ink-muted">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-ink-subtle' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
           ))}
         </div>
       )}
@@ -1054,7 +1055,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         loadingAudit ? <p className="text-sm text-ink-muted text-center py-10">Loading audit log…</p> : audit.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No admin activity recorded yet.</p> : (
           <div className="space-y-2">
             {audit.map(entry => (
-              <div key={entry.id} className="bg-white border border-line rounded-2xl px-4 py-3 flex gap-3 items-start">
+              <div key={entry.id} className="bg-surface-raised border border-line rounded-2xl px-4 py-3 flex gap-3 items-start">
                 <span className="text-xs font-bold px-2 py-1 rounded-full bg-surface-sunken text-ink-muted whitespace-nowrap">{entry.action}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{entry.actor_username || 'system'} → {entry.target_type} {String(entry.target_id).slice(0, 8)}</p>

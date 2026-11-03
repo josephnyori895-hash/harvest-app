@@ -9,6 +9,7 @@ import VideoThumb from './VideoThumb'
 
 import ErrorMessage from './ErrorMessage'
 import { Icon, Spinner } from '../ui'
+import { VerifiedBadge } from './VerifiedBadge'
 type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; saved?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
@@ -510,7 +511,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold text-xs">
               {String(cur.user).charAt(0).toUpperCase()}
             </div>
-            <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <Icon name="check" size={13} strokeWidth={3} className="inline text-gold" />}</span>
+            <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={14} />}</span>
           </button>
 
           {cur.cap && <p className="mt-1.5 max-w-[min(36rem,calc(100vw-7rem))] text-[13px] sm:text-sm font-medium leading-[1.35] line-clamp-2 drop-shadow">{cur.cap}</p>}

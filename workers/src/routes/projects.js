@@ -2,6 +2,10 @@ import { query, uuid } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 import { recordNotificationsSafe } from '../lib/notif.js'
+import { mediaUrlOrNull } from '../lib/media.js'
+
+// Cover art is an uploaded media key, signed on read so it never expires.
+const IMAGE_KEY_RE = /^originals\/(post|story)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]{2,5}$/i
 
 async function auditLog(env, actor, action, targetId, meta = {}) {
   await query(
@@ -25,6 +29,8 @@ function projectRow(row, mine = null, takes = [], mineTake = null) {
     status: row.status,
     auto_advertise: Boolean(row.auto_advertise),
     icon: row.icon || '🤲',
+    image_key: row.image_key || null,
+    image_url: null,
     created_at: row.created_at,
     takes,
     mine_take: mineTake,
@@ -111,14 +117,15 @@ async function baseProjects(env, userId = null, { includeMembers = false } = {})
       memberLists.set(String(r.project_id), list)
     }
   }
-  return rows.map(r => {
+  return Promise.all(rows.map(async r => {
     const takes = (takeMap.get(String(r.id)) || []).map(t => ({ ...t, mine_helper: takeMine.get(t.id) || null }))
     const mineTakeRow = takes.find(t => t.mine_helper)
     const mineTake = mineTakeRow ? { take_id: mineTakeRow.id, kind: mineTakeRow.kind, name: mineTakeRow.name, commitment_kes: mineTakeRow.mine_helper.commitment_kes } : null
     const out = projectRow(r, mine.get(String(r.id)) || null, takes, mineTake)
+    out.image_url = r.image_key ? await mediaUrlOrNull(env, r.image_key, 6 * 3600) : null
     if (includeMembers) out.participants_list = memberLists.get(String(r.id)) || []
     return out
-  })
+  }))
 }
 
 export async function handleProjects(request, env, ctx) {
@@ -292,11 +299,13 @@ export async function handleProjects(request, env, ctx) {
     const goal = Number(body.goal_kes)
     if (!name || !Number.isFinite(goal) || goal <= 0) return errorResponse('name and positive goal required',400)
     const status = ['upcoming','active','paused','completed','closed'].includes(body.status) ? body.status : 'active'
+    const imageKey = body.image_key === undefined || body.image_key === null || body.image_key === '' ? null : String(body.image_key)
+    if (imageKey && !IMAGE_KEY_RE.test(imageKey)) return errorResponse('image_key is not a valid uploaded photo', 400)
     const id = uuid()
     const now = new Date().toISOString()
-    await query(env, `INSERT INTO projects(id,name,description,goal_kes,deadline,status,auto_advertise,advertise_from,advertise_until,advertise_frequency_days,icon,created_by,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id,name,description,goal,body.deadline || null,status,body.auto_advertise === false ? 0 : 1,body.advertise_from || now,body.advertise_until || null,Math.max(1,Math.min(30,Number(body.advertise_frequency_days)||3)),String(body.icon||'🤲').slice(0,8),fresh.id,now,now])
+    await query(env, `INSERT INTO projects(id,name,description,goal_kes,deadline,status,auto_advertise,advertise_from,advertise_until,advertise_frequency_days,icon,image_key,created_by,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id,name,description,goal,body.deadline || null,status,body.auto_advertise === false ? 0 : 1,body.advertise_from || now,body.advertise_until || null,Math.max(1,Math.min(30,Number(body.advertise_frequency_days)||3)),String(body.icon||'🤲').slice(0,8),imageKey,fresh.id,now,now])
     return jsonResponse({ project: (await baseProjects(env, fresh.id)).find(x => x.id === id) }, 201)
   }
 
@@ -328,6 +337,11 @@ export async function handleProjects(request, env, ctx) {
     if (body.auto_advertise !== undefined) updates.auto_advertise = body.auto_advertise === false ? 0 : 1
     if (body.advertise_frequency_days !== undefined) updates.advertise_frequency_days = Math.max(1, Math.min(30, Number(body.advertise_frequency_days) || 3))
     if (body.icon !== undefined) updates.icon = String(body.icon || '').slice(0,8) || '🤲'
+    if (body.image_key !== undefined) {
+      const key = body.image_key === null || body.image_key === '' ? null : String(body.image_key)
+      if (key && !IMAGE_KEY_RE.test(key)) return errorResponse('image_key is not a valid uploaded photo', 400)
+      updates.image_key = key
+    }
     if (!Object.keys(updates).length) return errorResponse('no changes to apply', 400)
     const now = new Date().toISOString()
     const keys = Object.keys(updates)

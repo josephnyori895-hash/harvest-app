@@ -16,6 +16,8 @@ const composer = await readFile(new URL('../src/components/PostCreate.tsx', impo
 const admin = await readFile(new URL('../src/components/Admin.tsx', import.meta.url), 'utf8')
 const contentRoute = await readFile(new URL('../workers/src/routes/content.js', import.meta.url), 'utf8')
 const feedRoute = await readFile(new URL('../workers/src/routes/feed.js', import.meta.url), 'utf8')
+const projectsRoute = await readFile(new URL('../workers/src/routes/projects.js', import.meta.url), 'utf8')
+const give = await readFile(new URL('../src/components/Give.tsx', import.meta.url), 'utf8')
 
 test('worship plays as a queue that advances on its own', () => {
   assert.match(player, /export async function playFromQueue\(tracks: PlayerTrack\[\], startIndex = 0\)/)
@@ -98,4 +100,17 @@ test('adverts can use an uploaded photo, stored as a key and signed at render', 
   assert.match(contentRoute, /image_key/)
   assert.match(contentRoute, /is not a valid uploaded media key/)
   assert.match(feedRoute, /ad\.image_url \|\| \(ad\.image_key \? await mediaUrlOrNull\(env, ad\.image_key, 6 \* 3600\) : null\)/)
+})
+
+test('church projects carry a cover photo into the card and the feed advert', () => {
+  // Stored as a key, signed per read — never an expiring URL in the database.
+  assert.match(projectsRoute, /image_key: row\.image_key \|\| null/)
+  assert.match(projectsRoute, /out\.image_url = r\.image_key \? await mediaUrlOrNull\(env, r\.image_key, 6 \* 3600\) : null/)
+  assert.match(projectsRoute, /image_key is not a valid uploaded photo/)
+  assert.match(feedRoute, /image_url: p\.image_key \? await mediaUrlOrNull\(env, p\.image_key, 6 \* 3600\) : null/)
+  assert.match(feed, /const cover = advert\.image_url \|\| project\?\.image_url \|\| null/)
+  // The project form uploads a real photo and saves image_key with the project.
+  assert.ok(give.includes("const pre = await presign({ type: 'post'"), "the project form uploads the chosen photo")
+  assert.match(give, /image_key: imageKey \|\| null/)
+  assert.match(give, /accept="image\/\*"/)
 })

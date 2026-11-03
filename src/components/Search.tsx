@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { VerifiedBadge } from './VerifiedBadge'
 
 // PreviewTile — IG-style browse tile: a muted looping preview of the actual
 // reel. One video element per tile, mounted once (remounting stalls and
@@ -260,7 +261,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   const MemberRow = ({ u }: { u: any }) => (
     <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-purple-600 p-[2px]"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-sm font-bold text-accent-strong border-2 border-white shadow-sm">{String(u.username)[0].toUpperCase()}</div></div>
-      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <span className="w-3 h-3 rounded-full bg-[#0F766E] flex items-center justify-center text-[8px] text-white shrink-0">✓</span>}</p><p className="text-xs text-ink-muted truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
+      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={14} />}</p><p className="text-xs text-ink-muted truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
       <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
     </button>
   )

@@ -4,38 +4,7 @@ import { useCongregations } from '../lib/useCongregations'
 import StoryViewer from './Stories'
 
 import ErrorMessage from './ErrorMessage'
-
-type VerifiedBadgeProps = {
-  size?: 'sm' | 'md'
-  className?: string
-}
-
-function VerifiedBadge({ size = 'sm', className = '' }: VerifiedBadgeProps) {
-  const sizeClasses =
-    size === 'md'
-      ? 'h-5 w-5 text-[12px]'
-      : 'h-[18px] w-[18px] text-[10px]'
-
-  return (
-    <span
-      role="img"
-      aria-label="Verified account"
-      title="Verified account"
-      className={[
-        'inline-flex shrink-0 items-center justify-center',
-        'rounded-full bg-blue-500 text-white',
-        'font-black leading-none',
-        'ring-2 ring-blue-500/15',
-        'shadow-sm',
-        sizeClasses,
-        className,
-      ].join(' ')}
-      style={{ verticalAlign: 'middle' }}
-    >
-      ✓
-    </span>
-  )
-}
+import { VerifiedBadge } from './VerifiedBadge'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -168,7 +137,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
         <button onClick={onBack} aria-label="Back" className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-2xl hover:bg-neutral-100 active:scale-95 transition">‹</button>
         <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <h1 className="min-w-0 truncate font-bold text-lg leading-6">{displayName}</h1>
-          {profile.verified && <VerifiedBadge size="md" />}
+          {profile.verified && <VerifiedBadge size={20} />}
         </div>
         <div className="shrink-0 flex items-center justify-end gap-2">
           {!isSelf && (

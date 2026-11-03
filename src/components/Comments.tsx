@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
 import { Icon } from '../ui'
+import { VerifiedBadge } from './VerifiedBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Comment = {
@@ -170,11 +171,7 @@ export default function Comments({
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-5 text-ink">
             <span className="font-extrabold">{c.username}</span>
-            {c.verified && (
-              <span role="img" aria-label="Verified account" className="ml-1 inline-grid h-[13px] w-[13px] translate-y-[-1px] place-items-center rounded-full bg-accent text-white">
-                <Icon name="check" size={8} strokeWidth={3.2} />
-              </span>
-            )}
+            {c.verified && <VerifiedBadge size={13} className="ml-1" />}
             <span className="ml-1.5 break-words text-ink-muted">{c.body}</span>
           </p>
           <div className="mt-1 flex items-center gap-3 text-2xs text-ink-subtle">
