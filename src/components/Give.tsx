@@ -3,6 +3,7 @@ import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participat
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 import { timeAgo } from '../lib/time'
+import { Icon } from '../ui'
 
 const FUNDS = [
   { id:'tithe', label:'Tithe', sub:'First fruits', icon:'💰' },
@@ -23,6 +24,20 @@ export function normalizeMpesaPhone(raw: string): string | null {
   if (/^254[17]\d{8}$/.test(v)) return v
   if (/^\+254[17]\d{8}$/.test(v)) return v.slice(1)
   return null
+}
+
+/** Deadlines are dates, not "events": a past deadline must never render as
+ *  "Just now" the way a relative timestamp would. */
+function deadlineLabel(value: any): string {
+  if (!value) return 'Open · no deadline'
+  const d = new Date(value)
+  if (!Number.isFinite(d.getTime())) return 'Open · no deadline'
+  const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+  if (days < 0) return 'Deadline passed'
+  if (days === 0) return 'Ends today'
+  if (days === 1) return '1 day left'
+  if (days <= 30) return `${days} days left`
+  return `Ends ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}`
 }
 
 function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; onCreated?: (p:any) => void; onUpdated?: (p:any) => void }) {
@@ -294,14 +309,41 @@ export default function Give() {
     } catch (e) { showToast(e instanceof Error ? e.message : 'Could not save participation', 'error') }
     finally { setProjectBusy(false) }
   }
+  // A campaign card, not an admin row: artwork band, one big number, the human
+  // detail underneath and a single action. Matches the sponsored card in the
+  // feed so a project looks identical wherever the family meets it.
   const projectCard = (p: any) => {
-    const pct = p.goal_kes > 0 ? Math.min(100, Math.round((p.raised_kes / p.goal_kes) * 100)) : 0
-    return <button key={p.id} type="button" onClick={() => openProject(p)} className="w-full text-left rounded-2xl bg-white border border-line p-4 shadow-sm active:scale-[0.99] transition-transform">
-      <div className="flex items-start gap-3"><span className="w-11 h-11 shrink-0 rounded-2xl bg-accent-soft flex items-center justify-center text-xl">{p.icon || '🤲'}</span><div className="min-w-0 flex-1"><div className="flex justify-between gap-2"><p className="font-extrabold truncate">{p.name}</p><span className="text-[10px] font-bold capitalize text-accent shrink-0">{p.status}</span></div><p className="mt-1 text-xs text-ink-muted line-clamp-2">{p.description || 'Give with purpose and help us move this project forward.'}</p></div></div>
-      <div className="mt-3 h-2 rounded-full bg-surface-sunken overflow-hidden"><div className="h-full bg-accent rounded-full" style={{width:`${pct}%`}} /></div>
-      <div className="mt-2 flex justify-between gap-3 text-[11px] font-semibold"><span>KES {Number(p.raised_kes).toLocaleString()} raised</span><span>{pct}% · {p.participants} participating</span></div>
-      {p.mine && <p className="mt-2 text-[11px] text-accent-strong font-bold">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</p>}
-      {p.deadline && <p className="mt-1 text-[10px] text-ink-subtle">Deadline {timeAgo(p.deadline)}</p>}
+    const goal = Number(p.goal_kes) || 0
+    const raised = Number(p.raised_kes) || 0
+    const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
+    const remaining = Math.max(goal - raised, 0)
+    const statusLabel = p.status === 'active' ? 'Active project' : p.status === 'upcoming' ? 'Starting soon' : String(p.status || 'project')
+    return <button key={p.id} type="button" onClick={() => openProject(p)} data-testid="project-card" className="w-full overflow-hidden rounded-3xl border border-line bg-surface-raised text-left shadow-card transition-transform active:scale-[0.995]">
+      <span className="relative block h-28 overflow-hidden bg-gradient-to-br from-accent-strong via-accent to-gold">
+        <span aria-hidden="true" className="absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15" />
+        <span aria-hidden="true" className="absolute -bottom-10 -left-6 h-28 w-28 rounded-full bg-white/10" />
+        <span className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/25 to-transparent" />
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-ink/50 px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-gold" /> {statusLabel}
+        </span>
+        <span className="absolute right-3 top-3 rounded-full bg-white/20 px-2.5 py-1 text-2xs font-extrabold text-white backdrop-blur-sm">{pct}%</span>
+        <span className="absolute inset-x-3 bottom-2.5 block">
+          <span className="block truncate text-base font-extrabold text-white drop-shadow">{p.name}</span>
+          <span className="mt-0.5 block truncate text-2xs font-bold text-white/80">KES {raised.toLocaleString()} raised of {goal.toLocaleString()}</span>
+        </span>
+      </span>
+      <span className="block p-3.5">
+        {p.description && <span className="line-clamp-2 block text-2xs leading-relaxed text-ink-muted">{p.description}</span>}
+        <span className="mt-2.5 block h-2 overflow-hidden rounded-full bg-surface-sunken">
+          <span className="block h-full rounded-full bg-gradient-to-r from-accent to-gold" style={{ width: `${Math.max(pct, 2)}%` }} />
+        </span>
+        <span className="mt-2 flex items-center justify-between gap-2 text-2xs font-bold">
+          <span className="text-accent-strong">{p.participants || 0} participating{remaining > 0 ? ` · KES ${remaining.toLocaleString()} to go` : ' · funded'}</span>
+          <span className="shrink-0 text-ink-muted">{deadlineLabel(p.deadline)}</span>
+        </span>
+        {p.mine && <span className="mt-2 block rounded-xl bg-accent-soft px-2.5 py-2 text-2xs font-bold text-accent-strong">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</span>}
+        <span className="mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent text-2xs font-extrabold text-white">Take part <Icon name="arrow-right" size={14} /></span>
+      </span>
     </button>
   }
 
@@ -407,7 +449,7 @@ export default function Give() {
         </div>
       </>))}
 
-      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.16em] text-accent font-extrabold">Project</p><h2 className="text-xl font-extrabold mt-1">{selectedProject.icon} {selectedProject.name}</h2></div><button type="button" onClick={() => setSelectedProject(null)} className="w-10 h-10 rounded-full bg-white border border-line" aria-label="Close">×</button></div><p className="mt-3 text-sm text-ink-muted leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-line p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-surface-sunken"><div className="h-full rounded-full bg-accent" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-ink-muted"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-accent-soft p-4"><p className="text-xs font-extrabold text-accent-strong">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-ink-muted">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}
+      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5" onClick={e => e.stopPropagation()}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.16em] text-accent font-extrabold">Project · {selectedProject.status}</p><h2 className="text-xl font-extrabold mt-1 truncate">{selectedProject.name}</h2><p className="mt-1 text-2xs font-bold text-ink-muted">{deadlineLabel(selectedProject.deadline)}</p></div><button type="button" onClick={() => setSelectedProject(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink-muted" aria-label="Close"><Icon name="close" size={16} /></button></div><p className="mt-3 text-sm text-ink-muted leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-white border border-line p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-surface-sunken"><div className="h-full rounded-full bg-accent" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-ink-muted"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-accent-soft p-4"><p className="text-xs font-extrabold text-accent-strong">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-ink-muted">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}
           {(selectedProject.takes || []).length > 0 && <div className="mt-3"><p className="text-xs font-extrabold text-accent">Team takes on this project</p>{selectedProject.takes.map((t: any) => <div key={t.id} className="mt-2 rounded-2xl bg-white border border-line p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold truncate">{t.kind === 'group' ? '👥' : t.kind === 'department' ? '🏛' : '🏘'} {t.name}</p><p className="text-[11px] text-ink-muted mt-0.5">{t.taken_by ? `Taken by ${t.taken_by.name || t.taken_by.username}` : 'Open'} · {t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()} pledged</p></div><button type="button" onClick={() => { setTakeKind(t.kind); setTakeJoinId(t.id); setTakeEntity(t.name); setProjectCommitment(t.mine_helper ? Number(t.mine_helper.commitment_kes) : '') }} className="shrink-0 px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">{t.mine_helper ? 'Update' : 'Help'}</button></div></div>)}</div>}
           {isAdmin && <div className="mt-3 rounded-2xl bg-white border border-line p-3"><p className="text-xs font-extrabold text-accent">Admin controls</p>{(selectedProject.participants_list || []).length === 0 && (selectedProject.takes || []).length === 0 && <p className="text-xs text-ink-muted mt-1">No members have taken or contributed to this project yet.</p>}{(selectedProject.participants_list || []).map((u: any) => <div key={`ind-${u.username}`} className="mt-2"><p className="text-[11px] font-bold truncate">{u.name || u.username} <span className="text-ink-subtle">@{u.username}</span> · KES {Number(u.commitment_kes).toLocaleString()}</p><div className="flex gap-1.5 mt-1"><input inputMode="numeric" value={adminAmts[`ind:${u.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`ind:${u.username}`]: e.target.value }))} placeholder="New pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(u.username, `ind:${u.username}`)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Set</button><button type="button" onClick={() => void adminRemoveMember(u.username)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">✕</button></div></div>)}{(selectedProject.takes || []).map((t: any) => <div key={t.id} className="mt-3"><div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold truncate">{t.kind === 'group' ? '👥' : t.kind === 'department' ? '🏛' : '🏘'} {t.name} · {t.helpers_detail?.length || t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()}</p><div className="flex gap-1"><button type="button" onClick={() => void adminRenameTake(t)} className="px-2 py-1 rounded-lg bg-accent-soft text-accent-strong text-[10px] font-extrabold">Rename</button><button type="button" onClick={() => void adminRemoveTake(t)} className="px-2 py-1 rounded-lg bg-danger-soft border border-danger text-danger text-[10px] font-extrabold">Remove</button></div></div>{(t.helpers_detail || []).map((h: any) => <div key={`h-${t.id}-${h.username}`} className="mt-1.5"><p className="text-[10px] text-ink-muted truncate">{h.name || h.username} · KES {Number(h.commitment_kes).toLocaleString()}{h.note ? ` · "${h.note}"` : ''}</p><div className="flex gap-1.5"><input inputMode="numeric" value={adminAmts[`helper:${t.id}:${h.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`helper:${t.id}:${h.username}`]: e.target.value }))} placeholder="Set pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(h.username, `helper:${t.id}:${h.username}`)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Set</button></div></div>)}</div>)}</div>}
           <div className="mt-4"><p className="text-xs font-extrabold text-accent">How do you want to take this?</p><div className="mt-2 grid grid-cols-4 gap-1.5">{(['individual','group','department','community'] as const).map(k => <button key={k} type="button" onClick={() => { setTakeKind(k); setTakeJoinId(''); setTakeEntity(k === 'individual' ? '' : takeEntity) }} className={`py-2 rounded-xl text-[11px] font-extrabold border ${takeKind === k ? 'bg-accent text-white border-accent' : 'bg-white border-line text-ink-muted'}`}>{k === 'individual' ? '👤 Me' : k === 'group' ? '👥 Group' : k === 'department' ? '🏛 Dept' : '🏘 Community'}</button>)}</div></div>

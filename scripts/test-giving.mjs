@@ -39,6 +39,15 @@ test('RS-105: STK polling survives past 120 s and re-checks when the tab returns
   assert.match(giveUi, /Date\.now\(\) - startedAt < 60_000 \? 4000 : 15_000/, 'poll backs off instead of stopping')
 })
 
+test('project cards are campaign cards with real deadline language', () => {
+  assert.match(giveUi, /data-testid="project-card"/)
+  assert.match(giveUi, /function deadlineLabel\(value: any\): string/)
+  assert.match(giveUi, /days left/, 'deadlines read as a countdown')
+  assert.match(giveUi, /Take part <Icon name="arrow-right"/, 'one clear action per card')
+  // A past deadline must never render as a relative "Just now" timestamp.
+  assert.doesNotMatch(giveUi, /Deadline \{timeAgo\(p\.deadline\)\}/)
+})
+
 test('RS-106: a failed giving-history load is surfaced with a retry', () => {
   assert.doesNotMatch(giveUi, /fetchMyGiving\(\)\.then\(setTransactions\)\.catch\(\(\) => \{\}\)/, 'silent swallow must be gone')
   assert.match(giveUi, /setHistoryError\(e instanceof Error \? e\.message/)
