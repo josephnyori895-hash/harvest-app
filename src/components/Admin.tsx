@@ -8,6 +8,7 @@ import ErrorMessage from './ErrorMessage'
 import { Icon } from '../ui'
 import { showToast } from './Toast'
 import { runAction } from '../lib/actionFeedback'
+import { presign, uploadToMinio } from '../lib/api'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
@@ -119,6 +120,51 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const settingsJson = (() => { try { return JSON.stringify(JSON.parse(content.advert_settings || '{}'), null, 2) } catch { return (content.advert_settings || '{}') } })()
   const [advertsDraft, setAdvertsDraft] = useState<string | null>(null)
   const [settingsDraft, setSettingsDraft] = useState<string | null>(null)
+  // Photo composer: adverts should be made with a picture, not a pasted URL.
+  const [adTitle, setAdTitle] = useState('')
+  const [adBody, setAdBody] = useState('')
+  const [adCta, setAdCta] = useState('')
+  const [adPhoto, setAdPhoto] = useState<File | null>(null)
+  const [adBusy, setAdBusy] = useState(false)
+  const addAdvertWithPhoto = async () => {
+    if (adBusy) return
+    if (!adTitle.trim()) { setError('Give the advert a title'); return }
+    if (!adPhoto) { setError('Choose a photo for this advert'); return }
+    setError('')
+    setAdBusy(true)
+    const photo = adPhoto
+    const res = await runAction('Uploading advert photo', async () => {
+      const pre = await presign({
+        type: 'post',
+        contentType: photo.type || 'image/jpeg',
+        bytes: photo.size,
+        ext: (photo.name.split('.').pop() || 'jpg').toLowerCase(),
+      })
+      await uploadToMinio(pre.url, pre.fields, photo)
+      return pre.key
+    }, 'Photo uploaded ✓')
+    if (!res.ok || !res.data) {
+      setError(res.error?.message || 'Could not upload the photo')
+      setAdBusy(false)
+      return
+    }
+    let current: any[] = []
+    try { current = JSON.parse((advertsDraft ?? advertsJson) || '[]') } catch { current = [] }
+    const baseSlug = adTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
+    const id = baseSlug || `advert-${Date.now()}`
+    const next = [...current, {
+      id: current.some(a => a?.id === id) ? `${id}-${Date.now().toString(36).slice(-4)}` : id,
+      title: adTitle.trim().slice(0, 80),
+      body: adBody.trim().slice(0, 400),
+      image_key: res.data,
+      cta_url: adCta.trim() || window.location.origin,
+      enabled: true,
+    }]
+    setAdvertsDraft(JSON.stringify(next, null, 2))
+    setAdTitle(''); setAdBody(''); setAdCta(''); setAdPhoto(null)
+    flash('Advert added — press Save below to publish it')
+    setAdBusy(false)
+  }
   useEffect(() => {
     fetch(`${API}/api/content`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -807,6 +853,29 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               />
               <p className="text-[10px] text-ink-muted mt-0.5">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
             </div>
+            <div className="rounded-2xl border border-line bg-surface p-3" data-testid="advert-photo-composer">
+              <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">New advert with a photo</p>
+              <p className="mt-1 text-[10px] text-ink-muted">Upload a picture straight from your phone — no hosting or link needed. It is added to the list below for you to review.</p>
+              <label htmlFor="ad-photo" className="mt-2 flex min-h-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-line bg-surface-sunken">
+                {adPhoto
+                  ? <img src={URL.createObjectURL(adPhoto)} alt="Selected advert" className="h-24 w-full object-cover" />
+                  : <span className="flex items-center gap-2 text-2xs font-bold text-ink-muted"><Icon name="camera" size={18} /> Choose a photo</span>}
+                <input
+                  id="ad-photo"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => { setAdPhoto(e.target.files?.[0] || null); e.target.value = '' }}
+                />
+              </label>
+              <input value={adTitle} onChange={e => setAdTitle(e.target.value.slice(0, 80))} placeholder="Headline (e.g. Harvest Bookshop)" className="input-base mt-2" aria-label="Advert headline" />
+              <textarea value={adBody} onChange={e => setAdBody(e.target.value.slice(0, 400))} rows={2} placeholder="One or two lines about the offer" className="input-base mt-2 resize-y" aria-label="Advert body" />
+              <input value={adCta} onChange={e => setAdCta(e.target.value)} placeholder="Link (optional — defaults to the church site)" className="input-base mt-2" aria-label="Advert link" />
+              <button type="button" onClick={() => void addAdvertWithPhoto()} disabled={adBusy || !adPhoto || !adTitle.trim()} className="mt-2 min-h-11 w-full rounded-full bg-ink text-2xs font-extrabold text-white disabled:opacity-40">
+                {adBusy ? 'Uploading photo…' : 'Add this advert'}
+              </button>
+            </div>
+
             <div>
               <label htmlFor="ad-list" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Adverts (JSON array)</label>
               <textarea
@@ -817,7 +886,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 placeholder={ADVERT_EXAMPLE}
                 className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
               />
-              <p className="text-[10px] text-ink-muted mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_url</b>, <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
+              <p className="text-[10px] text-ink-muted mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_key</b> (an uploaded photo — added by the composer above), <b>image_url</b> (external link), <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
             </div>
             <button
               onClick={() => {

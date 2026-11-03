@@ -82,7 +82,7 @@ export type ProjectAdvert = {
   } | null
 }
 
-export function AdvertCard({ advert, onOpen }: { advert: ProjectAdvert; onOpen?: () => void }) {
+export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: ProjectAdvert; onOpen?: () => void; onBrowseProjects?: () => void }) {
   const project = advert.project || null
   const title = project?.name || advert.title || advert.caption || 'Harvest partner'
   const body = advert.body || project?.description || advert.caption || ''
@@ -129,9 +129,18 @@ export function AdvertCard({ advert, onOpen }: { advert: ProjectAdvert; onOpen?:
             </div>
           </div>
         </button>
-        <div className="p-3">
+        <div className="space-y-1 p-3 pt-2">
           <button type="button" onClick={open} className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-gold text-2xs font-extrabold text-ink transition active:scale-[0.99]">
             Take part <Icon name="arrow-right" size={14} />
+          </button>
+          {/* A project card is also a door: members who are not moved by this
+              goal can go and find the one they are. */}
+          <button
+            type="button"
+            onClick={() => (onBrowseProjects ? onBrowseProjects() : open())}
+            className="flex min-h-9 w-full items-center justify-center gap-1 rounded-full text-2xs font-extrabold text-surface/60 transition hover:text-surface"
+          >
+            Take up another project <Icon name="chevron-right" size={12} />
           </button>
         </div>
       </article>

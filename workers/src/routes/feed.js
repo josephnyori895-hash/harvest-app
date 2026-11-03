@@ -160,11 +160,14 @@ export async function handleFeed(request, env, ctx) {
       organicSinceAd += 1
       if (organicSinceAd % interval === 0 && ai < eligible.length) {
         const ad = eligible[ai++]
+        // Uploaded advert photos live as media keys — sign one URL per render so
+        // the image works for everyone without storing an expiring URL.
+        const adImage = ad.image_url || (ad.image_key ? await mediaUrlOrNull(env, ad.image_key, 6 * 3600) : null)
         pagePosts.push({
           id: `advert_${ad.id}`, kind: 'advert', advert_id: ad.id,
           name: 'Harvest Family', verified: true,
           caption: ad.body || ad.title, title: ad.title, body: ad.body || '',
-          cta_url: ad.cta_url || null, image_url: ad.image_url || null,
+          cta_url: ad.cta_url || null, image_url: adImage,
         })
       }
     }

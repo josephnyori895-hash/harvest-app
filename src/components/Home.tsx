@@ -667,47 +667,24 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           <p className="mt-0.5 text-2xs text-ink-muted">Shared goals from Harvest Family.</p>
         </div>
         <div className="space-y-3">
+          {/* Same campaign card as the sponsored slot inside the feed and the
+              Give screen — one project design everywhere, never a bespoke tile. */}
           {liveProjects.map((p: any) => {
             const project = p.project || p
-            const raised = Number(project.raised_kes || 0)
-            const pct = project.goal_kes ? Math.min(100, Math.round((raised / Number(project.goal_kes)) * 100)) : 0
-            // Bar is a hairline at true 1–3% — floor the visual to 4% so early
-            // progress is visible (the exact figure is printed beside it).
-            const barW = pct > 0 ? Math.max(4, pct) : 0
-            const daysLeft = project.deadline ? Math.ceil((new Date(project.deadline).getTime() - Date.now()) / 86400000) : null
-            const urgent = daysLeft !== null && daysLeft >= 0 && daysLeft <= 14
-            return <article key={p.id} className="relative overflow-hidden rounded-card border border-accent-soft bg-gradient-to-br from-accent-wash via-surface-raised to-gold-soft shadow-card">
-              <button type="button" onClick={() => setTab('give')} className="block w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-inset" aria-label={`Open sponsored project: ${project.name || p.name}`}>
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-accent-strong">Sponsored · Church project</span>
-                  <span className="inline-flex shrink-0 items-center gap-1 text-2xs font-bold text-accent">Learn more <Icon name="chevron-right" size={13} /></span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-accent-soft bg-surface-raised text-accent">{project.icon ? <span className="text-xl">{project.icon}</span> : <Icon name="gift" size={20} />}</span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-body font-extrabold leading-5 text-ink">{project.name || p.name}</h3>
-                    <p className="mt-1 line-clamp-2 text-caption leading-5 text-ink-muted">{project.description || p.caption}</p>
-                  </div>
-                </div>
-                <div className="mt-4 rounded-2xl border border-line bg-surface-raised p-3">
-                  <div className="flex items-center justify-between gap-3 text-2xs font-bold text-ink">
-                    <span>KES {raised.toLocaleString()} raised</span>
-                    <span>{pct}% of goal</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-line">
-                    <div className={`h-full rounded-full ${urgent && pct < 100 ? 'bg-gradient-to-r from-gold to-gold-strong' : 'bg-accent'}`} style={{ width: `${barW}%` }} />
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-3 text-2xs text-ink-muted">
-                    <span>{Number(project.participants || 0)} participating</span>
-                    {project.deadline ? <span className={`inline-flex items-center gap-1 ${urgent ? 'font-bold text-gold-strong' : ''}`}>{urgent && <Icon name="clock" size={12} />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 14 ? (daysLeft === 0 ? 'Ends today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`) : `Ends ${timeAgo(project.deadline)}`}</span> : <span>Open participation</span>}
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-2xs text-ink-subtle">Support a shared church goal</span>
-                  <span className="inline-flex min-h-9 items-center justify-center rounded-full bg-accent px-4 text-2xs font-extrabold text-white shadow-card">View project</span>
-                </div>
-              </button>
-            </article>
+            return (
+              <AdvertCard
+                key={p.id}
+                advert={{
+                  ...p,
+                  kind: 'advert',
+                  title: project.name || p.name,
+                  body: project.description || p.caption || '',
+                  project,
+                }}
+                onOpen={() => setTab('give')}
+                onBrowseProjects={() => setTab('give')}
+              />
+            )
           })}
         </div>
       </section>
@@ -723,7 +700,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             <div className="px-3"><div className="skeleton mt-3 h-3 w-4/5 rounded-full" /></div>
           </div>
         ))}{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
-        if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpen={() => setTab('give')} /></div>
+        if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpen={() => setTab('give')} onBrowseProjects={() => setTab('give')} /></div>
         const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
         <FeedCard
           key={key}

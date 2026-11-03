@@ -120,6 +120,14 @@ export async function handleContent(request, env, ctx) {
           for (const urlField of ['cta_url', 'image_url']) {
             if (!isAbsoluteUrl(ad[urlField], urlField === 'cta_url')) return errorResponse(`sponsor_adverts: ${urlField} must be an http(s) URL`, 400)
           }
+          // Uploaded advert photos are stored as media KEYS; the feed signs them
+          // per request, so an advert image never expires the way a signed URL
+          // stored in content would.
+          if (ad.image_key !== undefined && ad.image_key !== null) {
+            if (!/^originals\/(post|story)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]{2,5}$/i.test(String(ad.image_key))) {
+              return errorResponse('sponsor_adverts: image_key is not a valid uploaded media key', 400)
+            }
+          }
           for (const dateField of ['advertise_from', 'advertise_until']) {
             if (ad[dateField] !== undefined && ad[dateField] !== null && (!isIsoDate(ad[dateField]))) return errorResponse(`sponsor_adverts: ${dateField} must be an ISO date-time`, 400)
             if (ad[dateField] !== undefined && ad[dateField] !== null && ad[dateField].length > 30) return errorResponse(`sponsor_adverts: ${dateField} too long`, 400)
