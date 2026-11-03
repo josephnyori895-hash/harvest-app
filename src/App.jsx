@@ -550,7 +550,7 @@ function InnerApp() {
       <Sidebar tab={tab} setTab={handleTab} />
       {/* Fluid on phones; on desktop the content column sits beside the rail
           instead of stretching a phone layout across the whole window. */}
-      <div className="app-shell relative mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[760px] xl:max-w-[860px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+      <div className="app-shell relative mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[560px] xl:max-w-[620px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <button
           type="button"
           onClick={() => setShowNotifications(v => { const next = !v; if (next) void refreshNotifications(); return next })}
@@ -1278,6 +1278,7 @@ const NAV_ITEMS = [
   { id: 'post', label: 'Create', icon: 'plus' },
   { id: 'give', label: 'Give', icon: 'gift' },
   { id: 'chat', label: 'Chat', icon: 'chat' },
+  { id: 'map', label: 'Map', icon: 'map' },
   { id: 'profile', label: 'Profile', icon: 'user' },
 ]
 

@@ -31,7 +31,7 @@ export type IconName =
   | 'heart' | 'building' | 'globe' | 'coins' | 'phone' | 'check' | 'clock'
   | 'alert' | 'info' | 'close' | 'copy' | 'retry' | 'chevron-right'
   | 'chevron-down' | 'bank' | 'shield' | 'bookmark' | 'camera' | 'dots'
-  | 'arrow-left' | 'send' | 'reply' | 'star' | 'trash' | 'share' | 'users' | 'smile'
+  | 'arrow-left' | 'arrow-right' | 'map' | 'send' | 'reply' | 'star' | 'trash' | 'share' | 'users' | 'smile'
   | 'play' | 'pause' | 'music' | 'mic' | 'sparkle' | 'pencil' | 'volume' | 'volume-x'
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
@@ -63,6 +63,8 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   camera: <><path d="M4.4 8.6h3l1.6-2.4h6l1.6 2.4h3v10.8H4.4V8.6Z" /><circle cx="12" cy="13.8" r="3.2" /></>,
   dots: <><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /></>,
   'arrow-left': <><path d="M20.4 12H4.6" /><path d="m10.6 5.4-6.4 6.6 6.4 6.6" /></>,
+  'arrow-right': <><path d="M3.6 12h15.8" /><path d="m13.4 5.4 6.4 6.6-6.4 6.6" /></>,
+  map: <><path d="M9.2 3.6 3.4 5.6v14.8l5.8-2 5.8 2 5.8-2V3.6l-5.8 2-5.8-2Z" /><path d="M9.2 3.6v14.8M14.8 5.6v14.8" /></>,
   send: <><path d="M21 3.4 3.8 10.2l6.6 2.6 2.6 6.6L21 3.4Z" /><path d="m10.4 12.8 4.6-4.6" /></>,
   reply: <><path d="m9.6 5.4-6.6 6.6 6.6 6.6" /><path d="M3.4 12h9.4a7.2 7.2 0 0 1 7.2 7.2v.4" /></>,
   star: <path d="m12 3.6 2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6L3.3 10l6-.9L12 3.6Z" />,

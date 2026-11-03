@@ -40,7 +40,7 @@ export async function handleFeed(request, env, ctx) {
     // Union posts + reels (approved), rank in JS (identical math to the pg SQL version).
     const posts = await query(
       env,
-      `SELECT p.id, p.user_id, u.username, u.name, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
+      `SELECT p.id, p.user_id, u.username, u.name, u.avatar_key, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
               p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
               p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
@@ -48,7 +48,7 @@ export async function handleFeed(request, env, ctx) {
     )
     const reels = await query(
       env,
-      `SELECT r.id, r.user_id, u.username, u.name, COALESCE(u.verified, r.verified_snapshot, 0) AS verified,
+      `SELECT r.id, r.user_id, u.username, u.name, u.avatar_key, COALESCE(u.verified, r.verified_snapshot, 0) AS verified,
               r.caption, r.music_track_id, r.poster_key AS thumb_key, NULL AS blurhash, r.hls_master_key AS original_key,
               r.likes, r.comments, r.created_at, r.is_pinned, r.group_name, r.constituency, r.faith, 'reel' AS kind
          FROM reels r JOIN users u ON u.id = r.user_id
@@ -89,6 +89,7 @@ export async function handleFeed(request, env, ctx) {
 
     const enriched = await Promise.all(ranked.map(async r => ({
       ...r,
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
       // Reels: thumb_url must be a POSTER image, never the video itself —
       // falling back to original_key gave clients a video URL as "thumbnail",
       // which rendered broken <img> tiles or WebView's giant play glyph.
@@ -449,7 +450,7 @@ export async function handleFeed(request, env, ctx) {
     const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
     const { rows } = await query(
       env,
-      `SELECT p.id, p.user_id, u.username, u.name, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
+      `SELECT p.id, p.user_id, u.username, u.name, u.avatar_key, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
               p.caption, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
               p.music_track_id, sp.created_at AS saved_at
          FROM saved_posts sp

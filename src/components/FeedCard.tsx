@@ -22,6 +22,7 @@ export type FeedCardPost = {
   id?: string
   user: string
   username?: string
+  avatar_url?: string | null
   verified?: boolean
   loc?: string
   time?: string
@@ -235,8 +236,10 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
       {/* header — 32px avatar, one bold line, one meta line, overflow */}
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
-            {String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}
+          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+            {p.avatar_url
+              ? <img src={p.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+              : String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}
           </button>
           <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="min-w-0 text-left">
             <p className="flex min-w-0 items-center gap-1 text-caption font-extrabold leading-tight text-ink">

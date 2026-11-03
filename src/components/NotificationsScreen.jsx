@@ -133,7 +133,7 @@ export default function NotificationsScreen({
   const empty = !loading && !error && filtered.length === 0
   const filterLabel = FILTERS.find(f => f.id === filter)?.label || 'All'
 
-  return <main className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-surface" aria-label="Notifications">
+  return <main className="flex h-full min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-surface" aria-label="Notifications">
     <header className="flex min-h-14 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3">
       <button type="button" onClick={onBack} aria-label="Back" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl focus:outline-none focus-visible:ring-2"><Icon name="arrow-left" size={20} /></button>
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">Notifications</h1>
@@ -146,7 +146,7 @@ export default function NotificationsScreen({
       </div>
     </div>
 
-    <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto">
+    <div className="pane-scroll min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden">
       {initialLoading && <Skeleton />}
       {initialError && <div role="alert" className="mx-4 my-6 rounded-xl border border-red-500/15 bg-red-500/5 p-4"><p className="text-sm font-semibold">Couldn’t load notifications</p><p className="mt-1 text-sm text-black/60">Check your connection and try again.</p><button type="button" onClick={onRetry} className="mt-3 rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white">Retry</button></div>}
       {error && notifications.length > 0 && <div role="alert" className="mx-4 my-3 flex items-center gap-3 rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2.5"><Icon name="alert" size={16} className="shrink-0 text-gold-strong" /><p className="min-w-0 flex-1 text-xs font-medium text-black/70">Couldn’t refresh notifications.</p><button type="button" onClick={onRetry} disabled={refreshing} className="shrink-0 text-xs font-semibold underline">{refreshing ? 'Retrying…' : 'Retry'}</button></div>}

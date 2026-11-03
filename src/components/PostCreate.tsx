@@ -97,6 +97,11 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
+  // Instagram's create sequence: pick & edit the media first, and the share
+  // screen (caption + music) arrives only after. Photo/story/reel only —
+  // music, sermons and announcements keep their single form.
+  const isMediaKind = ['post', 'story', 'video'].includes(type)
+  const [share, setShare] = useState(false)
 
   // Release temporary local previews when media is replaced or the composer closes.
   useEffect(() => {
@@ -174,6 +179,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
     setFile(editedFile)
     setVideoCover(cover)
     setVideoAdjusting(false)
+    // Editing done → advance to Instagram's share step (caption + music).
+    setShare(true)
   }
 
   const applyAdjust = (blob: Blob, preview: string) => {
@@ -181,11 +188,12 @@ export default function PostCreate({ onDone, initialType }: Props) {
     setFile(adjusted)
     setPreviewUrl(preview)
     setAdjusting(false)
+    setShare(true)
   }
 
   const resetFor = (next: ContentType) => {
     setType(next); setFile(null); setPreviewUrl(null); setMusicTrack(null)
-    setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null)
+    setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null); setShare(false)
   }
 
   const submit = async () => {
@@ -266,20 +274,35 @@ export default function PostCreate({ onDone, initialType }: Props) {
     <main className="flex min-h-[calc(100dvh-72px)] flex-col bg-surface text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-xl">
         <div className="flex h-14 items-center gap-2 px-3">
-          <button onClick={onDone} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface-sunken" aria-label="Close composer">
-            <Icon name="close" size={20} />
+          <button
+            onClick={isMediaKind && share ? () => setShare(false) : onDone}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface-sunken"
+            aria-label={isMediaKind && share ? 'Back to media' : 'Close composer'}
+          >
+            <Icon name={isMediaKind && share ? 'arrow-left' : 'close'} size={20} />
           </button>
           <p className="min-w-0 flex-1 truncate text-base font-extrabold text-ink">{heading}</p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => void submit()}
-            loading={busy}
-            disabled={busy || (needsFile && !file) || !canCreate}
-            className="shrink-0 rounded-full px-5"
-          >
-            Share
-          </Button>
+          {isMediaKind && !share && previewUrl ? (
+            <button
+              onClick={() => setShare(true)}
+              aria-label="Continue to share"
+              data-testid="create-next"
+              className="flex min-h-9 items-center gap-1 rounded-full px-3 text-sm font-extrabold text-accent-strong transition hover:bg-surface-sunken"
+            >
+              Next <Icon name="arrow-right" size={16} />
+            </button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void submit()}
+              loading={busy}
+              disabled={busy || (needsFile && !file) || !canCreate}
+              className="shrink-0 rounded-full px-5"
+            >
+              Share
+            </Button>
+          )}
         </div>
         {available.length > 1 && (
           <div className="flex gap-2 overflow-x-auto px-3 pb-3" role="tablist" aria-label="What are you sharing">
@@ -300,7 +323,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
       <section className="flex-1 pb-6">
         {/* media stage — the canvas is the preview */}
-        {needsFile && (
+        {needsFile && !(isMediaKind && share) && (
           audioOnlyStage ? (
             <div className="px-3 pt-3">
               <button
@@ -400,28 +423,28 @@ export default function PostCreate({ onDone, initialType }: Props) {
           </div>
         )}
 
-        {/* caption + options */}
-        <div className="px-3 pt-3">
-          {(type === 'music' || type === 'sermon') ? (
-            <div className="space-y-2">
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'music' ? 'Track title' : 'Sermon title (e.g. The Power of Persistence)'} className="input-base" />
-              <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={type === 'music' ? 'Artist (optional)' : 'Speaker / preacher (optional)'} className="input-base" />
-              {type === 'sermon' && <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="input-base" />}
-              <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder={captions[type]} className="input-base resize-none" />
-            </div>
-          ) : (
-            <>
-              <textarea
-                value={caption}
-                onChange={e => setCaption(e.target.value)}
-                maxLength={2000}
-                rows={3}
-                placeholder={captions[type]}
-                className="w-full resize-none border-0 bg-transparent px-0 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none"
-              />
-              <div className="flex items-center justify-between gap-3 border-t border-line pt-2">
-                <span className={`text-2xs ${caption.length > 1900 ? 'font-bold text-gold-strong' : 'text-ink-subtle'}`}>{caption.length}/2000</span>
-                {['post', 'video', 'story'].includes(type) && (
+        {/* Instagram sequence for photo/story/reel: media first, then a share
+            screen — small thumbnail at the left, caption beside it, music row
+            underneath. Music, sermons and announcements keep one form. */}
+        {isMediaKind ? (share ? (
+          <div className="px-3 pt-3" data-testid="create-share-step">
+            <div className="flex min-w-0 items-start gap-3">
+              {previewUrl && (
+                <img src={previewUrl} alt="Publishing preview" aria-hidden="true" className="h-11 w-11 shrink-0 rounded-lg border border-line object-cover" />
+              )}
+              <div className="min-w-0 flex-1">
+                <textarea
+                  value={caption}
+                  onChange={e => setCaption(e.target.value)}
+                  maxLength={2000}
+                  rows={5}
+                  placeholder={captions[type]}
+                  data-testid="share-caption"
+                  aria-label="Caption"
+                  className="w-full resize-none border-0 bg-transparent px-0 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none"
+                />
+                <div className="flex items-center justify-between gap-3 border-t border-line pt-2">
+                  <span className={`text-2xs ${caption.length > 1900 ? 'font-bold text-gold-strong' : 'text-ink-subtle'}`}>{caption.length}/2000</span>
                   <button
                     type="button"
                     onClick={() => setMusicOpen(true)}
@@ -429,51 +452,78 @@ export default function PostCreate({ onDone, initialType }: Props) {
                   >
                     <Icon name="music" size={14} /> {musicTrack ? 'Change music' : 'Add music'}
                   </button>
-                )}
+                </div>
               </div>
-            </>
-          )}
-
-          {musicTrack && ['post', 'video', 'story'].includes(type) && (
-            <div className="mt-2 flex items-center gap-2.5 rounded-card border border-line bg-surface-raised p-2">
-              <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent-soft text-accent">
-                {musicTrack.cover_url ? <img src={musicTrack.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-2xs font-extrabold text-ink">{musicTrack.title}</span>
-                <span className="block truncate text-2xs text-ink-muted">{musicTrack.artist}</span>
-              </span>
-              <button onClick={() => setMusicTrack(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Remove music">
-                <Icon name="close" size={16} />
-              </button>
             </div>
-          )}
 
-          {type === 'story' && (
-            <div className="mt-4">
-              <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-subtle">Story length</p>
-              <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Story length in seconds">
-                {STORY_DURATIONS.map(s => (
-                  <button
-                    key={s}
-                    role="radio"
-                    aria-checked={duration === s}
-                    onClick={() => setDuration(s)}
-                    className={`min-h-10 flex-1 rounded-xl border text-2xs font-extrabold transition ${duration === s ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
-                  >
-                    {s}s
-                  </button>
-                ))}
+            {musicTrack && ['post', 'video', 'story'].includes(type) && (
+              <div className="mt-3 flex items-center gap-2.5 rounded-card border border-line bg-surface-raised p-2">
+                <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-accent-soft text-accent">
+                  {musicTrack.cover_url ? <img src={musicTrack.cover_url} alt="" className="h-full w-full object-cover" /> : <Icon name="music" size={16} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-2xs font-extrabold text-ink">{musicTrack.title}</span>
+                  <span className="block truncate text-2xs text-ink-muted">{musicTrack.artist}</span>
+                </span>
+                <button onClick={() => setMusicTrack(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken" aria-label="Remove music">
+                  <Icon name="close" size={16} />
+                </button>
               </div>
-              <p className="mt-1.5 text-2xs text-ink-muted">Photos hold for {duration} seconds, then the next story plays.</p>
-            </div>
-          )}
+            )}
 
-          {!isAdmin && !isVerified && <p className="mt-3 text-2xs text-ink-muted">Members can share stories. Verification unlocks posts, reels, music and sermons.</p>}
-          {!isAdmin && isVerified && <p className="mt-3 text-2xs text-ink-muted">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
+            {type === 'story' && (
+              <div className="mt-4">
+                <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-subtle">Story length</p>
+                <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Story length in seconds">
+                  {STORY_DURATIONS.map(s => (
+                    <button
+                      key={s}
+                      role="radio"
+                      aria-checked={duration === s}
+                      onClick={() => setDuration(s)}
+                      className={`min-h-10 flex-1 rounded-xl border text-2xs font-extrabold transition ${duration === s ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
+                    >
+                      {s}s
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-2xs text-ink-muted">Photos hold for {duration} seconds, then the next story plays.</p>
+              </div>
+            )}
 
-          {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
-        </div>
+            {!isAdmin && !isVerified && <p className="mt-3 text-2xs text-ink-muted">Members can share stories. Verification unlocks posts, reels, music and sermons.</p>}
+            {!isAdmin && isVerified && <p className="mt-3 text-2xs text-ink-muted">Verified members can share community content and sermons. Some media may enter admin review before appearing publicly.</p>}
+
+            {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
+          </div>
+        ) : null) : (
+          <div className="px-3 pt-3">
+            {(type === 'music' || type === 'sermon') ? (
+              <div className="space-y-2">
+                <input value={title} onChange={e => setTitle(e.target.value)} placeholder={type === 'music' ? 'Track title' : 'Sermon title (e.g. The Power of Persistence)'} className="input-base" />
+                <input value={artist} onChange={e => setArtist(e.target.value)} placeholder={type === 'music' ? 'Artist (optional)' : 'Speaker / preacher (optional)'} className="input-base" />
+                {type === 'sermon' && <input value={scripture} onChange={e => setScripture(e.target.value)} placeholder="Scripture reference (optional)" className="input-base" />}
+                <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={3} placeholder={captions[type]} className="input-base resize-none" />
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={caption}
+                  onChange={e => setCaption(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder={captions[type]}
+                  className="w-full resize-none border-0 bg-transparent px-0 text-sm leading-6 text-ink placeholder:text-ink-subtle focus:outline-none"
+                />
+                <div className="flex items-center justify-between gap-3 border-t border-line pt-2">
+                  <span className={`text-2xs ${caption.length > 1900 ? 'font-bold text-gold-strong' : 'text-ink-subtle'}`}>{caption.length}/2000</span>
+                </div>
+              </>
+            )}
+
+            {notice && <div className="mt-3"><ErrorMessage message={notice} /></div>}
+          </div>
+        )}
       </section>
 
       <Dialog open={musicOpen} onClose={() => setMusicOpen(false)} title="Add music" description="Pick a song from the church worship library." size="sm">

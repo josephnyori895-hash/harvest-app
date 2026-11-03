@@ -33,6 +33,17 @@ test('the edit screen is zoom-to-fill and IG-shaped', () => {
   assert.match(adjuster, /data-testid=\{`image-adjuster-aspect-\$\{p\.id\}`\}/)
 })
 
+test("create follows Instagram's pick → edit → share sequence", () => {
+  // Media kinds take a separate share screen (thumbnail + caption + music);
+  // the header offers Next on the pick step and back-to-media on share.
+  assert.match(post, /isMediaKind && share/)
+  assert.match(post, /data-testid="create-share-step"/)
+  assert.match(post, /data-testid="create-next"/)
+  assert.match(post, /data-testid="share-caption"/)
+  // Editing done (photo or cover) advances straight to the share step.
+  assert.match(post, /const applyAdjust = \(blob: Blob, preview: string\) => \{[\s\S]*?setShare\(true\)/)
+})
+
 test('filters are one shared look library, not duplicated definitions', () => {
   assert.match(filtersLib, /export const FILTERS/)
   assert.match(filtersLib, /export const FILTER_CSS/)
@@ -48,13 +59,24 @@ test('export bakes the selected look into the pixels', () => {
 })
 
 test('the editor shows the filter preview live on the stage image', () => {
-  assert.match(adjuster, /filter: lookCss\(look, intensity\) === 'none' \? undefined : lookCss\(look, intensity\)/)
+  assert.match(adjuster, /filter: previewFilter === 'none' \? undefined : previewFilter/)
+})
+
+test('manual adjustments share one composeLook between the stage and the export', () => {
+  assert.match(filtersLib, /export function composeLook\(name: string \| null, intensity = 1, adjust: Partial<Adjustments> = \{\}\)/)
+  assert.match(filtersLib, /export const neutralAdjust/)
+  assert.match(adjuster, /data-testid=\{`image-adjuster-\$\{tool\.key\}`\}/, 'every edit tool renders a slider from the shared ADJUST_TOOLS list')
+  for (const tool of ['brightness', 'contrast', 'saturate', 'warmth', 'fade']) {
+    assert.match(adjuster, new RegExp(`key: '${tool}'`), `the ${tool} tool must be offered`)
+  }
+  const previewUse = adjuster.match(/const previewFilter = composeLook\(look, intensity, adjust\)/)
+  const exportUse = adjuster.match(/const lookFilter = composeLook\(look, intensity, adjust\)/)
+  assert.ok(previewUse && exportUse, 'preview and export must both read the same composeLook with the same adjust state')
 })
 
 test('Instagram-grade filter intensity: preview, export and the slider share one value', () => {
   assert.match(filtersLib, /export function lookCss\(name: string \| null, strength = 1\)/, 'the look library blends toward neutral by strength')
   assert.match(adjuster, /const \[intensity, setIntensity\] = useState\(1\)/)
-  assert.match(adjuster, /const lookFilter = lookCss\(look, intensity\)/)
   assert.match(adjuster, /data-testid="image-adjuster-intensity"/)
-  assert.match(adjuster, /lookFilter = lookCss\(look, intensity\)/, 'intensity must survive into the export')
+  assert.match(adjuster, /const lookFilter = composeLook\(look, intensity, adjust\)/, 'intensity must survive into the export')
 })

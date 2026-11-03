@@ -222,7 +222,7 @@ export default function Comments({
           </div>
         </div>
 
-        <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-3">
+        <div ref={listRef} className="pane-scroll min-h-0 flex-1 space-y-4 px-3 py-3">
           {loading && (
             <div className="space-y-4" aria-label="Loading comments">
               {[0, 1, 2].map(i => (

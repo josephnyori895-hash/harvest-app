@@ -41,6 +41,30 @@ export function applyLookCss(el: HTMLElement | null, look: string | null): void 
   el.style.filter = lookCss(look) === 'none' ? '' : lookCss(look)
 }
 
+/** Instagram's manual Edit tools share one shape across preview and export. */
+export type Adjustments = { brightness: number; contrast: number; saturate: number; warmth: number; fade: number }
+export const neutralAdjust: Adjustments = { brightness: 1, contrast: 1, saturate: 1, warmth: 0, fade: 0 }
+
+/** The editor's full filter string: the selected look at `strength`, then the
+ *  manual tool stack on top. Only one function may produce it, so the stage
+ *  img and the export canvas can never show different pictures. */
+export function composeLook(name: string | null, intensity = 1, adjust: Partial<Adjustments> = {}): string {
+  const a = { ...neutralAdjust, ...adjust }
+  const parts: string[] = []
+  const look = lookCss(name, intensity)
+  if (look !== 'none') parts.push(look)
+  if (a.fade > 0) {
+    // Fade washes blacks toward grey: lower contrast, lifted exposure, less colour.
+    const f = a.fade
+    parts.push(`contrast(${(1 - 0.35 * f).toFixed(3)})`, `brightness(${(1 + 0.12 * f).toFixed(3)})`, `saturate(${(1 - 0.25 * f).toFixed(3)})`)
+  }
+  if (a.brightness !== 1) parts.push(`brightness(${a.brightness.toFixed(3)})`)
+  if (a.contrast !== 1) parts.push(`contrast(${a.contrast.toFixed(3)})`)
+  if (a.saturate !== 1) parts.push(`saturate(${a.saturate.toFixed(3)})`)
+  if (a.warmth > 0) parts.push(`sepia(${a.warmth.toFixed(3)})`)
+  return parts.length ? parts.join(' ') : 'none'
+}
+
 type Dice = { brightness: number; contrast: number; saturate: number; hue: number }
 const LOOK_DICE: Record<string, Dice> = {
   Clarendon: { brightness: 1.2, contrast: 1.0, saturate: 1.0, hue: 0 },

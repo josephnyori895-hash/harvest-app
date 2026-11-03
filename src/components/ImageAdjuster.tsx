@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FILTERS, lookCss } from '../lib/imageFilters'
+import { FILTERS, composeLook, lookCss, neutralAdjust, type Adjustments } from '../lib/imageFilters'
 
 // ImageAdjuster — Harvest Family photo editing, modelled on Instagram's create
 // screen: a dark immersive canvas that fills the width, two tabs (Filters ·
@@ -43,6 +43,9 @@ export default function ImageAdjuster({
   const [look, setLook] = useState('Original')
   // Instagram-style intensity for the active look: 0 = original, 1 = full effect.
   const [intensity, setIntensity] = useState(1)
+  // Instagram's manual Edit tools: each is a scaled CSS filter so the same
+  // string works live on the stage and inside the export's ctx.filter.
+  const [adjust, setAdjust] = useState<Adjustments>({ ...neutralAdjust })
   const [tab, setTab] = useState<'filters' | 'edit'>('filters')
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1, rotation: 0 })
   const [zoom, setZoom] = useState(1)
@@ -102,7 +105,15 @@ export default function ImageAdjuster({
     setTransform({ x: 0, y: 0, scale: 1, rotation: 0 })
     setLook('Original')
     setIntensity(1)
+    setAdjust({ ...neutralAdjust })
     setZoom(1)
+  }
+
+  const applyAdjust = (key: keyof Adjustments, raw: number) => {
+    const value = key === 'brightness' || key === 'contrast' ? Math.min(1.5, Math.max(0.5, raw))
+      : key === 'saturate' ? Math.min(2, Math.max(0, raw))
+      : Math.min(1, Math.max(0, raw))
+    setAdjust(a => ({ ...a, [key]: value }))
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -163,7 +174,7 @@ export default function ImageAdjuster({
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
     ctx.save()
-    const lookFilter = lookCss(look, intensity)
+    const lookFilter = composeLook(look, intensity, adjust)
     if (lookFilter !== 'none' && 'filter' in ctx) ctx.filter = lookFilter
     ctx.translate(outW / 2 + transform.x * (outW / vw), outH / 2 + transform.y * (outH / vh))
     ctx.rotate((rotationDegrees * Math.PI) / 180)
@@ -187,6 +198,16 @@ export default function ImageAdjuster({
   }
 
   const croppedDisplayRatio = activeRatio ?? Math.min(Math.max(naturalRatio, MIN_RATIO), MAX_RATIO)
+  // One string drives both the live preview and the export canvas.
+  const previewFilter = composeLook(look, intensity, adjust)
+
+  const ADJUST_TOOLS: { key: keyof Adjustments; label: string; min: number; max: number; scale: number }[] = [
+    { key: 'brightness', label: 'Brightness', min: 50, max: 150, scale: 100 },
+    { key: 'contrast', label: 'Contrast', min: 50, max: 150, scale: 100 },
+    { key: 'saturate', label: 'Saturation', min: 0, max: 200, scale: 100 },
+    { key: 'warmth', label: 'Warmth', min: 0, max: 100, scale: 100 },
+    { key: 'fade', label: 'Fade', min: 0, max: 100, scale: 100 },
+  ]
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-label="Adjust image">
@@ -216,7 +237,7 @@ export default function ImageAdjuster({
               draggable={false}
               className="absolute left-1/2 top-1/2 max-w-none pointer-events-none"
               style={{
-                filter: lookCss(look, intensity) === 'none' ? undefined : lookCss(look, intensity),
+                filter: previewFilter === 'none' ? undefined : previewFilter,
                 width: (() => {
                   const { vw, vh } = stageSize()
                   if (!vw || !vh) return 'auto'
@@ -301,6 +322,26 @@ export default function ImageAdjuster({
 
         {tab === 'edit' && (
           <div className="space-y-3 px-4 pb-2 pt-3">
+            {/* Instagram's adjust tools: each slider is the same list the
+                export bakes, so what the member sets is what ships. */}
+            <div className="space-y-2">
+              {ADJUST_TOOLS.map(tool => {
+                const value = adjust[tool.key] * tool.scale
+                return (
+                  <div key={tool.key} className="flex items-center gap-3">
+                    <span className="w-20 shrink-0 text-left text-[11px] font-bold text-white/60" aria-hidden="true">{tool.label}</span>
+                    <input
+                      type="range" min={tool.min} max={tool.max} step={1} value={Math.round(value)}
+                      onChange={e => applyAdjust(tool.key, Number(e.target.value) / tool.scale)}
+                      className="min-w-0 flex-1 accent-sky-400"
+                      aria-label={`${tool.label} adjustment`}
+                      data-testid={`image-adjuster-${tool.key}`}
+                    />
+                    <span className="w-8 shrink-0 text-right text-[10px] font-bold text-white/70" aria-hidden="true">{Math.round(value)}%</span>
+                  </div>
+                )
+              })}
+            </div>
             <div className="flex items-center gap-3">
               <span className="text-2xs font-bold text-white/60" aria-hidden="true">−</span>
               <input
