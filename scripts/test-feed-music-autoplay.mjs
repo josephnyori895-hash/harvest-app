@@ -13,11 +13,11 @@ const media = await readFile(new URL('../src/components/FeedMediaPreview.tsx', i
 test('1. eligible music post becomes visible → playback attempted', () => {
   assert.match(feed, /startFeedPlayback\(p\)/)
   assert.match(playback, /export async function startFeedPlayback/)
-  assert.match(playback, /if \(!postId \|\| !url\) return false/)
+  assert.match(playback, /if \(!postId \|\| !url\) (return false|\{[^}]*return false[^}]*\})/)
 })
 
 test('2. scrolling away → playback stops', () => {
-  assert.match(feed, /stopFeedPlayback\(\)/)
+  assert.match(feed, /stopFeedPlayback\(p\)/)
   assert.match(playback, /export function stopFeedPlayback/)
 })
 
@@ -27,11 +27,12 @@ test('3. next music post becomes visible → previous stops and next starts', ()
 })
 
 test('4. posts without music → no playback', () => {
-  assert.match(feed, /Boolean\(p\.video\) \|\| Boolean\(p\.music\?\.url && p\.music\?\.id\)/)
+  assert.match(feed, /musicEligible = Boolean\(p\.music\?\.url && p\.music\?\.id\)/)
+  assert.match(feed, /if \(!p\.video && !musicEligible\) return/)
 })
 
 test('5. autoplay disabled → no automatic playback', () => {
-  assert.match(playback, /if \(!getFeedAutoplayPref\(\)\) return false/)
+  assert.match(playback, /if \(!getFeedAutoplayPref\(\)\) (return false|\{[^}]*return false[^}]*\})/)
   assert.match(feed, /getFeedAutoplayPref/)
 })
 

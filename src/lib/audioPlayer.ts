@@ -39,9 +39,17 @@ export const markAudioUnlocked = (): void => { audioUnlocked = true }
 /** True when a global (worship / sermon) track currently owns the audio element. */
 export const isGlobalPlayerPlaying = (): boolean => Boolean(state.track && state.playing)
 /** Member-level feed autoplay opt-in. Off by default — the first-use control sets it. */
-let feedAutoplayPref = false
+// Member-level feed autoplay opt-in. Off by default — the first-use control sets
+// it. Persisted: the choice must survive reloads and app restarts.
+const FEED_AUTOPLAY_KEY = 'harvest_feed_autoplay'
+let feedAutoplayPref = (() => {
+  try { return (typeof localStorage !== 'undefined' && localStorage.getItem(FEED_AUTOPLAY_KEY)) === '1' } catch { return false }
+})()
 export const getFeedAutoplayPref = (): boolean => feedAutoplayPref
-export const setFeedAutoplayPref = (v: boolean): void => { feedAutoplayPref = v }
+export const setFeedAutoplayPref = (v: boolean): void => {
+  feedAutoplayPref = v
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(FEED_AUTOPLAY_KEY, v ? '1' : '0') } catch { /* private mode */ }
+}
 
 const emit = () => { listeners.forEach(l => l(state)) }
 const patch = (p: Partial<PlayerState>) => { state = { ...state, ...p }; emit() }

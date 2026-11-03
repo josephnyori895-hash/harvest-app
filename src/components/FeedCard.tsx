@@ -2,7 +2,7 @@
 // Preserve the church's visual identity while keeping media clear and responsive.
 
 import { useEffect, useRef, useState } from 'react'
-import { getFeedAutoplayPref, setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
+import { audioAutoplayReady, getFeedAutoplayPref, setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio, isInlinePlaying } from '../lib/inlineMediaAudio'
 import { startFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
 import FeedMediaPreview from './FeedMediaPreview'
@@ -83,21 +83,25 @@ function MusicChip({ p }: { p: FeedCardPost }) {
   useEffect(() => subscribeInlineMediaAudio(id => { setLiveId(id); setLoading(false) }), [])
   if (!m?.id || !m.title) return null
   const playing = !loading && liveId === m.id && !failed
-  const start = async () => {
-    if (loading) return
-    if (playing) { stopInlineMediaAudio(); return }
-    if (!m.url) { setFailed(true); return }
+  const start = async (): Promise<boolean> => {
+    if (loading) return false
+    if (playing) { stopInlineMediaAudio(); return true }
+    if (!m.url) { setFailed(true); return false }
     setLoading(true)
     const ok = await toggleInlineMediaTrack({ id: String(m.id), url: m.url }, setLiveId)
     setLoading(false)
     if (!ok) setFailed(true)
+    return Boolean(ok)
   }
   const retry = () => { setFailed(false); void start() }
   const enableAutoplay = async () => {
     setFeedAutoplayPref(true)
+    // Real user gesture → the browser grants playback for this activation.
     markAudioUnlocked()
-    setAutoplayAllowed(true)
-    await start()
+    const started = await start()
+    // Honest state: only show "enabled" when audio actually started. A rejected
+    // play() (NotAllowedError / track error) keeps the manual Play control up.
+    if (started) setAutoplayAllowed(true)
   }
   return (
     <>
@@ -115,6 +119,12 @@ function MusicChip({ p }: { p: FeedCardPost }) {
       </button>
       {!playing && !loading && !autoplayAllowed && (
         <button type="button" onClick={() => void enableAutoplay()} className="mt-2 w-full min-h-11 rounded-xl bg-[#7C3AED] text-white text-[11px] font-extrabold">Enable music autoplay</button>
+      )}
+      {autoplayAllowed && !playing && !loading && !failed && audioAutoplayReady() && (
+        <p className="mt-1 text-[10px] font-bold text-[#0F766E]" role="status">Autoplay on — scroll to another song post</p>
+      )}
+      {autoplayAllowed && !playing && !loading && !audioAutoplayReady() && (
+        <button type="button" onClick={() => { markAudioUnlocked(); void start() }} className="mt-1 min-h-9 w-full rounded-xl bg-[#F4E8D0] border border-[#E8DEC9] text-[11px] font-extrabold text-[#B45309]">Tap to allow sound</button>
       )}
       {failed && (
         <button type="button" onClick={() => void retry()} className="mt-1 text-[10px] font-bold text-[#B45309] underline">Retry music</button>
@@ -164,14 +174,16 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   useEffect(() => {
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
-    const shouldArm = Boolean(p.video) || Boolean(p.music?.url && p.music?.id)
-    if (!shouldArm) return
+    const musicEligible = Boolean(p.music?.url && p.music?.id)
+    if (!p.video && !musicEligible) return
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
         if (p.video) setAutoPlayVideo(true)
-        void startFeedPlayback(p).catch(() => {})
+        if (musicEligible) void startFeedPlayback(p).catch(() => {})
       } else {
-        stopFeedPlayback()
+        // Only this card's own track is paused by its own scroll-out — a
+        // video post leaving view must never stop a neighbour's music.
+        if (musicEligible) stopFeedPlayback(p)
         setAutoPlayVideo(false)
       }
     }, { threshold: [0, 0.6] })
