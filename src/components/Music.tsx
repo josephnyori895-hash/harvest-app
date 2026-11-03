@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IgIcon } from './Icons'
 import { showToast } from './Toast'
 import { fetchMusic, useApi } from '../lib/api'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
-import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, closePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
+import {
+  playFromQueue, playTrack, togglePlay as togglePlayGlobal, seekToFraction, seekTo, closePlayer,
+  previousTrack, nextTrack, subscribePlayer, getLastPlayed,
+  type PlayerState, type PlayerTrack,
+} from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
+import { Icon } from '../ui'
 
-// Worship room: the church library (admin uploads) + online search with
-// 30-second previews (Apple iTunes Search API — no key required, free).
-// Members can play, download and save tracks; only admins upload to the library.
+// Worship room — the church library, daily listening and online search.
+//
+// Daily listening is the whole design goal: a Continue-listening card that
+// resumes where the member stopped, a date-seeded "Today's worship" rotation
+// that is different every morning, Play-all through the global queue so one tap
+// never dead-ends, and a now-playing bar with prev/next that follows them
+// across every tab.
 
 type Track = {
   id: string
@@ -24,6 +32,14 @@ type Track = {
 
 const fmt = (s: number) => (!Number.isFinite(s) || s < 0) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
+const toPlayer = (t: Track): PlayerTrack => ({
+  id: t.id, title: t.title, artist: t.artist, url: t.url || null, artwork: t.artwork || null, origin: 'music',
+})
+
+const mapServer = (rows: any[]): Track[] => (rows || [])
+  .filter((t: any) => t.url)
+  .map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
+
 async function downloadFile(url: string, filename: string) {
   const r = await fetch(url)
   if (!r.ok) throw new Error('download failed')
@@ -33,6 +49,18 @@ async function downloadFile(url: string, filename: string) {
   a.download = filename.replace(/[^\w\s.-]/g, '').trim() || 'harvest-track'
   document.body.appendChild(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+}
+
+/** Date-seeded shuffle: the same shelf all day, a new one tomorrow. */
+function seededShuffle<T>(items: T[], seed: number, take: number): T[] {
+  const arr = [...items]
+  let s = (seed % 2147483647) || 7
+  const rand = () => (s = (s * 16807) % 2147483647) / 2147483647
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr.slice(0, Math.min(take, arr.length))
 }
 
 export default function Music() {
@@ -46,16 +74,15 @@ export default function Music() {
   const [error, setError] = useState('')
   const [saved, setSaved] = useState<Track[]>([])
   const [downloading, setDownloading] = useState('')
+  const [continueAt, setContinueAt] = useState(0)
   const useServer = useApi()
   const { isAdmin } = useAuth()
 
   // Audio lives in the global player (lib/audioPlayer) so backing out of this
-  // screen — or even switching tabs — never stops whatever the member is
-  // hearing. This screen just mirrors the player state.
+  // screen — or switching tabs — never stops whatever the member is hearing.
   const [player, setPlayer] = useState<PlayerState>({ track: null, playing: false, currentTime: 0, duration: 0, error: null })
   useEffect(() => subscribePlayer(setPlayer), [])
 
-  // Derived playhead state — the single source of truth is the global player.
   const activeTrack = player.track as (PlayerTrack & { seconds?: number }) | null
   const playingId: string | null = activeTrack && player.playing ? activeTrack.id : null
   const progress = activeTrack
@@ -88,18 +115,10 @@ export default function Music() {
     const audio = upFile
     const cover = upCover
     try {
-      // Background hand-off: the panel closes now; progress moves to the
-      // floating pill (audio bytes count for ~90%, cover + confirm finish it).
       void startBackgroundUpload({
         label: `music: ${title}`,
         successMsg: `"${title}" added to the church library 🎵`,
-        task: {
-          kind: 'track',
-          file: audio,
-          title,
-          artist: artist || 'Harvest Worship',
-          cover: cover || undefined,
-        },
+        task: { kind: 'track', file: audio, title, artist: artist || 'Harvest Worship', cover: cover || undefined },
       }).catch(() => {})
       setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
     } catch (e: any) { showToast(e?.message || 'Upload failed') } finally { setUpBusy(false); setUpPct(0) }
@@ -133,6 +152,7 @@ export default function Music() {
   // Personal library persisted on-device.
   useEffect(() => {
     try { setSaved(JSON.parse(localStorage.getItem('harvest_saved_tracks') || '[]')) } catch {}
+    setContinueAt(getLastPlayed()?.position || 0)
   }, [])
 
   // Church library (admin uploads).
@@ -141,13 +161,7 @@ export default function Music() {
     let cancelled = false
     setLoadingServer(true)
     fetchMusic()
-      .then(r => {
-        if (cancelled) return
-        const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({
-          id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const,
-        }))
-        setServerTracks(mapped)
-      })
+      .then(r => { if (!cancelled) setServerTracks(mapServer(r.tracks as any[])) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoadingServer(false) })
     return () => { cancelled = true }
@@ -155,19 +169,14 @@ export default function Music() {
 
   // A background track upload just published — refresh the library.
   useEffect(() => {
-    const bump = () => { fetchMusic().then(r => {
-      const mapped: Track[] = (r.tracks || []).filter((t: any) => t.url).map((t: any) => ({ id: `srv_${t.id}`, title: t.title, artist: t.artist, artwork: t.cover_url, url: t.url, source: 'server' as const }))
-      setServerTracks(mapped)
-    }).catch(() => {}) }
+    const bump = () => { fetchMusic().then(r => setServerTracks(mapServer(r.tracks as any[]))).catch(() => {}) }
     window.addEventListener('harvest:tracks-updated', bump)
     return () => window.removeEventListener('harvest:tracks-updated', bump)
   }, [])
 
   // Online search — every result is a FULL-LENGTH, legally downloadable song.
-  // 1) Jamendo (best curation + covers) when a key is set at build time
-  //    (free at dev.jamendo.com → VITE_JAMENDO_CLIENT_ID).
-  // 2) Internet Archive / Free Music Archive — no key needed, CC-licensed,
-  //    complete MP3s served with range support. iTunes 30s previews removed.
+  // 1) Jamendo when a key is set at build time (VITE_JAMENDO_CLIENT_ID).
+  // 2) Internet Archive / Free Music Archive — no key needed, CC-licensed.
   const JAMENDO_ID = (import.meta.env.VITE_JAMENDO_CLIENT_ID || '').trim()
   const parseIaLength = (v: any): number => {
     const s = String(v ?? '')
@@ -183,20 +192,13 @@ export default function Music() {
         const r = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=${encodeURIComponent(JAMENDO_ID)}&format=json&limit=25&search=${encodeURIComponent(needle)}&audioformat=mp32&include=musicinfo`)
         const data = await r.json()
         const tracks: Track[] = (data.results || []).map((x: any) => ({
-          id: `jam_${x.id}`,
-          title: x.name,
-          artist: x.artist_name || 'Jamendo artist',
-          artwork: x.image || undefined,
-          url: x.audio || null,
-          seconds: Number(x.duration) || undefined,
-          source: 'online' as const,
+          id: `jam_${x.id}`, title: x.name, artist: x.artist_name || 'Jamendo artist',
+          artwork: x.image || undefined, url: x.audio || null, seconds: Number(x.duration) || undefined, source: 'online' as const,
         }))
         if (tracks.length) { setOnline(tracks); return }
       }
-      // Internet Archive / Free Music Archive: search items, then read each
-      // item's file list for a playable full-length MP3.
-      const q = `collection:(freemusicarchive) AND mediatype:audio AND (title:("${needle.replace(/"/g, '')}") OR creator:("${needle.replace(/"/g, '')}") OR subject:("${needle.replace(/"/g, '')}"))`
-      const sr = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=creator&rows=18&page=1&output=json&sort[]=downloads+desc`)
+      const qry = `collection:(freemusicarchive) AND mediatype:audio AND (title:("${needle.replace(/"/g, '')}") OR creator:("${needle.replace(/"/g, '')}") OR subject:("${needle.replace(/"/g, '')}"))`
+      const sr = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(qry)}&fl[]=identifier&fl[]=title&fl[]=creator&rows=18&page=1&output=json&sort[]=downloads+desc`)
       const sd = await sr.json()
       const docs: any[] = sd?.response?.docs || []
       const settled = await Promise.allSettled(docs.slice(0, 12).map(async (doc) => {
@@ -222,16 +224,29 @@ export default function Music() {
     } finally { setSearching(false) }
   }
 
-  // Nothing to clean up here — the global player keeps playing after this
-  // screen unmounts. That is the entire point.
-  const togglePlay = (track: Track) => {
+  const startOne = (track: Track) => {
     setError('')
-    // Worship owns the global audio element while it plays — feed music yields.
     stopFeedPlayback()
-    void playTrack({ id: track.id, title: track.title, artist: track.artist, url: track.url || null, artwork: track.artwork || null, origin: 'music' })
+    void playTrack(toPlayer(track))
+  }
+  const togglePlay = (track: Track) => {
+    if (activeTrack?.id === track.id) { void togglePlayGlobal(); return }
+    startOne(track)
+  }
+  const playShelf = (tracks: Track[], startIndex = 0) => {
+    stopFeedPlayback()
+    void playFromQueue(tracks.map(toPlayer), startIndex)
   }
   const seek = (fraction: number) => seekToFraction(fraction)
-  const stopAndClosePlayer = () => closePlayer()
+
+  const resumeLast = () => {
+    const last = getLastPlayed()
+    if (!last?.track?.url) return
+    stopFeedPlayback()
+    // playTrack always starts at 0, so restore the saved position after it
+    // accepts the play (autoplay policies can reject it).
+    void playTrack(last.track).then(ok => { if (ok && last.position > 3) seekTo(last.position) })
+  }
 
   const doDownload = async (track: Track) => {
     if (!track.url) { showToast('No audio source for this track'); return }
@@ -240,8 +255,7 @@ export default function Music() {
       await downloadFile(track.url, `${track.title} - ${track.artist}.mp3`)
       showToast('Downloaded ✓ Check your Downloads folder')
     } catch {
-      // Some CDNs block cross-origin downloads — open in the browser instead.
-      try { window.open(track.url, '_blank') ; showToast('Opened in browser — use the player\'s download there') }
+      try { window.open(track.url, '_blank'); showToast("Opened in browser — use the player's download there") }
       catch { showToast('Download failed — try again') }
     } finally { setDownloading('') }
   }
@@ -253,7 +267,6 @@ export default function Music() {
     localStorage.setItem('harvest_saved_tracks', JSON.stringify(next))
     showToast(`"${track.title}" saved`)
   }
-
   const unsave = (id: string) => {
     const next = saved.filter(t => t.id !== id)
     setSaved(next)
@@ -269,207 +282,306 @@ export default function Music() {
     })
   }, [serverTracks, saved])
 
-  const listFor = (t: Track[]): Track[] => t
+  const daySeed = Math.floor(Date.now() / 86400000)
+  const todaysWorship = useMemo(() => seededShuffle(allLibrary, daySeed, 8), [allLibrary, daySeed])
+  const lastPlayed = useMemo(() => getLastPlayed(), [player.track?.id])
   const filtered = (tracks: Track[]) => {
     const needle = q.trim().toLowerCase()
     if (!needle) return tracks
     return tracks.filter(t => `${t.title} ${t.artist}`.toLowerCase().includes(needle))
   }
 
-  const TrackRow = ({ track }: { track: Track }) => {
+  const TrackRow = ({ track, index, shelf }: { track: Track; index?: number; shelf?: Track[] }) => {
     const isPlaying = playingId === track.id
-    const showBar = progress.id === track.id && isPlaying
+    const showBar = progress.id === track.id
     const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
     const serverId = track.id.startsWith('srv_') ? track.id.slice(4) : null
-    // Only library tracks can be edited; never match the null default (which
-    // previously put every online/saved track into edit mode).
     const isEditing = serverId !== null && editingId === serverId
+    const isSaved = saved.some(t => t.id === track.id)
     if (isEditing) {
       return (
-        <div className="p-4 rounded-2xl bg-white border-2 border-purple-300 shadow-sm space-y-2">
-          <p className="text-[10px] font-extrabold uppercase tracking-wider text-purple-700">Editing track</p>
-          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Title" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
-          <input value={editArtist} onChange={e => setEditArtist(e.target.value)} placeholder="Artist" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
-          <div className="flex gap-2">
-            <button onClick={() => serverId && void saveEdit(serverId)} className="flex-1 py-2.5 rounded-xl bg-purple-600 text-white text-xs font-extrabold">Save</button>
-            <button onClick={() => setEditingId(null)} className="px-4 py-2.5 rounded-xl bg-neutral-100 text-neutral-600 text-xs font-bold">Cancel</button>
+        <div className="rounded-card border border-line bg-surface-raised p-4" data-testid="track-editor">
+          <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Editing track</p>
+          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Title" className="input-base mt-2" aria-label="Track title" />
+          <input value={editArtist} onChange={e => setEditArtist(e.target.value)} placeholder="Artist" className="input-base mt-2" aria-label="Track artist" />
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => serverId && void saveEdit(serverId)} className="min-h-10 flex-1 rounded-full bg-accent text-2xs font-extrabold text-white">Save</button>
+            <button onClick={() => setEditingId(null)} className="min-h-10 rounded-full border border-line px-4 text-2xs font-extrabold text-ink-muted">Cancel</button>
           </div>
         </div>
       )
     }
     return (
-      <div className="flex gap-3 p-4 items-center rounded-2xl bg-white border border-neutral-200 shadow-sm">
-        <div className="relative shrink-0">
+      <div className="flex items-center gap-3 rounded-card border border-line bg-surface-raised p-2.5" data-testid="track-row">
+        <button
+          onClick={() => togglePlay(track)}
+          aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-sunken"
+        >
           {track.artwork
-            ? <img src={track.artwork} alt="" className="w-14 h-14 rounded-xl object-cover shadow-md" />
-            : <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white text-xl">🎵</div>}
-          <button onClick={() => togglePlay(track)} className={`absolute inset-0 flex items-center justify-center rounded-xl ${isPlaying ? 'bg-purple-600/90' : 'bg-ink/35'}`} aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}>
-            <span className="text-white text-xl">{isPlaying ? '⏸' : '▶'}</span>
-          </button>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-neutral-900 truncate text-sm">{track.title}</p>
-          <p className="text-xs text-neutral-600 truncate">{track.artist}{track.seconds ? ` · ${fmt(track.seconds)}` : ''}</p>
-          <div className="flex gap-1.5 mt-1 flex-wrap">
-            {track.source === 'server' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">CHURCH LIBRARY</span>}
-            {track.preview && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">30s PREVIEW</span>}
-            {track.source === 'online' && !track.preview && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">FULL SONG ✓</span>}
-            {track.source === 'local' && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">SAVED</span>}
-          </div>
+            ? <img src={track.artwork} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={20} /></span>}
+          <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/45' : 'bg-ink/25'}`}>
+            <Icon name={isPlaying ? 'pause' : 'play'} size={18} className="text-white" />
+          </span>
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-caption font-extrabold text-ink">{track.title}</p>
+          <p className="truncate text-2xs text-ink-muted">
+            {track.artist}{track.seconds ? ` · ${fmt(track.seconds)}` : ''}
+            {track.source === 'server' ? ' · Church library' : track.source === 'online' ? ' · Full song' : ''}
+          </p>
           {showBar && (
             <div className="mt-1.5 flex items-center gap-2">
-              <div className="flex-1 h-1 bg-neutral-200 rounded-full overflow-hidden"><div className="h-full bg-purple-600" style={{ width: `${pct}%` }} /></div>
-              <span className="text-[10px] text-neutral-500 font-mono">{fmt(progress.seconds)}</span>
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-sunken"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div>
+              <span className="text-2xs text-ink-subtle tabular-nums">{fmt(progress.seconds)}</span>
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1.5 shrink-0">
-          <button onClick={() => void doDownload(track)} disabled={downloading === track.id} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm disabled:opacity-50" aria-label={`Download ${track.title}`}>{downloading === track.id ? '…' : '⬇'}</button>
-          {tab === 'saved'
-            ? <button onClick={() => unsave(track.id)} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm" aria-label={`Remove ${track.title} from saved`}>✕</button>
-            : <button onClick={() => saveTrack(track)} className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center text-sm" aria-label={`Save ${track.title}`}>＋</button>}
+        <div className="flex shrink-0 items-center gap-1">
+          {shelf && shelf.length > 1 && typeof index === 'number' && (
+            <button onClick={() => playShelf(shelf, index)} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken" aria-label={`Play from ${track.title}`}><Icon name="play" size={16} /></button>
+          )}
+          <button onClick={() => void doDownload(track)} disabled={downloading === track.id} aria-label={`Download ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken disabled:opacity-40">
+            <Icon name="share" size={16} />
+          </button>
+          <button
+            onClick={() => (isSaved ? unsave(track.id) : saveTrack(track))}
+            aria-pressed={isSaved}
+            aria-label={isSaved ? `Remove ${track.title} from saved` : `Save ${track.title}`}
+            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken"
+          >
+            <Icon name="heart" size={18} strokeWidth={isSaved ? 2.4 : 1.7} className={isSaved ? 'fill-current text-danger' : ''} />
+          </button>
           {isAdmin && serverId && (
-            <>
-              <button onClick={() => { setEditingId(serverId); setEditTitle(track.title); setEditArtist(track.artist) }} className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center text-sm" aria-label={`Edit ${track.title}`}>✏️</button>
-              <button onClick={() => void deleteTrack(serverId, track.title)} className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-sm" aria-label={`Delete ${track.title}`}>🗑</button>
-            </>
+            <button onClick={() => { setEditingId(serverId); setEditTitle(track.title); setEditArtist(track.artist) }} aria-label={`Edit ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken">
+              <Icon name="dots" size={18} />
+            </button>
+          )}
+          {isAdmin && serverId && (
+            <button onClick={() => void deleteTrack(serverId, track.title)} aria-label={`Delete ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-danger hover:bg-surface-sunken">
+              <Icon name="trash" size={16} />
+            </button>
           )}
         </div>
       </div>
     )
   }
 
+  const playingNow = Boolean(activeTrack)
   return (
-    <div className="min-h-[calc(100vh-49px)] bg-surface text-ink">
-      <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-neutral-200 px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between mb-3 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center text-white font-bold">🎵</div>
-            <h1 className="text-xl font-extrabold truncate">Worship Room</h1>
+    <div className="min-h-[calc(100dvh-72px)] bg-surface pb-28 text-ink">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 px-4 pb-3 pt-4 backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-extrabold tracking-tight">Worship</h1>
+            <p className="text-2xs text-ink-muted">Songs that carry your week</p>
           </div>
+          {isAdmin && tab === 'library' && (
+            <button onClick={() => setShowUpload(s => !s)} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-accent px-3.5 text-2xs font-extrabold text-white">
+              <Icon name={showUpload ? 'close' : 'plus'} size={14} /> {showUpload ? 'Close' : 'Add'}
+            </button>
+          )}
         </div>
-        {tab === 'online' && (
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-none">
-            {['Worship', 'Gospel', 'Hymns', 'Praise', 'Choir', 'Instrumental'].map(g => (
-              <button key={g} onClick={() => { setQ(g); void searchOnline(g) }} disabled={searching} className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${q === g ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-200'}`}>{g}</button>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2 mb-3">
-          <div className="flex-1 min-w-0 flex items-center gap-2 bg-white border-2 border-neutral-200 rounded-xl px-3 py-2.5 focus-within:border-purple-500 transition">
-            <IgIcon name="search" active={false} size={20} />
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && tab === 'online') void searchOnline(q) }}
-              placeholder={tab === 'online' ? 'Search songs worldwide… (press enter)' : 'Search songs, artists…'}
-              className="min-w-0 flex-1 bg-transparent outline-none text-sm"
-            />
-            {q && <button onClick={() => { setQ(''); if (tab === 'online') { setOnline([]); setSearched(false) } }} className="text-neutral-400 text-sm">✕</button>}
-          </div>
-          {tab === 'online' && <button onClick={() => void searchOnline(q)} disabled={searching} className="px-4 rounded-xl bg-purple-600 text-white text-xs font-bold disabled:opacity-50">{searching ? '…' : 'Search'}</button>}
+        <div className="mt-3 flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3.5">
+          <Icon name="search" size={18} className="text-ink-subtle" />
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && tab === 'online') void searchOnline(q) }}
+            placeholder={tab === 'online' ? 'Search songs worldwide…' : 'Search songs, artists…'}
+            className="min-h-10 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle"
+            aria-label="Search worship music"
+          />
+          {q && <button onClick={() => { setQ(''); if (tab === 'online') { setOnline([]); setSearched(false) } }} aria-label="Clear search" className="shrink-0 text-ink-subtle"><Icon name="close" size={16} /></button>}
+          {tab === 'online' && <button onClick={() => void searchOnline(q)} disabled={searching} className="shrink-0 text-2xs font-extrabold text-accent disabled:opacity-50">{searching ? '…' : 'Search'}</button>}
         </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-      {activeTrack && (
-        <div className="sticky top-[calc(100vh-140px)] z-20 mx-4 mt-4 mb-1">
-          <div className="rounded-2xl bg-neutral-900 text-white shadow-2xl border border-neutral-700 px-3 py-2.5">
-            <div className="flex items-center gap-3">
-              {activeTrack.artwork
-                ? <img src={activeTrack.artwork} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                : <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-purple-600 flex items-center justify-center">🎵</div>}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold truncate">{activeTrack.title}</p>
-                <p className="text-[10px] text-neutral-400 truncate">{activeTrack.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
-              </div>
-              <button onClick={() => void togglePlayGlobal()} className="w-9 h-9 rounded-full bg-white text-neutral-900 flex items-center justify-center font-bold shrink-0" aria-label={player.playing ? 'Pause' : 'Play'}>{player.playing ? '⏸' : '▶'}</button>
-              <button onClick={stopAndClosePlayer} className="w-9 h-9 rounded-full bg-neutral-800 text-neutral-400 flex items-center justify-center text-xs shrink-0" aria-label="Close player">✕</button>
-            </div>
-            {player.error && <p className="text-[10px] text-amber-400 mt-1">{player.error}</p>}
-            <div
-              role="slider"
-              aria-label="Seek"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress.duration > 0 ? Math.round((progress.seconds / progress.duration) * 100) : 0}
-              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width) }}
-              className="mt-2 h-1.5 bg-neutral-700 rounded-full overflow-hidden cursor-pointer"
-            >
-              <div className="h-full bg-gradient-to-r from-amber-400 to-purple-500" style={{ width: progress.duration > 0 ? `${(progress.seconds / progress.duration) * 100}%` : '0%' }} />
-            </div>
-          </div>
-        </div>
-      )}
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-3 flex min-w-0 gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Worship sections">
           {([
-            ['library', `⛪ Church library${serverTracks.length ? ` (${serverTracks.length})` : ''}`],
-            ['online', '🌍 Search online'],
-            ['saved', `🎧 Saved${saved.length ? ` (${saved.length})` : ''}`],
-          ] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t as any)} className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${tab === t ? 'bg-gradient-to-r from-amber-400 to-purple-600 text-white shadow-lg' : 'bg-white text-neutral-700 border border-neutral-200'}`}>
-              {label}
+            ['library', 'Church library', serverTracks.length],
+            ['saved', 'Saved', saved.length],
+            ['online', 'Discover', 0],
+          ] as const).map(([id, label, count]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id as any)}
+              className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-2xs font-extrabold transition ${tab === id ? 'bg-ink text-white' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
+            >
+              {label}{count ? <span className="opacity-70">{count}</span> : null}
             </button>
           ))}
-          {isAdmin && tab === 'library' && (
-            <button onClick={() => setShowUpload(s => !s)} className={`shrink-0 px-4 py-2 rounded-full text-sm font-extrabold transition-all ${showUpload ? 'bg-neutral-900 text-white' : 'bg-purple-600 text-white shadow-lg'}`}>
-              {showUpload ? '✕ Close' : '＋ Add music'}
-            </button>
-          )}
         </div>
-      </div>
+      </header>
 
-      {/* Persistent mini-player — stays while browsing tabs, seekable, dismissible */}
       {isAdmin && showUpload && tab === 'library' && (
-        <div className="mx-4 mt-4 p-4 rounded-2xl bg-white border-2 border-purple-200 shadow-lg space-y-3">
-          <p className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">Add to church library</p>
-          <div className="flex gap-3 items-start">
-            <button onClick={() => coverInputRef.current?.click()} className="shrink-0 w-20 h-20 rounded-xl bg-gradient-to-br from-amber-100 to-purple-100 border-2 border-dashed border-purple-300 flex items-center justify-center overflow-hidden" aria-label="Choose cover art">
-              {upCover
-                ? <img src={URL.createObjectURL(upCover)} alt="" className="w-full h-full object-cover" />
-                : <span className="text-2xl">🖼️</span>}
+        <div className="mx-4 mt-4 space-y-3 rounded-card border border-line bg-surface-raised p-4">
+          <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Add to church library</p>
+          <div className="flex items-start gap-3">
+            <button onClick={() => coverInputRef.current?.click()} aria-label="Choose cover art" className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-line bg-surface-sunken">
+              {upCover ? <img src={URL.createObjectURL(upCover)} alt="" className="h-full w-full object-cover" /> : <Icon name="camera" size={20} className="text-ink-muted" />}
             </button>
             <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setUpCover(e.target.files?.[0] || null)} className="hidden" />
-            <div className="flex-1 space-y-2">
-              <input value={upTitle} onChange={e => setUpTitle(e.target.value)} placeholder="Track title *" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
-              <input value={upArtist} onChange={e => setUpArtist(e.target.value)} placeholder="Artist / ministry (optional)" className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none placeholder:text-neutral-500 focus:border-purple-500" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <input value={upTitle} onChange={e => setUpTitle(e.target.value)} placeholder="Track title *" className="input-base" aria-label="New track title" />
+              <input value={upArtist} onChange={e => setUpArtist(e.target.value)} placeholder="Artist / ministry (optional)" className="input-base" aria-label="New track artist" />
             </div>
           </div>
-          <button onClick={() => audioInputRef.current?.click()} className={`w-full py-3 rounded-xl border-2 border-dashed text-sm font-semibold ${upFile ? 'border-green-400 bg-green-50 text-green-700' : 'border-neutral-300 text-neutral-500'}`}>
-            {upFile ? `🎵 ${upFile.name} (${(upFile.size / 1024 / 1024).toFixed(1)} MB) — tap to change` : '🎵 Choose audio file (MP3, M4A, WAV — up to 20 MB)'}
+          <button onClick={() => audioInputRef.current?.click()} className="w-full rounded-xl border border-dashed border-line bg-surface-sunken px-3 py-3 text-2xs font-bold text-ink-muted">
+            {upFile ? `${upFile.name} · ${(upFile.size / 1024 / 1024).toFixed(1)} MB — tap to change` : 'Choose audio file (MP3, M4A, WAV — up to 20 MB)'}
           </button>
           <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/mp3,audio/m4a,audio/x-m4a,audio/mp4,audio/wav,audio/aac,audio/ogg" onChange={e => setUpFile(e.target.files?.[0] || null)} className="hidden" />
-          {upBusy && (
-            <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div className="h-full bg-purple-600 transition-all" style={{ width: `${upPct}%` }} /></div>
-          )}
-          <button onClick={() => void submitUpload()} disabled={upBusy || !upFile || !upTitle.trim()} className="w-full py-3 rounded-full bg-purple-600 text-white text-sm font-extrabold disabled:opacity-40">
+          {upBusy && <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken"><div className="h-full bg-accent transition-all" style={{ width: `${upPct}%` }} /></div>}
+          <button onClick={() => void submitUpload()} disabled={upBusy || !upFile || !upTitle.trim()} className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40">
             {upBusy ? `Uploading… ${upPct}%` : 'Add to library'}
           </button>
         </div>
       )}
 
-      <div className="px-4 py-5 space-y-3">
-        {error && <div role="status" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <div className="space-y-4 px-4 py-4">
+        {error && <div role="status" className="rounded-xl border border-danger/20 bg-danger/5 p-3 text-sm text-danger">{error}</div>}
+
+        {/* Continue listening — the reason to come back tomorrow. */}
+        {lastPlayed && tab === 'library' && (
+          <section className="overflow-hidden rounded-card border border-line bg-surface-raised" data-testid="continue-listening">
+            <div className="flex items-center gap-3 p-3">
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-surface-sunken">
+                {lastPlayed.track.artwork
+                  ? <img src={lastPlayed.track.artwork} alt="" className="h-full w-full object-cover" />
+                  : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={22} /></span>}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Continue listening</p>
+                <p className="truncate text-caption font-extrabold text-ink">{lastPlayed.track.title}</p>
+                <p className="truncate text-2xs text-ink-muted">{lastPlayed.track.artist || 'Harvest Worship'}{continueAt > 3 ? ` · resume at ${fmt(continueAt)}` : ''}</p>
+              </div>
+              <button onClick={resumeLast} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-white" aria-label="Resume last worship track">
+                <Icon name="play" size={18} />
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Today's worship — a fresh rotation each morning. */}
+        {tab === 'library' && todaysWorship.length > 0 && (
+          <section data-testid="todays-worship">
+            <div className="flex items-end justify-between gap-2">
+              <div>
+                <h2 className="text-base font-extrabold text-ink">Today’s worship</h2>
+                <p className="text-2xs text-ink-muted">A new set every morning · {todaysWorship.length} tracks</p>
+              </div>
+              <button onClick={() => playShelf(todaysWorship)} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 text-2xs font-extrabold text-white">
+                <Icon name="play" size={13} /> Play all
+              </button>
+            </div>
+            <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {todaysWorship.map((t, i) => {
+                const isPlaying = playingId === t.id
+                return (
+                  <button key={t.id} onClick={() => playShelf(todaysWorship, i)} className="w-28 shrink-0 text-left" aria-label={`Play ${t.title}`}>
+                    <span className="relative block h-28 w-28 overflow-hidden rounded-xl bg-surface-sunken">
+                      {t.artwork ? <img src={t.artwork} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="grid h-full w-full place-items-center text-ink-muted"><Icon name="music" size={22} /></span>}
+                      <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/40' : 'bg-transparent'}`}>
+                        {isPlaying && <Icon name="pause" size={18} className="text-white" />}
+                      </span>
+                    </span>
+                    <span className="mt-1.5 block truncate text-2xs font-extrabold text-ink">{t.title}</span>
+                    <span className="block truncate text-2xs text-ink-muted">{t.artist}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {tab === 'library' && (
-          loadingServer ? <p className="text-center text-sm text-neutral-500 py-10">Loading the church library…</p>
-            : filtered(listFor(allLibrary)).length === 0 ? (
-              <div className="text-center py-12"><div className="text-6xl mb-4">🎶</div><p className="text-neutral-500 font-medium">{q ? 'No matches in the church library' : 'The church library is empty'}</p><p className="text-sm text-neutral-400 mt-1">Worship tracks uploaded by your leaders appear here</p></div>
-            ) : filtered(listFor(allLibrary)).map(t => <TrackRow key={t.id} track={t} />)
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-extrabold text-ink">Church library</h2>
+              {filtered(allLibrary).length > 0 && (
+                <button onClick={() => playShelf(filtered(allLibrary))} className="text-2xs font-extrabold text-accent">Play all</button>
+              )}
+            </div>
+            {loadingServer ? <p className="py-8 text-center text-sm text-ink-muted">Loading the church library…</p>
+              : filtered(allLibrary).length === 0 ? (
+                <div className="rounded-card border border-line bg-surface-raised px-4 py-10 text-center">
+                  <Icon name="music" size={26} className="mx-auto text-ink-subtle" />
+                  <p className="mt-3 text-sm font-extrabold text-ink">{q ? 'No matches in the church library' : 'The church library is empty'}</p>
+                  <p className="mt-1 text-2xs text-ink-muted">Worship tracks uploaded by your leaders appear here</p>
+                </div>
+              ) : filtered(allLibrary).map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={filtered(allLibrary)} />)}
+          </section>
         )}
 
         {tab === 'online' && (
-          searching ? <p className="text-center text-sm text-neutral-500 py-10">Searching the web…</p>
-            : online.length === 0 ? (
-              <div className="text-center py-12"><div className="text-6xl mb-4">🌍</div>              <p className="text-neutral-500 font-medium">{searched ? 'No results — try another search' : 'Search free full-length songs'}</p><p className="text-sm text-neutral-400 mt-1">Every result plays in full and downloads complete — no 30-second previews. Try "Worship", "Gospel", "Hymns"…</p></div>
-            ) : online.map(t => <TrackRow key={t.id} track={t} />)
+          <section className="space-y-3">
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {['Worship', 'Gospel', 'Hymns', 'Praise', 'Choir', 'Instrumental'].map(g => (
+                <button key={g} onClick={() => { setQ(g); void searchOnline(g) }} disabled={searching} className={`min-h-9 shrink-0 rounded-full px-3.5 text-2xs font-extrabold ${q === g ? 'bg-ink text-white' : 'border border-line bg-surface-raised text-ink-muted'}`}>{g}</button>
+              ))}
+            </div>
+            {searching ? <p className="py-8 text-center text-sm text-ink-muted">Searching the web…</p>
+              : online.length === 0 ? (
+                <div className="rounded-card border border-line bg-surface-raised px-4 py-10 text-center">
+                  <Icon name="globe" size={26} className="mx-auto text-ink-subtle" />
+                  <p className="mt-3 text-sm font-extrabold text-ink">{searched ? 'No results — try another search' : 'Discover full-length worship'}</p>
+                  <p className="mt-1 text-2xs text-ink-muted">Every result plays in full and downloads complete. Try “Worship”, “Gospel”, “Hymns”…</p>
+                </div>
+              ) : online.map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={online} />)}
+          </section>
         )}
 
         {tab === 'saved' && (
-          saved.length === 0 ? (
-            <div className="text-center py-12"><div className="text-6xl mb-4">🎧</div><p className="text-neutral-500 font-medium">Nothing saved yet</p><p className="text-sm text-neutral-400 mt-1">Tap ＋ on any track to keep it here</p></div>
-          ) : saved.map(t => <TrackRow key={t.id} track={t} />)
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-extrabold text-ink">Saved songs</h2>
+              {saved.length > 0 && <button onClick={() => playShelf(saved)} className="text-2xs font-extrabold text-accent">Play all</button>}
+            </div>
+            {saved.length === 0 ? (
+              <div className="rounded-card border border-line bg-surface-raised px-4 py-10 text-center">
+                <Icon name="heart" size={26} className="mx-auto text-ink-subtle" />
+                <p className="mt-3 text-sm font-extrabold text-ink">Nothing saved yet</p>
+                <p className="mt-1 text-2xs text-ink-muted">Tap the heart on any track to keep it here</p>
+              </div>
+            ) : saved.map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={saved} />)}
+          </section>
         )}
       </div>
+
+      {/* Persistent mini-player — stays while browsing tabs, seekable, dismissible */}
+      {playingNow && (
+        <div className="fixed inset-x-0 bottom-[calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))+124px)] z-30 px-3">
+          <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-sunken">
+                {activeTrack?.artwork
+                  ? <img src={activeTrack.artwork} alt="" className="h-full w-full object-cover" />
+                  : <span className="grid h-full w-full place-items-center bg-gold/20 text-gold"><Icon name="music" size={16} /></span>}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-extrabold">{activeTrack?.title}</p>
+                <p className="truncate text-2xs text-surface/60">{activeTrack?.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
+              </div>
+              <button onClick={() => void previousTrack()} aria-label="Previous track" disabled={!player.hasPrev} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"><Icon name="arrow-left" size={16} /></button>
+              <button onClick={() => void togglePlayGlobal()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface text-ink" aria-label={player.playing ? 'Pause' : 'Play'}>
+                <Icon name={player.playing ? 'pause' : 'play'} size={16} />
+              </button>
+              <button onClick={() => void nextTrack()} aria-label="Next track" disabled={!player.hasNext} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"><Icon name="arrow-right" size={16} /></button>
+              <button onClick={closePlayer} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface/10 text-surface/70" aria-label="Close player"><Icon name="close" size={14} /></button>
+            </div>
+            {player.error && <p className="mt-1 text-2xs text-gold">{player.error}</p>}
+            <div
+              role="slider" aria-label="Seek" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={progress.duration > 0 ? Math.round((progress.seconds / progress.duration) * 100) : 0}
+              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width) }}
+              className="mt-2 h-1 cursor-pointer overflow-hidden rounded-full bg-surface/20"
+            >
+              <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: progress.duration > 0 ? `${(progress.seconds / progress.duration) * 100}%` : '0%' }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

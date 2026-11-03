@@ -723,7 +723,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             <div className="px-3"><div className="skeleton mt-3 h-3 w-4/5 rounded-full" /></div>
           </div>
         ))}{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
-        if (p.kind === 'advert') return <div key={String(p.id)} className="px-4 py-4"><AdvertCard advert={p} /></div>
+        if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpen={() => setTab('give')} /></div>
         const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
         <FeedCard
           key={key}

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { subscribePlayer, seekToFraction, togglePlay, closePlayer, type PlayerState } from '../lib/audioPlayer'
+import { subscribePlayer, seekToFraction, togglePlay, closePlayer, previousTrack, nextTrack, type PlayerState } from '../lib/audioPlayer'
+import { Icon } from '../ui'
 
 /**
  * Floating "now playing" strip above the bottom nav. Rendered once in App.jsx
  * so it survives every tab change — pairing with the global audio player that
- * owns the actual HTMLAudioElement. Tap the title to jump back to the screen
- * that owns the track (music room or sermons).
+ * owns the actual HTMLAudioElement and its queue. Tap the title to jump back to
+ * the screen that owns the track; prev/next keep a worship set going while the
+ * member browses anywhere else in the app.
  */
 export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'sermons') => void }) {
   const [player, setPlayer] = useState<PlayerState>({ track: null, playing: false, currentTime: 0, duration: 0, error: null })
@@ -19,16 +21,24 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
     return `${m}:${String(s).padStart(2, '0')}`
   }
   return (
-    <div className="fixed left-0 right-0 z-40 px-3" style={{ bottom: 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom)) + 58px)' }}>
-      <div className="mx-auto max-w-lg rounded-2xl bg-ink text-surface shadow-2xl border border-[#3E362C] px-3 py-2" role="group" aria-label="Now playing">
-        <div className="flex items-center gap-3">
+    <div
+      className="fixed inset-x-0 z-40 px-3"
+      style={{ bottom: 'calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 64px)' }}
+    >
+      <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl" role="group" aria-label="Now playing">
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface/10">
+            {track.artwork
+              ? <img src={track.artwork} alt="" className="h-full w-full object-cover" />
+              : <span className="grid h-full w-full place-items-center text-gold"><Icon name="music" size={16} /></span>}
+          </div>
           <button
             type="button"
             onClick={() => onOpen(track.origin === 'sermons' ? 'sermons' : 'music')}
             className="min-w-0 flex-1 text-left active:opacity-70"
           >
-            <p className="text-xs font-extrabold truncate">{track.title}</p>
-            <p className="text-[10px] text-[#B8AC9C] truncate">
+            <p className="truncate text-xs font-extrabold">{track.title}</p>
+            <p className="truncate text-2xs text-surface/60">
               {track.artist || 'Harvest Family Church'}
               {player.duration > 0 ? ` · ${fmt(player.currentTime)} / ${fmt(player.duration)}` : ''}
               {player.error ? ` · ${player.error}` : ''}
@@ -36,18 +46,38 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
           </button>
           <button
             type="button"
+            onClick={() => void previousTrack()}
+            disabled={!player.hasPrev}
+            aria-label="Previous track"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"
+          >
+            <Icon name="arrow-left" size={16} />
+          </button>
+          <button
+            type="button"
             onClick={() => void togglePlay()}
             aria-label={player.playing ? 'Pause' : 'Play'}
-            className="w-9 h-9 shrink-0 rounded-full bg-accent hover:bg-accent-strong text-white flex items-center justify-center font-bold"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-white"
           >
-            {player.playing ? '⏸' : '▶'}
+            <Icon name={player.playing ? 'pause' : 'play'} size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void nextTrack()}
+            disabled={!player.hasNext}
+            aria-label="Next track"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"
+          >
+            <Icon name="arrow-right" size={16} />
           </button>
           <button
             type="button"
             onClick={() => closePlayer()}
             aria-label="Close player"
-            className="w-7 h-7 shrink-0 rounded-full bg-[#3E362C] text-[#B8AC9C] flex items-center justify-center text-xs"
-          >✕</button>
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface/10 text-surface/60"
+          >
+            <Icon name="close" size={13} />
+          </button>
         </div>
         <div
           role="slider"
@@ -56,7 +86,7 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
           aria-valuemax={100}
           aria-valuenow={Math.round(pct)}
           onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seekToFraction((e.clientX - r.left) / r.width) }}
-          className="mt-2 h-1 rounded-full bg-[#3E362C] overflow-hidden cursor-pointer"
+          className="mt-2 h-1 cursor-pointer overflow-hidden rounded-full bg-surface/20"
         >
           <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: `${pct}%` }} />
         </div>

@@ -57,29 +57,82 @@ const fmtCount = (n: number): string => {
   return String(n)
 }
 
-// Sponsored advert slot — third-party advert card, cream identity, never
-// styled to mimic an organic post (the Sponsored chip is always visible).
-export function AdvertCard({ advert }: { advert: { id: string; advert_id?: string; title?: string; caption?: string; body?: string; image_url?: string | null; cta_url?: string | null } }) {
-  const title = advert.title || advert.caption || 'Sponsored'
-  const body = advert.body || ''
-  const href = advert.cta_url || null
+// Sponsored project slot — a 2026 advert, not a banner. Full-bleed artwork,
+// one loud number (progress toward the goal), the human detail underneath and
+// a single action. It is always labelled Sponsored and never mimics an organic
+// post: church projects get a campaign card, not a grey box with a link.
+export type ProjectAdvert = {
+  id: string
+  advert_id?: string
+  title?: string
+  caption?: string
+  body?: string
+  image_url?: string | null
+  cta_url?: string | null
+  project?: {
+    id?: string
+    name?: string
+    description?: string
+    goal_kes?: number
+    raised_kes?: number
+    committed_kes?: number
+    participants?: number
+    deadline?: string | null
+  } | null
+}
+
+export function AdvertCard({ advert, onOpen }: { advert: ProjectAdvert; onOpen?: () => void }) {
+  const project = advert.project || null
+  const title = project?.name || advert.title || advert.caption || 'Harvest project'
+  const body = advert.body || project?.description || advert.caption || ''
+  const raised = Number(project?.raised_kes) || 0
+  const goal = Number(project?.goal_kes) || 0
+  const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
+  const participants = Number(project?.participants) || 0
+  const deadline = project?.deadline ? new Date(project.deadline) : null
+  const daysLeft = deadline && Number.isFinite(deadline.getTime())
+    ? Math.max(0, Math.ceil((deadline.getTime() - Date.now()) / 86_400_000))
+    : null
+  const open = () => { if (onOpen) onOpen(); else if (advert.cta_url) window.open(advert.cta_url, '_blank', 'noopener') }
   return (
-    <article className="relative overflow-hidden rounded-card border border-accent-soft bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id}>
-      {advert.image_url && (
-        <button type="button" onClick={() => href && window.open(href, '_blank', 'noopener')} className="block w-full text-left" aria-label={href ? `Open advertiser: ${title}` : undefined}>
-          <img src={advert.image_url} alt={title} className="max-h-72 w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
-        </button>
-      )}
-      <div className="p-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-accent-strong">Sponsored</span>
-          {href && <span className="inline-flex shrink-0 items-center gap-1 text-2xs font-bold text-accent">Learn more <Icon name="chevron-right" size={13} /></span>}
-        </div>
-        <h3 className="text-heading font-extrabold leading-5 text-ink">{title}</h3>
-        {body && <p className="mt-1 text-sm leading-6 text-ink-muted break-words">{body}</p>}
-        {href && (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full bg-accent px-5 text-2xs font-extrabold text-white shadow-card">Visit sponsor</a>
+    <article className="overflow-hidden rounded-3xl border border-line bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id}>
+      {/* Artwork band */}
+      <button type="button" onClick={open} className="relative block h-40 w-full overflow-hidden text-left" aria-label={`Open ${title}`}>
+        {advert.image_url
+          ? <img src={advert.image_url} alt={title} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+          : <span className="absolute inset-0 bg-gradient-to-br from-accent-strong via-accent to-gold" />}
+        <span className="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/25 to-transparent" />
+        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-ink/55 px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-gold" aria-hidden="true" /> Sponsored · Project
+        </span>
+        <span className="absolute inset-x-3 bottom-3 block">
+          <span className="block text-caption font-extrabold leading-tight text-white drop-shadow">{title}</span>
+          <span className="mt-1 block text-2xs font-bold text-white/75">{goal > 0 ? `KES ${raised.toLocaleString()} of ${goal.toLocaleString()}` : 'Harvest Family project'}</span>
+        </span>
+      </button>
+
+      <div className="p-3.5">
+        {body && <p className="line-clamp-2 text-2xs leading-relaxed text-ink-muted">{body}</p>}
+
+        {goal > 0 && (
+          <div className="mt-2.5" data-testid="advert-progress">
+            <div className="h-2 overflow-hidden rounded-full bg-surface-sunken">
+              <div className="h-full rounded-full bg-gradient-to-r from-accent to-gold" style={{ width: `${Math.max(pct, 2)}%` }} />
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-2xs font-bold">
+              <span className="text-accent-strong">{pct}% funded</span>
+              <span className="text-ink-muted">{participants} participating{!participants ? '' : ` · ${daysLeft === null ? 'open' : `${daysLeft}d left`}`}</span>
+            </div>
+          </div>
         )}
+
+        <button
+          type="button"
+          onClick={open}
+          className="mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent text-2xs font-extrabold text-white shadow-card transition active:scale-[0.99]"
+        >
+          Support this project <Icon name="arrow-right" size={14} />
+        </button>
       </div>
     </article>
   )
