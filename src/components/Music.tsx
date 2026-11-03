@@ -73,9 +73,12 @@ export default function Music() {
   const [searching, setSearching] = useState(false)
   const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
+  const [libraryError, setLibraryError] = useState('')
   const [saved, setSaved] = useState<Track[]>([])
   const [downloading, setDownloading] = useState('')
   const [continueAt, setContinueAt] = useState(0)
+  // No silence: every failure below is rendered inline and announced as a toast.
+  useEffect(() => { if (libraryError) showToast(libraryError, 'error', 6000) }, [libraryError])
   const useServer = useApi()
   const { isAdmin } = useAuth()
 
@@ -156,21 +159,26 @@ export default function Music() {
     setContinueAt(getLastPlayed()?.position || 0)
   }, [])
 
-  // Church library (admin uploads).
+  // Church library (admin uploads). A failed load is a visible, retryable state
+  // — not an empty shelf that looks like "the church has no music".
+  const loadLibrary = () => {
+    setLoadingServer(true)
+    setLibraryError('')
+    return fetchMusic()
+      .then(r => { setServerTracks(mapServer(r.tracks as any[])) })
+      .catch((e: any) => { setLibraryError(e?.message || 'Could not load the church library — check your connection') })
+      .finally(() => { setLoadingServer(false) })
+  }
   useEffect(() => {
     if (!useServer) return
     let cancelled = false
-    setLoadingServer(true)
-    fetchMusic()
-      .then(r => { if (!cancelled) setServerTracks(mapServer(r.tracks as any[])) })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoadingServer(false) })
+    void loadLibrary().finally(() => { if (cancelled) return })
     return () => { cancelled = true }
   }, [useServer])
 
   // A background track upload just published — refresh the library.
   useEffect(() => {
-    const bump = () => { fetchMusic().then(r => setServerTracks(mapServer(r.tracks as any[]))).catch(() => {}) }
+    const bump = () => { void loadLibrary() }
     window.addEventListener('harvest:tracks-updated', bump)
     return () => window.removeEventListener('harvest:tracks-updated', bump)
   }, [])
@@ -500,6 +508,13 @@ export default function Music() {
                 <button onClick={() => playShelf(filtered(allLibrary))} className="text-2xs font-extrabold text-accent">Play all</button>
               )}
             </div>
+            {libraryError && !loadingServer && (
+              <div role="alert" className="rounded-card border border-danger/20 bg-danger/5 p-3 text-sm text-danger">
+                <p className="font-extrabold">Couldn’t load the church library</p>
+                <p className="mt-0.5 text-2xs">{libraryError}</p>
+                <button type="button" onClick={() => { void loadLibrary() }} className="mt-2 rounded-full bg-danger px-3 py-1.5 text-2xs font-extrabold text-white">Try again</button>
+              </div>
+            )}
             {loadingServer ? <p className="py-8 text-center text-sm text-ink-muted">Loading the church library…</p>
               : filtered(allLibrary).length === 0 ? (
                 <div className="rounded-card border border-line bg-surface-raised px-4 py-10 text-center">

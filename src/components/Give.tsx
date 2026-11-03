@@ -220,6 +220,11 @@ export default function Give() {
     }
   }
 
+  // Money actions are never silent: a failed history load or a status message
+  // that lands off-screen is announced as a toast as well as rendered inline.
+  useEffect(() => { if (historyError) showToast(historyError, 'error', 6000) }, [historyError])
+  useEffect(() => { if (message) showToast(message, message.startsWith('✅') ? 'success' : 'info', 6000) }, [message])
+
   useEffect(() => {
     if (!apiEnabled) return
     fetch(`${API}/api/giving/config`)

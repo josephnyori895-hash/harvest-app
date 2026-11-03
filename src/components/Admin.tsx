@@ -6,6 +6,8 @@ import { timeAgo } from '../lib/time'
 
 import ErrorMessage from './ErrorMessage'
 import { Icon } from '../ui'
+import { showToast } from './Toast'
+import { runAction } from '../lib/actionFeedback'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // The installed app always uses the API. The old VITE_USE_API gate silently
 // disabled this whole screen in production builds.
@@ -44,6 +46,12 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const token = () => localStorage.getItem('harvest_token') || ''
 
   const flash = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 2500) }
+
+  // Every admin action reports out loud: errors become a red toast with the real
+  // server message, confirmations a green one. The inline banner stays too, but
+  // an admin who scrolled far down the Everything editor never misses it.
+  useEffect(() => { if (error) showToast(error, 'error', 6000) }, [error])
+  useEffect(() => { if (notice) showToast(notice, 'success') }, [notice])
 
   // ── Daily operations dashboard ──
   const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, content: [] as any[], chats: [] as any[], audit: [] as any[] })
@@ -124,21 +132,30 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const saveContent = async () => {
     if (contentBusy) return
     setContentBusy(true)
+    setError('')
     // Merge the Everything draft over the loaded content so a single save
     // publishes every edit, including keys added on the spot.
     const payload: Record<string, string> = { ...content, ...(contentDraft || {}) }
-    try {
+    const res = await runAction('Saving changes', async () => {
       const r = await fetch(`${API}/api/content`, {
         method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
+      return d
+    }, 'Saved — live for everyone ✓')
+    if (res.ok) {
+      const d: any = res.data
       setContent(d.content || {})
+      if (d.editable) setEditable(d.editable)
       setFundsDraft(null); setQuickDraft(null)
       setAdvertsDraft(null); setSettingsDraft(null); setContentDraft(null)
       flash('Saved — live for everyone ✓')
-    } catch (e: any) { setError(e?.message || 'Could not save') } finally { setContentBusy(false) }
+    } else {
+      setError(res.error?.message || 'Could not save')
+    }
+    setContentBusy(false)
   }
 
   // ── Announce state ──

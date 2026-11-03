@@ -27,6 +27,7 @@ import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
 import { Icon } from './ui'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
+import { describeError } from './lib/actionFeedback'
 
 // Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
 // session-expired event so the app can return to login with a clear message,
@@ -541,6 +542,27 @@ function InnerApp() {
     }).catch(() => { /* web build: no hardware back */ })
     return () => { disposed = true; try { sub?.remove?.() } catch {} }
   }, [onboarded, tab, userList, viewUser, backTarget, chatReturnTab, dmSheet, showNotifications])
+
+  // Global silent-failure net: any unhandled rejection or runtime error raises a
+  // visible, readable toast. The member never has to guess whether something
+  // worked — "no silence" applies to the whole app, not just known actions.
+  useEffect(() => {
+    const onRejection = (e) => {
+      const text = describeError(e?.reason, 'An action failed')
+      if (/AbortError|NetworkError when attempting|cancelled/i.test(text)) return
+      showToast(`Something went wrong — ${text}`, 'error', 6000)
+    }
+    const onError = (e) => {
+      if (!e?.message) return
+      showToast(`Something went wrong — ${e.message}`.slice(0, 200), 'error', 6000)
+    }
+    window.addEventListener('unhandledrejection', onRejection)
+    window.addEventListener('error', onError)
+    return () => {
+      window.removeEventListener('unhandledrejection', onRejection)
+      window.removeEventListener('error', onError)
+    }
+  }, [])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
