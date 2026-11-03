@@ -314,40 +314,42 @@ export default function Give() {
     } catch (e) { showToast(e instanceof Error ? e.message : 'Could not save participation', 'error') }
     finally { setProjectBusy(false) }
   }
-  // A campaign card, not an admin row: artwork band, one big number, the human
-  // detail underneath and a single action. Matches the sponsored card in the
-  // feed so a project looks identical wherever the family meets it.
+  // Dark campaign card — the same shape as the sponsored project in the feed:
+  // one big number, a thin gold progress line, small-caps detail, one action.
   const projectCard = (p: any) => {
     const goal = Number(p.goal_kes) || 0
     const raised = Number(p.raised_kes) || 0
     const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
     const remaining = Math.max(goal - raised, 0)
     const statusLabel = p.status === 'active' ? 'Active project' : p.status === 'upcoming' ? 'Starting soon' : String(p.status || 'project')
-    return <button key={p.id} type="button" onClick={() => openProject(p)} data-testid="project-card" className="w-full overflow-hidden rounded-3xl border border-line bg-surface-raised text-left shadow-card transition-transform active:scale-[0.995]">
-      <span className="relative block h-28 overflow-hidden bg-gradient-to-br from-accent-strong via-accent to-gold">
-        <span aria-hidden="true" className="absolute -right-6 -top-8 h-24 w-24 rounded-full bg-white/15" />
-        <span aria-hidden="true" className="absolute -bottom-10 -left-6 h-28 w-28 rounded-full bg-white/10" />
-        <span className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/25 to-transparent" />
-        <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-ink/50 px-2.5 py-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
-          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-gold" /> {statusLabel}
+    return <button key={p.id} type="button" onClick={() => openProject(p)} data-testid="project-card" className="w-full overflow-hidden rounded-3xl bg-ink text-left text-surface shadow-card transition-transform active:scale-[0.995]">
+      <span className="block p-4 pb-0">
+        <span className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">
+            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-gold" /> {statusLabel}
+          </span>
+          <span className="rounded-full bg-surface/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-surface/60">{pct}%</span>
         </span>
-        <span className="absolute right-3 top-3 rounded-full bg-white/20 px-2.5 py-1 text-2xs font-extrabold text-white backdrop-blur-sm">{pct}%</span>
-        <span className="absolute inset-x-3 bottom-2.5 block">
-          <span className="block truncate text-base font-extrabold text-white drop-shadow">{p.name}</span>
-          <span className="mt-0.5 block truncate text-2xs font-bold text-white/80">KES {raised.toLocaleString()} raised of {goal.toLocaleString()}</span>
+        <span className="mt-2.5 block truncate text-xl font-extrabold leading-tight tracking-tight">{p.name}</span>
+        {p.description && <span className="mt-1 line-clamp-2 block max-w-[42ch] text-2xs leading-relaxed text-surface/55">{p.description}</span>}
+        <span className="mt-4 flex items-end justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-2xl font-extrabold leading-none tabular-nums">KES {raised.toLocaleString()}</span>
+            <span className="mt-1 block text-2xs text-surface/45">of {goal.toLocaleString()} goal</span>
+          </span>
+          <span className="shrink-0 text-2xs font-extrabold text-gold">{remaining > 0 ? `KES ${remaining.toLocaleString()} to go` : 'Fully funded'}</span>
         </span>
+        <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-surface/10">
+          <span className="block h-full rounded-full bg-gold" style={{ width: `${Math.max(pct, 1.5)}%` }} />
+        </span>
+        <span className="mt-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.1em] text-surface/40">
+          <span>{p.participants || 0} participating</span>
+          <span>{deadlineLabel(p.deadline)}</span>
+        </span>
+        {p.mine && <span className="mt-3 block rounded-xl bg-surface/10 px-2.5 py-2 text-2xs font-bold text-surface/75">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</span>}
       </span>
-      <span className="block p-3.5">
-        {p.description && <span className="line-clamp-2 block text-2xs leading-relaxed text-ink-muted">{p.description}</span>}
-        <span className="mt-2.5 block h-2 overflow-hidden rounded-full bg-surface-sunken">
-          <span className="block h-full rounded-full bg-gradient-to-r from-accent to-gold" style={{ width: `${Math.max(pct, 2)}%` }} />
-        </span>
-        <span className="mt-2 flex items-center justify-between gap-2 text-2xs font-bold">
-          <span className="text-accent-strong">{p.participants || 0} participating{remaining > 0 ? ` · KES ${remaining.toLocaleString()} to go` : ' · funded'}</span>
-          <span className="shrink-0 text-ink-muted">{deadlineLabel(p.deadline)}</span>
-        </span>
-        {p.mine && <span className="mt-2 block rounded-xl bg-accent-soft px-2.5 py-2 text-2xs font-bold text-accent-strong">Your commitment: KES {Number(p.mine.commitment_kes).toLocaleString()} · paid KES {Number(p.mine.paid_kes).toLocaleString()}</span>}
-        <span className="mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent text-2xs font-extrabold text-white">Take part <Icon name="arrow-right" size={14} /></span>
+      <span className="block p-3">
+        <span className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-gold text-2xs font-extrabold text-ink">Take part <Icon name="arrow-right" size={14} /></span>
       </span>
     </button>
   }

@@ -63,9 +63,14 @@ test('every track surface renders artwork, even without a cover', () => {
 })
 
 test('the sponsored project is a campaign card, not a banner', () => {
+  // Dark campaign card: one number, a thin gold progress line, one action.
   assert.match(feed, /data-testid="advert-progress"/)
-  assert.match(feed, /% funded/)
-  assert.match(feed, /Sponsor.*Project|Sponsored · Project/)
-  assert.match(feed, /Support this project/)
+  assert.match(feed, /Harvest project/)
+  assert.match(feed, /rounded-full bg-gold text-2xs font-extrabold text-ink/)
+  assert.match(feed, /Take part <Icon name="arrow-right"/)
+  // Partner adverts are image-forward with their own single CTA.
+  assert.match(feed, /Harvest partner/)
+  assert.match(feed, /Learn more <Icon name="arrow-right"/)
+  assert.match(feed, /aria-label="Sponsored"|>Sponsored</)
   assert.match(home, /<AdvertCard advert=\{p\} onOpen=\{\(\) => setTab\('give'\)\} \/>/)
 })
