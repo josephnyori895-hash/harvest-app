@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Icon } from '../ui'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -132,14 +133,14 @@ export default function NotificationsScreen({
   const empty = !loading && !error && filtered.length === 0
   const filterLabel = FILTERS.find(f => f.id === filter)?.label || 'All'
 
-  return <main className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-white" aria-label="Notifications">
-    <header className="flex min-h-14 min-w-0 shrink-0 items-center gap-2 border-b border-black/5 px-3">
-      <button type="button" onClick={onBack} aria-label="Back" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl focus:outline-none focus-visible:ring-2">←</button>
+  return <main className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-surface" aria-label="Notifications">
+    <header className="flex min-h-14 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3">
+      <button type="button" onClick={onBack} aria-label="Back" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl focus:outline-none focus-visible:ring-2"><Icon name="arrow-left" size={20} /></button>
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">Notifications</h1>
-      {unreadCount > 0 && <button type="button" onClick={onMarkAllRead} disabled={markAllPending} aria-label="Mark all notifications as read" aria-busy={markAllPending} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold disabled:opacity-40">{markAllPending ? <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border-2 border-black/15 border-t-black/60" /> : '✓'}</button>}
+      {unreadCount > 0 && <button type="button" onClick={onMarkAllRead} disabled={markAllPending} aria-label="Mark all notifications as read" aria-busy={markAllPending} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold disabled:opacity-40">{markAllPending ? <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border-2 border-black/15 border-t-black/60" /> : <Icon name="check" size={18} />}</button>}
     </header>
 
-    <div className="w-full min-w-0 shrink-0 border-b border-black/5" role="tablist" aria-label="Notification filters">
+    <div className="w-full min-w-0 shrink-0 border-b border-line" role="tablist" aria-label="Notification filters">
       <div className="flex w-full min-w-0 flex-nowrap gap-2 overflow-x-auto overflow-y-hidden px-4 pb-2 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {FILTERS.map(item => <button key={item.id} type="button" role="tab" aria-selected={filter === item.id} aria-controls={`notifications-panel-${item.id}`} onClick={() => onFilterChange?.(item.id)} className={`inline-flex h-10 shrink-0 grow-0 items-center justify-center whitespace-nowrap rounded-full px-4 text-sm font-medium ${filter === item.id ? 'bg-black text-white' : 'bg-black/5 text-black/70'}`}>{item.label}</button>)}
       </div>
@@ -148,15 +149,15 @@ export default function NotificationsScreen({
     <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto">
       {initialLoading && <Skeleton />}
       {initialError && <div role="alert" className="mx-4 my-6 rounded-xl border border-red-500/15 bg-red-500/5 p-4"><p className="text-sm font-semibold">Couldn’t load notifications</p><p className="mt-1 text-sm text-black/60">Check your connection and try again.</p><button type="button" onClick={onRetry} className="mt-3 rounded-lg bg-black px-3 py-2 text-sm font-semibold text-white">Retry</button></div>}
-      {error && notifications.length > 0 && <div role="alert" className="mx-4 my-3 flex items-center gap-3 rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2.5"><span aria-hidden="true">⚠</span><p className="min-w-0 flex-1 text-xs font-medium text-black/70">Couldn’t refresh notifications.</p><button type="button" onClick={onRetry} disabled={refreshing} className="shrink-0 text-xs font-semibold underline">{refreshing ? 'Retrying…' : 'Retry'}</button></div>}
+      {error && notifications.length > 0 && <div role="alert" className="mx-4 my-3 flex items-center gap-3 rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2.5"><Icon name="alert" size={16} className="shrink-0 text-gold-strong" /><p className="min-w-0 flex-1 text-xs font-medium text-black/70">Couldn’t refresh notifications.</p><button type="button" onClick={onRetry} disabled={refreshing} className="shrink-0 text-xs font-semibold underline">{refreshing ? 'Retrying…' : 'Retry'}</button></div>}
       {actionError && <ActionError message={actionError} onDismiss={onDismissActionError} />}
 
-      {!initialLoading && !initialError && empty && <div id={`notifications-panel-${filter}`} role="tabpanel" className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center"><div aria-hidden="true" className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-black/5 text-2xl">🔔</div><h2 className="text-base font-semibold">{notifications.length ? `No ${filterLabel.toLowerCase()} notifications` : 'You’re all caught up'}</h2><p className="mt-1 max-w-sm text-sm text-black/55">{notifications.length ? 'Activity for this filter will appear here.' : 'New notifications will appear here when there’s something to show.'}</p></div>}
+      {!initialLoading && !initialError && empty && <div id={`notifications-panel-${filter}`} role="tabpanel" className="flex min-h-[280px] flex-col items-center justify-center px-6 text-center"><div aria-hidden="true" className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-black/5 text-2xl"><Icon name="bell" size={22} /></div><h2 className="text-base font-semibold">{notifications.length ? `No ${filterLabel.toLowerCase()} notifications` : 'You’re all caught up'}</h2><p className="mt-1 max-w-sm text-sm text-black/55">{notifications.length ? 'Activity for this filter will appear here.' : 'New notifications will appear here when there’s something to show.'}</p></div>}
 
       {!initialLoading && !initialError && filtered.length > 0 && <div id={`notifications-panel-${filter}`} role="tabpanel" aria-label={`${filterLabel} notifications`}>
         {refreshing && <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 px-4 py-2 text-xs text-black/45"><span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/15 border-t-black/60" />Refreshing notifications…</div>}
         {groups.map(group => <section key={group.label} aria-labelledby={`notification-group-${group.label}`} className="w-full min-w-0 max-w-full overflow-hidden">
-          <div className="sticky top-0 z-10 bg-white/95 px-4 py-2 backdrop-blur"><h2 id={`notification-group-${group.label}`} className="truncate text-[11px] font-semibold tracking-wide text-black/45">{group.label}</h2></div>
+          <div className="sticky top-0 z-10 bg-surface/95 px-4 py-2 backdrop-blur"><h2 id={`notification-group-${group.label}`} className="truncate text-[11px] font-semibold tracking-wide text-black/45">{group.label}</h2></div>
           {group.notifications.map(n => <Item key={n.id} notification={n} pending={pendingNotificationIds.has(n.id)} onPress={onNotificationPress} />)}
         </section>)}
       </div>}

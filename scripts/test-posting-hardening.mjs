@@ -28,11 +28,21 @@ assert.match(media, /SELECT id FROM tracks WHERE original_key=\?/)
 // the UI before handing work to the background uploader. The review step is the
 // live canvas itself (media + caption + music on one screen) — the old separate
 // "Final preview" modal duplicated it and was removed.
-assert.match(postCreate, /aspectRatio: stageRatio\(type\)/, 'the media canvas is the live preview')
+assert.match(postCreate, /aspectRatio: \(type === 'post' && imgRatio\)/, 'photo posts preview at their natural feed ratio')
+assert.match(postCreate, /stageRatio\(type\)/, 'stories and reels keep the 9:16 canvas')
 assert.doesNotMatch(postCreate, /Final preview/, 'no duplicate preview modal')
 assert.match(postCreate, /maxLength=\{2000\}/)
 assert.match(postCreate, /caption\.trim\(\)\.length > 2000/)
 assert.match(postCreate, /startBackgroundUpload/)
+
+// Edge-to-edge guarantee: the photo/video stage never letterboxes — media
+// covers its canvas exactly the way the feed crops it (zoom-to-fill, never
+// object-contain with cream/black bars around it). The sermon audio stage's
+// inline video preview is out of scope: it is a small embedded control, not
+// the canvas the member reviews before sharing.
+assert.match(postCreate, /alt="Selected media preview"/)
+assert.ok(!/Selected media preview"\n?\s*className="[^"]*object-contain/.test(postCreate), 'the composer stage must not letterbox media')
+assert.match(postCreate, /h-full w-full object-cover/)
 
 // Background transfer must honor the presigned HTTP method and carry signed
 // fields as headers for direct R2 uploads.

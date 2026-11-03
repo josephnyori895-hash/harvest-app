@@ -361,22 +361,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   )
 }
 
-const FILTERS = ['Original', 'Clarendon', 'Juno', 'Aden', 'Lark', 'Moody', 'Valencia', 'Perpetua', 'Willow', 'Gingham']
+// One look library shared with the post editor (src/lib/imageFilters.ts) —
+// filter previews here must match what the post editor shows and bakes.
+import { FILTERS, FILTER_CSS } from '../lib/imageFilters'
 const STORY_STICKERS = ['🙏', '🔥', '❤️', '🎵', '🎤', '📍', '📷', '✝️', '🕊️', '💜', '👏', '😍', '🤗', '✨', '🎉', '🍕', '🌟', '⚽', '🎸', '💎']
-// Preview-only approximations of the filters that burnDecorations applies to
-// the pixels at submit. The composer must show what the viewer will get.
-const FILTER_CSS: Record<string, string> = {
-  Original: 'none',
-  Clarendon: 'brightness(1.06) contrast(1.14) saturate(1.18)',
-  Juno: 'brightness(1.05) contrast(1.1) saturate(1.3) hue-rotate(-6deg)',
-  Aden: 'brightness(1.08) contrast(1.06) saturate(1.2) hue-rotate(4deg)',
-  Lark: 'brightness(1.06) contrast(1.04) saturate(1.12) hue-rotate(-8deg)',
-  Moody: 'brightness(0.88) contrast(1.12) saturate(1.2) hue-rotate(8deg)',
-  Valencia: 'brightness(1.1) contrast(1.05) saturate(1.24) hue-rotate(4deg)',
-  Perpetua: 'brightness(1.06) contrast(1.02) saturate(1.26) hue-rotate(-4deg)',
-  Willow: 'brightness(0.98) contrast(1.04) saturate(0.9) hue-rotate(10deg)',
-  Gingham: 'brightness(1.06) contrast(1.06) saturate(1.1) hue-rotate(-10deg)',
-}
 const TEXT_COLORS = ['#ffffff', '#000000', '#f5c451', '#7ed6a5', '#8ec5ff', '#ff9fc4', '#c9a6ff', '#ffb27a']
 
 export function StoryCreate({ onDone }: { onDone: () => void }) {

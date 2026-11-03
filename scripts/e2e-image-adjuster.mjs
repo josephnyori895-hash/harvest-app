@@ -5,6 +5,12 @@ import os from 'node:os'
 import path from 'node:path'
 import puppeteer from 'puppeteer-core'
 
+// E2E for the IG-style photo editor at the heart of the composer: pick media in
+// the upload canvas flow, adjust aspect (Original / Square / Tall portrait /
+// Portrait / Wide), rotate 90°/180°, save, and confirm the exported JPEG has
+// the right ratio and zero unintended near-black bars — the black-bar client
+// regression must never reappear.
+
 const baseUrl = (process.env.E2E_BASE_URL || '').replace(/\/$/, '')
 const apiUrl = (process.env.E2E_API_URL || baseUrl).replace(/\/$/, '')
 const username = process.env.E2E_USERNAME || ''
@@ -87,8 +93,6 @@ async function login() {
 async function clickExactButton(text) {
   const clicked = await page.evaluate((value) => {
     const nodes = [...document.querySelectorAll('button')]
-    // Composer option buttons embed a primary label span plus a hint span;
-    // match the primary label, falling back to whole-text equality.
     const node = nodes.find(b => b.querySelector('span')?.textContent?.trim() === value)
       || nodes.find(b => b.textContent?.trim() === value)
     if (!node) return false
@@ -121,16 +125,13 @@ try {
     await openPost.click()
 
     await page.waitForSelector('button', { visible: true })
-    await clickExactButton('Photo post')
+    await clickExactButton('Photo')
 
-    // Hidden file input inside the composer's media picker shell.
+    // The hidden file input inside the composer's media picker shell.
     const input = await page.waitForSelector('input[type="file"]', { hidden: true, timeout: 15000 })
     await input.uploadFile(fixture)
 
-    // Applied file shows its preview with an Adjust affordance.
-    await page.waitForSelector('button[aria-label="Adjust image"]', { visible: true })
-    await page.click('button[aria-label="Adjust image"]')
-
+    // Picking media opens the IG-style edit screen automatically.
     await page.waitForSelector('[data-testid="image-adjuster-save"]', { visible: true })
     await page.waitForSelector(`[data-testid="image-adjuster-aspect-${testCase.id}"]`, { visible: true })
     await page.click(`[data-testid="image-adjuster-aspect-${testCase.id}"]`)
@@ -139,9 +140,9 @@ try {
     }
     await page.click('[data-testid="image-adjuster-save"]')
 
-    // Composer preview now carries the exported JPEG.
-    await page.waitForSelector('img[alt="Preview"]', { visible: true })
-    const preview = await waitForImageDimensions('img[alt="Preview"]')
+    // Composer preview now carries the exported JPEG — the canvas is the review.
+    await page.waitForSelector('img[alt="Selected media preview"]', { visible: true })
+    const preview = await waitForImageDimensions('img[alt="Selected media preview"]')
     assert.equal(preview.mime, 'image/jpeg', `${testCase.label} export is not JPEG: ${preview.mime}`)
     const previewRatio = preview.width / preview.height
     const pixels = await inspectExportPixels(preview.src)
@@ -152,19 +153,7 @@ try {
     assert.ok(Math.abs(previewRatio - testCase.ratio) < 0.01,
       `${testCase.label} Preview ratio mismatch: ${preview.width}x${preview.height} = ${previewRatio}`)
 
-    await clickExactButton('Preview')
-    await page.waitForSelector('img[alt="Post preview"]', { visible: true })
-
-    const details = await waitForImageDimensions('img[alt="Post preview"]')
-    assert.equal(details.mime, 'image/jpeg', `${testCase.label} Details preview is not the exported JPEG: ${details.mime}`)
-    const detailsRatio = details.width / details.height
-
-    assert.equal(details.width, preview.width, `${testCase.label} Details width differs from Preview`)
-    assert.equal(details.height, preview.height, `${testCase.label} Details height differs from Preview`)
-    assert.ok(Math.abs(detailsRatio - testCase.ratio) < 0.01,
-      `${testCase.label} Details ratio mismatch: ${details.width}x${details.height} = ${detailsRatio}`)
-
-    console.log(`PASS ${testCase.label}: ${preview.width}x${preview.height}; border/content pixel checks passed; Preview and Details match`)
+    console.log(`PASS ${testCase.label}: ${preview.width}x${preview.height}; border/content pixel checks passed`)
   }
 
   console.log('PASS ImageAdjuster editor flow: Original, Square, Tall portrait, Portrait and Wide, plus 90°/180° rotated cases, including pixel-level border/content checks')

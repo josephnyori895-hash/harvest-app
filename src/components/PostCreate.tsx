@@ -44,8 +44,11 @@ const captions: Record<ContentType, string> = {
 }
 const STORY_DURATIONS = [3, 5, 8, 12]
 
-/** Portrait canvas for stories and reels, feed-shaped for photo posts. */
+/** Portrait canvas for stories and reels; photo posts show their natural
+ *  ratio (clamped to the feed's rendering band) so nothing is letterboxed. */
 const stageRatio = (type: ContentType) => (type === 'story' || type === 'video' ? '9 / 16' : '4 / 5')
+// Feed parity band — FeedImagePreview clamps to exactly these limits.
+const clampStageRatio = (r: number) => Math.min(Math.max(r, 0.8), 1.91)
 
 export default function PostCreate({ onDone, initialType }: Props) {
   const { role, isVerified, isAdmin } = useAuth()
@@ -83,6 +86,9 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const [musicLoading, setMusicLoading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // Natural ratio of the previewed image, so the canvas matches the exact
+  // geometry the feed will render — no black/white letterbox around a photo.
+  const [imgRatio, setImgRatio] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [adjusting, setAdjusting] = useState(false)
@@ -133,6 +139,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
     const tooBig = uploadTooLarge(serverTypeOf(f), f.size)
     if (tooBig) { setNotice(tooBig); return }
     setNotice('')
+    setImgRatio(null)
     // Photos and videos use the same edit-first flow. Videos let the user pick
     // a cover frame without changing the original video.
     if (f.type.startsWith('image/')) {
@@ -178,7 +185,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
   const resetFor = (next: ContentType) => {
     setType(next); setFile(null); setPreviewUrl(null); setMusicTrack(null)
-    setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice('')
+    setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null)
   }
 
   const submit = async () => {
@@ -324,14 +331,22 @@ export default function PostCreate({ onDone, initialType }: Props) {
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
               className={`relative w-full overflow-hidden bg-surface-sunken ${dragging ? 'ring-2 ring-inset ring-accent' : ''}`}
-              style={{ aspectRatio: stageRatio(type), maxHeight: '62vh' }}
+              style={{ aspectRatio: (type === 'post' && imgRatio) ? String(clampStageRatio(imgRatio)) : stageRatio(type), maxHeight: '62vh' }}
             >
               {previewUrl ? (
                 <>
                   {file?.type.startsWith('video/') ? (
-                    <video src={previewUrl} controls playsInline preload="metadata" className="h-full w-full bg-surface-sunken object-contain" />
+                    <video src={previewUrl} controls playsInline preload="metadata" className="h-full w-full object-cover" />
                   ) : (
-                    <img src={previewUrl} alt="Selected media preview" className="h-full w-full object-contain" />
+                    <img
+                      src={previewUrl}
+                      alt="Selected media preview"
+                      className="h-full w-full object-cover"
+                      onLoad={e => {
+                        const im = e.currentTarget
+                        if (im.naturalWidth && im.naturalHeight) setImgRatio(im.naturalWidth / im.naturalHeight)
+                      }}
+                    />
                   )}
                   <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3">
                     <button

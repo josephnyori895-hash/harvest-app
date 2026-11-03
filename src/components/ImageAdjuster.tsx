@@ -1,27 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { FILTERS, lookCss } from '../lib/imageFilters'
 
-// ImageAdjuster — Harvest Family photo adjustments.
-// Drag to reposition, pinch or slider to zoom, 90° rotate, and crop presets
-// (original / square / portrait / wide). "Save" bakes the adjustments
-// into a JPEG blob that replaces the picked file before upload, so the server
-// receives exactly what the user sees.
+// ImageAdjuster — Harvest Family photo editing, modelled on Instagram's create
+// screen: a dark immersive canvas that fills the width, two tabs (Filters ·
+// Edit), zoom-to-fill so the photo always covers its crop and never shows
+// letterbox bars, and clips + filters that bake into the exported JPEG so the
+// server receives exactly what the member saw.
 //
 // Pure-canvas implementation (no external libs) so it works in the APK WebView.
 
 export type AspectPreset = 'original' | '1:1' | '3:4' | '4:5' | '16:9'
 
-const PRESETS: { id: AspectPreset; label: string; box: string; ratio: number | null }[] = [
-  { id: 'original', label: 'Original', box: 'w-6 h-6', ratio: null },
-  { id: '1:1', label: 'Square', box: 'w-6 h-6', ratio: 1 },
-  { id: '3:4', label: 'Tall portrait', box: 'w-5 h-6', ratio: 3 / 4 },
-  { id: '4:5', label: 'Portrait', box: 'w-5 h-6', ratio: 4 / 5 },
-  { id: '16:9', label: 'Wide', box: 'w-7 h-4', ratio: 16 / 9 },
+const PRESETS: { id: AspectPreset; label: string; ratio: number | null }[] = [
+  { id: 'original', label: 'Original', ratio: null },
+  { id: '1:1', label: 'Square', ratio: 1 },
+  { id: '3:4', label: 'Tall portrait', ratio: 3 / 4 },
+  { id: '4:5', label: 'Portrait', ratio: 4 / 5 },
+  { id: '16:9', label: 'Wide', ratio: 16 / 9 },
 ]
 
 type Transform = { x: number; y: number; scale: number; rotation: number }
 
 const MIN_SCALE = 1
 const MAX_SCALE = 5
+// Feed parity: a post never renders outside this ratio band, so a crop outside
+// it would be re-cropped by the feed — a look the editor would be lying about.
+const MIN_RATIO = 0.8
+const MAX_RATIO = 1.91
 
 export default function ImageAdjuster({
   file,
@@ -35,10 +40,14 @@ export default function ImageAdjuster({
   const [srcUrl, setSrcUrl] = useState<string | null>(null)
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null)
   const [aspect, setAspect] = useState<AspectPreset>('original')
+  const [look, setLook] = useState('Original')
+  // Instagram-style intensity for the active look: 0 = original, 1 = full effect.
+  const [intensity, setIntensity] = useState(1)
+  const [tab, setTab] = useState<'filters' | 'edit'>('filters')
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1, rotation: 0 })
   const [zoom, setZoom] = useState(1)
-  const [rotating, setRotating] = useState(false)
-  const viewportRef = useRef<HTMLDivElement>(null)
+  const [saving, setSaving] = useState(false)
+  const stageRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const pinchRef = useRef<{ dist: number; baseScale: number } | null>(null)
 
@@ -51,55 +60,37 @@ export default function ImageAdjuster({
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  const viewportSize = useCallback(() => {
-    const el = viewportRef.current
+  const stageSize = useCallback(() => {
+    const el = stageRef.current
     if (!el) return { vw: 0, vh: 0 }
     return { vw: el.clientWidth, vh: el.clientHeight }
   }, [])
 
-  const activeRatio = PRESETS.find(p => p.id === aspect)?.ratio ?? null
-
-  const cropSize = useCallback((vw: number, vh: number, ratio: number | null) => {
-    if (!vw || !vh) return { cw: vw, ch: vh }
-    const target = ratio ?? (imgSize ? imgSize.w / imgSize.h : vw / vh)
-    return vw / vh > target
-      ? { cw: vh * target, ch: vh }
-      : { cw: vw, ch: vw / target }
-  }, [imgSize])
+  // The crop region the export bakes: the stage area itself (zoom-to-fill —
+  // the photo always covers it, nothing is visible but photo).
+  const activeRatio: number | null = PRESETS.find(p => p.id === aspect)?.ratio ?? null
+  const naturalRatio = imgSize ? imgSize.w / imgSize.h : 4 / 5
 
   const clampTransform = useCallback((t: Transform): Transform => {
     if (!imgSize) return t
-    const { vw, vh } = viewportSize()
+    const { vw, vh } = stageSize()
     if (!vw || !vh) return t
     const rotationDegrees = ((t.rotation % 360) + 360) % 360
     const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
-    const fit = Math.max(cw / iw, ch / ih) || 1
+    const fit = Math.max(vw / iw, vh / ih) || 1
     const dw = iw * fit * t.scale
     const dh = ih * fit * t.scale
-    const maxX = Math.max((dw - cw) / 2, 0)
-    const maxY = Math.max((dh - ch) / 2, 0)
+    const maxX = Math.max((dw - vw) / 2, 0)
+    const maxY = Math.max((dh - vh) / 2, 0)
     return {
       ...t,
       scale: Math.min(Math.max(t.scale, MIN_SCALE), MAX_SCALE),
       x: Math.min(Math.max(t.x, -maxX), maxX),
       y: Math.min(Math.max(t.y, -maxY), maxY),
     }
-  }, [imgSize, viewportSize, cropSize, activeRatio])
-
-  const minScaleFor = useCallback(() => {
-    if (!imgSize) return 1
-    const { vw, vh } = viewportSize()
-    if (!vw || !vh) return 1
-    const rotationDegrees = ((transform.rotation % 360) + 360) % 360
-    const swapped = rotationDegrees === 90 || rotationDegrees === 270
-    const iw = swapped ? imgSize.h : imgSize.w
-    const ih = swapped ? imgSize.w : imgSize.h
-    const { cw, ch } = cropSize(vw, vh, activeRatio ?? iw / ih)
-    return Math.max(cw / iw, ch / ih) || 1
-  }, [imgSize, transform.rotation, viewportSize, cropSize, activeRatio])
+  }, [imgSize, stageSize])
 
   useEffect(() => { setZoom(transform.scale) }, [transform.scale])
 
@@ -109,6 +100,8 @@ export default function ImageAdjuster({
 
   const reset = () => {
     setTransform({ x: 0, y: 0, scale: 1, rotation: 0 })
+    setLook('Original')
+    setIntensity(1)
     setZoom(1)
   }
 
@@ -140,8 +133,7 @@ export default function ImageAdjuster({
   const onDoubleClick = () => reset()
 
   const applyZoomSlider = (v: number) => {
-    const min = minScaleFor()
-    setTransform(t => clampTransform({ ...t, scale: Math.max(v, min) }))
+    setTransform(t => clampTransform({ ...t, scale: Math.max(v, MIN_SCALE) }))
   }
 
   const exportBlob = async (): Promise<Blob> => {
@@ -149,151 +141,200 @@ export default function ImageAdjuster({
     const img = new Image()
     await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error('could not read image')); img.src = srcUrl })
 
-    const { vw, vh } = viewportSize()
+    const { vw, vh } = stageSize()
     const rotationDegrees = ((transform.rotation % 360) + 360) % 360
-    const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
-    const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
-    const outW = Math.max(1, Math.round(cw >= ch ? 1440 : 1440 * cw / ch))
-    const outH = Math.max(1, Math.round(ch > cw ? 1440 : 1440 * ch / cw))
-    const canvas = document.createElement('canvas')
-    canvas.width = outW; canvas.height = outH
-    const ctx = canvas.getContext('2d')!
-    // Paper-cream under-layer, never black: coverage seams (sub-pixel cracks at
-    // the crop boundary, amplified by JPEG) must read as paper, not as bars.
-    ctx.fillStyle = '#F4E8D0'; ctx.fillRect(0, 0, outW, outH)
-
     const swapped = rotationDegrees === 90 || rotationDegrees === 270
     const iw = swapped ? imgSize.h : imgSize.w
     const ih = swapped ? imgSize.w : imgSize.h
-    // Cover with a small slack so boundary arithmetic never exposes a
-    // sub-pixel crack after rounding + JPEG (the black-bar client report).
-    const minScale = (Math.max(cw / iw, ch / ih) || 1) * 1.002
+    // Out ratio: the preset, or for Original the uncropped source ratio.
+    const outRatio = activeRatio ?? (iw / ih)
+    let outW: number, outH: number
+    if (outRatio >= 1) { outW = 1440; outH = Math.max(1, Math.round(1440 / outRatio)) }
+    else { outH = 1440; outW = Math.max(1, Math.round(1440 * outRatio)) }
+    const canvas = document.createElement('canvas')
+    canvas.width = outW; canvas.height = outH
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+    // Defensive under-fill: coverage arithmetic has a 1.002 slack, so this must
+    // never be visible — but if a rounding edge ever shows, it reads as paper,
+    // not as the black-bar client bug.
+    ctx.fillStyle = '#F4E8D0'; ctx.fillRect(0, 0, outW, outH)
+
+    const minScale = (Math.max(outW / iw, outH / ih) || 1) * 1.002
     const drawW = iw * minScale * transform.scale
     const drawH = ih * minScale * transform.scale
-
     ctx.save()
-    ctx.translate(outW / 2 + transform.x * (outW / cw), outH / 2 + transform.y * (outH / ch))
+    const lookFilter = lookCss(look, intensity)
+    if (lookFilter !== 'none' && 'filter' in ctx) ctx.filter = lookFilter
+    ctx.translate(outW / 2 + transform.x * (outW / vw), outH / 2 + transform.y * (outH / vh))
     ctx.rotate((rotationDegrees * Math.PI) / 180)
     const drawnW = swapped ? drawH : drawW
     const drawnH = swapped ? drawW : drawH
     ctx.drawImage(img, -drawnW / 2, -drawnH / 2, drawnW, drawnH)
     ctx.restore()
 
-    const long = Math.max(outW, outH)
-    let final = canvas
-    if (long > 1440) {
-      const k = 1440 / long
-      const c2 = document.createElement('canvas')
-      c2.width = Math.round(outW * k); c2.height = Math.round(outH * k)
-      c2.getContext('2d')!.drawImage(canvas, 0, 0, c2.width, c2.height)
-      final = c2
-    }
-    const blob: Blob = await new Promise(res => final.toBlob(b => res(b!), 'image/jpeg', 0.9))
+    const blob: Blob = await new Promise(res => canvas.toBlob(b => res(b!), 'image/jpeg', 0.9))
     return blob
   }
 
   const save = async () => {
     try {
-      setRotating(true)
+      setSaving(true)
       const blob = await exportBlob()
       onDone(blob, URL.createObjectURL(blob))
     } finally {
-      setRotating(false)
+      setSaving(false)
     }
   }
 
+  const croppedDisplayRatio = activeRatio ?? Math.min(Math.max(naturalRatio, MIN_RATIO), MAX_RATIO)
+
   return (
-    <div className="fixed inset-0 z-[60] bg-surface flex flex-col" role="dialog" aria-label="Adjust image">
-      <div className="h-14 shrink-0 flex items-center justify-between px-3 border-b border-line bg-surface">
-        <button onClick={onCancel} className="text-sm text-stone-300 px-2 py-2" aria-label="Cancel">✕ Cancel</button>
-        <p className="text-sm font-bold text-white">Adjust</p>
-        <button onClick={() => void save()} disabled={rotating || !imgSize} className="text-sm font-bold text-[#C4B5FD] px-2 py-2 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">Save</button>
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-label="Adjust image">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-2">
+        <button onClick={onCancel} className="grid h-10 w-10 place-items-center rounded-full" aria-label="Cancel">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <p className="text-base font-extrabold">Edit photo</p>
+        <button onClick={() => void save()} disabled={saving || !imgSize} className="px-2 text-base font-extrabold text-sky-400 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">
+          {saving ? 'Saving…' : 'Done'}
+        </button>
       </div>
 
-      <div
-        ref={viewportRef}
-        className="relative flex-1 overflow-hidden touch-none select-none bg-surface-sunken"
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
-        style={{ cursor: 'grab' }}
-      >
-        {srcUrl && imgSize && (
-          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+      {/* stage — zoom-to-fill: the photo covers the crop exactly, edge to edge */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center px-0 py-4">
+        <div
+          ref={stageRef}
+          className="relative overflow-hidden bg-surface-sunken touch-none select-none"
+          style={{ aspectRatio: String(croppedDisplayRatio), maxWidth: '100%', maxHeight: '100%', width: '100%' }}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+          onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
+        >
+          {srcUrl && imgSize && (
             <img
               src={srcUrl}
               alt=""
               draggable={false}
-              className="max-w-none pointer-events-none"
+              className="absolute left-1/2 top-1/2 max-w-none pointer-events-none"
               style={{
+                filter: lookCss(look, intensity) === 'none' ? undefined : lookCss(look, intensity),
                 width: (() => {
+                  const { vw, vh } = stageSize()
+                  if (!vw || !vh) return 'auto'
                   const rotationDegrees = ((transform.rotation % 360) + 360) % 360
                   const swapped = rotationDegrees === 90 || rotationDegrees === 270
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
-                  const { vw, vh } = viewportSize()
-                  const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
-                  const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
-                  const minScale = Math.max(cw / iw, ch / ih) || 1
+                  const minScale = Math.max(vw / iw, vh / ih) || 1
                   return iw * minScale * transform.scale
                 })(),
                 height: (() => {
+                  const { vw, vh } = stageSize()
+                  if (!vw || !vh) return 'auto'
                   const rotationDegrees = ((transform.rotation % 360) + 360) % 360
                   const swapped = rotationDegrees === 90 || rotationDegrees === 270
                   const iw = swapped ? imgSize.h : imgSize.w
                   const ih = swapped ? imgSize.w : imgSize.h
-                  const { vw, vh } = viewportSize()
-                  const sourceRatio = rotationDegrees === 90 || rotationDegrees === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h
-                  const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
-                  const minScale = Math.max(cw / iw, ch / ih) || 1
+                  const minScale = Math.max(vw / iw, vh / ih) || 1
                   return ih * minScale * transform.scale
                 })(),
-                transform: `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
+                transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
                 transition: dragRef.current ? 'none' : 'width 0.15s, height 0.15s',
               }}
             />
-          </div>
-        )}
-        {(() => {
-          const { vw, vh } = viewportSize()
-          const rotated = ((transform.rotation % 360) + 360) % 360
-          const sourceRatio = imgSize ? (rotated === 90 || rotated === 270 ? imgSize.h / imgSize.w : imgSize.w / imgSize.h) : vw / vh
-          const { cw, ch } = cropSize(vw, vh, activeRatio ?? sourceRatio)
-          return <div className="absolute pointer-events-none border-2 border-white/90" data-testid="image-adjuster-crop-frame" style={{ width: cw, height: ch, left: (vw - cw) / 2, top: (vh - ch) / 2 }}>
-            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">{Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/25" />)}</div>
-          </div>
-        })()}
+          )}
+          {tab === 'edit' && (
+            <div className="pointer-events-none absolute inset-0" data-testid="image-adjuster-crop-frame">
+              <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
+                {Array.from({ length: 9 }).map((_, i) => <div key={i} className="border border-white/25" />)}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="shrink-0 border-t border-line px-4 pt-4 pb-[max(1rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-4 bg-surface">
-        <div className="flex items-center gap-3">
-          <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍−</span>
-          <input
-            type="range" min={1} max={5} step={0.01} value={zoom}
-            onChange={e => applyZoomSlider(Number(e.target.value))}
-            className="flex-1 accent-sky-400"
-            aria-label="Zoom"
-          />
-          <span className="text-lg text-stone-400 w-6" aria-hidden="true">🔍＋</span>
+      {/* tabs — Filters | Edit, like Instagram's own edit bottom drawer */}
+      <div className="shrink-0 border-t border-white/10 bg-black pb-[max(0.75rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))]">
+        <div className="flex items-center justify-center gap-6 px-4 pt-3" role="tablist" aria-label="Edit tools">
+          <button role="tab" aria-selected={tab === 'filters'} onClick={() => setTab('filters')} className={`rounded px-2 pb-2 pt-1 text-xs font-extrabold uppercase tracking-[0.16em] ${tab === 'filters' ? 'text-white' : 'text-white/40'}`}>Filters</button>
+          <button role="tab" aria-selected={tab === 'edit'} onClick={() => setTab('edit')} className={`rounded px-2 pb-2 pt-1 text-xs font-extrabold uppercase tracking-[0.16em] ${tab === 'edit' ? 'text-white' : 'text-white/40'}`}>Edit</button>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={reset} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Reset image adjustments">Reset</button>
-          <button onClick={rotate} className="shrink-0 px-3 py-2 rounded-xl bg-white/5 text-stone-300 text-[11px] font-bold" aria-label="Rotate image" data-testid="image-adjuster-rotate">↻ Rotate</button>
-          <div className="flex gap-2 overflow-x-auto min-w-0">
-            {PRESETS.map(p => (
+
+        {tab === 'filters' && (
+          <div className="flex min-w-0 gap-2 overflow-x-auto px-3 pb-1 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {FILTERS.map(name => (
               <button
-                key={p.id}
-                onClick={() => { setAspect(p.id); setTransform({ x: 0, y: 0, scale: 1, rotation: 0 }); setZoom(1) }}
-                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
-                aria-pressed={aspect === p.id}
-                data-testid={`image-adjuster-aspect-${p.id}`}
+                key={name}
+                onClick={() => { setLook(name); setIntensity(1) }}
+                aria-pressed={look === name}
+                className="flex w-16 shrink-0 flex-col items-center gap-1"
               >
-                <span className={`${p.box} rounded-sm border-2 ${aspect === p.id ? 'border-sky-400' : 'border-stone-500'}`} />
-                <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-sky-400' : 'text-stone-400'}`}>{p.label}</span>
+                <span className={`block h-16 w-16 overflow-hidden rounded-xl ring-2 ${look === name ? 'ring-sky-400' : 'ring-white/10'}`}>
+                  {srcUrl && imgSize && (
+                    <img
+                      src={srcUrl}
+                      alt=""
+                      draggable={false}
+                      className="h-full w-full object-cover"
+                      style={{ filter: lookCss(name) === 'none' ? undefined : lookCss(name) }}
+                    />
+                  )}
+                </span>
+                <span className={`max-w-full truncate text-[10px] font-semibold ${look === name ? 'text-white' : 'text-white/55'}`}>{name}</span>
               </button>
             ))}
           </div>
-        </div>
-        <p className="text-[10px] text-stone-500 text-center">Drag to move · pinch or slide to zoom · double-tap to reset</p>
+        )}
+
+        {tab === 'filters' && look !== 'Original' && (
+          <div className="flex items-center gap-3 px-4 pb-1 pt-1" data-testid="image-adjuster-intensity-row">
+            <span className="w-14 shrink-0 text-2xs font-bold text-white/45" aria-hidden="true">Intensity</span>
+            <input
+              type="range" min={0} max={100} step={1} value={Math.round(intensity * 100)}
+              onChange={e => setIntensity(Number(e.target.value) / 100)}
+              className="min-w-0 flex-1 accent-sky-400"
+              aria-label="Filter intensity"
+              data-testid="image-adjuster-intensity"
+            />
+            <span className="w-9 shrink-0 text-right text-2xs font-bold text-white/70" aria-hidden="true">{Math.round(intensity * 100)}%</span>
+          </div>
+        )}
+
+        {tab === 'edit' && (
+          <div className="space-y-3 px-4 pb-2 pt-3">
+            <div className="flex items-center gap-3">
+              <span className="text-2xs font-bold text-white/60" aria-hidden="true">−</span>
+              <input
+                type="range" min={MIN_SCALE} max={MAX_SCALE} step={0.01} value={zoom}
+                onChange={e => applyZoomSlider(Number(e.target.value))}
+                className="flex-1 accent-sky-400"
+                aria-label="Zoom"
+              />
+              <span className="text-2xs font-bold text-white/60" aria-hidden="true">+</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={reset} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80" aria-label="Reset image adjustments">Reset</button>
+              <button onClick={rotate} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80" aria-label="Rotate image" data-testid="image-adjuster-rotate">Rotate</button>
+              <div className="flex min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {PRESETS.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setAspect(p.id); setTransform({ x: 0, y: 0, scale: 1, rotation: 0 }); setZoom(1) }}
+                    className={`flex flex-col items-center gap-1 rounded-xl px-2.5 py-1.5 ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
+                    aria-pressed={aspect === p.id}
+                    data-testid={`image-adjuster-aspect-${p.id}`}
+                  >
+                    <span
+                      className={`rounded-sm border-2 ${aspect === p.id ? 'border-sky-400' : 'border-white/45'}`}
+                      style={{ width: p.ratio == null ? 22 : p.ratio >= 1 ? 22 : Math.max(12, Math.round(22 * p.ratio)), height: p.ratio == null ? 22 : Math.round(22 / Math.max(p.ratio, 0.5)) }}
+                    />
+                    <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-white' : 'text-white/55'}`}>{p.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-center text-[10px] text-white/35">Drag to move · pinch to zoom · double-tap to reset</p>
+          </div>
+        )}
       </div>
     </div>
   )

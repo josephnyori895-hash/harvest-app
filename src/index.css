@@ -200,6 +200,19 @@ body { margin: 0; background: rgb(var(--surface)); color: rgb(var(--ink)); }
 }
 
 /* Harvest Family creation flow — directional screen motion and state feedback. */
+/* Notifications drawer: slides up over the feed on phones (the bottom bar stays
+   visible), slides in from the right as a 420px panel on desktop — Instagram's
+   notifications-over-content grammar, never a fullscreen tab swap. */
+@keyframes drawer-up { from { transform: translateY(8%); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes drawer-right { from { transform: translateX(24%); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.drawer-anim { animation: drawer-up 0.28s ease-out both; }
+@media (min-width: 1024px) {
+  .drawer-anim { animation: drawer-right 0.28s ease-out both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-anim { animation: none !important; }
+}
+
 @keyframes hfCreateForward {
   from { opacity: 0; transform: translate3d(24px, 0, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }

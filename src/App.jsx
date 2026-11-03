@@ -265,6 +265,7 @@ function InnerApp() {
   const [editProfileKey, setEditProfileKey] = useState(0)
   const [teamChat, setTeamChat] = useState(null)
   const [dmTarget, setDmTarget] = useState(null)
+  const [dmSheet, setDmSheet] = useState(false)
   const [chatReturnTab, setChatReturnTab] = useState('home')
   // A single Chat surface owns all team conversations. Departments and Chats
   // only choose the same target; they never maintain separate chat state.
@@ -435,12 +436,15 @@ function InnerApp() {
   }
 
   // 'Pray with Pastor': open a 1:1 DM with the pastor's account from Home.
+  // Instagram grammar: a DM opened from anywhere but the chat tab arrives as
+  // a slide-in layer over the current screen — never a fullscreen tab swap.
   const openDm = (user) => {
     if (!user?.id || !user?.username) return
-    setChatReturnTab(tab)
     setTeamChat(null)
     setDmTarget({ id: String(user.id), username: String(user.username), name: user.name || user.username })
-    setTab('chat')
+    if (tab === 'chat') { setChatReturnTab('chat'); return }
+    setChatReturnTab(tab)
+    setDmSheet(true)
   }
 
   // Route notification taps (DM / group / department / tab deep links).
@@ -525,6 +529,8 @@ function InnerApp() {
         window.dispatchEvent(new CustomEvent('harvest:nested-back', { detail: nestedBack }))
         if (nestedBack.handled) return
         if (userList) return setUserList(null)
+        if (dmSheet) return setDmSheet(false)
+        if (showNotifications) return setShowNotifications(false)
         if (viewUser) { setViewUser(null); return setTab(backTarget) }
         if (tab === 'editprofile') return setTab('profile')
         if ((tab === 'groups' || tab === 'departments') && chatReturnTab === 'chat') return setTab('chat')
@@ -534,7 +540,7 @@ function InnerApp() {
       }).then(s => { sub = s })
     }).catch(() => { /* web build: no hardware back */ })
     return () => { disposed = true; try { sub?.remove?.() } catch {} }
-  }, [onboarded, tab, userList, viewUser, backTarget, chatReturnTab])
+  }, [onboarded, tab, userList, viewUser, backTarget, chatReturnTab, dmSheet, showNotifications])
 
   if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
 
@@ -544,7 +550,7 @@ function InnerApp() {
       <Sidebar tab={tab} setTab={handleTab} />
       {/* Fluid on phones; on desktop the content column sits beside the rail
           instead of stretching a phone layout across the whole window. */}
-      <div className="app-shell mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[760px] xl:max-w-[860px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+      <div className="app-shell relative mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[760px] xl:max-w-[860px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         <button
           type="button"
           onClick={() => setShowNotifications(v => { const next = !v; if (next) void refreshNotifications(); return next })}
@@ -561,26 +567,7 @@ function InnerApp() {
           )}
         </button>
         <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
-          {showNotifications && (
-            <NotificationsScreen
-              notifications={notifications}
-              filter={notificationFilter}
-              loading={notificationsLoading}
-              refreshing={notificationsRefreshing}
-              error={notificationsError}
-              actionError={notificationActionError}
-              unreadCount={notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0)}
-              pendingNotificationIds={notificationPendingIds}
-              markAllPending={notificationMarkAllPending}
-              onFilterChange={setNotificationFilter}
-              onNotificationPress={handleNotificationPress}
-              onRetry={() => {}}
-              onMarkAllRead={markAllNotificationsRead}
-              onDismissActionError={() => setNotificationActionError(null)}
-              onBack={() => setShowNotifications(false)}
-            />
-          )}
-          <div className={showNotifications ? 'hidden' : 'contents'}>
+          <div className="contents">
           {/* Home stays mounted when switching tabs (hidden, not unmounted) so
               scroll position and loaded feed state survive the round-trip —
               the IG feel. Other tabs still mount on demand. */}
@@ -627,6 +614,83 @@ function InnerApp() {
           </div>
         </div>
         {userList && <UserListModal type={userList.type} userId={userList.userId} users={users} onBack={()=>setUserList(null)} />}
+        {/* Instagram-style notifications: a slide-over drawer on top of the
+            feed — never a fullscreen tab swap. The feed stays mounted
+            underneath, the bottom bar stays visible, Android back closes it. */}
+        {showNotifications && (
+          <>
+          {/* Scrim lets the feed show through, dimmed — the drawer is an
+              overlay, not a screen swap. Tap the feed to dismiss. */}
+          <button
+            type="button"
+            onClick={() => setShowNotifications(false)}
+            aria-label="Close notifications"
+            data-testid="notifications-drawer-backdrop"
+            className="absolute inset-0 z-20 cursor-default bg-ink/30 backdrop-blur-[2px]"
+          />
+          {/* A floating card anchored to the right edge — inset from the top
+              bar and the bottom bar on phones, a 400px panel on wider
+              surfaces. Never edge-to-edge full height: the feed, header and
+              nav stay visible around it. */}
+          <div
+            id="notifications-drawer"
+            role="dialog"
+            aria-label="Notifications drawer"
+            className="drawer-anim absolute inset-x-2 top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+56px)] bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-2 sm:w-[400px] lg:top-[72px]"
+          >
+            <NotificationsScreen
+              notifications={notifications}
+              filter={notificationFilter}
+              loading={notificationsLoading}
+              refreshing={notificationsRefreshing}
+              error={notificationsError}
+              actionError={notificationActionError}
+              unreadCount={notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0)}
+              pendingNotificationIds={notificationPendingIds}
+              markAllPending={notificationMarkAllPending}
+              onFilterChange={setNotificationFilter}
+              onNotificationPress={handleNotificationPress}
+              onRetry={() => {}}
+              onMarkAllRead={markAllNotificationsRead}
+              onDismissActionError={() => setNotificationActionError(null)}
+              onBack={() => setShowNotifications(false)}
+            />
+          </div>
+          </>
+        )}
+        {/* Instagram DM layer: a 1:1 conversation slides in over whatever
+            the member was doing — the feed stays mounted and visible around
+            the card. The chat tab remains for the full inbox. */}
+          {dmSheet && tab !== 'chat' && (
+            <>
+            <button
+              type="button"
+              onClick={() => setDmSheet(false)}
+              aria-label="Close conversation"
+              data-testid="dm-layer-backdrop"
+              className="absolute inset-0 z-20 cursor-default bg-ink/30 backdrop-blur-[2px]"
+            />
+            <div
+              id="dm-layer"
+              role="dialog"
+              aria-label="Messages"
+              data-testid="dm-layer"
+              className="drawer-anim absolute inset-x-2 top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+56px)] bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-2 sm:w-[400px] lg:top-[72px]"
+            >
+              <Chat
+                onBack={() => setDmSheet(false)}
+                users={users}
+                teamChat={teamChat}
+                dmTarget={dmTarget}
+                onDmOpened={() => setDmTarget(null)}
+                onCloseTeam={() => setTeamChat(null)}
+                onOpenGroups={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('groups') }}
+                onOpenDepartments={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('departments') }}
+                onOpenUser={(u) => { setDmSheet(false); openProfile(u) }}
+              />
+            </div>
+            </>
+          )}
         <UploadPill />
         <NowPlayingBar onOpen={t => setTab(t)} />
         {tab !== 'chat' && <Nav tab={tab} setTab={handleTab} />}
