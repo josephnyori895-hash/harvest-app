@@ -56,6 +56,15 @@ assert.match(uploads, /if \(file\.size > CHUNK_THRESHOLD\) \{\s*\n\s*try \{\s*\n
 // A server without multipart credentials must not refuse what its proxy can
 // still carry — chunk-start 501 falls through to the presign path.
 assert.ok(/credentials are not configured/i.test(uploads), 'chunk-501 falls back to the presign path for proxy-sized files')
+
+// Binding-backed staged chunks: without S3 keys on the server the multipart
+// session runs on the R2 binding itself, so big sermons still land.
+const mediaLib = await readFile('workers/src/lib/media.js', 'utf8')
+assert.ok(mediaLib.includes('STAGED_CHUNK_PREFIX'), 'staged-chunk backend exists for credential-free servers')
+assert.match(mediaLib, /isStagedUpload/, 'staged sessions are identified by their upload id')
+assert.ok(mediaLib.includes('FixedLengthStream'), 'staged joins stream part by part, not into memory')
+assert.match(mediaLib, /purgeStaleStagedChunks/, 'abandoned staged parts are garbage-collected')
+assert.ok((await readFile('workers/src/routes/pending.js', 'utf8')).includes('purgeStaleStagedChunks'), 'the cron cleanup actually calls the purge')
 assert.match(uploads, /api\/media\/multipart\/part/, 'chunks are posted to the Worker')
 assert.match(uploads, /api\/media\/multipart\/status/, 'a retry asks which parts already landed')
 assert.match(uploads, /api\/media\/multipart\/complete/, 'parts are joined server-side')

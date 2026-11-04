@@ -388,6 +388,126 @@ export async function abortMultipartUpload(env, { key, uploadId }) {
   try { await r2Request(env, { method: 'DELETE', key, query: { uploadId } }) } catch { /* best effort */ }
 }
 
+// ── Staged chunks (no S3 credentials required) ──
+// The multipart session above is a SigV4 call against R2's S3 API, so it needs
+// account-scoped R2 keys. Without them every chunk went straight to a 501
+// "storage credentials are not configured on the server", which is a dead end
+// for a phone twice removed from any dashboard. The binding can do the same job
+// through a different route: keep each part as its own small object under
+// tmp/chunks/<uploadId>/, then join them into the final key on complete. Parts
+// stay independent, so a dropped upload resumes exactly as it does on the S3
+// path — and the R2 bucket stays a single public object per upload.
+export const STAGED_CHUNK_PREFIX = 'tmp/chunks/'
+const STAGED_ID_PREFIX = 'st_'
+
+// The id names the backend, so every later call on this session knows which one
+// it is looking at without any D1 row or extra client state.
+export const isStagedUpload = uploadId => String(uploadId || '').startsWith(STAGED_ID_PREFIX)
+export const newStagedUploadId = () => STAGED_ID_PREFIX + crypto.randomUUID().replace(/-/g, '')
+export const hasStorageCredentials = env => !!r2Credentials(env)
+const stagedChunkKey = (uploadId, partNumber) => `${STAGED_CHUNK_PREFIX}${uploadId}/${String(partNumber).padStart(6, '0')}`
+
+// ETags do not exist for a binding put, but the client only ever echoes them
+// back, so a size-derived value keeps the resume bookkeeping identical.
+const stagedEtag = size => `staged-${size}`
+
+export async function stageChunk(env, { uploadId, partNumber, body }) {
+  const bytes = body instanceof Uint8Array ? body : new Uint8Array(body)
+  if (!bytes.byteLength) throw Object.assign(new Error('part is empty'), { status: 400 })
+  await env.MEDIA.put(stagedChunkKey(uploadId, partNumber), bytes)
+  return { etag: stagedEtag(bytes.byteLength) }
+}
+
+export async function listStagedChunks(env, uploadId) {
+  const prefix = `${STAGED_CHUNK_PREFIX}${uploadId}/`
+  const parts = []
+  let cursor
+  do {
+    const listed = await env.MEDIA.list({ prefix, cursor })
+    for (const object of listed.objects || []) {
+      const partNumber = Number(String(object.key).slice(prefix.length))
+      if (partNumber) parts.push({ partNumber, etag: stagedEtag(Number(object.size) || 0), size: Number(object.size) || 0, key: object.key })
+    }
+    cursor = listed.truncated ? listed.cursor : undefined
+  } while (cursor)
+  return parts.sort((a, b) => a.partNumber - b.partNumber)
+}
+
+export async function deleteStagedChunks(env, uploadId) {
+  const keys = (await listStagedChunks(env, uploadId)).map(p => p.key)
+  // R2 accepts up to 1000 keys per delete call; a 5 GB sermon is 640 parts.
+  while (keys.length) {
+    try { await env.MEDIA.delete(keys.splice(0, 1000)) } catch { /* best effort */ }
+  }
+}
+
+export async function abortStagedChunks(env, uploadId) {
+  try { await deleteStagedChunks(env, uploadId) } catch { /* best effort */ }
+}
+
+// Join the parts into the object the app actually reads. The body is streamed
+// part by part into a FixedLengthStream, so peak memory is one part (8 MiB)
+// rather than the whole sermon — the reason a single 400 MB request could never
+// pass through a Worker. FixedLengthStream also fails the put if the assembled
+// byte count does not match, which catches a truncated part before it reaches
+// the sermons table as a broken video.
+export async function completeStagedChunks(env, { key, uploadId, contentType, ownerId }) {
+  const parts = await listStagedChunks(env, uploadId)
+  if (!parts.length) throw Object.assign(new Error('no chunks have been uploaded yet — retry the upload'), { status: 400 })
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].partNumber !== i + 1) {
+      throw Object.assign(new Error(`chunk ${i + 1} is missing — retry the upload`), { status: 409 })
+    }
+  }
+  const total = parts.reduce((n, p) => n + p.size, 0)
+  if (!total) throw Object.assign(new Error('uploaded chunks are empty — retry the upload'), { status: 400 })
+
+  const fixed = new FixedLengthStream(total)
+  const put = env.MEDIA.put(key, fixed.readable, {
+    httpMetadata: { contentType },
+    customMetadata: { ownerId: String(ownerId), uploadedAt: new Date().toISOString() },
+  })
+  const writer = fixed.writable.getWriter()
+  try {
+    for (const part of parts) {
+      const object = await env.MEDIA.get(part.key)
+      if (!object) throw Object.assign(new Error(`chunk ${part.partNumber} disappeared — retry the upload`), { status: 409 })
+      const reader = object.body.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        await writer.write(value)
+      }
+    }
+    await writer.close()
+    await put
+  } catch (e) {
+    try { await writer.abort(e) } catch { /* already closed */ }
+    try { await put } catch { /* the abort surfaces here */ }
+    // Keep the parts: the client's retry re-runs complete without re-uploading.
+    throw Object.assign(new Error(e?.message || 'could not join the uploaded chunks'), { status: e?.status || 502 })
+  }
+  await deleteStagedChunks(env, uploadId)
+  return { key, size: total }
+}
+
+// Abandoned sessions (app killed mid-upload) would otherwise sit in the bucket
+// forever. Staged parts are single-use, so anything untouched for a day is dead.
+export async function purgeStaleStagedChunks(env, olderThanMs = 24 * 3600_000) {
+  const cutoff = Date.now() - olderThanMs
+  let cursor, removed = 0
+  do {
+    const listed = await env.MEDIA.list({ prefix: STAGED_CHUNK_PREFIX, cursor })
+    const stale = (listed.objects || [])
+      .filter(o => new Date(o.uploaded || 0).getTime() < cutoff)
+      .map(o => o.key)
+      .slice(0, 1000)
+    if (stale.length) { await env.MEDIA.delete(stale); removed += stale.length }
+    cursor = listed.truncated ? listed.cursor : undefined
+  } while (cursor)
+  return removed
+}
+
 // GET /api/media/* — signed reads from R2.
 // Range handling is explicit: parse the header ourselves and pass a proper
 // {offset, length} to R2. Forwarding raw request headers used to make the

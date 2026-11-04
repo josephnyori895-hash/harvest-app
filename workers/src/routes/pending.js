@@ -2,7 +2,7 @@
 import { query } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
-import { mediaUrlOrNull } from '../lib/media.js'
+import { mediaUrlOrNull, purgeStaleStagedChunks } from '../lib/media.js'
 
 const STALE_PENDING_MS = 24 * 60 * 60 * 1000
 const REJECTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
@@ -56,7 +56,10 @@ export async function runScheduledCleanup(env) {
   const deliveriesGc = await query(env, `DELETE FROM notification_deliveries WHERE created_at < ?`, [new Date(Date.now() - 14 * 24 * 3600_000).toISOString()]).catch(() => ({ meta: {} }))
   await query(env, `DELETE FROM notification_sent_keys WHERE created_at < ?`, [new Date(Date.now() - 7 * 24 * 3600_000).toISOString()]).catch(() => {})
   await query(env, `DELETE FROM notification_devices WHERE enabled = 0 AND updated_at < ?`, [new Date(Date.now() - 90 * 24 * 3600_000).toISOString()]).catch(() => {})
-  return { cleanup, stories_purged: expired.rows.length, notification_deliveries_purged: deliveriesGc?.meta?.changes ?? 0 }
+  // Chunked-upload parts abandoned by a killed app: single-use, so a day of
+  // silence means nobody is coming back for them.
+  const staged_purged = await purgeStaleStagedChunks(env).catch(() => 0)
+  return { cleanup, stories_purged: expired.rows.length, staged_purged, notification_deliveries_purged: deliveriesGc?.meta?.changes ?? 0 }
 }
 
 export async function handlePending(request, env, ctx) {

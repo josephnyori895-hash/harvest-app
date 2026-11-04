@@ -6,6 +6,8 @@ import {
   presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT,
   mediaKeyFor, mediaSecret, createMultipartUpload, uploadMultipartPart, listMultipartParts,
   completeMultipartUpload, abortMultipartUpload, MULTIPART_PART_SIZE, MAX_PARTS,
+  isStagedUpload, newStagedUploadId, hasStorageCredentials, stageChunk, listStagedChunks,
+  completeStagedChunks, abortStagedChunks,
 } from '../lib/media.js'
 import { hmacSign, timingSafeEqualStr } from '../lib/crypto.js'
 import { hasCap } from '../lib/capabilities.js'
@@ -151,7 +153,13 @@ export async function handleMedia(request, env, ctx) {
       if (Number(rate.rows[0]?.count || 0) >= 10) return errorResponse('upload rate limit 10/min', 429)
       await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [fresh.id, new Date().toISOString()])
       const key = mediaKeyFor({ type, ext, contentType: resolvedType, idempotencyKey })
-      const uploadId = await createMultipartUpload(env, { key, contentType: resolvedType, ownerId: fresh.id })
+      // Chunked uploads must work on a deployment that has the R2 binding but no
+      // S3 API keys: without this branch every sermon over 8 MiB died at
+      // "storage credentials are not configured on the server" and the phone had
+      // no way to finish. The binding-backed session needs no credentials.
+      const uploadId = hasStorageCredentials(env)
+        ? await createMultipartUpload(env, { key, contentType: resolvedType, ownerId: fresh.id })
+        : newStagedUploadId()
       const token = await multipartToken(fresh, uploadId, key)
       return jsonResponse({ key, uploadId, token, partSize: MULTIPART_PART_SIZE, parts, contentType: resolvedType }, 201)
     } catch (e) {
@@ -185,7 +193,10 @@ export async function handleMedia(request, env, ctx) {
       return errorResponse('upload token does not match this account', 403)
     }
     try {
-      const etag = await uploadMultipartPart(env, { key, uploadId, partNumber, body: await part.arrayBuffer() })
+      const body = await part.arrayBuffer()
+      const etag = isStagedUpload(uploadId)
+        ? (await stageChunk(env, { uploadId, partNumber, body })).etag
+        : await uploadMultipartPart(env, { key, uploadId, partNumber, body })
       return jsonResponse({ partNumber, etag })
     } catch (e) {
       return errorResponse(e.message || 'part upload failed', e.status || 502)
@@ -204,7 +215,10 @@ export async function handleMedia(request, env, ctx) {
       return errorResponse('upload token does not match this account', 403)
     }
     try {
-      return jsonResponse({ parts: await listMultipartParts(env, { key, uploadId }) })
+      const parts = isStagedUpload(uploadId)
+        ? (await listStagedChunks(env, uploadId)).map(p => ({ partNumber: p.partNumber, etag: p.etag }))
+        : await listMultipartParts(env, { key, uploadId })
+      return jsonResponse({ parts })
     } catch (e) {
       return errorResponse(e.message || 'could not read upload session', e.status || 502)
     }
@@ -224,7 +238,12 @@ export async function handleMedia(request, env, ctx) {
     }
     if (!parts.length) return errorResponse('parts required', 400)
     try {
-      await completeMultipartUpload(env, { key, uploadId, parts: parts.map(p => ({ partNumber: Number(p.partNumber), etag: String(p.etag || '') })) })
+      if (isStagedUpload(uploadId)) {
+        const storedCt = contentTypeForKey(key, '')
+        await completeStagedChunks(env, { key, uploadId, contentType: storedCt, ownerId: fresh.id })
+      } else {
+        await completeMultipartUpload(env, { key, uploadId, parts: parts.map(p => ({ partNumber: Number(p.partNumber), etag: String(p.etag || '') })) })
+      }
       const head = await env.MEDIA.head(key)
       return jsonResponse({ key, size: Number(head?.size) || null })
     } catch (e) {
@@ -239,7 +258,8 @@ export async function handleMedia(request, env, ctx) {
     const key = String(body.key || '')
     const uploadId = String(body.uploadId || '')
     if (!KEY_RE.test(key) || !uploadId) return errorResponse('key and uploadId required', 400)
-    await abortMultipartUpload(env, { key, uploadId })
+    if (isStagedUpload(uploadId)) await abortStagedChunks(env, uploadId)
+    else await abortMultipartUpload(env, { key, uploadId })
     return jsonResponse({ ok: true })
   }
 
