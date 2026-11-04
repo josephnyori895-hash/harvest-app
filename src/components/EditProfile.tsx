@@ -49,8 +49,8 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
   const onAvatarFile = (e: any) => {
     const f: File | undefined = e.target.files?.[0]
     if (!f) return
-    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { setNotice('Profile photo must be a JPG, PNG or WebP image'); return }
-    if (f.size > 5 * 1024 * 1024) { setNotice('Profile photo must be under 5 MB'); return }
+    if (!/^image\//.test(f.type)) { setNotice('Profile photo must be an image'); return }
+    if (f.size > 40 * 1024 * 1024) { setNotice('That photo is too large to read — pick a smaller one'); return }
     setNotice('')
     setAvatarUploading(true)
     setSaved(false)

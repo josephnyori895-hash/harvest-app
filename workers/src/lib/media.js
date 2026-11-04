@@ -20,7 +20,7 @@ export const ALLOW_CT = {
   story: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   reel: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   track: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/x-m4a-aot', 'audio/aac', 'audio/ogg'],
-  sermon_audio: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/ogg'],
+  sermon_audio: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/wav', 'audio/x-wav'],
   // Phones hand back whatever container the camera or a download produced.
   // Matroska, 3GP and AVI are accepted because refusing them left sermon
   // uploads failing with no usable explanation; the original file keeps its

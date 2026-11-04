@@ -52,7 +52,10 @@ assert.match(uploads, /up = await xhrSend\(`\$\{API\}\$\{presign\.url\}`/, 'non-
 
 // Anything past one chunk goes through the Worker, which is what stopped the
 // single long PUT that died as an opaque XHR "network error" on mobile.
-assert.match(uploads, /if \(file\.size > CHUNK_THRESHOLD\) return uploadChunked\(/, 'big transfers are chunked')
+assert.match(uploads, /if \(file\.size > CHUNK_THRESHOLD\) \{\s*\n\s*try \{\s*\n\s*return await uploadChunked\(/, 'big transfers are chunked')
+// A server without multipart credentials must not refuse what its proxy can
+// still carry — chunk-start 501 falls through to the presign path.
+assert.ok(/credentials are not configured/i.test(uploads), 'chunk-501 falls back to the presign path for proxy-sized files')
 assert.match(uploads, /api\/media\/multipart\/part/, 'chunks are posted to the Worker')
 assert.match(uploads, /api\/media\/multipart\/status/, 'a retry asks which parts already landed')
 assert.match(uploads, /api\/media\/multipart\/complete/, 'parts are joined server-side')

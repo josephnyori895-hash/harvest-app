@@ -436,7 +436,10 @@ async function coverThumbnail(file: File | Blob, max = 720, quality = 0.85): Pro
 // presign → upload (with progress) → confirm, for any task kind.
 export async function performUpload(task: UploadTask, onPct: (p: number) => void) {
   const idempotencyKey = task.idempotency_key || newUploadId()
-  const audioKey = await uploadOne(task.file, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
+  // Avatars tile small and phones hand back HEIC 12MP originals the server does
+  // not allow — decode here and ship a compact JPEG instead.
+  const source = task.kind === 'avatar' ? await coverThumbnail(task.file, 512) : task.file
+  const audioKey = await uploadOne(source, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
   let coverKey: string | undefined
   if (task.kind === 'track' && task.cover) {
     const cover = await coverThumbnail(task.cover)
