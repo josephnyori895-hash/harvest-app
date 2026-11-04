@@ -34,6 +34,19 @@ function deadlineLabel(value: any): string {
   return `Ends ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}`
 }
 
+/** Campaign maths, shared by the project card and the project cockpit sheet so
+ *  the two can never disagree about progress, backers or pledges. */
+function projectStats(p: any) {
+  const goal = Number(p?.goal_kes) || 0
+  const raised = Number(p?.raised_kes) || 0
+  const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0
+  const remaining = Math.max(goal - raised, 0)
+  const backers = Number(p?.participants) || 0
+  const helping = (p?.takes || []).reduce((n: number, t: any) => n + (Number(t.helpers_count) || 0), 0)
+  const pledged = Number(p?.committed_kes) || 0
+  return { goal, raised, pct, remaining, backers, helping, pledged }
+}
+
 function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; onCreated?: (p:any) => void; onUpdated?: (p:any) => void }) {
   const [name,setName]=useState<string>(initial?.name !== undefined ? initial.name : '')
   const [description,setDescription]=useState<string>(initial?.description !== undefined ? initial.description : '')
@@ -253,7 +266,7 @@ export default function Give() {
   // Money actions are never silent: a failed history load or a status message
   // that lands off-screen is announced as a toast as well as rendered inline.
   useEffect(() => { if (historyError) showToast(historyError, 'error', 6000) }, [historyError])
-  useEffect(() => { if (message) showToast(message, message.startsWith('✅') ? 'success' : 'info', 6000) }, [message])
+  useEffect(() => { if (message) showToast(message, 'info', 6000) }, [message])
 
   useEffect(() => {
     if (!apiEnabled) return
@@ -284,8 +297,8 @@ export default function Give() {
         if (tx && tx.status !== 'pending') {
           setPollingId(null)
           if (tx.status === 'completed') {
-            showToast(`Giving received — thank you! 🙏 Receipt ${tx.receipt_number || ''}`.trim(), 'success')
-            setMessage('✅ Your gift has been received. Asante sana!')
+            showToast(`Giving received — thank you! Receipt ${tx.receipt_number || ''}`.trim(), 'success')
+            setMessage('Your gift has been received. Asante sana!')
           } else if (tx.status === 'failed') {
             setMessage('The M-Pesa payment did not go through. You can try again below.')
           }
@@ -311,6 +324,24 @@ export default function Give() {
     setTakeEntity(project?.mine_take ? project.mine_take.name : '')
     setTakeJoinId(project?.mine_take ? String(project.mine_take.take_id) : '')
     setTakeNote('')
+  }
+
+  // Sharing: the native sheet on Android/iOS, the clipboard everywhere else.
+  // A cancelled share sheet is not a failure; a real one must be visible.
+  const shareProject = async (p: any) => {
+    const url = `${window.location.origin}/?project=${encodeURIComponent(String(p?.id || ''))}`
+    const goal = Number(p?.goal_kes) || 0
+    const raised = Number(p?.raised_kes) || 0
+    const text = `${p?.name || 'Church project'} — KES ${raised.toLocaleString()} raised of KES ${goal.toLocaleString()}. Join us.`
+    try {
+      if (navigator.share) { await navigator.share({ title: String(p?.name || 'Church project'), text, url }); return }
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
+      await navigator.clipboard.writeText(`${text} ${url}`)
+      showToast('Project link copied — share it anywhere', 'success')
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return
+      showToast('Could not share the project — copy the link from your browser instead', 'error')
+    }
   }
 
   const saveTeamTake = async () => {
@@ -504,14 +535,164 @@ export default function Give() {
         </div>
       </>))}
 
-      {selectedProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSelectedProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5" onClick={e => e.stopPropagation()}>{selectedProject.image_url && <img src={selectedProject.image_url} alt="" loading="lazy" referrerPolicy="no-referrer" className="mb-4 aspect-[16/9] w-full rounded-2xl object-cover" />}<div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] uppercase tracking-[0.16em] text-accent font-extrabold">Project · {selectedProject.status}</p><h2 className="text-xl font-extrabold mt-1 truncate">{selectedProject.name}</h2><p className="mt-1 text-2xs font-bold text-ink-muted">{deadlineLabel(selectedProject.deadline)}</p></div><button type="button" onClick={() => setSelectedProject(null)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink-muted" aria-label="Close"><Icon name="close" size={16} /></button></div><p className="mt-3 text-sm text-ink-muted leading-6">{selectedProject.description}</p><div className="mt-4 rounded-2xl bg-surface-raised border border-line p-4"><div className="flex justify-between text-xs font-bold"><span>Raised</span><span>KES {Number(selectedProject.raised_kes).toLocaleString()} / {Number(selectedProject.goal_kes).toLocaleString()}</span></div><div className="mt-2 h-2 rounded-full bg-surface-sunken"><div className="h-full rounded-full bg-accent" style={{width: (selectedProject.goal_kes ? Math.min(100, selectedProject.raised_kes / selectedProject.goal_kes * 100) : 0) + '%'}} /></div><div className="mt-2 flex justify-between text-[11px] text-ink-muted"><span>{selectedProject.participants} participating</span><span>KES {Number(selectedProject.remaining_kes).toLocaleString()} remaining</span></div></div>{selectedProject.mine && <div className="mt-3 rounded-2xl bg-accent-soft p-4"><p className="text-xs font-extrabold text-accent-strong">Your project status</p><p className="mt-2 text-sm font-bold">Committed KES {Number(selectedProject.mine.commitment_kes).toLocaleString()}</p><p className="text-xs text-ink-muted">Paid KES {Number(selectedProject.mine.paid_kes).toLocaleString()} · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} remaining</p></div>}
-          {(selectedProject.takes || []).length > 0 && <div className="mt-3"><p className="text-xs font-extrabold text-accent">Team takes on this project</p>{selectedProject.takes.map((t: any) => <div key={t.id} className="mt-2 rounded-2xl bg-surface-raised border border-line p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-bold truncate">{t.name}</p><p className="text-[11px] text-ink-muted mt-0.5">{t.taken_by ? `Taken by ${t.taken_by.name || t.taken_by.username}` : 'Open'} · {t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()} pledged</p></div><button type="button" onClick={() => { setTakeKind(t.kind); setTakeJoinId(t.id); setTakeEntity(t.name); setProjectCommitment(t.mine_helper ? Number(t.mine_helper.commitment_kes) : '') }} className="shrink-0 px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">{t.mine_helper ? 'Update' : 'Help'}</button></div></div>)}</div>}
-          {isAdmin && <div className="mt-3 rounded-2xl bg-surface-raised border border-line p-3"><p className="text-xs font-extrabold text-accent">Admin controls</p>{(selectedProject.participants_list || []).length === 0 && (selectedProject.takes || []).length === 0 && <p className="text-xs text-ink-muted mt-1">No members have taken or contributed to this project yet.</p>}{(selectedProject.participants_list || []).map((u: any) => <div key={`ind-${u.username}`} className="mt-2"><p className="text-[11px] font-bold truncate">{u.name || u.username} <span className="text-ink-subtle">@{u.username}</span> · KES {Number(u.commitment_kes).toLocaleString()}</p><div className="flex gap-1.5 mt-1"><input inputMode="numeric" value={adminAmts[`ind:${u.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`ind:${u.username}`]: e.target.value }))} placeholder="New pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(u.username, `ind:${u.username}`)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Set</button><button type="button" onClick={() => void adminRemoveMember(u.username)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">✕</button></div></div>)}{(selectedProject.takes || []).map((t: any) => <div key={t.id} className="mt-3"><div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold truncate">{t.name} · {t.helpers_detail?.length || t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()}</p><div className="flex gap-1"><button type="button" onClick={() => void adminRenameTake(t)} className="px-2 py-1 rounded-lg bg-accent-soft text-accent-strong text-[10px] font-extrabold">Rename</button><button type="button" onClick={() => void adminRemoveTake(t)} className="px-2 py-1 rounded-lg bg-danger-soft border border-danger text-danger text-[10px] font-extrabold">Remove</button></div></div>{(t.helpers_detail || []).map((h: any) => <div key={`h-${t.id}-${h.username}`} className="mt-1.5"><p className="text-[10px] text-ink-muted truncate">{h.name || h.username} · KES {Number(h.commitment_kes).toLocaleString()}{h.note ? ` · "${h.note}"` : ''}</p><div className="flex gap-1.5"><input inputMode="numeric" value={adminAmts[`helper:${t.id}:${h.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`helper:${t.id}:${h.username}`]: e.target.value }))} placeholder="Set pledge" className="input-premium flex-1" /><button type="button" onClick={() => void adminSetPledge(h.username, `helper:${t.id}:${h.username}`)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Set</button></div></div>)}</div>)}</div>}
-          <div className="mt-4"><p className="text-xs font-extrabold text-accent">How do you want to take this?</p><div className="mt-2 grid grid-cols-4 gap-1.5">{(['individual','group','department','community'] as const).map(k => <button key={k} type="button" onClick={() => { setTakeKind(k); setTakeJoinId(''); setTakeEntity(k === 'individual' ? '' : takeEntity) }} className={`py-2 rounded-xl text-[11px] font-extrabold border ${takeKind === k ? 'bg-accent text-white border-accent' : 'bg-surface-raised border-line text-ink-muted'}`}>{k === 'individual' ? 'Me' : k === 'group' ? 'Group' : k === 'department' ? 'Dept' : 'Community'}</button>)}</div></div>
-          {takeKind !== 'individual' && <div className="mt-3 rounded-2xl bg-surface-raised border border-line p-3"><p className="text-xs font-bold">{takeKind === 'group' ? 'As a group' : takeKind === 'department' ? 'As a department' : 'As a community'}</p>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).length > 0 && <select value={takeJoinId} onChange={e => { const id = e.target.value; setTakeJoinId(id); const t = (selectedProject.takes || []).find((x: any) => x.id === id); setTakeEntity(t?.name || ''); if (t?.mine_helper) setProjectCommitment(Number(t.mine_helper.commitment_kes)) }} className="input-premium mt-2"><option value="">— Help an existing take —</option>{(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).map((t: any) => <option key={t.id} value={t.id}>{t.name} · KES {Number(t.total_committed_kes).toLocaleString()}</option>)}</select>}<select value={takeJoinId ? '' : takeEntity} onChange={e => setTakeEntity(e.target.value)} disabled={!!takeJoinId} className="input-premium mt-2"><option value="">{takeJoinId ? 'Helping an existing take' : `— Start a new ${takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community'} take —`}</option>{(takeKind === 'group' ? entityOptions.group : takeKind === 'department' ? entityOptions.department : entityOptions.community).filter((n: string) => !(selectedProject.takes || []).some((t: any) => t.kind === takeKind && t.name === n)).map((n: string) => <option key={n} value={n}>{n}</option>)}</select></div>}
-          <label className="block mt-4 text-xs font-bold">{takeKind === 'individual' ? 'My commitment (KES)' : takeJoinId ? 'My pledge to help (KES, 0 = helping by hand)' : 'Pledge on behalf (KES)'}<input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" /></label>
-          {takeKind === 'individual' && <label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label>}
-          <button type="button" disabled={projectBusy} onClick={() => takeKind === 'individual' ? void saveParticipation() : void saveTeamTake()} className="btn-primary-lg w-full mt-4 disabled:opacity-60">{projectBusy ? 'Saving…' : takeKind === 'individual' ? 'Save participation' : takeJoinId ? 'Save my help' : 'Take as ' + (takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community')}</button><button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="w-full mt-2 py-3 rounded-xl border border-line bg-surface-raised text-sm font-extrabold">Give toward this project</button></div></div>}
+      {selectedProject && (() => {
+        const s = projectStats(selectedProject)
+        const backers = selectedProject.participants_list || []
+        return <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 backdrop-blur-sm" onClick={() => setSelectedProject(null)}>
+          <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-surface shadow-raised" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${selectedProject.name} project`}>
+            {/* Campaign hero: the cover is the whole story, so the status, name
+                and deadline sit on it instead of in a header bar above it. */}
+            <div className="relative">
+              {selectedProject.image_url
+                ? <img src={selectedProject.image_url} alt="" loading="lazy" referrerPolicy="no-referrer" className="h-48 w-full object-cover" />
+                : <div className="h-32 w-full bg-gradient-to-br from-accent to-accent-strong" />}
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/90 via-ink/35 to-ink/10" />
+              <button type="button" onClick={() => setSelectedProject(null)} className="absolute right-3 top-3 grid h-10 w-10 place-items-center rounded-full bg-ink/50 text-white backdrop-blur" aria-label="Close project">
+                <Icon name="close" size={17} />
+              </button>
+              <div className="absolute inset-x-0 bottom-0 p-4">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-gold px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-ink">
+                  {selectedProject.status === 'active' ? 'Active project' : selectedProject.status === 'upcoming' ? 'Starting soon' : String(selectedProject.status || 'project')}
+                </span>
+                <h2 className="mt-2 text-2xl font-extrabold leading-tight tracking-tight text-white">{selectedProject.name}</h2>
+                <p className="mt-1 text-2xs font-bold text-white/70">{deadlineLabel(selectedProject.deadline)}</p>
+              </div>
+            </div>
+
+            <div className="px-4 pb-6 pt-4">
+              {selectedProject.description && <p className="text-sm leading-6 text-ink-muted">{selectedProject.description}</p>}
+
+              <div className="mt-4 rounded-card border border-line bg-surface-raised p-4" data-testid="campaign-progress">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-ink-muted">Raised so far</p>
+                    <p className="mt-0.5 text-3xl font-extrabold leading-none tracking-tight tabular-nums">KES {s.raised.toLocaleString()}</p>
+                    <p className="mt-1 text-2xs text-ink-subtle">of KES {s.goal.toLocaleString()} goal</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-2xl font-extrabold leading-none tabular-nums text-accent">{s.pct}%</p>
+                    <p className="mt-1 text-2xs font-bold text-ink-muted">{s.remaining > 0 ? `KES ${s.remaining.toLocaleString()} to go` : 'Fully funded'}</p>
+                  </div>
+                </div>
+                <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-surface-sunken" role="progressbar" aria-valuenow={s.pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${s.pct}% of the goal raised`}>
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(s.pct, 2)}%` }} />
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-base font-extrabold leading-none tabular-nums">{s.backers}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-ink-muted">{s.backers === 1 ? 'Backer' : 'Backers'}</p>
+                  </div>
+                  <div>
+                    <p className="text-base font-extrabold leading-none tabular-nums">{s.helping}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-ink-muted">Helping</p>
+                  </div>
+                  <div>
+                    <p className="text-base font-extrabold leading-none tabular-nums">{s.pledged > 0 ? `KES ${Math.round(s.pledged).toLocaleString()}` : '—'}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-ink-muted">Pledged</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => void shareProject(selectedProject)} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface-raised text-xs font-extrabold text-ink">
+                  <Icon name="share" size={15} /> Share project
+                </button>
+                <button type="button" onClick={() => { setGivingProject(selectedProject); setSelectedProject(null); setFund('building') }} className="min-h-11 rounded-xl bg-accent text-xs font-extrabold text-white">Give now</button>
+              </div>
+
+              {selectedProject.mine && <div className="mt-3 rounded-2xl bg-accent-soft p-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-accent-strong">Your commitment</p>
+                <p className="mt-1 text-sm font-extrabold text-accent-strong">KES {Number(selectedProject.mine.commitment_kes).toLocaleString()} pledged</p>
+                <p className="mt-0.5 text-2xs text-accent-strong/80">KES {Number(selectedProject.mine.paid_kes).toLocaleString()} given · KES {Number(selectedProject.mine.remaining_kes).toLocaleString()} still to give</p>
+              </div>}
+
+              {/* Backers: names matter more than a number. Admins get the full
+                  list with pledges; members see who took the project up. */}
+              <div className="mt-3 rounded-card border border-line bg-surface-raised p-4">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-extrabold">Backers</p>
+                  <p className="text-2xs font-bold text-ink-muted">{s.backers} {s.backers === 1 ? 'member' : 'members'}</p>
+                </div>
+                {backers.length > 0 ? <div className="mt-2 space-y-1.5">{backers.slice(0, 10).map((b: any) => <div key={`backer-${b.username}`} className="flex items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-extrabold text-white">{String(b.name || b.username || '?').charAt(0).toUpperCase()}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs font-bold">{b.name || b.username}</span>
+                  <span className="shrink-0 text-2xs font-extrabold text-ink-muted">KES {Number(b.commitment_kes).toLocaleString()}</span>
+                </div>)}</div>
+                  : (selectedProject.takes || []).length > 0
+                    ? <p className="mt-2 text-2xs text-ink-muted">Taken up by the teams below — join one and your name appears here.</p>
+                    : <p className="mt-2 text-2xs text-ink-muted">No one has taken this up yet. Be the first.</p>}
+              </div>
+
+              {(selectedProject.takes || []).length > 0 && <div className="mt-3 rounded-card border border-line bg-surface-raised p-4">
+                <p className="text-xs font-extrabold">Team takes on this project</p>
+                <div className="mt-2 space-y-2">{selectedProject.takes.map((t: any) => <div key={t.id} className="rounded-xl bg-surface p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold">{t.name}</p>
+                      <p className="mt-0.5 text-2xs text-ink-muted">{t.taken_by ? `Taken by ${t.taken_by.name || t.taken_by.username}` : 'Open'} · {t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()} pledged</p>
+                    </div>
+                    <button type="button" onClick={() => { setTakeKind(t.kind); setTakeJoinId(t.id); setTakeEntity(t.name); setProjectCommitment(t.mine_helper ? Number(t.mine_helper.commitment_kes) : '') }} className="shrink-0 rounded-xl bg-accent-soft px-3 py-1.5 text-2xs font-extrabold text-accent-strong">{t.mine_helper ? 'Update' : 'Help'}</button>
+                  </div>
+                </div>)}</div>
+              </div>}
+
+              {isAdmin && <div className="mt-3 rounded-card border border-line bg-surface-raised p-4">
+                <p className="text-xs font-extrabold text-accent">Admin controls</p>
+                {(selectedProject.participants_list || []).length === 0 && (selectedProject.takes || []).length === 0 && <p className="mt-1 text-2xs text-ink-muted">No members have taken or contributed to this project yet.</p>}
+                {(selectedProject.participants_list || []).map((u: any) => <div key={`ind-${u.username}`} className="mt-2">
+                  <p className="truncate text-2xs font-bold">{u.name || u.username} <span className="text-ink-subtle">@{u.username}</span> · KES {Number(u.commitment_kes).toLocaleString()}</p>
+                  <div className="mt-1 flex gap-1.5">
+                    <input inputMode="numeric" value={adminAmts[`ind:${u.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`ind:${u.username}`]: e.target.value }))} placeholder="New pledge" aria-label={`New pledge for ${u.username}`} className="input-premium flex-1" />
+                    <button type="button" onClick={() => void adminSetPledge(u.username, `ind:${u.username}`)} className="rounded-xl bg-accent-soft px-3 py-1.5 text-2xs font-extrabold text-accent-strong">Set</button>
+                    <button type="button" onClick={() => void adminRemoveMember(u.username)} aria-label={`Remove ${u.username} from the project`} className="grid w-9 place-items-center rounded-xl border border-danger bg-danger-soft text-danger"><Icon name="close" size={13} /></button>
+                  </div>
+                </div>)}
+                {(selectedProject.takes || []).map((t: any) => <div key={t.id} className="mt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-2xs font-bold">{t.name} · {t.helpers_detail?.length || t.helpers_count} helping · KES {Number(t.total_committed_kes).toLocaleString()}</p>
+                    <div className="flex shrink-0 gap-1">
+                      <button type="button" onClick={() => void adminRenameTake(t)} className="rounded-lg bg-accent-soft px-2 py-1 text-[10px] font-extrabold text-accent-strong">Rename</button>
+                      <button type="button" onClick={() => void adminRemoveTake(t)} className="rounded-lg border border-danger bg-danger-soft px-2 py-1 text-[10px] font-extrabold text-danger">Remove</button>
+                    </div>
+                  </div>
+                  {(t.helpers_detail || []).map((h: any) => <div key={`h-${t.id}-${h.username}`} className="mt-1.5">
+                    <p className="truncate text-[10px] text-ink-muted">{h.name || h.username} · KES {Number(h.commitment_kes).toLocaleString()}{h.note ? ` · "${h.note}"` : ''}</p>
+                    <div className="flex gap-1.5">
+                      <input inputMode="numeric" value={adminAmts[`helper:${t.id}:${h.username}`] ?? ''} onChange={e => setAdminAmts(prev => ({ ...prev, [`helper:${t.id}:${h.username}`]: e.target.value }))} placeholder="Set pledge" aria-label={`Set pledge for ${h.username}`} className="input-premium flex-1" />
+                      <button type="button" onClick={() => void adminSetPledge(h.username, `helper:${t.id}:${h.username}`)} className="rounded-xl bg-accent-soft px-3 py-1.5 text-2xs font-extrabold text-accent-strong">Set</button>
+                    </div>
+                  </div>)}
+                </div>)}
+              </div>}
+
+              <div className="mt-4">
+                <p className="text-xs font-extrabold text-accent">How do you want to take this?</p>
+                <div className="mt-2 grid grid-cols-4 gap-1.5">{(['individual','group','department','community'] as const).map(k => <button key={k} type="button" onClick={() => { setTakeKind(k); setTakeJoinId(''); setTakeEntity(k === 'individual' ? '' : takeEntity) }} className={`min-h-9 rounded-xl border text-2xs font-extrabold ${takeKind === k ? 'border-accent bg-accent text-white' : 'border-line bg-surface-raised text-ink-muted'}`}>{k === 'individual' ? 'Me' : k === 'group' ? 'Group' : k === 'department' ? 'Dept' : 'Community'}</button>)}</div>
+              </div>
+
+              {takeKind !== 'individual' && <div className="mt-3 rounded-2xl border border-line bg-surface-raised p-3">
+                <p className="text-xs font-bold">{takeKind === 'group' ? 'As a group' : takeKind === 'department' ? 'As a department' : 'As a community'}</p>
+                {(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).length > 0 && <select value={takeJoinId} aria-label="Help an existing take" onChange={e => { const id = e.target.value; setTakeJoinId(id); const t = (selectedProject.takes || []).find((x: any) => x.id === id); setTakeEntity(t?.name || ''); if (t?.mine_helper) setProjectCommitment(Number(t.mine_helper.commitment_kes)) }} className="input-premium mt-2">
+                  <option value="">— Help an existing take —</option>
+                  {(selectedProject.takes || []).filter((t: any) => t.kind === takeKind).map((t: any) => <option key={t.id} value={t.id}>{t.name} · KES {Number(t.total_committed_kes).toLocaleString()}</option>)}
+                </select>}
+                <select value={takeJoinId ? '' : takeEntity} aria-label="Start a new take" onChange={e => setTakeEntity(e.target.value)} disabled={!!takeJoinId} className="input-premium mt-2">
+                  <option value="">{takeJoinId ? 'Helping an existing take' : `— Start a new ${takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community'} take —`}</option>
+                  {(takeKind === 'group' ? entityOptions.group : takeKind === 'department' ? entityOptions.department : entityOptions.community).filter((n: string) => !(selectedProject.takes || []).some((t: any) => t.kind === takeKind && t.name === n)).map((n: string) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>}
+
+              <label className="mt-4 block text-xs font-bold">{takeKind === 'individual' ? 'My commitment (KES)' : takeJoinId ? 'My pledge to help (KES, 0 = helping by hand)' : 'Pledge on behalf (KES)'}
+                <input inputMode="numeric" value={projectCommitment} onChange={e => setProjectCommitment(e.target.value === '' ? '' : Number(e.target.value))} placeholder="e.g. 10000" className="input-premium mt-2" />
+              </label>
+
+              {takeKind === 'individual' && <label className="mt-3 flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={projectReminder} onChange={e => setProjectReminder(e.target.checked)} /> Remind me about this project</label>}
+
+              <button type="button" disabled={projectBusy} onClick={() => takeKind === 'individual' ? void saveParticipation() : void saveTeamTake()} className="btn-primary-lg mt-4 w-full disabled:opacity-60">{projectBusy ? 'Saving…' : takeKind === 'individual' ? 'Save participation' : takeJoinId ? 'Save my help' : 'Take as ' + (takeKind === 'group' ? 'group' : takeKind === 'department' ? 'department' : 'community')}</button>
+            </div>
+          </div>
+        </div>
+      })()}
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-accent">Giving administration</p><h1 className="mt-1 text-2xl font-extrabold tracking-tight">Ledger &amp; methods</h1><p className="mt-1 text-2xs text-ink-muted">Payment instructions, projects and the money trail. Every change reports back.</p></div>

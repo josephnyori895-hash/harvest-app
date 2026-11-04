@@ -121,7 +121,7 @@ export default function Music() {
     try {
       void startBackgroundUpload({
         label: `music: ${title}`,
-        successMsg: `"${title}" added to the church library 🎵`,
+        successMsg: `"${title}" added to the church library`,
         task: { kind: 'track', file: audio, title, artist: artist || 'Harvest Worship', cover: cover || undefined },
       }).catch(() => {})
       setShowUpload(false); setUpFile(null); setUpCover(null); setUpTitle(''); setUpArtist(''); setUpPct(0)
@@ -262,7 +262,7 @@ export default function Music() {
     setDownloading(track.id)
     try {
       await downloadFile(track.url, `${track.title} - ${track.artist}.mp3`)
-      showToast('Downloaded ✓ Check your Downloads folder')
+      showToast('Downloaded — check your Downloads folder', 'success')
     } catch {
       try { window.open(track.url, '_blank'); showToast("Opened in browser — use the player's download there") }
       catch { showToast('Download failed — try again') }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth, type Role } from '../state/auth'
+import { Icon } from '../ui'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = import.meta.env.PROD ? import.meta.env.VITE_USE_API !== 'false' : import.meta.env.VITE_USE_API === 'true'
@@ -65,7 +66,9 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
   if (fallback) return <>{fallback}</>
   return (
     <div className="bg-surface text-ink min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-14 h-14 rounded-2xl bg-accent text-white flex items-center justify-center text-xl mb-3">🔒</div>
+      <div className="w-14 h-14 rounded-2xl bg-accent text-white flex items-center justify-center mb-3">
+        <Icon name="shield" size={24} />
+      </div>
       <h2 className="font-bold text-lg">{needAdmin ? 'Admin access required' : 'Member access required'}</h2>
       <p className="text-sm text-ink-muted mt-1 max-w-[300px]">{needAdmin ? 'Sign in with an administrator account to continue.' : 'Enter your account PIN to continue.'}</p>
       <div className="w-full max-w-[300px] mt-4 flex gap-2"><input type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" className="flex-1 bg-white border border-line rounded-2xl px-4 py-3 text-sm outline-none focus:border-accent" onKeyDown={e => e.key === 'Enter' && void tryLogin()} /><button onClick={() => void tryLogin()} className="px-5 py-3 rounded-2xl bg-accent text-white text-sm font-semibold">Unlock</button></div>

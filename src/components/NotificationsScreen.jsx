@@ -53,16 +53,18 @@ function groupByDate(items) {
   return [...groups].map(([label, notifications]) => ({ label, notifications }))
 }
 
+// A notification type is UI, so it gets a stroke icon from the design system
+// rather than an emoji glyph that renders differently on every device.
 function iconFor(type) {
-  if (type === 'group_chat') return '👥'
-  if (type === 'department_chat') return '🏛'
-  if (type === 'member_joined') return '👋'
-  if (type === 'followed_you') return '❤️'
-  if (type === 'you_followed') return '❤️'
-  if (type === 'post_like') return '♡'
-  if (type === 'post_comment') return '💬'
-  if (type === 'sermon' || type === 'reel') return '▶'
-  return '💬'
+  if (type === 'group_chat') return 'users'
+  if (type === 'department_chat') return 'building'
+  if (type === 'member_joined') return 'smile'
+  if (type === 'followed_you') return 'heart'
+  if (type === 'you_followed') return 'heart'
+  if (type === 'post_like') return 'heart'
+  if (type === 'post_comment') return 'chat'
+  if (type === 'sermon' || type === 'reel') return 'play'
+  return 'chat'
 }
 
 function Skeleton() {
@@ -84,9 +86,9 @@ function Skeleton() {
 function ActionError({ message, onDismiss }) {
   if (!message) return null
   return <div role="alert" aria-live="assertive" className="mx-4 mb-3 flex min-w-0 items-center gap-3 rounded-lg border border-red-500/15 bg-red-500/5 px-3 py-2.5">
-    <span aria-hidden="true" className="shrink-0">⚠</span>
+    <Icon name="alert" size={15} className="shrink-0 text-danger" />
     <p className="min-w-0 flex-1 text-xs font-medium text-black/70">{message}</p>
-    <button type="button" onClick={onDismiss} aria-label="Dismiss notification error" className="h-7 w-7 shrink-0 rounded-full text-black/50">×</button>
+    <button type="button" onClick={onDismiss} aria-label="Dismiss notification error" className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-muted"><Icon name="close" size={14} /></button>
   </div>
 }
 
@@ -102,7 +104,7 @@ function Item({ notification, pending, onPress }) {
     <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-black/5">
       {notification?.actor?.avatar_url
         ? <img src={notification.actor.avatar_url} alt="" className="block h-full w-full object-cover" loading="lazy" />
-        : <span className="flex h-full w-full items-center justify-center text-lg" aria-hidden="true">{iconFor(notification?.type)}</span>}
+        : <span className="flex h-full w-full items-center justify-center" aria-hidden="true"><Icon name={iconFor(notification?.type)} size={18} /></span>}
       {unread && !pending && <span aria-hidden="true" className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-red-500" />}
     </div>
     <div className="min-w-0 flex-1 overflow-hidden">

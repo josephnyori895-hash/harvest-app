@@ -4,16 +4,19 @@ import { showToast } from './Toast'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
+import { Icon, type IconName } from '../ui'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-const departmentStyle = (department: any) => {
+// Each ministry gets a stroke icon and a tint from the token palette — the
+// icon is UI, so it comes from the design system, never an emoji glyph.
+const departmentStyle = (department: any): { icon: IconName; tint: string; glow: string } => {
   const label = `${department.slug || ''} ${department.name || ''}`.toLowerCase()
-  if (/worship|praise|music|choir/.test(label)) return { icon: '🎵', tint: 'from-fuchsia-600 to-purple-700', glow: 'bg-fuchsia-500/15' }
-  if (/media|tech|sound|camera/.test(label)) return { icon: '📸', tint: 'from-sky-500 to-indigo-700', glow: 'bg-sky-500/15' }
-  if (/usher|welcome|hospitality/.test(label)) return { icon: '👋', tint: 'from-amber-400 to-orange-600', glow: 'bg-amber-400/15' }
-  if (/children|kid|youth/.test(label)) return { icon: '✨', tint: 'from-emerald-500 to-teal-700', glow: 'bg-emerald-500/15' }
-  if (/prayer|intercess/.test(label)) return { icon: '🙏', tint: 'from-violet-500 to-indigo-800', glow: 'bg-violet-500/15' }
-  return { icon: '🤝', tint: 'from-purple-600 to-indigo-800', glow: 'bg-purple-500/15' }
+  if (/worship|praise|music|choir/.test(label)) return { icon: 'music', tint: 'from-accent to-accent-strong', glow: 'bg-accent/15' }
+  if (/media|tech|sound|camera/.test(label)) return { icon: 'camera', tint: 'from-accent-strong to-ink', glow: 'bg-accent/15' }
+  if (/usher|welcome|hospitality/.test(label)) return { icon: 'smile', tint: 'from-gold to-gold-strong', glow: 'bg-gold/20' }
+  if (/children|kid|youth/.test(label)) return { icon: 'sparkle', tint: 'from-success to-accent-strong', glow: 'bg-success/15' }
+  if (/prayer|intercess/.test(label)) return { icon: 'heart', tint: 'from-accent to-gold-strong', glow: 'bg-accent/15' }
+  return { icon: 'users', tint: 'from-ink to-accent-strong', glow: 'bg-ink/10' }
 }
 
 function authHeaders() {
@@ -116,7 +119,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     try {
       const r = await fetch(`${API}/api/departments/${encodeURIComponent(slug)}/join`, { method: 'POST', headers: authHeaders() })
       if (!r.ok) throw new Error('failed')
-      showToast('Welcome to the team! 🙌')
+      showToast('Welcome to the team!')
       load()
       window.dispatchEvent(new Event('harvest:departments-updated'))
       if (openSlug === slug) openDetail(slug)
@@ -229,19 +232,19 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const DeptCard = ({ d }: { d: any }) => {
     const style = departmentStyle(d)
     return (
-    <div className="group relative w-full overflow-hidden rounded-3xl border border-line bg-white shadow-sm transition hover:border-accent/40">
+    <div className="group relative w-full overflow-hidden rounded-3xl border border-line bg-surface-raised shadow-card transition hover:border-accent/40">
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${style.tint}`} />
       <div className="relative p-4">
       <div className="flex items-start justify-between gap-3">
         <button onClick={() => openDetail(d.slug)} className="min-w-0 flex flex-1 gap-3 text-left active:opacity-70">
           <div className={`w-12 h-12 shrink-0 rounded-2xl ${style.glow} border border-line flex items-center justify-center text-2xl`}>
-            {style.icon}
+            <Icon name={style.icon} size={18} className="text-white" />
           </div>
           <div className="min-w-0 pt-0.5">
           <p className="text-sm font-bold text-ink flex items-center gap-2 truncate">
             <span className="truncate">{d.name}</span>
-            {d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold">LEADER</span>}
-            {d.joined && !d.leader && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-600 text-white font-extrabold">JOINED</span>}
+            {d.leader && <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-[10px] font-extrabold text-gold-strong">LEADER</span>}
+            {d.joined && !d.leader && <span className="rounded-full bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold text-success">JOINED</span>}
           </p>
           {d.description && <p className="text-[11px] text-ink-muted mt-1 line-clamp-2">{d.description}</p>}
           <p className="text-[10px] text-ink-muted mt-1.5 font-semibold">{d.member_count} {Number(d.member_count) === 1 ? 'person' : 'people'} serving</p>
@@ -250,7 +253,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
         <div className="shrink-0 flex flex-col items-end gap-2">
           {(d.joined || isAdmin) && onOpenDeptChat && (
             <button type="button" onClick={() => onOpenDeptChat(d.slug, d.name)} className="relative px-3 py-1.5 pr-7 rounded-full bg-accent text-white text-[10px] font-extrabold active:opacity-70">
-              💬 Chat
+              <span className="inline-flex items-center gap-1"><Icon name="chat" size={12} /> Chat</span>
               <UnreadBadge count={Number(unreadByDepartment[d.slug])} className="absolute -right-1.5 -top-1.5" />
             </button>
           )}
@@ -272,72 +275,72 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
     const canManage = isAdmin || isDepartmentLeader
     return (
-      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-ink text-white pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-stone-800 px-3 bg-ink z-10">
-          <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="text-2xl w-10 h-10" aria-label="Back">‹</button>
+      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line px-3 bg-surface z-10">
+          <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted" aria-label="Back"><Icon name="arrow-left" size={19} /></button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
-          {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold ${detail.department.joined ? 'bg-stone-800 text-stone-300 border border-stone-700' : 'bg-accent text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
-          {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="w-10 h-10 rounded-full bg-stone-900 border border-stone-800 text-lg" aria-label="Department settings" title="Department settings">⚙️</button>}
+          {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`min-h-9 rounded-full px-3 text-2xs font-extrabold ${detail.department.joined ? 'border border-line bg-surface-sunken text-ink-muted' : 'bg-accent text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
+          {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="grid h-10 w-10 place-items-center rounded-full border border-line bg-surface-raised text-ink-muted" aria-label="Department settings" title="Department settings"><Icon name="pencil" size={17} /></button>}
         </div>
-        {!detail ? <p className="text-stone-500 text-sm text-center py-10">Loading…</p> : (
+        {!detail ? <p className="py-10 text-center text-sm text-ink-muted">Loading…</p> : (
           <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
             {editing && canManage ? (
-              <div className="p-3 rounded-xl bg-stone-900 border border-amber-500/40 mb-3">
-                <p className="text-[10px] font-bold text-amber-400 mb-2">DEPARTMENT SETTINGS</p>
-                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
-                <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none mb-2" />
+              <div className="mb-3 rounded-xl border border-gold bg-surface-raised p-3">
+                <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Department settings</p>
+                <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full mb-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
+                <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Short description (optional)" className="w-full mb-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
                 <div className="flex gap-2">
                   <button disabled={busy === 'edit'} onClick={() => void saveEdit()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">{busy === 'edit' ? 'Saving…' : 'Save changes'}</button>
-                  <button disabled={busy === 'edit'} onClick={() => setEditing(false)} className="px-4 py-2.5 rounded-xl bg-stone-800 text-stone-300 text-xs font-bold">Cancel</button>
+                  <button disabled={busy === 'edit'} onClick={() => setEditing(false)} className="rounded-xl border border-line bg-surface-sunken px-4 py-2.5 text-xs font-bold text-ink-muted">Cancel</button>
                 </div>
               </div>
             ) : (
               <>
-                {detail.department.description && <p className="text-xs text-stone-400 pb-1">{detail.department.description}</p>}
+                {detail.department.description && <p className="pb-1 text-xs text-ink-muted">{detail.department.description}</p>}
                 {(detail.department.joined || isAdmin) && onOpenDeptChat && (
-                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold active:opacity-70 mb-2">
-                    💬 Open team chat
+                  <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative mb-2 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-accent py-3 text-xs font-bold text-white active:opacity-70">
+                    <Icon name="chat" size={15} /> Open team chat
                     <UnreadBadge count={Number(unreadByDepartment[detail.department.slug])} className="absolute right-3 top-1/2 -translate-y-1/2" />
                   </button>
                 )}
                 {canManage && (
-                  <button onClick={() => setEditing(true)} className="text-[11px] font-bold text-amber-400">⚙️ Department settings</button>
+                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 text-2xs font-bold text-gold-strong"><Icon name="pencil" size={13} /> Department settings</button>
                 )}
               </>
             )}
             {canManage && (
-              <div className="p-3 rounded-xl bg-stone-900 border border-stone-800 mb-3">
-                <p className="text-[10px] font-bold text-amber-400 mb-2">ADMIN — ADD MEMBER</p>
+              <div className="mb-3 rounded-xl border border-line bg-surface-raised p-3">
+                <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Admin — add member</p>
                 <div className="flex gap-2">
-                  <input value={addUsername} onChange={e => setAddUsername(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm outline-none" />
+                  <input value={addUsername} onChange={e => setAddUsername(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
                   <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'member')} className="px-3 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Add</button>
-                  <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'leader')} className="px-3 rounded-xl bg-amber-400 text-black text-xs font-bold disabled:opacity-50">Leader</button>
+                  <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'leader')} className="rounded-xl bg-gold px-3 text-xs font-bold text-ink disabled:opacity-50">Leader</button>
                 </div>
               </div>
             )}
             {detail.members.map(u => (
-              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-xl bg-stone-900 border border-stone-800">
+              <div key={u.username} className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-raised p-3">
                 <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
-                  <div className="w-9 h-9 shrink-0 rounded-full bg-stone-700 flex items-center justify-center text-xs font-bold">{String(u.name || u.username)[0].toUpperCase()}</div>
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink text-xs font-extrabold text-white">{String(u.name || u.username)[0].toUpperCase()}</div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
-                    <p className="text-[11px] text-stone-500 truncate">@{u.username} · {u.group_name || 'Harvest'}</p>
+                    <p className="truncate text-2xs text-ink-muted">@{u.username} · {u.group_name || 'Harvest'}</p>
                   </div>
                 </button>
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
-                    <button disabled={busy.startsWith(`assign_${detail.department.slug}`)} onClick={() => void assign(detail.department.slug, u.username, u.role === 'leader' ? 'member' : 'leader')} className="px-2.5 py-1.5 rounded-full bg-stone-800 text-white text-[10px] font-bold">{u.role === 'leader' ? 'Make member' : 'Make leader'}</button>
-                    <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-900 text-white text-[10px] font-bold">Remove</button>
+                    <button disabled={busy.startsWith(`assign_${detail.department.slug}`)} onClick={() => void assign(detail.department.slug, u.username, u.role === 'leader' ? 'member' : 'leader')} className="rounded-full border border-line bg-surface-sunken px-2.5 py-1.5 text-[10px] font-bold text-ink">{u.role === 'leader' ? 'Make member' : 'Make leader'}</button>
+                    <button disabled={busy.startsWith(`rm_${detail.department.slug}_`)} onClick={() => void removeMember(detail.department.slug, u.username)} className="rounded-full bg-danger-soft px-2.5 py-1.5 text-[10px] font-bold text-danger">Remove</button>
                   </div>
                 )}
               </div>
             ))}
-            {detail.members.length === 0 && <p className="text-sm text-stone-500 text-center py-8">No one is serving here yet — be the first to join!</p>}
+            {detail.members.length === 0 && <p className="py-8 text-center text-sm text-ink-muted">No one is serving here yet — be the first to join!</p>}
             {isAdmin && (
-              <button disabled={busy === `del_${detail.department.slug}` || editing} onClick={() => void deleteDepartment(detail.department.slug, detail.department.name)} className="w-full mt-4 py-2.5 rounded-xl bg-red-950 border border-red-900 text-red-300 text-xs font-bold disabled:opacity-50">{busy === `del_${detail.department.slug}` ? 'Deleting…' : '🗑 Delete department'}</button>
+              <button disabled={busy === `del_${detail.department.slug}` || editing} onClick={() => void deleteDepartment(detail.department.slug, detail.department.name)} className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-danger bg-danger-soft py-2.5 text-xs font-bold text-danger disabled:opacity-50">{busy === `del_${detail.department.slug}` ? 'Deleting…' : <><Icon name="trash" size={14} /> Delete department</>}</button>
             )}
             {!isAdmin && (
-              <p className="text-xs text-stone-500 text-center py-4">Members of a department see the team chat at the top of Chats when they're signed in.</p>
+              <p className="py-4 text-center text-xs text-ink-muted">Members of a department see the team chat at the top of Chats when they're signed in.</p>
             )}
           </div>
         )}
@@ -353,11 +356,11 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
         <div className="relative">
           <p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/70 font-bold">Harvest Family · Serve together</p>
           <h1 className="text-3xl font-black tracking-tight mt-1">Departments</h1>
-          <p className="text-sm text-stone-300 mt-2 max-w-sm">Find your place, build your team, and keep the conversation moving.</p>
+          <p className="mt-2 max-w-sm text-sm text-white/80">Find your place, build your team, and keep the conversation moving.</p>
           <div className="flex gap-2 mt-5">
             <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{departments.length}</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Teams</p></div>
             <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">{mine.length}</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Your teams</p></div>
-            <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black">💬</p><p className="text-[9px] uppercase tracking-wide text-white/70 mt-1">Team chat</p></div>
+            <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2 backdrop-blur"><p className="text-lg leading-none font-black"><Icon name="chat" size={17} /></p><p className="text-[10px] uppercase tracking-wide text-white/70 mt-1">Team chat</p></div>
           </div>
         </div>
       </div>
@@ -385,14 +388,14 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
           <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-sm font-black text-ink">Explore departments</h2><span className="text-[10px] text-ink-muted">{filteredAvailable.length} available</span></div><label className="sr-only" htmlFor="department-search">Search departments</label><input id="department-search" value={departmentQuery} onChange={e => setDepartmentQuery(e.target.value)} placeholder="Search ministry teams…" className="mb-3 w-full rounded-2xl bg-surface-sunken border border-line px-3 py-2.5 text-sm text-ink outline-none focus:border-accent placeholder:text-ink-subtle" />
           {loading ? (
             <div role="status" aria-live="polite" className="rounded-2xl border border-line bg-surface-sunken px-4 py-6 text-center">
-              <div className="mx-auto w-7 h-7 rounded-full border-2 border-stone-700 border-t-purple-400 animate-spin" aria-hidden="true" />
-              <p className="mt-3 text-xs font-semibold text-stone-400">Loading departments…</p>
+              <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-line border-t-accent" aria-hidden="true" />
+              <p className="mt-3 text-xs font-semibold text-ink-muted">Loading departments…</p>
             </div>
           ) : availableDepartments.length === 0 ? (
             <div className="rounded-3xl border border-line bg-surface-sunken px-5 py-10 text-center">
-              <div className="mx-auto w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center text-2xl" aria-hidden="true">🏛️</div>
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft" aria-hidden="true"><Icon name="building" size={24} className="text-accent-strong" /></div>
               <h2 className="mt-4 text-sm font-extrabold text-ink">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
-              <p className="mt-2 text-xs leading-5 text-stone-500">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
+              <p className="mt-2 text-xs leading-5 text-ink-muted">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
             </div>
           ) : (
             <div className="space-y-2">

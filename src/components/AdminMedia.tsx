@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import ErrorMessage from './ErrorMessage'
+import { Icon } from '../ui'
 import { timeAgo } from '../lib/time'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -149,7 +150,7 @@ export default function AdminMedia({ onBack }: Props) {
         artist: upType === 'track' ? artist.trim() || 'Harvest Worship' : undefined,
       })
       setFile(null); setCaption(''); setTitle(''); setArtist('')
-      flash('Published to the church ✅')
+      flash('Published to the church')
       setTab(upType === 'track' ? 'tracks' : upType === 'reel' ? 'reels' : 'posts')
     } catch (e: any) {
       setError(e?.message || 'Upload failed')
@@ -161,7 +162,7 @@ export default function AdminMedia({ onBack }: Props) {
   return (
     <div className="bg-surface text-ink min-h-[70vh] p-4">
       <div className="flex items-center gap-3 mb-4">
-        <button onClick={onBack} className="w-10 h-10 rounded-full bg-white border border-line" aria-label="Back">‹</button>
+        <button onClick={onBack} className="grid h-10 w-10 place-items-center rounded-full border border-line bg-surface-raised text-ink" aria-label="Back"><Icon name="arrow-left" size={18} /></button>
         <div>
           <h1 className="font-extrabold">Media studio</h1>
           <p className="text-xs text-ink-muted">Upload · edit · pin · delete anything</p>
@@ -170,22 +171,24 @@ export default function AdminMedia({ onBack }: Props) {
 
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {(['upload', 'posts', 'reels', 'tracks', 'stories'] as const).map(value => (
-          <button key={value} onClick={() => setTab(value)} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition ${tab === value ? 'bg-accent text-white shadow' : 'bg-white border border-line text-ink-muted'}`}>
+          <button key={value} onClick={() => setTab(value)} className={`min-h-9 rounded-full px-4 text-2xs font-extrabold whitespace-nowrap transition ${tab === value ? 'bg-accent text-white shadow' : 'bg-surface-raised border border-line text-ink-muted'}`}>
             {value[0].toUpperCase() + value.slice(1)}
           </button>
         ))}
       </div>
 
       {error && <ErrorMessage message={error} />}
-      {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
+      {notice && <div role="status" className="mb-3 rounded-2xl border border-success bg-success-soft p-3 text-sm font-semibold text-success">{notice}</div>}
 
       {tab === 'upload' && (
         <div className="space-y-3 max-w-xl">
           <div className="p-4 rounded-3xl bg-white border border-line shadow-sm">
             <p className="text-xs font-bold text-ink-muted mb-3">WHAT ARE YOU PUBLISHING?</p>
             <div className="grid grid-cols-3 gap-2">
-              {([['post', '📷 Photo post'], ['reel', '🎬 Reel / sermon'], ['track', '🎵 Worship track']] as const).map(([value, label]) => (
-                <button key={value} onClick={() => { setUpType(value); setFile(null) }} className={`p-3 rounded-2xl border text-sm font-bold ${upType === value ? 'border-accent bg-accent-soft' : 'border-line bg-surface'}`}>{label}</button>
+              {([['post', 'Photo post', 'camera'], ['reel', 'Reel / sermon', 'reels'], ['track', 'Worship track', 'music']] as const).map(([value, label, icon]) => (
+                <button key={value} onClick={() => { setUpType(value); setFile(null) }} className={`inline-flex flex-col items-center gap-1.5 rounded-2xl border p-3 text-2xs font-extrabold ${upType === value ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface-raised text-ink-muted'}`}>
+                  <Icon name={icon} size={18} />{label}
+                </button>
               ))}
             </div>
           </div>
@@ -194,14 +197,14 @@ export default function AdminMedia({ onBack }: Props) {
             {file ? (
               <div className="relative bg-surface-sunken aspect-[4/3] rounded-2xl overflow-hidden flex items-center justify-center">
                 {file.type.startsWith('video/') ? <video src={URL.createObjectURL(file)} controls className="w-full h-full object-cover" />
-                  : file.type.startsWith('audio/') ? <div className="text-center"><span className="text-5xl">🎵</span><p className="text-sm font-bold mt-2 truncate max-w-[220px]">{file.name}</p></div>
+                  : file.type.startsWith('audio/') ? <div className="text-center"><Icon name="music" size={36} className="mx-auto text-accent" /><p className="mt-2 max-w-[220px] truncate text-sm font-bold">{file.name}</p></div>
                   : <img src={URL.createObjectURL(file)} alt="Preview" className="w-full h-full object-cover" />}
-                <button onClick={() => setFile(null)} className="absolute top-2 right-2 w-10 h-10 rounded-full bg-white/90" aria-label="Remove selected media">×</button>
+                <button onClick={() => setFile(null)} className="absolute right-2 top-2 grid h-10 w-10 place-items-center rounded-full bg-ink/70 text-white" aria-label="Remove selected media"><Icon name="close" size={16} /></button>
               </div>
             ) : (
               <button onClick={() => fileInput.current?.click()} className="w-full aspect-[4/3] flex flex-col items-center justify-center rounded-2xl bg-surface border border-dashed border-line">
-                <span className="text-3xl">＋</span>
-                <span className="text-sm font-bold mt-2">{upType === 'track' ? 'Choose audio' : upType === 'reel' ? 'Choose video' : 'Choose photo'}</span>
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-accent-strong"><Icon name="plus" size={20} /></span>
+                <span className="mt-2 text-sm font-bold">{upType === 'track' ? 'Choose audio' : upType === 'reel' ? 'Choose video' : 'Choose photo'}</span>
               </button>
             )}
             <input ref={fileInput} type="file" accept={upType === 'reel' ? 'video/*' : upType === 'track' ? 'audio/*' : 'image/*'} onChange={e => setFile(e.target.files?.[0] || null)} className="hidden" />
@@ -242,7 +245,7 @@ export default function AdminMedia({ onBack }: Props) {
                 <div className="flex gap-2 mt-3 flex-wrap">
                   <button disabled={busy === item.id} onClick={() => { setEditing(item.id); setEditText(item.kind === 'tracks' ? (item.title || '') : (item.caption || '')) }} className="px-3 py-1.5 rounded-full text-xs font-bold bg-surface-sunken border border-line">Edit</button>
                   {(item.kind === 'posts' || item.kind === 'reels') && (
-                    <button disabled={busy === item.id} onClick={() => void togglePin(item)} className={`px-3 py-1.5 rounded-full text-xs font-bold ${item.is_pinned ? 'bg-accent text-white' : 'bg-surface-sunken border border-line'}`}>{item.is_pinned ? '📌 Pinned' : 'Pin'}</button>
+                    <button disabled={busy === item.id} onClick={() => void togglePin(item)} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-2xs font-extrabold ${item.is_pinned ? 'bg-accent text-white' : 'bg-surface-sunken border border-line'}`}><Icon name="bookmark" size={12} />{item.is_pinned ? 'Pinned' : 'Pin'}</button>
                   )}
                   <button disabled={busy === item.id} onClick={() => void remove(item)} className="ml-auto px-3 py-1.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">Delete</button>
                 </div>

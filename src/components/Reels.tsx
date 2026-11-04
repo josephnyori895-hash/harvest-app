@@ -362,7 +362,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     if (now - t.time < 350 && Math.hypot(x - t.x, y - t.y) < 40) {
       lastTap.current = { time: 0, x: 0, y: 0 }
       if (!cur?.id) return
-      if (!cur.liked) { void toggleEncourage(); flash('You encouraged this video 🤲') }
+      if (!cur.liked) { void toggleEncourage(); flash('You encouraged this video') }
       const id = ++heartSeq.current
       setHeart({ id, x, y })
       window.setTimeout(() => setHeart(h => (h?.id === id ? null : h)), 900)
@@ -644,7 +644,7 @@ export function ReelCreate({ onDone }: { onDone: () => void }) {
         }
         void startBackgroundUpload({
           label: 'video',
-          successMsg: 'Video shared with the Harvest family ✓',
+          successMsg: 'Video shared with the Harvest family',
           task: { kind: 'reel', file: blob, caption: caption.trim(), cover_key: coverKey },
         }).catch(() => {})
         onDone()

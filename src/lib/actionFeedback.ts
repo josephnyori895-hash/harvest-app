@@ -28,7 +28,7 @@ export async function runAction<T>(
 ): Promise<ActionOutcome<T>> {
   try {
     const data = await fn()
-    showToast(successMessage || `${label} — done ✓`, 'success')
+    showToast(successMessage || `${label} — done`, 'success')
     return { ok: true, data }
   } catch (e) {
     return { ok: false, error: new Error(describeError(e)) }

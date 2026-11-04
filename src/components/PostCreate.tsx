@@ -240,7 +240,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
         // progress shows in the floating pill while the user keeps browsing.
         void startBackgroundUpload({
           label,
-          successMsg: type === 'story' ? 'Story shared — visible for 24 hours ✓' : `${label} shared with the family ✓`,
+          successMsg: type === 'story' ? 'Story shared — visible for 24 hours' : `${label} shared with the family`,
           task: {
             kind: serverTypeOf(file) as any,
             file,

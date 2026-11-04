@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { VerifiedBadge } from './VerifiedBadge'
+import { Icon, type IconName } from '../ui'
 
 // PreviewTile — IG-style browse tile: a muted looping preview of the actual
 // reel. One video element per tile, mounted once (remounting stalls and
@@ -56,14 +57,14 @@ function authHeaders() {
 
 type Filter = 'all' | 'members' | 'groups' | 'departments' | 'reels' | 'sermons' | 'places'
 
-const FILTERS: { id: Filter; label: string; icon: string }[] = [
-  { id: 'all', label: 'All', icon: '✨' },
-  { id: 'members', label: 'Members', icon: '👤' },
-  { id: 'groups', label: 'Groups', icon: '👥' },
-  { id: 'departments', label: 'Departments', icon: '🏛️' },
-  { id: 'reels', label: 'Reels', icon: '🎥' },
-  { id: 'sermons', label: 'Sermons', icon: '📖' },
-  { id: 'places', label: 'Places', icon: '📍' },
+const FILTERS: { id: Filter; label: string; icon: IconName }[] = [
+  { id: 'all', label: 'All', icon: 'sparkle' },
+  { id: 'members', label: 'Members', icon: 'user' },
+  { id: 'groups', label: 'Groups', icon: 'users' },
+  { id: 'departments', label: 'Departments', icon: 'building' },
+  { id: 'reels', label: 'Reels', icon: 'reels' },
+  { id: 'sermons', label: 'Sermons', icon: 'bookmark' },
+  { id: 'places', label: 'Places', icon: 'map' },
 ]
 
 const fmtDuration = (s?: number | null) => {
@@ -272,7 +273,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
       <div className="bg-white rounded-2xl flex items-center gap-2 px-3 py-2.5 pr-0 mr-14 border border-line shadow-sm">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8B8175" strokeWidth="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the church…" aria-label="Search the church" autoCapitalize="none" className="bg-transparent outline-none text-sm flex-1 placeholder:text-ink-subtle" />
-        {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-ink-muted text-base" aria-label="Clear search">✕</button>}
+        {q && <button onClick={() => setQ('')} className="min-w-[44px] min-h-[44px] -my-2 -mr-1 flex items-center justify-center rounded-full text-ink-muted text-base" aria-label="Clear search"><Icon name="close" size={16} /></button>}
       </div>
       {/* Screen-reader announcement of result counts as the query changes. */}
       <p aria-live="polite" className="sr-only">{showGrid ? '' : loading ? 'Searching…' : `${totalHits} results found`}</p>
@@ -287,7 +288,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             onClick={() => setFilter(f.id)}
             className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${filter === f.id ? 'bg-accent text-white border-accent shadow-sm' : 'bg-white text-ink-muted border-line'}`}
           >
-            <span aria-hidden="true" className="mr-1">{f.icon}</span>{f.label}
+            <span className="inline-flex items-center gap-1.5"><Icon name={f.icon} size={13} />{f.label}</span>
           </button>
         ))}
       </div>
@@ -308,7 +309,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                       className="pl-2 pr-1 py-1 rounded-full text-xs font-semibold text-ink active:bg-surface-sunken"
                       aria-label={`Search for ${entry}`}
                     >{entry}</button>
-                    <button onClick={() => removeRecent(entry)} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-subtle text-xs" aria-label={`Remove ${entry} from recent searches`}>✕</button>
+                    <button onClick={() => removeRecent(entry)} className="w-8 h-8 flex items-center justify-center rounded-full text-ink-subtle text-xs" aria-label={`Remove ${entry} from recent searches`}><Icon name="close" size={13} /></button>
                   </span>
                 ))}
               </div>
@@ -325,7 +326,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                       videoSrc={r.hls_url || undefined}
                       ariaLabel={`Reel by ${r.username}`}
                       onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
-                      fallback={<>{r.thumb_url ? <TileImg src={r.thumb_url} /> : null}{!r.thumb_url && r.hls_url ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : null}{!r.thumb_url && !r.hls_url && <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}</>}
+                      fallback={<>{r.thumb_url ? <TileImg src={r.thumb_url} /> : null}{!r.thumb_url && r.hls_url ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : null}{!r.thumb_url && !r.hls_url && <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center" aria-hidden="true"><Icon name="reels" size={22} className="text-accent-strong/60" /></div>}</>}
                       overlay={<span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}
                     />
                   ))}
@@ -356,7 +357,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                     videoSrc={p.kind === 'reel' && p.hls_url ? p.hls_url : undefined}
                     ariaLabel={`Post by ${p.name || p.username}`}
                     onClick={() => openPost(p)}
-                    fallback={<>{p.thumb_url ? <TileImg src={p.thumb_url} /> : <div className="w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br from-accent-soft to-gold-soft" aria-hidden="true">🙏</div>}</>}
+                    fallback={<>{p.thumb_url ? <TileImg src={p.thumb_url} /> : <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft" aria-hidden="true"><Icon name="sparkle" size={22} className="text-accent-strong/60" /></div>}</>}
                     overlay={p.kind === 'reel' ? <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span> : null}
                   />
                 ))}
@@ -404,7 +405,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             <div className="space-y-1">
               {(filter === 'all' ? departmentHits.slice(0, 3) : departmentHits).map(d => (
                 <button key={d.slug || d.id} onClick={() => onOpenDepartments?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-accent-soft flex items-center justify-center text-lg shrink-0">🏛️</div>
+                  <div className="w-10 h-10 rounded-2xl bg-accent-soft flex items-center justify-center shrink-0"><Icon name="building" size={18} className="text-accent-strong" /></div>
                   <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{d.name}{d.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">JOINED</span>}</p><p className="text-xs text-ink-muted truncate">{d.member_count} serving{d.description ? ` · ${d.description}` : ''}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
@@ -424,7 +425,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                   onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
                   fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
                     ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                    : <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-2xl" aria-hidden="true">🎥</div>}
+                    : <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center" aria-hidden="true"><Icon name="reels" size={22} className="text-accent-strong/60" /></div>}
                   overlay={<>
                     <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
                     <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
@@ -440,7 +441,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             <div className="space-y-1">
               {(filter === 'all' ? sermonHits.slice(0, 3) : sermonHits).map(s => (
                 <button key={s.id} onClick={() => onOpenSermons?.(String(s.id))} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-gold-soft flex items-center justify-center text-lg shrink-0">📖</div>
+                  <div className="w-10 h-10 rounded-2xl bg-gold-soft flex items-center justify-center shrink-0"><Icon name="bookmark" size={18} className="text-gold-strong" /></div>
                   <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{s.title}</p><p className="text-xs text-ink-muted truncate">{[s.speaker, s.scripture, fmtDuration(s.duration_secs)].filter(Boolean).join(' · ') || 'Sermon'}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Listen</span>
                 </button>
@@ -454,13 +455,13 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             <div className="space-y-1">
               {(filter === 'all' ? placeHits.slice(0, 4) : placeHits).map(({ kind, item }) => kind === 'member' ? (
                 <button key={`m_${item.username}`} onClick={() => onView(item)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-lg shrink-0">📍</div>
+                  <div className="w-10 h-10 rounded-2xl bg-success-soft flex items-center justify-center shrink-0"><Icon name="map" size={18} className="text-success" /></div>
                   <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name || item.username}</p><p className="text-xs text-ink-muted truncate">{[item.location, item.group_name || item.group, item.constituency].filter(Boolean).join(' · ')}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
                 </button>
               ) : (
                 <button key={`g_${item.slug || item.id}`} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
-                  <div className="w-10 h-10 rounded-2xl bg-[#D1FAE5] flex items-center justify-center text-lg shrink-0">📍</div>
+                  <div className="w-10 h-10 rounded-2xl bg-success-soft flex items-center justify-center shrink-0"><Icon name="map" size={18} className="text-success" /></div>
                   <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.name}</p><p className="text-xs text-ink-muted truncate">{[item.location_label, item.community].filter(Boolean).join(' · ')}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
@@ -478,14 +479,14 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             (filter === 'places' && !placeHits.length)
           ) && (
             <div className="text-center py-10">
-              <div className="text-3xl mb-2">🔍</div>
+              <Icon name="search" size={26} className="mx-auto mb-2 text-ink-subtle" />
               <p className="text-sm font-bold">Nothing found for "{q}"</p>
               <p className="text-xs text-ink-subtle mt-1">Try another spelling, or search All.</p>
             </div>
           )}
           {!loading && filter === 'all' && totalHits === 0 && failedCorpora.length === 0 && (
             <div className="text-center py-10">
-              <div className="text-3xl mb-2">🔍</div>
+              <Icon name="search" size={26} className="mx-auto mb-2 text-ink-subtle" />
               <p className="text-sm font-bold">Nothing found for "{q}"</p>
               <p className="text-xs text-ink-subtle mt-1">Try a member, group, department, reel, sermon or place.</p>
             </div>

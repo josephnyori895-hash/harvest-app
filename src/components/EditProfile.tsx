@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchMe, updateProfile } from '../lib/api'
 import { getUploads, startBackgroundUpload, subscribeUploads } from '../lib/backgroundUploads'
 import { useCongregations } from '../lib/useCongregations'
+import { Icon } from '../ui'
 
 import ErrorMessage from './ErrorMessage'
 // EditProfile — self-service profile editing (name, photo, phone, location,
@@ -55,7 +56,7 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
     setSaved(false)
     void startBackgroundUpload({
       label: 'profile photo',
-      successMsg: 'Profile photo updated ✓',
+      successMsg: 'Profile photo updated',
       task: { kind: 'avatar', file: f },
     })
       .then(() => fetchMe().then(d => { if (d.user) setAvatarUrl(d.user.avatar_url || null) }))
@@ -108,69 +109,81 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
     faith !== (me?.faith || '') ||
     groupName !== (me?.group_name || '')
   )
+  const initials = (name || me?.username || '?').split(/[\s_.]/).filter(Boolean).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()
+  const FIELD = 'mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-raised px-4 text-sm text-ink outline-none placeholder:text-ink-subtle focus:border-accent focus:ring-2 focus:ring-accent/20'
 
   return (
-    <div className="bg-ink text-white min-h-[calc(100vh-56px)] pb-8">
-      <div className="flex justify-between items-center px-4 h-[56px] border-b border-stone-800 sticky top-0 bg-ink z-10">
-        <button onClick={onDone} aria-label="Close profile editor" className="text-xl text-stone-300 px-1 min-w-11 min-h-11">✕</button>
-        <p className="font-semibold text-sm">Edit profile</p>
+    <div className="min-h-[calc(100vh-56px)] bg-surface pb-8 text-ink">
+      <div className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-line bg-surface px-3">
+        <button onClick={onDone} aria-label="Close profile editor" className="grid h-11 w-11 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken">
+          <Icon name="close" size={19} />
+        </button>
+        <p className="text-sm font-extrabold">Edit profile</p>
         <button
           onClick={() => void save()}
           disabled={busy || avatarUploading || !dirty}
-          className={`font-semibold text-sm ${busy || avatarUploading || !dirty ? 'text-stone-600' : 'text-accent'}`}
+          className={`min-h-11 rounded-xl px-3 text-sm font-extrabold ${busy || avatarUploading || !dirty ? 'text-ink-subtle' : 'text-accent'}`}
         >{busy ? 'Saving…' : 'Save'}</button>
       </div>
 
       {notice && <div className="mx-4 mt-3"><ErrorMessage message={notice} /></div>}
-      {saved && <div className="mx-4 mt-3 p-3 rounded-xl bg-emerald-950/60 border border-emerald-900 text-sm text-emerald-300">Profile saved ✓</div>}
+      {saved && (
+        <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-success bg-success-soft p-3 text-sm font-semibold text-success">
+          <Icon name="check" size={16} /> Profile saved
+        </div>
+      )}
 
       <div className="flex flex-col items-center py-6">
         <div className="relative">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
+          <div className="h-24 w-24 rounded-full bg-gradient-to-tr from-accent to-accent-strong p-[3px]">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-black" />
+              <img src={avatarUrl} alt="" className="h-full w-full rounded-full border-[3px] border-surface object-cover" />
             ) : (
-              <div className="w-full h-full rounded-full bg-ink flex items-center justify-center font-bold text-xl border-[3px] border-black">
-                {(name || me?.username || '?').split(/[\s_.]/).filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase()}
+              <div className="flex h-full w-full items-center justify-center rounded-full border-[3px] border-surface bg-surface-sunken text-xl font-extrabold">
+                {initials}
               </div>
             )}
           </div>
-          <label className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-accent flex items-center justify-center cursor-pointer border-2 border-black" title="Change profile photo">
+          <label className="absolute -bottom-1 -right-1 grid h-9 w-9 cursor-pointer place-items-center rounded-full border-2 border-surface bg-accent text-white" title="Change profile photo">
             <input type="file" accept="image/jpeg,image/png,image/webp" onChange={onAvatarFile} className="hidden" />
-            <span className="text-sm">📷</span>
+            <Icon name="camera" size={16} />
           </label>
         </div>
-        {avatarUploading && <p className="text-[11px] text-stone-400 mt-2">Uploading photo…</p>}
+        {avatarUploading && <p className="mt-2 text-2xs text-ink-muted">Uploading photo…</p>}
         {!avatarUploading && avatarUrl && (
-          <button onClick={() => void removeAvatar()} disabled={busy} className="text-[11px] text-red-400 mt-2 underline">Remove photo</button>
+          <button onClick={() => void removeAvatar()} disabled={busy} className="mt-2 text-2xs font-bold text-danger underline">Remove photo</button>
         )}
-        {!avatarUploading && !avatarUrl && <p className="text-[11px] text-stone-500 mt-2">Tap 📷 to add a profile photo</p>}
+        {!avatarUploading && !avatarUrl && <p className="mt-2 text-2xs text-ink-subtle">Tap the camera to add a profile photo</p>}
       </div>
 
-      <div className="px-4 space-y-4">
+      <div className="space-y-4 px-4">
         <div>
-          <label className="text-xs text-stone-400 font-semibold">Name</label>
-          <input value={name} onChange={e => { setName(e.target.value); setSaved(false) }} maxLength={120} placeholder="Your full name" className="mt-1 w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-3 text-sm outline-none focus:border-stone-600" />
+          <label className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Name</label>
+          <input value={name} onChange={e => { setName(e.target.value); setSaved(false) }} maxLength={120} placeholder="Your full name" className={FIELD} />
         </div>
         <div>
-          <label className="text-xs text-stone-400 font-semibold">Phone</label>
-          <input value={phone} onChange={e => { setPhone(e.target.value); setSaved(false) }} type="tel" inputMode="tel" placeholder="07xx xxx xxx" className="mt-1 w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-3 text-sm outline-none focus:border-stone-600" />
-          <p className="text-[11px] text-stone-500 mt-1">Visible to admins only — used for church contact and giving.</p>
+          <label className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Phone</label>
+          <input value={phone} onChange={e => { setPhone(e.target.value); setSaved(false) }} type="tel" inputMode="tel" placeholder="07xx xxx xxx" className={FIELD} />
+          <p className="mt-1 text-2xs text-ink-subtle">Visible to admins only — used for church contact and giving.</p>
         </div>
         <div>
-          <label className="text-xs text-stone-400 font-semibold">Location</label>
-          <input value={location} onChange={e => { setLocation(e.target.value); setSaved(false) }} maxLength={160} placeholder="e.g. Nyeri Town" className="mt-1 w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-3 text-sm outline-none focus:border-stone-600" />
+          <label className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Location</label>
+          <input value={location} onChange={e => { setLocation(e.target.value); setSaved(false) }} maxLength={160} placeholder="e.g. Nyeri Town" className={FIELD} />
         </div>
         <div>
-          <label className="text-xs text-stone-400 font-semibold">Faith testimony</label>
-          <input value={faith} onChange={e => { setFaith(e.target.value); setSaved(false) }} maxLength={160} placeholder="A short line about your faith" className="mt-1 w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-3 text-sm outline-none focus:border-stone-600" />
+          <label className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Faith testimony</label>
+          <input value={faith} onChange={e => { setFaith(e.target.value); setSaved(false) }} maxLength={160} placeholder="A short line about your faith" className={FIELD} />
         </div>
         <div>
-          <label className="text-xs text-stone-400 font-semibold">Congregation</label>
+          <label className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Congregation</label>
           <div className="mt-2 flex flex-wrap gap-2">
             {GROUPS.map(g => (
-              <button key={g} onClick={() => { setGroupName(g); setSaved(false) }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${groupName === g ? 'bg-white text-black border-white' : 'bg-stone-900 text-stone-300 border-stone-800'}`}>
-                {groupName === g ? `✓ ${g}` : g}
+              <button
+                key={g}
+                onClick={() => { setGroupName(g); setSaved(false) }}
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-bold transition ${groupName === g ? 'border-accent bg-accent text-white' : 'border-line bg-surface-raised text-ink-muted'}`}
+              >
+                {groupName === g && <Icon name="check" size={13} />} {g}
               </button>
             ))}
           </div>

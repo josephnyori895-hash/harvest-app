@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../ui'
 
 // Instagram-style video tile: paints the video's first frame onto a <canvas>.
 //
@@ -79,9 +80,9 @@ export default function VideoThumb({ src, className = '', onRetryBump, retryKey 
     <div className={`relative w-full h-full overflow-hidden ${className}`}>
       <canvas ref={canvasRef} className={`w-full h-full object-cover ${failed ? 'hidden' : ''}`} />
       {failed && (
-        <div className="absolute inset-0 bg-gradient-to-br from-stone-800 to-stone-900 flex flex-col items-center justify-center gap-2 px-4 text-center">
-          <span className="text-2xl" aria-hidden>🎥</span>
-          <p className="text-[11px] text-stone-300">{isHls ? HLS_HINT : 'Preview could not load'}</p>
+        <div className="absolute inset-0 bg-ink/85 flex flex-col items-center justify-center gap-2 px-4 text-center">
+          <Icon name="reels" size={22} className="text-white/70" />
+          <p className="text-2xs text-white/75">{isHls ? HLS_HINT : 'Preview could not load'}</p>
           {onRetryBump && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onRetryBump() }} className="min-h-11 rounded-xl border border-white/15 bg-white/10 px-4 text-xs font-semibold text-white" aria-label="Retry video preview">Retry</button>
           )}

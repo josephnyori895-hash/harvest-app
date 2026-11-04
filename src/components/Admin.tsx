@@ -157,7 +157,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       })
       await uploadToMinio(pre.url, pre.fields, photo)
       return pre.key
-    }, 'Photo uploaded ✓')
+    }, 'Photo uploaded')
     if (!res.ok || !res.data) {
       setError(res.error?.message || 'Could not upload the photo')
       setAdBusy(false)
@@ -208,13 +208,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
       return d
-    }, 'Saved — live for everyone ✓')
+    }, 'Saved — live for everyone')
     if (res.ok) {
       const d: any = res.data
       setContent(d.content || {})
       if (d.editable) setEditable(d.editable)
       setAdvertsDraft(null); setSettingsDraft(null); setContentDraft(null)
-      flash(`Saved ${Object.keys(changed).length} change${Object.keys(changed).length === 1 ? '' : 's'} — live for everyone ✓`)
+      flash(`Saved ${Object.keys(changed).length} change${Object.keys(changed).length === 1 ? '' : 's'} — live for everyone`)
       // Screens already mounted (Home, Give…) hold the content they loaded at
       // startup. Announce the new values so they repaint without a reload.
       if (d?.content) window.dispatchEvent(new CustomEvent('harvest:content-updated', { detail: d.content }))
@@ -480,7 +480,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       setAnnCount(data.recipients || 0)
       setAnnText('')
       setAnnGroup('')
-      flash(`📣 Delivered to ${data.recipients} member${data.recipients === 1 ? '' : 's'}`)
+      flash(`Delivered to ${data.recipients} member${data.recipients === 1 ? '' : 's'}`)
     } catch (e: any) {
       setError(e?.message || 'Announce failed')
     } finally { setAnnBusy(false) }
@@ -932,7 +932,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                           onClick={() => void patchUser(u.username, { verified: !u.verified })}
                           className={`min-h-10 rounded-xl text-xs font-extrabold disabled:opacity-50 ${u.verified ? 'border border-line bg-surface-sunken text-ink-muted' : 'bg-accent text-white'}`}
                         >
-                          {busy === u.username ? 'Saving…' : u.verified ? 'Remove verification' : 'Verify member ✓'}
+                          {busy === u.username ? 'Saving…' : u.verified ? 'Remove verification' : 'Verify member'}
                         </button>
                         <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">Reset PIN</button>
                         <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">{u.active === false ? 'Reactivate account' : 'Deactivate account'}</button>
@@ -1079,7 +1079,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                   value={annText}
                   onChange={e => setAnnText(e.target.value.slice(0, 2000))}
                   rows={5}
-                  placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend! 🙏"
+                  placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend!"
                   className="input-base resize-y"
                 />
                 <p className="mt-1 text-right text-[10px] text-ink-muted">{annText.length}/2000</p>
@@ -1087,7 +1087,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               {annText.trim().length >= 2 && (
                 <div className="rounded-xl border border-line bg-surface-sunken p-3">
                   <p className="label-caps">Preview</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm">📣 {annText.trim()}</p>
+                  <p className="mt-1 flex items-start gap-1.5 whitespace-pre-wrap break-words text-sm"><Icon name="bell" size={14} className="mt-0.5 shrink-0" />{annText.trim()}</p>
                 </div>
               )}
               <button
@@ -1097,7 +1097,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               >
                 {annBusy ? 'Sending…' : annGroup ? `Send to ${annGroup}` : 'Send to all members'}
               </button>
-              {annCount !== null && <p className="text-center text-xs font-bold text-success">✓ Last announcement delivered to {annCount} members</p>}
+              {annCount !== null && <p className="flex items-center justify-center gap-1.5 text-center text-xs font-bold text-success"><Icon name="check" size={13} /> Last announcement delivered to {annCount} members</p>}
               {annText.trim().length >= 2 && (
                 <button onClick={() => shareAnnouncementToWhatsApp(annText.trim())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] text-sm font-extrabold text-white">
                   Share this on WhatsApp
@@ -1349,14 +1349,14 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                       const d = await r.json().catch(() => ({}))
                       if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
                       setContent(d.content || content); setAdvertsDraft(null); setSettingsDraft(null)
-                      flash('Adverts published — live on the next feed refresh ✓')
+                      flash('Adverts published — live on the next feed refresh')
                     } catch (e: any) { setError(e?.message || 'Could not save adverts') } finally { setContentBusy(false) }
                   })()
                 }}
                 disabled={contentBusy}
                 className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50"
               >
-                {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+                {contentBusy ? 'Saving…' : 'Save — goes live for everyone'}
               </button>
               <p className="text-[10px] text-ink-muted">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
             </div>

@@ -250,13 +250,13 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     <>
       {viewerError && <div className="absolute top-3 left-3 right-3 z-[90]"><ErrorMessage message={viewerError} action={<button type="button" onClick={() => setViewerError('')} className="text-xs">Dismiss</button>} /></div>}
       <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={handleTap}>
-        <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-stone-800 rounded overflow-hidden relative"><div className="h-full bg-white/90" style={{ width: i === idx ? `${progress}%` : '100%' }} /></div>)}</div>
+        <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-white/25 rounded overflow-hidden relative"><div className="h-full bg-white/90" style={{ width: i === idx ? `${progress}%` : '100%' }} /></div>)}</div>
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}>
             <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-bold text-white">{(s.name || s.username || 'H').charAt(0).toUpperCase()}</div>
             <div className="text-left"><p className="font-bold text-white text-sm">{s.name}</p><p className="text-[11px] text-stone-300">@{s.username || 'harvest'}</p></div>
           </button>
-          <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50" aria-label="Delete story">🗑</button>}{canEdit && <button onClick={e => { e.stopPropagation(); setEditing(true) }} className="min-w-11 min-h-11 px-2 text-white" aria-label="Edit story">✎</button>}</div>
+          <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50" aria-label="Delete story"><Icon name="trash" size={18} /></button>}{canEdit && <button onClick={e => { e.stopPropagation(); setEditing(true) }} className="grid min-h-11 min-w-11 place-items-center px-2 text-white" aria-label="Edit story"><Icon name="pencil" size={18} /></button>}</div>
         </div>
         <div className="flex-1 flex items-center justify-center relative overflow-hidden">
           {s.img && !isVideo && (
@@ -312,7 +312,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 px-3 pb-3 pt-8">
           <div className="px-3">
             <p className="font-bold text-white text-lg">{s.name}</p>
-            <p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story 🙏'}</p>
+            <p className="text-sm text-stone-300 mt-1">{s.caption || 'Harvest story'}</p>
           </div>
         {showViews && (
           <div onClick={e => e.stopPropagation()} className="pointer-events-auto max-h-48 overflow-auto rounded-2xl bg-black/80 p-3 text-white">
@@ -323,7 +323,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             {views.length ? views.map((v: any) => (
               <div key={v.username || v.name} className="flex items-center gap-2.5 text-xs py-1.5">
                 <div className="w-7 h-7 shrink-0 rounded-full bg-white/15 flex items-center justify-center text-[10px] font-bold">{(v.name || v.username || 'H').charAt(0).toUpperCase()}</div>
-                <p className="min-w-0 flex-1 truncate"><b>{v.name || v.username}</b>{v.verified ? ' ✓' : ''} <span className="text-stone-400">@{v.username}</span></p>
+                <p className="min-w-0 flex-1 truncate"><b>{v.name || v.username}</b>{v.verified ? <Icon name="check" size={11} className="ml-0.5 inline text-white" /> : ''} <span className="text-stone-400">@{v.username}</span></p>
                 <span className="text-[10px] text-stone-400 shrink-0">{(() => {
                   const m = Math.floor((Date.now() - new Date(v.viewed_at).getTime()) / 60000)
                   if (!Number.isFinite(m) || m < 1) return 'now'
@@ -345,9 +345,9 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
           {isStoryAuthor ? (<>
             <button onClick={() => { setShowViews(v => !v); setShowReplies(false); void loadViews() }} className="flex-1 min-h-11 flex items-center justify-between gap-1 px-4 py-2 rounded-full bg-white/10 text-white">
               <span className="text-white/70">{showViews ? 'Viewers listed above' : 'Replies land in your inbox'}</span>
-              <span className="text-xs font-bold shrink-0">👁 {viewCount}</span>
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold"><Icon name="users" size={12} /> {viewCount}</span>
             </button>
-            <button onClick={()=>{setShowReplies(v=>!v); setShowViews(false); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs" aria-label="Open replies">💬</button>
+            <button onClick={()=>{setShowReplies(v=>!v); setShowViews(false); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs" aria-label="Open replies"><Icon name="chat" size={17} /></button>
           </>) : (<>
             <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
             <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
@@ -553,7 +553,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
       if (!isVideoFile) blob = await burnDecorations(fileObj)
       void startBackgroundUpload({
         label: 'story',
-        successMsg: 'Story shared — visible for 24 hours ✓',
+        successMsg: 'Story shared — visible for 24 hours',
         task: {
           kind: 'story',
           file: blob,

@@ -24,13 +24,28 @@ const fallbackGroupCoords: Record<string, [number, number]> = {
 const groupOf = (u: any) => u.group_name || u.group || 'Harvest Nyeri'
 const hasCoords = (u: any) => Number.isFinite(Number(u.lat)) && Number.isFinite(Number(u.lng))
 
+/**
+ * Where a member's pin sits.
+ *
+ * An admin must be able to see every account on this map. Members who have
+ * shared coordinates get their exact pin. Members who never shared one are
+ * placed in a small deterministic ring around their congregation's centre —
+ * not stacked on one dot — so each of them is still individually visible and
+ * tappable, and the popup says the location was not shared.
+ */
+function pinPosition(u: any, i = 0): [number, number] {
+  if (hasCoords(u)) return [Number(u.lat), Number(u.lng)]
+  const gc = fallbackGroupCoords[groupOf(u)] || [-0.4197, 36.9475]
+  const angle = ((i * 47) % 360) * (Math.PI / 180)
+  const radius = 0.0045 + 0.0015 * ((i * 7) % 4)
+  return [gc[0] + Math.sin(angle) * radius, gc[1] + Math.cos(angle) * radius]
+}
+
 function FitMarkers({ users }: { users: any[] }) {
   const map = useMap()
   const signature = users.map(u => `${u.id || u.username}:${u.lat}:${u.lng}`).join('|')
   useEffect(() => {
-    const points = users
-      .filter(hasCoords)
-      .map(u => [Number(u.lat), Number(u.lng)] as [number, number])
+    const points = users.map((u, i) => pinPosition(u, i))
     if (points.length > 1) map.fitBounds(points, { padding: [28, 28], maxZoom: 14 })
     else if (points.length === 1) map.setView(points[0], 14)
     // Signature (not the array identity) drives fitting: the directory refresh
@@ -126,6 +141,9 @@ export default function HarvestMap({
   const activeNow = users.filter(u => u.online).length
   const sharingCount = users.filter(u => !u.hidden && u.location_updated_at && hasCoords(u)).length
   const liveMembers = users.filter(u => u.online && !u.hidden && hasCoords(u)).length
+  // How many accounts the admin cannot place precisely — shown in the header
+  // so a blank area on the map is explained instead of looking broken.
+  const notSharing = users.filter(u => !hasCoords(u)).length
 
   const visibleList = (list: any[]) => {
     if (!isAdmin) return list
@@ -203,7 +221,7 @@ export default function HarvestMap({
             <h1 className="mt-0.5 text-xl font-extrabold tracking-tight">Who is where</h1>
             <p className="mt-1 text-xs text-ink-muted">
               {isAdmin
-                ? 'Exact member locations, live presence and last-seen times for the whole church. Updates every 15 seconds.'
+                ? `Exact member locations, live presence and last-seen times for the whole church. ${notSharing} of ${users.length} members have not shared a location — those pins sit on their congregation area. Updates every 15 seconds.`
                 : 'Find Harvest members and congregations nearby. Precise member locations are only shared with mutual follows and admins.'}
             </p>
           </div>
@@ -243,7 +261,7 @@ export default function HarvestMap({
             disabled={locating}
             className="min-h-10 rounded-full bg-accent px-3.5 text-[11px] font-extrabold text-white disabled:opacity-50"
           >
-            {locating ? 'Getting your location…' : '📍 Share my location'}
+            {locating ? 'Getting your location…' : 'Share my location'}
           </button>
           {isAdmin && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-sunken px-2.5 py-1.5 text-[10px] font-bold text-ink-muted">
@@ -264,10 +282,8 @@ export default function HarvestMap({
         <MapContainer center={[-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap contributors" />
           <FitMarkers users={mapUsers} />
-          {visibleUsers.filter(inFilter).map(u => {
-            const fallback = fallbackGroupCoords[groupOf(u)] || [-0.4197, 36.9475]
-            const lat = hasCoords(u) ? Number(u.lat) : fallback[0]
-            const lng = hasCoords(u) ? Number(u.lng) : fallback[1]
+          {visibleUsers.filter(inFilter).map((u, i) => {
+            const [lat, lng] = pinPosition(u, i)
             return (
               <Marker key={u.id || u.username + '_vis'} position={[lat, lng]} icon={memberPin(u)}>
                 <Popup>
@@ -277,18 +293,18 @@ export default function HarvestMap({
                       {u.verified && <VerifiedBadge size={13} />}
                       {u.online && <span className="h-2 w-2 rounded-full bg-green-600" aria-label="Active now" />}
                     </div>
-                    <div className="text-stone-500">@{u.username}</div>
+                    <div className="text-ink-subtle">@{u.username}</div>
                     <div className="mt-1 flex items-center gap-1 font-semibold">
-                      <span className={u.online ? 'text-green-700' : 'text-stone-500'}>{formatPresence(u)}</span>
+                      <span className={u.online ? 'text-success' : 'text-ink-subtle'}>{formatPresence(u)}</span>
                     </div>
                     <div>{u.location || u.location_label || groupOf(u)}</div>
-                    <div className="mt-1 text-stone-500">{u.hidden ? 'Approximate area only' : formatLocationAge(u.location_updated_at)}</div>
+                    <div className="mt-1 text-ink-subtle">{hasCoords(u) ? formatLocationAge(u.location_updated_at) : `Location not shared — shown at ${groupOf(u)} area`}</div>
                     {isAdmin && u.phone && (
-                      <a href={`tel:${u.phone}`} className="mt-1 block font-semibold text-green-700">{u.phone}</a>
+                      <a href={`tel:${u.phone}`} className="mt-1 block font-semibold text-success">{u.phone}</a>
                     )}
                     {onOpenUser && !u.me && (
                       <button
-                        className="mt-2 w-full rounded-md bg-black px-2 py-1.5 text-white"
+                        className="mt-2 w-full rounded-md bg-ink px-2 py-1.5 text-white"
                         onClick={() => onOpenUser(u)}
                       >
                         View profile
@@ -299,16 +315,15 @@ export default function HarvestMap({
               </Marker>
             )
           })}
-          {hiddenUsers.filter(inFilter).map(u => {
-            const gc = fallbackGroupCoords[groupOf(u)] || [-0.4197, 36.9475]
-            const pos = [Number(u.lat) || gc[0], Number(u.lng) || gc[1]] as [number, number]
+          {hiddenUsers.filter(inFilter).map((u, i) => {
+            const pos = pinPosition(u, i)
             return (
               <Marker key={u.id || u.username + '_hid'} position={pos} icon={memberPin(u)}>
                 <Popup>
                   <div className="text-xs">
                     <b>{u.name || u.username}</b>
                     <div className="mt-1">Approximate area only</div>
-                    <div className="text-stone-500">{groupOf(u)}</div>
+                    <div className="text-ink-subtle">{groupOf(u)}</div>
                   </div>
                 </Popup>
               </Marker>
@@ -321,7 +336,7 @@ export default function HarvestMap({
         <div className="flex items-center gap-3 border-b border-line px-4 py-2 text-[10px] font-semibold text-ink-muted">
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success" /> Active now</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-accent" /> Verified</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-stone-400" /> No live pin</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-stone-400" /> Location not shared</span>
         </div>
       )}
 
@@ -342,7 +357,7 @@ export default function HarvestMap({
                 onClick={() => void joinGroup(g)}
                 className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold disabled:opacity-70 ${myGroup === g || joined === g ? 'bg-success text-white' : 'border border-line bg-surface-sunken text-ink'}`}
               >
-                {joined === g ? 'Joined ✓' : myGroup === g ? 'Your group ✓' : 'Join'}
+                {joined === g ? 'Joined' : myGroup === g ? 'Your group' : 'Join'}
               </button>
             </div>
             <div className="mt-2 space-y-1">
@@ -368,14 +383,16 @@ export default function HarvestMap({
                         <span className="block truncate text-xs text-ink-muted">
                           {m.online
                             ? <span className="font-bold text-success">Active now</span>
-                            : canSee
-                              ? (m.location || m.location_label || 'Location shared')
-                              : '📍 Approximate area — follow mutually to see exact location'}
+                            : !hasCoords(m) && !m.hidden
+                              ? <span className="text-gold-strong">Location not shared</span>
+                              : canSee
+                                ? (m.location || m.location_label || 'Location shared')
+                                : 'Approximate area — follow mutually to see exact location'}
                         </span>
                       </span>
                     </span>
                     <span className="shrink-0 text-right text-[10px] font-semibold text-ink-subtle">
-                      {m.hidden ? 'Approx.' : m.online ? 'Live' : formatLocationAge(m.location_updated_at)}
+                      {m.hidden ? 'Approx.' : !hasCoords(m) ? 'No pin' : m.online ? 'Live' : formatLocationAge(m.location_updated_at)}
                     </span>
                   </button>
                 )

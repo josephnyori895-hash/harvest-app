@@ -113,3 +113,46 @@ test('one premium verification seal is used everywhere', () => {
 })
 
 console.log('Admin, map, ministry and verification contract tests passed.')
+
+test('the project sheet is a full campaign: progress, backers and share', async () => {
+  const give = await readFile(new URL('../src/components/Give.tsx', import.meta.url), 'utf8')
+  assert.match(give, /data-testid="campaign-progress"/, 'progress block is missing')
+  assert.match(give, /role="progressbar"/, 'progress must be announced to assistive tech')
+  assert.match(give, /function projectStats/, 'campaign maths must be shared by card and sheet')
+  assert.ok(give.includes('Share project'), 'the share action is missing')
+  assert.match(give, /navigator\.share/, 'native share must be attempted first')
+  assert.match(give, /Project link copied/, 'the clipboard fallback must report success')
+  assert.ok(give.includes('Backers'), 'the backers block is missing')
+  assert.ok(give.includes('How do you want to take this?'), 'taking part must survive the new layout')
+})
+
+test('the admin map accounts for every member, including those who never shared', () => {
+  assert.match(map, /function pinPosition/, 'unplaced members must still get a pin')
+  assert.match(map, /Location not shared/, 'unshared locations must be labelled, not faked')
+  assert.match(map, /const notSharing = users\.filter/, 'the header must explain missing pins')
+  assert.ok(map.includes("!hasCoords(m) ? 'No pin'"), 'the member list must show the pin state')
+})
+
+test('no legacy emoji or dark card survives the swept screens', async () => {
+  const swept = [
+    'src/components/Toast.tsx', 'src/components/CallScreen.tsx', 'src/components/Protected.tsx',
+    'src/components/VideoThumb.tsx', 'src/components/UploadPill.tsx', 'src/components/EditProfile.tsx',
+    'src/components/Search.tsx', 'src/components/ViewUser.tsx', 'src/components/AdminMedia.tsx',
+    'src/components/Admin.tsx', 'src/components/Departments.tsx', 'src/components/AccountSwitcher.tsx',
+    'src/components/SocialEditor.tsx', 'src/components/NotificationsScreen.jsx', 'src/App.jsx',
+  ]
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u
+  for (const path of swept) {
+    const src = await readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(src, EMOJI, `${path} still renders an emoji glyph`)
+    assert.doesNotMatch(src, /bg-stone-(800|900|950)|border-stone-(700|800)/, `${path} still uses the old dark palette`)
+  }
+})
+
+test('a floating message button opens DMs in place, without switching tabs', () => {
+  assert.match(app, /data-testid="chat-fab"/, 'the floating chat button is missing')
+  assert.match(app, /aria-label="Open messages"/, 'the floating chat button must be labelled')
+  assert.match(app, /tab !== 'chat' && !dmSheet/, 'the button must hide while a conversation is open')
+  assert.match(app, /setDmSheet\(true\)/, 'the button must open the in-place DM layer')
+  assert.match(app, /data-testid="dm-layer"/, 'the DM layer must overlay the current tab')
+})

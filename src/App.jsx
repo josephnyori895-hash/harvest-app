@@ -121,7 +121,7 @@ function IgIcon({ name, active }) {
   if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-accent text-white border-accent' : 'border-ink-subtle'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#FFFBF0' : '#A49A8E'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
   if (name === 'activity') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 21s-6-4-6-10a6 6 0 0 1 12 0c0 6-6 10-6 10z" /></svg>
   if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-  if (name === 'give') return <span style={{fontSize: active? '20px':'18px', lineHeight:'24px', filter: active?'none':'grayscale(0.4) opacity(0.75)'}} role="img" aria-label="give">🤲</span>
+  if (name === 'give') return <Icon name="gift" size={active ? 22 : 20} className={active ? '' : 'opacity-75'} />
   if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
   if (name === 'chat') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-4.2A7.5 7.5 0 1 1 20 11.5z" /><path d="M8 11h8M8 14h5" strokeLinecap="round" /></svg>
   if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
@@ -153,7 +153,7 @@ function UpdateGate({ children }) {
     <>
       {update && !hidden && (
         <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-ink text-white shadow-2xl border border-accent/40 flex items-center gap-3">
-          <span className="text-2xl shrink-0" aria-hidden="true">🚀</span>
+          <Icon name="sparkle" size={22} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
             <p className="text-[11px] text-stone-300 mt-0.5">This build of the church app is out of date. Tap update to get the latest version.</p>
@@ -164,8 +164,8 @@ function UpdateGate({ children }) {
           >Update</button>
           <button
             onClick={() => { import('./lib/appUpdate').then(({ dismissUpdate }) => { dismissUpdate(update.versionCode); setHidden(true) }) }}
-            className="shrink-0 w-9 h-9 rounded-full bg-white/10 text-stone-300 text-sm" aria-label="Remind me later"
-          >✕</button>
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-white" aria-label="Remind me later"
+          ><Icon name="close" size={16} /></button>
         </div>
       )}
       {children}
@@ -754,6 +754,20 @@ function InnerApp() {
             </div>
             </>
           )}
+        {/* Instagram's floating message button: a conversation opens over
+            whatever the member is doing — reels keep playing, the feed stays
+            scrolled where it was — instead of switching to the chat tab. */}
+        {onboarded && tab !== 'chat' && !dmSheet && (
+          <button
+            type="button"
+            onClick={() => { setDmTarget(null); setChatReturnTab(tab); setDmSheet(true) }}
+            aria-label="Open messages"
+            data-testid="chat-fab"
+            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] right-3 z-20 grid h-12 w-12 place-items-center rounded-full bg-ink text-white shadow-raised transition active:scale-95"
+          >
+            <Icon name="chat" size={22} />
+          </button>
+        )}
         <UploadPill />
         <NowPlayingBar onOpen={t => setTab(t)} />
         {tab !== 'chat' && <Nav tab={tab} setTab={handleTab} />}
@@ -911,9 +925,9 @@ function Onboarding({ onAuthSuccess }) {
               <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
               <div className="relative">
                 <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showRegPass ? '🙈' : '👁'}</button>
+                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
               </div>
-              <p className="text-[11px] text-zinc-500 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap 👁 to check what you typed.'}</p>
+              <p className="text-[11px] text-zinc-500 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap Show to check what you typed.'}</p>
             </div>
             <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
@@ -927,12 +941,12 @@ function Onboarding({ onAuthSuccess }) {
               <p className="text-[11px] font-medium text-zinc-600 mt-2.5">This exact group is saved on your profile — GPS is never used to change it.</p>
               {!groupsLive && (
                 <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1">
-                  <span aria-hidden="true">⚠</span> Couldn't reach the latest group list — showing the default congregations.
+                  <Icon name="alert" size={14} className="shrink-0" /> Couldn't reach the latest group list — showing the default congregations.
                 </p>
               )}
               <div className="mt-3 flex items-center gap-2">
                 <button type="button" onClick={captureLocation} disabled={gpsStatus === 'locating'} className="px-3 py-2 rounded-full bg-white border border-zinc-300 text-[11px] font-bold text-zinc-700 disabled:opacity-50">
-                  {gpsStatus === 'locating' ? '📍 Locating…' : gpsStatus === 'ok' ? '📍 Location saved' : '📍 Use my location (optional)'}
+                  {gpsStatus === 'locating' ? 'Locating…' : gpsStatus === 'ok' ? 'Location saved' : 'Use my location (optional)'}
                 </button>
                 {gpsStatus === 'denied' && <span className="text-[10px] text-zinc-500">Location off — pick your group above instead</span>}
               </div>
@@ -954,7 +968,7 @@ function Onboarding({ onAuthSuccess }) {
               <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
               <div className="relative">
                 <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60">{showLoginPass ? '🙈' : '👁'}</button>
+                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
               </div>
             </div>
             {error && (
@@ -1086,7 +1100,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
         <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>
-          {role === 'admin' ? '★ Admin' : me?.verified ? <span className="inline-flex items-center gap-1">Verified <VerifiedBadge size={12} /></span> : 'Member'}
+          {role === 'admin' ? <span className="inline-flex items-center gap-1"><Icon name="shield" size={11} /> Admin</span> : me?.verified ? <span className="inline-flex items-center gap-1">Verified <VerifiedBadge size={12} /></span> : 'Member'}
         </span>
       </div>
 
@@ -1103,21 +1117,21 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
           <p className="inline-flex items-center gap-1 text-xs text-ink-muted">{me?.verified ? <><VerifiedBadge size={13} /> Verified member</> : 'Account pending verification by admin'}</p>
-          <button onClick={() => onEditProfile?.()} className="mt-1 px-4 py-1.5 rounded-full bg-surface-sunken border border-line text-xs font-bold text-ink active:opacity-70">✏️ Edit profile</button>
+          <button onClick={() => onEditProfile?.()} className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-sunken px-4 py-1.5 text-xs font-bold text-ink active:opacity-70"><Icon name="pencil" size={13} /> Edit profile</button>
         </div>
       </div>
 
       <div className="px-4 mt-3">
         <div className="mt-2 flex flex-wrap gap-2">
-          <span className="text-xs bg-surface-sunken px-2 py-1 rounded-full">📍 {me?.location || 'Nyeri'}</span>
-          <span className="text-xs bg-gradient-to-r from-yellow-500 to-purple-600 text-black px-2 py-1 rounded-full font-semibold">👥 {me?.group_name || 'Harvest Nyeri'}</span>
-          {me?.phone && <span className="text-xs bg-surface-sunken px-2 py-1 rounded-full">📱 {me.phone}</span>}
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-1 text-xs"><Icon name="map" size={12} /> {me?.location || 'Nyeri'}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-gold-soft px-2 py-1 text-xs font-semibold text-gold-strong"><Icon name="users" size={12} /> {me?.group_name || 'Harvest Nyeri'}</span>
+          {me?.phone && <span className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-1 text-xs"><Icon name="phone" size={12} /> {me.phone}</span>}
         </div>
       </div>
 
       {isAdmin && (
         <div className="mt-4 border-t border-line pt-3 px-4">
-          <button onClick={() => onOpenAdmin?.()} className="w-full py-2.5 rounded-full bg-accent text-white text-xs font-bold">🛡 Open moderation queue</button>
+          <button onClick={() => onOpenAdmin?.()} className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-accent py-2.5 text-xs font-bold text-white"><Icon name="shield" size={14} /> Open moderation queue</button>
           <p className="text-[11px] text-ink-muted text-center mt-2">Review posts, stories and reels submitted by members</p>
         </div>
       )}
@@ -1149,7 +1163,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           {memberGroups.map(g => (
             <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-white border border-line">
               <div className="min-w-0"><p className="text-sm font-semibold text-ink truncate">{g.name}</p><p className="text-xs text-ink-muted">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
-              <span className="text-xs bg-white text-black px-3 py-1 rounded-full">👥</span>
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-sunken text-ink"><Icon name="users" size={14} /></span>
             </div>
           ))}
           {memberGroups.length === 0 && <p className="text-xs text-ink-muted px-4">You are not in any groups.</p>}
@@ -1163,7 +1177,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <div className="space-y-2 px-4 mb-3">
             {uploads.map(u => (
               <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
-                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? '✓' : `${u.pct}`}</div>
+                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? <Icon name="check" size={12} /> : `${u.pct}`}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{u.label}</p>
                   <p className="text-[10px] text-ink-muted">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
@@ -1179,7 +1193,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <div className="space-y-2 px-4">
             {history.slice(0, 8).map(h => (
               <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
-                <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? '✓' : '✕'}</span>
+                <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? <Icon name="check" size={13} /> : <Icon name="close" size={13} />}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{h.label}</p>
                   {h.status === 'done'
@@ -1196,7 +1210,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-ink">🔖 Saved Posts</h3>
+          <h3 className="inline-flex items-center gap-1.5 text-sm font-extrabold text-ink"><Icon name="bookmark" size={15} /> Saved Posts</h3>
           <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
         {savedPostsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved posts…</p>}
@@ -1220,7 +1234,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                 )}
                 <div className="p-2.5">
                   <div className="flex items-center gap-1.5 text-[10px] text-ink-muted">
-                    <span className="font-bold text-ink truncate">@{sp.username}{sp.verified ? ' ✓' : ''}</span>
+                    <span className="inline-flex min-w-0 items-center gap-1 truncate font-bold text-ink">@{sp.username}{sp.verified ? <Icon name="check" size={11} className="text-accent" /> : ''}</span>
                     <span className="truncate">{savedAgo(sp.saved_at)}</span>
                   </div>
                   <p className="text-[11px] text-ink-muted line-clamp-2 mt-0.5">{sp.caption}</p>
@@ -1240,7 +1254,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 flex items-center justify-between mb-2">
-          <h3 className="text-sm font-bold text-ink">🔖 Saved Videos</h3>
+          <h3 className="inline-flex items-center gap-1.5 text-sm font-extrabold text-ink"><Icon name="bookmark" size={15} /> Saved Videos</h3>
           <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
         {savedReelsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved videos…</p>}
@@ -1248,7 +1262,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         {!savedReelsLoading && !savedReelsError && savedReels.length === 0 && (
           <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
             <p className="text-xs font-semibold">Nothing saved yet.</p>
-            <p className="text-[11px] text-ink-muted mt-1">Tap 🔖 on a Reel to keep it here for later.</p>
+            <p className="mt-1 text-2xs text-ink-muted">Tap Save on a Reel to keep it here for later.</p>
           </div>
         )}
         {savedReels.length > 0 && (() => {
@@ -1305,7 +1319,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                     <button key={r.id} type="button"
                       onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
                       className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-white border border-line text-left active:scale-[0.98] transition-transform">
-                      {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 flex items-center justify-center text-3xl">🎥</div>}
+                      {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 grid place-items-center"><Icon name="reels" size={26} className="text-ink-subtle" /></div>}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
                         <p className="text-[11px] font-bold truncate">{r.username}</p>
                         <p className="text-[10px] text-white/70 line-clamp-2">{r.caption || 'Saved video'}</p>
@@ -1327,7 +1341,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       <div className="px-4 mt-5">
         {/* Give took the bottom bar slot Activity used to hold; Activity stays
             one tap away here so nothing members relied on disappears. */}
-        <button onClick={() => onOpenActivity?.()} className="mb-2 w-full py-2.5 rounded-full border border-line bg-surface text-accent-strong text-xs font-semibold active:opacity-70">🕘 Your activity</button>
+        <button onClick={() => onOpenActivity?.()} className="mb-2 inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-line bg-surface py-2.5 text-xs font-semibold text-accent-strong active:opacity-70"><Icon name="clock" size={14} /> Your activity</button>
         <button onClick={() => onSignOut?.()} className="w-full py-2.5 rounded-full border border-line text-ink-muted text-xs font-semibold">Sign out</button>
       </div>
     </div>

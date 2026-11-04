@@ -14,7 +14,7 @@ const music = await readFile(new URL('../src/components/Music.tsx', import.meta.
 test('one shared action-outcome helper reports success and readable errors', () => {
   assert.match(feedback, /export function describeError\(/)
   assert.match(feedback, /export async function runAction<T>\(/)
-  assert.match(feedback, /showToast\(successMessage \|\| `\$\{label\} — done ✓`, 'success'\)/)
+  assert.match(feedback, /showToast\(successMessage \|\| `\$\{label\} — done`, 'success'\)/)
   assert.match(feedback, /return \{ ok: false, error: new Error\(describeError\(e\)\) \}/)
 })
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSocket, onSocket, emitSocket, getIceServers } from '../lib/realtime'
+import { Icon } from '../ui'
 
 export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 'voice' | 'video'; onEnd: () => void }) {
   const [status, setStatus] = useState('Calling...')
@@ -116,26 +117,26 @@ export default function CallScreen({ peer, type, onEnd }: { peer: string; type: 
   }
 
   return (
-    <div className="fixed inset-0 bg-stone-900 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-ink z-50 flex flex-col">
       <div className="flex-1 relative bg-ink flex flex-col items-center justify-center overflow-hidden">
         <div className="absolute top-4 left-4 flex items-center gap-2 text-white">
-          <span className="text-xs bg-white/20 px-2 py-1 rounded-full">{type === 'video' ? '📹 Video' : '📞 Voice'} • {status}</span>
+          <span className="text-xs bg-white/20 px-2 py-1 rounded-full">{type === 'video' ? 'Video call' : 'Voice call'} • {status}</span>
         </div>
         {/* remote video full-bleed */}
         <video ref={remoteVideoRef} autoPlay playsInline className={`absolute inset-0 w-full h-full object-cover ${type === 'video' ? 'block' : 'hidden'}`} />
         {/* fallback avatar when no remote */}
-        <div className={`w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 flex items-center justify-center text-2xl mb-4 ${status === 'Connected' && type === 'video' ? 'hidden' : 'flex'}`}>{peer[0].toUpperCase()}</div>
+        <div className={`w-24 h-24 rounded-full bg-gradient-to-tr from-accent to-accent-strong flex items-center justify-center text-2xl font-bold text-white mb-4 ${status === 'Connected' && type === 'video' ? 'hidden' : 'flex'}`}>{peer[0].toUpperCase()}</div>
         <p className="text-white font-semibold z-10">{peer}</p>
-        <p className="text-stone-400 text-sm z-10">{status}</p>
+        <p className="text-white/60 text-sm z-10">{status}</p>
         {type === 'video' && (
-          <video ref={localRef} autoPlay playsInline muted className={`mt-6 w-32 h-24 bg-stone-800 rounded-xl border-2 border-white object-cover ${camOff ? 'hidden' : 'block'}`} />
+          <video ref={localRef} autoPlay playsInline muted className={`mt-6 w-32 h-24 bg-white/15 rounded-xl border-2 border-white object-cover ${camOff ? 'hidden' : 'block'}`} />
         )}
-        {type === 'video' && camOff && <div className="mt-6 w-32 h-24 bg-stone-800 rounded-xl border-2 border-white flex items-center justify-center text-xs text-white">Camera off</div>}
+        {type === 'video' && camOff && <div className="mt-6 w-32 h-24 bg-white/15 rounded-xl border-2 border-white flex items-center justify-center text-xs text-white">Camera off</div>}
       </div>
       <div className="p-6 bg-ink flex justify-center gap-6">
-        <button onClick={toggleMute} className={`w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>{muted ? '🔇' : '🎤'}</button>
-        <button onClick={handleEnd} aria-label="End call" className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl">✕</button>
-        <button onClick={toggleCam} className={`w-12 h-12 rounded-full flex items-center justify-center ${camOff ? 'bg-white text-black' : 'bg-stone-800 text-white'}`}>📹</button>
+        <button onClick={toggleMute} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} aria-pressed={muted} className={`w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-ink' : 'bg-white/15 text-white'}`}><Icon name={muted ? 'volume-x' : 'mic'} size={20} /></button>
+        <button onClick={handleEnd} aria-label="End call" className="w-14 h-14 rounded-full bg-danger flex items-center justify-center text-white"><Icon name="close" size={22} /></button>
+        <button onClick={toggleCam} aria-label={camOff ? 'Turn camera on' : 'Turn camera off'} aria-pressed={camOff} className={`w-12 h-12 rounded-full flex items-center justify-center ${camOff ? 'bg-white text-ink' : 'bg-white/15 text-white'}`}><Icon name="camera" size={20} /></button>
       </div>
     </div>
   )

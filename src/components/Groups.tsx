@@ -132,7 +132,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/join`, { method: 'POST', headers: authHeaders() })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not request to join')
-      showToast(d.status === 'requested' ? 'Join request sent ⏳' : 'Welcome to the group! 🎉')
+      showToast(d.status === 'requested' ? 'Join request sent — waiting for a leader to approve' : 'Welcome to the group!')
       load()
       // Chat rails read /api/groups/mine — tell them membership changed.
       window.dispatchEvent(new Event('harvest:groups-changed'))
@@ -157,7 +157,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/requests/${reqId}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ approve }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not update request')
-      showToast(approve ? 'Member approved ✓' : 'Request rejected')
+      showToast(approve ? 'Member approved' : 'Request rejected')
       void openDetail(slug); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not update request') } finally { setBusy('') }
   }
@@ -168,7 +168,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(slug)}/members/${encodeURIComponent(username)}/role`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ role }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not change role')
-      showToast(role === 'admin' ? `${username} is now a group admin ⭐` : `${username} is now a member`)
+      showToast(role === 'admin' ? `${username} is now a group admin` : `${username} is now a member`, 'success')
       void openDetail(slug); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not change role') } finally { setBusy('') }
   }
@@ -191,7 +191,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/members`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ username: addUname.trim(), role: addRole }) })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not add member')
-      showToast(`${addUname.trim()} added ✓`)
+      showToast(`${addUname.trim()} added`, 'success')
       setAddUname('')
       void openDetail(openSlug || ''); notifyGroupsChanged()
     } catch (e: any) { showToast(e?.message || 'Could not add member') } finally { setBusy('') }

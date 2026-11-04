@@ -15,7 +15,7 @@ export default function UploadPill() {
   return (
     <div className="fixed bottom-[68px] right-3 z-40 flex flex-col gap-2 items-end pointer-events-none">
       {hidden > 0 && (
-        <div className="pointer-events-auto rounded-full bg-neutral-900/85 text-white text-[10px] font-bold px-3 py-1.5 shadow-lg backdrop-blur">
+        <div className="pointer-events-auto rounded-full bg-ink/85 text-white text-2xs font-bold px-3 py-1.5 shadow-lg backdrop-blur">
           +{hidden} more uploading
         </div>
       )}
@@ -24,7 +24,7 @@ export default function UploadPill() {
           key={u.id}
           role="status"
           aria-label={u.status === 'failed' ? `${u.label} upload failed` : `${u.label} uploading, ${u.pct}% complete`}
-          className="pointer-events-auto max-w-[260px] rounded-2xl bg-neutral-900/90 text-white shadow-2xl backdrop-blur px-3.5 py-2.5 border border-white/10"
+          className="pointer-events-auto max-w-[260px] rounded-2xl bg-ink/90 text-white shadow-raised backdrop-blur px-3.5 py-2.5 border border-white/10"
         >
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 36 36" aria-hidden="true">
@@ -37,11 +37,13 @@ export default function UploadPill() {
                 transform="rotate(-90 18 18)"
                 style={{ transition: 'stroke-dasharray 0.3s ease' }}
               />
-              <text x="18" y="21.5" textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">{u.pct >= 100 ? '✓' : u.pct}</text>
+              {u.pct >= 100
+                ? <path d="M12.2 19.4l-4.1-4.3 1.9-1.8 2.1 2.2 4.5-4.8 1.9 1.8-6.3 6.9z" fill="#BBF7D0" />
+                : <text x="18" y="21.5" textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">{u.pct}</text>}
             </svg>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold truncate leading-tight">{u.status === 'failed' ? `Upload failed: ${u.label}` : u.pct >= 100 ? 'Almost done…' : `Uploading ${u.label}`}</p>
-              <p className="text-[10px] text-white/55 leading-tight">{u.status === 'failed' ? 'Your file is still here — you can retry.' : u.status === 'waiting' ? 'Waiting to retry automatically…' : 'You can keep using the app'}</p>
+              <p className="text-2xs text-white/60 leading-tight">{u.status === 'failed' ? 'Your file is still here — you can retry.' : u.status === 'waiting' ? 'Waiting to retry automatically…' : 'You can keep using the app'}</p>
             </div>
           </div>
           {u.status === 'failed' && (

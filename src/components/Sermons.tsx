@@ -273,7 +273,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
     const kind = uploadKind === 'video' ? 'sermon_video' : 'sermon_audio'
     void startBackgroundUpload({
       label: uploadKind === 'video' ? 'Sermon video' : 'Sermon audio',
-      successMsg: 'Sermon published ✓',
+      successMsg: 'Sermon published',
       task: {
         kind,
         file: uploadFile,
@@ -314,7 +314,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       })
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not save')
-      showToast('Sermon updated ✓')
+      showToast('Sermon updated', 'success')
       setEditing(null)
       void load(true, { limit: PAGE })
     } catch (e: any) { showToast(e?.message || 'Could not save', 'error') } finally { setBusy('') }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Icon, type IconName } from '../ui'
 
 type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -21,6 +22,15 @@ export function showToast(message: string, type: ToastType = 'info', duration?: 
   toastSubscribers.forEach(sub => sub(toast))
 }
 
+// Semantic tokens, not hand-picked gradients: a toast must look like the rest
+// of the app on every screen, light or dark.
+const TONE: Record<ToastType, { box: string; icon: IconName }> = {
+  success: { box: 'bg-success text-white', icon: 'check' },
+  error: { box: 'bg-danger text-white', icon: 'alert' },
+  info: { box: 'bg-ink text-white', icon: 'info' },
+  warning: { box: 'bg-gold-strong text-ink', icon: 'alert' },
+}
+
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -37,31 +47,21 @@ export function ToastContainer() {
     return () => { toastSubscribers.delete(unsubscribe) }
   }, [])
 
-  const bgColors = {
-    success: 'bg-gradient-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-500/50',
-    error: 'bg-gradient-to-r from-red-600 to-rose-600 shadow-lg shadow-red-500/50',
-    info: 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg shadow-blue-500/50',
-    warning: 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg shadow-amber-500/50'
-  }
-
-  const icons = {
-    success: '✓',
-    error: '✕',
-    info: 'ℹ',
-    warning: '⚠'
-  }
-
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
-      {toasts.map(toast => (
-        <div
-          key={toast.id}
-          className={`${bgColors[toast.type]} text-white px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 animate-slide-up pointer-events-auto shadow-xl`}
-        >
-          <span className="text-lg">{icons[toast.type]}</span>
-          {toast.message}
-        </div>
-      ))}
+    <div className="pointer-events-none fixed left-3 right-3 top-[calc(env(safe-area-inset-top,0px)+12px)] z-50 space-y-2 sm:left-auto sm:right-4 sm:w-auto">
+      {toasts.map(toast => {
+        const tone = TONE[toast.type]
+        return (
+          <div
+            key={toast.id}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+            className={`${tone.box} animate-slide-up pointer-events-auto flex items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-semibold shadow-raised`}
+          >
+            <Icon name={tone.icon} size={17} className="shrink-0" />
+            <span className="min-w-0 flex-1">{toast.message}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
