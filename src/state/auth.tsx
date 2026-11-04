@@ -3,6 +3,12 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 // Exactly three Harvest account types: normal member, verified member, admin.
 // Verified is deliberately separate from the authorization role.
 const ADMIN_PINS: string[] = (import.meta.env.DEV && import.meta.env.VITE_USE_API !== 'true') ? ['7777', '0000', '7C3AED'] : []
+// Same API switch as src/lib/api.ts. In API mode the server is the only
+// authority on role and verification — stale local storage must never override
+// a value the admin just changed.
+const USE_API = import.meta.env.PROD
+  ? import.meta.env.VITE_USE_API !== 'false'
+  : import.meta.env.VITE_USE_API === 'true'
 const LS_ROLE = 'harvest_role'
 const LS_USERNAME = 'harvest_username'
 const LS_VERIFIED = 'harvest_verified'
@@ -39,11 +45,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsernameState(u)
     if (!u) { localStorage.removeItem(LS_USERNAME); return }
     localStorage.setItem(LS_USERNAME, u)
-    try {
-      const users = JSON.parse(localStorage.getItem('harvest_users') || '[]')
-      const account = users.find((x: any) => x.username === u)
-      if (account) setVerifiedState(Boolean(account.verified)), localStorage.setItem(LS_VERIFIED, String(Boolean(account.verified)))
-    } catch { /* server /me remains authoritative in API mode */ }
+    // Offline demo accounts only. With the API enabled, /api/me (boot check +
+    // periodic re-sync in App) is authoritative, and reading harvest_users here
+    // used to undo a fresh admin verification.
+    if (!USE_API) {
+      try {
+        const users = JSON.parse(localStorage.getItem('harvest_users') || '[]')
+        const account = users.find((x: any) => x.username === u)
+        if (account) {
+          setVerifiedState(Boolean(account.verified))
+          localStorage.setItem(LS_VERIFIED, String(Boolean(account.verified)))
+        }
+      } catch { /* offline demo data is optional */ }
+    }
   }, [])
 
   const login = useCallback((p: string) => {
@@ -70,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (localStorage.getItem(LS_ROLE) === 'leader') { setRole('member'); setVerified(true) }
     if (username && role === 'guest') setRole('member')
-    if (username) {
+    if (username && !USE_API) {
       try { const account = JSON.parse(localStorage.getItem('harvest_users') || '[]').find((x: any) => x.username === username); if (account) setVerified(Boolean(account.verified)) } catch {}
     }
   }, [role, username, setRole, setVerified])

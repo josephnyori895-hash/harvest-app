@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 const giving = await readFile(new URL('../workers/src/routes/giving.js', import.meta.url), 'utf8')
 const api = await readFile(new URL('../src/lib/api.ts', import.meta.url), 'utf8')
 const giveUi = await readFile(new URL('../src/components/Give.tsx', import.meta.url), 'utf8')
+const givingDefaults = await readFile(new URL('../src/lib/givingDefaults.ts', import.meta.url), 'utf8')
 
 test('M-Pesa STK push enforces whole-shilling amounts and bounds', () => {
   assert.match(giving, /!Number\.isFinite\(amount\) \|\| !Number\.isInteger\(amount\) \|\| amount < 1 \|\| amount > 1000000/)
@@ -46,6 +47,14 @@ test('project cards are campaign cards with real deadline language', () => {
   assert.match(giveUi, /Take part <Icon name="arrow-right"/, 'one clear action per card')
   // A past deadline must never render as a relative "Just now" timestamp.
   assert.doesNotMatch(giveUi, /Deadline \{timeAgo\(p\.deadline\)\}/)
+})
+
+test('the Ministry giving purpose is HYP and keeps its stable id', () => {
+  // Members see "HYP"; the stored purpose id stays 'ministry' so existing
+  // payment configs and transaction history are not orphaned.
+  assert.match(givingDefaults, /\{ id: 'ministry', label: 'HYP'/, 'HYP must be the member-facing label')
+  assert.match(givingDefaults, /f\.id === 'ministry' && label\.trim\(\)\.toLowerCase\(\) === 'ministry' \? 'HYP' : label/, 'already-saved lists must migrate on read')
+  assert.doesNotMatch(givingDefaults, /\{ id: 'ministry', label: 'Ministry'/, 'the old label must be gone')
 })
 
 test('RS-106: a failed giving-history load is surfaced with a retry', () => {

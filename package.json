@@ -13,7 +13,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
     "test:e2e:group-chat": "node scripts/e2e-group-chat.mjs",
-    "test:all": "npm run test:admin && npm run test:security && npm run test:reels && npm run test:posting && npm run test:music && npm run test:chat-media && npm run test:chat-realtime && npm run test:media-bounds && npm run test:feed-music-autoplay && npm run test:stories && npm run test:giving && npm run test:notifications && npm run test:reliability && npm run test:group2-upload && npm run test:ui && npm run test:comments && npm run test:composer && npm run test:worship && npm run test:admin-power && npm run test:no-silence && npm run test:chat-reliability",
+    "test:all": "npm run test:admin && npm run test:security && npm run test:reels && npm run test:posting && npm run test:music && npm run test:chat-media && npm run test:chat-realtime && npm run test:media-bounds && npm run test:feed-music-autoplay && npm run test:stories && npm run test:giving && npm run test:notifications && npm run test:reliability && npm run test:group2-upload && npm run test:ui && npm run test:comments && npm run test:composer && npm run test:worship && npm run test:admin-power && npm run test:no-silence && npm run test:chat-reliability && npm run test:admin-ui",
     "test:e2e:image-adjuster": "node scripts/e2e-image-adjuster.mjs",
     "test:reels": "node scripts/test-reels-regression.mjs",
     "validate:release": "node scripts/validate-release.mjs",
@@ -35,6 +35,7 @@
     "test:composer": "node --test scripts/test-composer-canvas.mjs",
     "test:worship": "node --test scripts/test-worship-room.mjs",
     "test:admin-power": "node --test scripts/test-admin-power.mjs",
+    "test:admin-ui": "node --test scripts/test-admin-redesign.mjs",
     "test:no-silence": "node --test scripts/test-no-silent-actions.mjs",
     "test:chat-reliability": "node --test scripts/test-chat-reliability.mjs"
   },

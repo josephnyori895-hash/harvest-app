@@ -80,8 +80,19 @@ export async function handleUsers(request, env, ctx, params) {
     // Phone numbers are admin-only: members never receive other people's numbers.
     const { rows } = await query(
       env,
-      `SELECT id, username, name, group_name, location, verified, role, lat, lng, location_updated_at, avatar_key${isAdmin ? ', phone, phone_normalized, grants' : ''} FROM users WHERE active=1 ORDER BY group_name, username LIMIT 500`,
+      `SELECT u.id, u.username, u.name, u.group_name, u.location, u.verified, u.role, u.lat, u.lng, u.location_updated_at, u.last_seen, u.created_at, u.avatar_key,
+              (SELECT d.name FROM department_members dm JOIN departments d ON d.id=dm.department_id WHERE dm.user_id=u.id LIMIT 1) AS department_name,
+              (SELECT d.slug FROM department_members dm JOIN departments d ON d.id=dm.department_id WHERE dm.user_id=u.id LIMIT 1) AS department_slug${isAdmin ? ', u.phone, u.phone_normalized, u.grants' : ''}
+         FROM users u WHERE u.active=1 ORDER BY u.group_name, u.username LIMIT 500`,
     )
+    // Presence comes from the same heartbeat the chat tab writes. A member is
+    // "active now" for five minutes after their last request, so an admin can
+    // tell a live location from one shared days ago.
+    const ONLINE_WINDOW_MS = 5 * 60 * 1000
+    const isOnline = u => {
+      const ms = Date.parse(u.last_seen || '')
+      return Number.isFinite(ms) && Date.now() - ms < ONLINE_WINDOW_MS
+    }
     const { rows: follows } = await query(env, `SELECT followee_id FROM follows WHERE follower_id=?`, [fresh.id])
     const followsSet = new Set(follows.map(r => r.followee_id))
     const { rows: followers } = await query(env, `SELECT follower_id FROM follows WHERE followee_id=?`, [fresh.id])
@@ -90,7 +101,7 @@ export async function handleUsers(request, env, ctx, params) {
       bool(u, 'verified')
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === fresh.id
       const avatar_url = await mediaUrlOrNull(env, u.avatar_key, 3600)
-      if (mutual) return { ...u, ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
+      if (mutual) return { ...u, online: isOnline(u), ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475, '']
       // Deterministic jitter keeps an approximate member marker stable across
       // refreshes; Math.random() made members appear to move every 30 seconds.
@@ -102,11 +113,11 @@ export async function handleUsers(request, env, ctx, params) {
         id: u.id, username: u.username, name: u.name, group_name: u.group_name,
         location: null, verified: u.verified, role: undefined,
         lat: gc[0] + jitterLat, lng: gc[1] + jitterLng,
-        location_updated_at: null, hidden: true, approx: true,
+        location_updated_at: null, last_seen: null, online: false, hidden: true, approx: true,
         location_label: gc[2] || null, avatar_url
       }
     }))
-    return jsonResponse({ users: out, viewer: fresh.username, isAdmin })
+    return jsonResponse({ users: out, viewer: fresh.username, isAdmin, server_time: new Date().toISOString() })
   }
 
   // POST /api/admin/users
@@ -221,8 +232,10 @@ export async function handleUsers(request, env, ctx, params) {
     if (body.lat !== undefined && body.lng !== undefined) {
       const lat = Number(body.lat), lng = Number(body.lng)
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return errorResponse('invalid coordinates', 400)
-      sets.push('lat=?, lng=?')
-      values.push(lat, lng)
+      // An admin correcting a pin counts as a fresh location, otherwise the
+      // member's map label would still read "Location not shared".
+      sets.push('lat=?, lng=?, location_updated_at=?')
+      values.push(lat, lng, new Date().toISOString())
     }
     if (nextActive && !before.active) { sets.push('deactivated_at=NULL', 'deactivated_by=NULL') }
     if (!nextActive && before.active) { sets.push('deactivated_at=?', 'deactivated_by=?'); values.push(new Date().toISOString(), fresh.id) }

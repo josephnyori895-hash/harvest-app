@@ -8,7 +8,9 @@ export const DEFAULT_FUNDS: GivingFund[] = [
   { id: 'tithe', label: 'Tithe', sub: 'First fruits', icon: '💰' },
   { id: 'offering', label: 'Offering', sub: 'Thanksgiving', icon: '🙏' },
   { id: 'building', label: 'Building Fund', sub: 'Church development', icon: '🏗️' },
-  { id: 'ministry', label: 'Ministry', sub: 'Outreach + missions', icon: '🌍' },
+  // id stays 'ministry' so saved payment configs and past transactions keep
+  // pointing at the same purpose; only the member-facing name is HYP.
+  { id: 'ministry', label: 'HYP', sub: 'Outreach + missions', icon: '🌍' },
 ]
 
 export const DEFAULT_QUICK = [100, 200, 500, 1000, 2500, 5000]
@@ -22,7 +24,15 @@ export function parseFunds(raw?: string | null): GivingFund[] {
     const funds = parsed
       .filter((f: any) => f && typeof f.id === 'string' && typeof f.label === 'string' && f.label.trim())
       .slice(0, 12)
-      .map((f: any) => ({ id: f.id, label: String(f.label).slice(0, 60), sub: String(f.sub || '').slice(0, 120), icon: String(f.icon || '').slice(0, 8) }))
+      .map((f: any) => {
+        const label = String(f.label).slice(0, 60)
+        // Churches that already saved the old default list still have
+        // "Ministry" in site_content. Rename it on read (id unchanged) so the
+        // purpose shows as HYP everywhere without a database edit; any other
+        // custom label the admin chose is left alone.
+        const renamed = f.id === 'ministry' && label.trim().toLowerCase() === 'ministry' ? 'HYP' : label
+        return { id: f.id, label: renamed, sub: String(f.sub || '').slice(0, 120), icon: String(f.icon || '').slice(0, 8) }
+      })
     return funds.length ? funds : DEFAULT_FUNDS
   } catch {
     return DEFAULT_FUNDS

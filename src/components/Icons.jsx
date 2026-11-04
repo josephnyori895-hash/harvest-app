@@ -360,21 +360,11 @@ export function IgIcon({ name, active, size = 24 }) {
 }
 
 /**
- * Spiritual badge icons
+ * One verification mark for the whole app. Kept as a re-export so any screen
+ * still importing from this legacy icon module renders the same seal as the
+ * rest of the product instead of a second, older badge design.
  */
-export function VerifiedBadge({ size = 16 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
-      fill="currentColor"
-      className="text-green-600"
-    >
-      <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm3.5-1a.5.5 0 01.5.5v.5h.5a.5.5 0 010 1h-.5v7a.5.5 0 01-1 0v-7h-.5a.5.5 0 010-1h.5V.5a.5.5 0 01.5-.5zM4 7a1 1 0 11-2 0 1 1 0 012 0z" />
-    </svg>
-  )
-}
+export { VerifiedBadge } from './VerifiedBadge'
 
 /**
  * Harvest leaf icon (branding)

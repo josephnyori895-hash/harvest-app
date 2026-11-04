@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import { AuthProvider, useAuth } from './state/auth'
 import { useCongregations } from './lib/useCongregations'
@@ -76,7 +75,7 @@ function authHeaders() {
 
 // Real member directory from the server (replaces the old mock user list).
 // Auto-refreshes when verification/admin actions fire 'harvest:verified'.
-function useDirectory(enabled) {
+function useDirectory(enabled, refreshMs = 30000) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -101,7 +100,7 @@ function useDirectory(enabled) {
     const refreshOnVisible = () => { if (document.visibilityState === 'visible') load() }
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') load()
-    }, 30000)
+    }, refreshMs)
     document.addEventListener('visibilitychange', refreshOnVisible)
     return () => {
       window.clearInterval(timer)
@@ -109,7 +108,7 @@ function useDirectory(enabled) {
       window.removeEventListener('harvest:verified', load)
       window.removeEventListener('harvest:profile-updated', load)
     }
-  }, [enabled])
+  }, [enabled, refreshMs])
   return [users, setUsers, loading, error, load]
 }
 function IgIcon({ name, active }) {
@@ -175,7 +174,7 @@ function UpdateGate({ children }) {
 }
 
 function InnerApp() {
-  const { setUsername, setRole, setVerified, role, verified, isAdmin } = useAuth()
+  const { setUsername, setRole, setVerified, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
   const [showNotifications, setShowNotifications] = useState(false)
@@ -317,7 +316,7 @@ function InnerApp() {
 
   // Fetch the notification list. Called once after sign-in and whenever the
   // bell panel opens, so the badge and the panel reflect fresh records.
-  const [notificationsLoadedOnce, setNotificationsLoadedOnce] = useState(false)
+  const [, setNotificationsLoadedOnce] = useState(false)
   useEffect(() => {
     if (!onboarded) return
     let cancelled = false
@@ -452,7 +451,9 @@ function InnerApp() {
   // Route notification taps (DM / group / department / tab deep links).
   usePushTapRouting(openDm, setTab, setTeamChat)
 
-  const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded)
+  // Admins get a faster directory refresh: the map's live-location view is
+  // only useful if presence and pins are current.
+  const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded, isAdmin ? 15000 : 30000)
 
   const [userList, setUserList] = useState(null)
 
@@ -517,6 +518,42 @@ function InnerApp() {
       })
       .catch(() => {})
   }, [])
+
+  // Verification is server-authoritative. An admin can verify (or unverify)
+  // an account at any moment; the member's screen must reflect that without a
+  // fresh login. Poll /api/me slowly, re-read on foreground, and react to the
+  // events admin actions already broadcast.
+  useEffect(() => {
+    if (!onboarded) return
+    let cancelled = false
+    const syncIdentity = () => {
+      const t = localStorage.getItem('harvest_token') || ''
+      if (!t) return
+      fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } })
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => {
+          const u = d?.user
+          if (!u || cancelled) return
+          if (u.username) setUsername(u.username)
+          setRole(u.role === 'admin' ? 'admin' : 'member')
+          setVerified(Boolean(u.verified))
+        })
+        .catch(() => { /* keep the last known identity */ })
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') syncIdentity() }
+    const id = window.setInterval(syncIdentity, 60_000)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('harvest:verified', syncIdentity)
+    window.addEventListener('harvest:profile-updated', syncIdentity)
+    syncIdentity()
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('harvest:verified', syncIdentity)
+      window.removeEventListener('harvest:profile-updated', syncIdentity)
+    }
+  }, [onboarded, setRole, setUsername, setVerified])
 
   // Android hardware back: pop overlays/tabs; exit only from Home.
   useEffect(() => {
@@ -619,7 +656,7 @@ function InnerApp() {
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
           {tab === 'give' && <Give />}
-          {tab === 'map' && <HarvestMap users={users} onOpenUser={openProfile} />}
+          {tab === 'map' && <HarvestMap users={users} onOpenUser={openProfile} onRefresh={refreshDirectory} />}
           {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} onOpenUser={openProfile} />}
           {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} onOpenUser={openProfile} />}
           {tab === 'admin' && (
@@ -633,6 +670,7 @@ function InnerApp() {
                 onOpenSermons={() => setTab('sermons')}
                 onOpenMusic={() => setTab('music')}
                 onOpenGive={() => setTab('give')}
+                onOpenMap={() => setTab('map')}
               />
             </RequireRole>
           )}

@@ -28,7 +28,7 @@ const ADVERT_EXAMPLE = JSON.stringify([{
   advertise_until: '2026-12-24T23:59:59Z',
 }], null, 2)
 
-type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content' | 'ministries'
 
 type Props = {
   onBack: () => void
@@ -39,9 +39,10 @@ type Props = {
   onOpenSermons?: () => void
   onOpenMusic?: () => void
   onOpenGive?: () => void
+  onOpenMap?: () => void
 }
 
-export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons, onOpenMusic, onOpenGive }: Props) {
+export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDepartments, onOpenSermons, onOpenMusic, onOpenGive, onOpenMap }: Props) {
   const { congregations: GROUPS } = useCongregations()
   const [tab, setTab] = useState<Tab>('dashboard')
   const [busy, setBusy] = useState<string | null>(null)
@@ -58,7 +59,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => { if (notice) showToast(notice, 'success') }, [notice])
 
   // ── Daily operations dashboard ──
-  const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, content: [] as any[], chats: [] as any[], audit: [] as any[] })
+  const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, online: 0, verified: 0, content: [] as any[], chats: [] as any[], audit: [] as any[] })
   const [loadingDashboard, setLoadingDashboard] = useState(false)
 
   // ── Moderation state ──
@@ -71,6 +72,12 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const [loadingAccounts, setLoadingAccounts] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  const [accountFilter, setAccountFilter] = useState<'all' | 'verified' | 'admin' | 'inactive'>('all')
+  // Ministries (departments) power both the ministry manager and the per-member
+  // "Ministry" selector. One list, one source of truth.
+  const [departments, setDepartments] = useState<any[]>([])
+  const [newMinistry, setNewMinistry] = useState('')
+  const [ministryNames, setMinistryNames] = useState<Record<string, string>>({})
   const [newUser, setNewUser] = useState({ username: '', name: '', pin: '', role: 'member', group_name: GROUPS[0] })
   const [showCreate, setShowCreate] = useState(false)
   const [restoreName, setRestoreName] = useState('')
@@ -244,6 +251,8 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           const created = member.created_at ? new Date(member.created_at).getTime() : 0
           return created > Date.now() - 7 * 24 * 60 * 60 * 1000
         }).length,
+        online: (u.users || []).filter((member: any) => member.online).length,
+        verified: (u.users || []).filter((member: any) => member.verified).length,
         groups: (g.groups || []).length,
         departments: (d.departments || []).length,
         content: (feed.posts || feed.items || feed.reels || []).slice(0, 8),
@@ -271,10 +280,17 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     setLoadingAccounts(true)
     try {
       setError('')
-      const response = await fetch(`${API}/api/users/map`, { headers: { Authorization: `Bearer ${token()}` } })
+      // Members and ministries load together: the member card needs each
+      // person's current ministry to offer a valid change.
+      const [response, depsResponse] = await Promise.all([
+        fetch(`${API}/api/users/map`, { headers: { Authorization: `Bearer ${token()}` } }),
+        fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${token()}` } }),
+      ])
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || 'Unable to load accounts')
       setAccounts(data.users || [])
+      const deps = await depsResponse.json().catch(() => ({}))
+      if (depsResponse.ok) setDepartments(deps.departments || [])
     } catch (e: any) {
       setError(e?.message || 'Unable to load accounts')
     } finally { setLoadingAccounts(false) }
@@ -319,10 +335,14 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     } finally { setLoadingAudit(false) }
   }, [])
 
+  // The hero counters must be real on arrival, not zero until Overview is
+  // visited for the first time.
+  useEffect(() => { void loadDashboard() }, [loadDashboard])
+
   useEffect(() => {
     if (tab === 'dashboard') void loadDashboard()
     if (tab === 'moderation') void loadPending()
-    if (tab === 'accounts') void loadAccounts()
+    if (tab === 'accounts' || tab === 'ministries') void loadAccounts()
     if (tab === 'chat') void loadChatConversations()
     if (tab === 'chat') void loadChatMessages()
     if (tab === 'audit') void loadAudit()
@@ -483,9 +503,96 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
   const filteredAccounts = accounts.filter(u => {
     const needle = q.trim().toLowerCase()
-    if (!needle) return true
-    return `${u.username} ${u.name} ${u.group_name}`.toLowerCase().includes(needle)
+    if (needle && !`${u.username} ${u.name} ${u.group_name} ${u.department_name || ''}`.toLowerCase().includes(needle)) return false
+    if (accountFilter === 'verified') return Boolean(u.verified)
+    if (accountFilter === 'admin') return u.role === 'admin'
+    if (accountFilter === 'inactive') return u.active === false
+    return true
   })
+
+  // Move a member between ministries (or out of every ministry). The admin API
+  // treats a transfer as authoritative, so this works even when the member was
+  // already serving somewhere else.
+  const changeMinistry = async (u: any, slug: string) => {
+    if (busy) return
+    if ((u.department_slug || '') === slug) return
+    setBusy(u.username); setError('')
+    try {
+      if (!slug) {
+        const r = await fetch(`${API}/api/departments/${encodeURIComponent(u.department_slug)}/members/${encodeURIComponent(u.username)}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${token()}` },
+        })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error || 'Could not remove ministry')
+      } else {
+        const r = await fetch(`${API}/api/departments/${encodeURIComponent(slug)}/members`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u.username, role: 'member' }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error || 'Could not change ministry')
+      }
+      const dep = departments.find((x: any) => x.slug === slug)
+      setAccounts(list => list.map(x => x.username === u.username ? { ...x, department_slug: slug || null, department_name: dep?.name || null } : x))
+      window.dispatchEvent(new Event('harvest:departments-updated'))
+      flash(`${u.username} is now in ${dep?.name || 'no ministry'}`)
+      // Refresh the ministry counts in the background (the member row already
+      // updated optimistically above, so nothing flickers).
+      void loadAccounts()
+    } catch (e: any) {
+      setError(e?.message || 'Could not change ministry')
+    } finally { setBusy(null) }
+  }
+
+  const createMinistry = async () => {
+    const name = newMinistry.trim()
+    if (!name || busy === 'ministry-create') return
+    setBusy('ministry-create'); setError('')
+    try {
+      const r = await fetch(`${API}/api/departments`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not create ministry')
+      setNewMinistry('')
+      await loadAccounts()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
+      flash(`Ministry “${name}” created`)
+    } catch (e: any) { setError(e?.message || 'Could not create ministry') } finally { setBusy(null) }
+  }
+
+  const renameMinistry = async (dep: any) => {
+    const name = (ministryNames[dep.slug] ?? dep.name ?? '').trim()
+    if (!name || name === dep.name || busy === `ministry-${dep.slug}`) return
+    setBusy(`ministry-${dep.slug}`); setError('')
+    try {
+      const r = await fetch(`${API}/api/departments/${encodeURIComponent(dep.slug)}`, {
+        method: 'PATCH', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not rename ministry')
+      setMinistryNames(prev => { const next = { ...prev }; delete next[dep.slug]; return next })
+      await loadAccounts()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
+      flash(`Ministry renamed to “${name}”`)
+    } catch (e: any) { setError(e?.message || 'Could not rename ministry') } finally { setBusy(null) }
+  }
+
+  const deleteMinistry = async (dep: any) => {
+    if (busy === `ministry-del-${dep.slug}`) return
+    if (!window.confirm(`Delete the ministry “${dep.name}”? Members are released from it and this cannot be undone.`)) return
+    setBusy(`ministry-del-${dep.slug}`); setError('')
+    try {
+      const r = await fetch(`${API}/api/departments/${encodeURIComponent(dep.slug)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not delete ministry')
+      await loadAccounts()
+      window.dispatchEvent(new Event('harvest:departments-updated'))
+      flash(`Ministry “${dep.name}” deleted`)
+    } catch (e: any) { setError(e?.message || 'Could not delete ministry') } finally { setBusy(null) }
+  }
 
   // Pagination: render one page of member cards at a time. Rendering the full
   // directory (each card = 10+ controls) janks past a few hundred members on
@@ -500,576 +607,769 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => { setAccountsPage(1) }, [q])
 
   return (
-    <div className="bg-surface text-ink min-h-[70vh] p-4">
-      <div className="mb-5 flex items-start gap-3">
-        <button onClick={onBack} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line bg-surface-raised text-ink" aria-label="Back to profile"><Icon name="arrow-left" size={18} /></button>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-accent">Harvest admin</p>
-          <h1 className="mt-0.5 text-xl font-extrabold tracking-tight">Control centre</h1>
-          <p className="text-2xs text-ink-muted">People, content, money and messages — every change publishes on save.</p>
-        </div>
-        <span className="shrink-0 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-ink-muted">
-          {tab === 'moderation' ? `${pending.length} ${status}` : tab === 'accounts' ? `${accounts.length} members` : tab === 'media' ? 'Studio' : tab === 'announce' ? 'Notify' : tab === 'content' ? 'All text' : tab === 'give' ? 'Giving' : 'Overview'}
-        </span>
-      </div>
-
-      {/* The screens that are member-facing but have no admin tab get their own
-          direct row, so managing them never means guessing where they live. */}
-      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {([
-          ['Groups', 'users', () => onOpenGroups?.()],
-          ['Departments', 'building', () => onOpenDepartments?.()],
-          ['Sermons', 'mic', () => onOpenSermons?.()],
-          ['Worship', 'music', () => onOpenMusic?.()],
-        ] as const).map(([label, icon, action]) => (
-          <button key={label} type="button" onClick={action} className="flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink transition hover:bg-surface-sunken">
-            <Icon name={icon} size={15} className="text-accent" /> {label}
+    <div className="min-h-[70vh] bg-surface text-ink" data-testid="admin-shell">
+      {/* ── Hero ── */}
+      <header className="relative overflow-hidden border-b border-line bg-ink px-4 pb-4 pt-4 text-white">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-52 w-52 rounded-full bg-accent/30 blur-3xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-gold/10 blur-3xl" aria-hidden="true" />
+        <div className="relative flex items-start gap-3">
+          <button onClick={onBack} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-white" aria-label="Back to profile">
+            <Icon name="arrow-left" size={18} />
           </button>
-        ))}
-      </div>
-      {/* Grouped sections read like a control centre, not eleven loose pills. */}
-      {([
-        ['Today', [['dashboard', 'Overview']]],
-        ['People', [['moderation', 'Approvals'], ['accounts', 'Members']]],
-        ['Content', [['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
-        ['Community', [['chat', 'Chats'], ['announce', 'Announce']]],
-        ['System', [['audit', 'Audit']]],
-      ] as [string, [Tab, string][]][]).map(([group, entries]) => (
-        <div key={group} className="mb-2.5">
-          <p className="mb-1.5 px-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-ink-subtle">{group}</p>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={`${group} admin sections`}>
-            {entries.map(([value, label]) => (
-              <button key={value} role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-9 shrink-0 whitespace-nowrap rounded-full px-3.5 text-2xs font-extrabold transition ${tab === value ? 'bg-ink text-white shadow' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}>
-                {label}
-              </button>
-            ))}
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-gold">Harvest admin</p>
+            <h1 className="mt-0.5 text-2xl font-extrabold tracking-tight">Control centre</h1>
+            <p className="mt-1 text-xs text-white/60">People, ministries, content, money and messages — saved changes publish immediately.</p>
           </div>
+          <span className="shrink-0 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[10px] font-extrabold text-white/80">Admin</span>
         </div>
-      ))}
-
-      {/* ── Everything: every editable display string, one editor ── */}
-      {tab === 'content' && (
-        <div className="space-y-3" data-testid="admin-content">
-          <div className="rounded-card border border-line bg-surface-raised p-4">
-            <h2 className="text-sm font-extrabold">Every word the church reads</h2>
-            <p className="mt-1 text-2xs text-ink-muted">
-              Home banner, giving copy, page titles, contact details, community rules — plus any new
-              <b> copy_</b> or <b>app_</b> key you add below. One save publishes all of it.
-            </p>
-            <div className="mt-3 flex items-center gap-2 rounded-full border border-line bg-surface px-3.5">
-              <Icon name="search" size={16} className="text-ink-subtle" />
-              <input value={contentQuery} onChange={e => setContentQuery(e.target.value)} placeholder="Find a setting…" className="min-h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-subtle" aria-label="Find a content setting" />
-              {contentDraft && <span className="shrink-0 rounded-full bg-gold-soft px-2 py-0.5 text-[10px] font-extrabold text-gold-strong">{Object.keys(contentDraft).length} edited</span>}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {[...new Set([...Object.keys(editable), ...Object.keys(content), ...Object.keys(contentDraft || {})])]
-              .filter(k => !contentQuery.trim() || k.includes(contentQuery.trim().toLowerCase().replace(/\s+/g, '_')))
-              .sort()
-              .map(k => {
-                const limit = editable[k] || customLimit
-                const value = contentValue(k)
-                const isJson = /^(giving_funds|giving_quick|giving_payment_methods|sponsor_adverts|advert_settings)$/.test(k)
-                return (
-                  <div key={k} className="rounded-card border border-line bg-surface-raised p-3">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <label htmlFor={`all-${k}`} className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">{k.replace(/_/g, ' ')}</label>
-                      <span className="shrink-0 text-[10px] text-ink-subtle">{value.length}/{limit}</span>
-                    </div>
-                    <textarea
-                      id={`all-${k}`}
-                      value={value}
-                      onChange={e => setContentValue(k, e.target.value.slice(0, limit))}
-                      rows={isJson ? 5 : value.length > 90 ? 4 : 2}
-                      spellCheck={false}
-                      className={`mt-1.5 w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent ${isJson ? 'font-mono text-xs' : ''}`}
-                    />
-                  </div>
-                )
-              })}
-          </div>
-
-          <div className="rounded-card border border-line bg-surface-raised p-3">
-            <label htmlFor="new-content-key" className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Add a new key</label>
-            <div className="mt-2 flex gap-2">
-              <input id="new-content-key" value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="copy_new_heading" className="input-base min-w-0 flex-1" />
-              <button
-                type="button"
-                onClick={() => {
-                  const k = newKey.trim().toLowerCase()
-                  if (!/^(copy|app)_[a-z0-9_]{1,40}$/.test(k)) { setError('Custom keys must start with copy_ or app_ (a–z, 0–9, _)'); return }
-                  setError('')
-                  setContentValue(k, '')
-                  setNewKey('')
-                  flash(`${k} added — edit it above, then save`)
-                }}
-                className="shrink-0 rounded-full bg-accent px-4 text-2xs font-extrabold text-white"
-              >Add</button>
-            </div>
-            <p className="mt-1.5 text-[10px] text-ink-muted">Use this for new surfaces so no wording ever waits on a code change.</p>
-          </div>
-
-          <button onClick={() => void saveContent()} disabled={contentBusy} data-testid="admin-content-save" className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-50">
-            {contentBusy ? 'Saving…' : 'Save every change — live for everyone'}
+        <div className="relative mt-4 grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => setTab('moderation')} className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2.5 text-left backdrop-blur">
+            <p className="text-xl font-extrabold leading-none tabular-nums">{dashboard.pending}</p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/60">Awaiting review</p>
+          </button>
+          <button type="button" onClick={() => setTab('accounts')} className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2.5 text-left backdrop-blur">
+            <p className="text-xl font-extrabold leading-none tabular-nums">{accounts.length || users.length}</p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-white/60">Members</p>
+          </button>
+          <button type="button" onClick={() => onOpenMap?.()} className="rounded-2xl border border-success/30 bg-success/15 px-3 py-2.5 text-left backdrop-blur">
+            <p className="text-xl font-extrabold leading-none tabular-nums text-emerald-300">{dashboard.online}</p>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-emerald-200/70">Active now</p>
           </button>
         </div>
-      )}
+      </header>
 
-      {error && <ErrorMessage message={error} />}
-      {notice && <div role="status" className="mb-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{notice}</div>}
-      {!USE_API && <div className="mb-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-sm">Admin tools require the server API. Enable VITE_USE_API=true in production.</div>}
-
-      {/* ── Daily operations dashboard ── */}
-      {tab === 'dashboard' && (
-        <div className="space-y-3">
-          {loadingDashboard ? <p className="text-sm text-ink-muted text-center py-10">Loading today’s operations…</p> : <>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ['Pending approvals', dashboard.pending, 'moderation', 'shield'],
-                ['New members · 7d', dashboard.members, 'accounts', 'users'],
-                ['Active groups', dashboard.groups, 'groups', 'users'],
-                ['Departments', dashboard.departments, 'departments', 'building'],
-              ] as const).map(([label, count, target, icon]) => (
-                <button key={label} type="button" onClick={() => target === 'groups' ? onOpenGroups?.() : target === 'departments' ? onOpenDepartments?.() : setTab(target as Tab)} className="rounded-card border border-line bg-surface-raised p-4 text-left transition hover:bg-surface-sunken">
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent-strong"><Icon name={icon} size={17} /></span>
-                  <p className="mt-2 text-2xl font-extrabold leading-none tabular-nums">{count}</p>
-                  <p className="mt-1 text-2xs font-bold text-ink-muted">{label}</p>
-                </button>
-              ))}
-            </div>
-            <div className="rounded-card border border-line bg-surface-raised p-4">
-              <div className="flex items-center justify-between"><h2 className="text-sm font-extrabold">Quick actions</h2><button onClick={() => void loadDashboard()} className="text-2xs font-extrabold text-accent">Refresh</button></div>
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                <button onClick={() => setTab('moderation')} className="py-3 rounded-xl bg-accent-soft text-accent-strong text-xs font-bold">Review approvals</button>
-                <button onClick={() => setTab('accounts')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage members</button>
-                <button onClick={() => onOpenGroups?.()} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage groups</button>
-                <button onClick={() => onOpenDepartments?.()} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Manage departments</button>
-                <button onClick={() => setTab('announce')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Send announcement</button>
-                <button onClick={() => setTab('chat')} className="py-3 rounded-xl bg-surface-sunken text-xs font-bold">Moderate chat</button>
+      {/* ── Navigation: direct shortcuts + grouped sections ── */}
+      <nav className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur" data-testid="admin-nav" aria-label="Admin sections">
+        <div className="flex gap-1.5 overflow-x-auto px-3 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {([
+            ['Groups', 'users', () => onOpenGroups?.()],
+            ['Departments', 'building', () => onOpenDepartments?.()],
+            ['Sermons', 'mic', () => onOpenSermons?.()],
+            ['Worship', 'music', () => onOpenMusic?.()],
+            ['Giving', 'coins', () => onOpenGive?.()],
+            ['Live map', 'map', () => onOpenMap?.()],
+          ] as const).map(([label, icon, action]) => (
+            <button key={label} type="button" onClick={action} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink-muted transition hover:text-ink">
+              <Icon name={icon} size={14} className="text-accent" /> {label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-1 px-3 pb-2 pt-2">
+          {([
+            ['Today', [['dashboard', 'Overview']]],
+            ['People', [['moderation', 'Approvals'], ['accounts', 'Members'], ['ministries', 'Ministries']]],
+            ['Content', [['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
+            ['Community', [['chat', 'Chats'], ['announce', 'Announce']]],
+            ['System', [['audit', 'Audit']]],
+          ] as [string, [Tab, string][]][]).map(([group, entries]) => (
+            <div key={group} className="flex items-center gap-2">
+              <span className="w-[52px] shrink-0 text-[9px] font-extrabold uppercase tracking-[0.12em] text-ink-subtle">{group}</span>
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={`${group} admin sections`}>
+                {entries.map(([value, label]) => (
+                  <button
+                    key={value}
+                    role="tab"
+                    aria-selected={tab === value}
+                    onClick={() => setTab(value)}
+                    className={`min-h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-2xs font-extrabold transition ${tab === value ? 'bg-ink text-white shadow-sm' : 'border border-line bg-surface-raised text-ink-muted hover:text-ink'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            </div>
-            <div className="rounded-card border border-line bg-surface-raised p-4">
-              <h2 className="mb-3 text-sm font-extrabold">Recent content</h2>
-              {dashboard.content.length ? dashboard.content.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p><p className="text-[10px] text-ink-muted">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p></div>) : <p className="text-xs text-ink-muted">No recent content.</p>}
-            </div>
-            <div className="rounded-card border border-line bg-surface-raised p-4">
-              <h2 className="mb-3 text-sm font-extrabold">Recent chat activity</h2>
-              {dashboard.chats.length ? dashboard.chats.map((x:any) => <div key={x.conversation_key} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.name}</p><p className="text-[10px] text-ink-muted truncate">{x.last_from ? '@'+x.last_from+' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p></div>) : <p className="text-xs text-ink-muted">No recent team chat activity.</p>}
-            </div>
-            <div className="rounded-card border border-line bg-surface-raised p-4">
-              <div className="flex items-center justify-between"><h2 className="text-sm font-extrabold">Recent admin actions</h2><button onClick={() => setTab('audit')} className="text-2xs font-extrabold text-accent">View all</button></div>
-              {dashboard.audit.length ? dashboard.audit.map((x:any) => <div key={x.id} className="py-2 border-b border-surface-sunken last:border-0"><p className="text-xs font-bold">{x.action}</p><p className="text-[10px] text-ink-muted">{x.actor_username || 'system'} → {x.target_type} {x.target_id || ''} · {new Date(x.created_at).toLocaleString()}</p></div>) : <p className="text-xs text-ink-muted mt-2">No admin actions recorded yet.</p>}
-            </div>
-          </>}
-        </div>
-      )}
-
-      {/* ── Media studio tab ── */}
-      {tab === 'media' && <AdminMedia onBack={() => setTab('moderation')} />}
-
-      {/* ── Announce tab ── */}
-      {tab === 'announce' && (
-        <div className="space-y-3">
-          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
-            <div>
-              <h2 className="text-sm font-extrabold">Announce to members</h2>
-              <p className="text-xs text-ink-muted mt-0.5">Lands as a direct message in every member's chat — with an unread badge. Members can reply straight back to you.</p>
-            </div>
-            <div>
-              <label htmlFor="ann-body" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Announcement</label>
-              <textarea
-                id="ann-body"
-                value={annText}
-                onChange={e => setAnnText(e.target.value.slice(0, 2000))}
-                rows={5}
-                placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend! 🙏"
-                className="w-full rounded-xl border border-line bg-surface px-3 py-3 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle resize-y"
-              />
-              <p className="text-[10px] text-ink-muted text-right mt-1">{annText.length}/2000</p>
-            </div>
-            <div>
-              <label htmlFor="ann-group" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Send to</label>
-              <select
-                id="ann-group"
-                value={annGroup}
-                onChange={e => setAnnGroup(e.target.value)}
-                className="w-full rounded-xl border border-line bg-surface-raised px-3 py-3 text-sm font-medium outline-none focus:border-accent"
-              >
-                <option value="">All members (every congregation)</option>
-                {GROUPS.map(g => <option key={g} value={g}>{g} only</option>)}
-              </select>
-            </div>
-            <button
-              onClick={sendAnnounce}
-              disabled={annBusy || annText.trim().length < 2}
-              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
-            >
-              {annBusy ? 'Sending…' : annGroup ? `Send to ${annGroup}` : 'Send to all members'}
-            </button>
-            {annCount !== null && <p className="text-xs text-emerald-700 font-bold text-center">✓ Last announcement delivered to {annCount} members</p>}
-            {annText.trim().length >= 2 && (
-              <button
-                onClick={() => shareAnnouncementToWhatsApp(annText.trim())}
-                className="w-full py-3.5 rounded-xl bg-[#25D366] text-white text-sm font-extrabold flex items-center justify-center gap-2"
-                title="Opens WhatsApp — pick the church group to post it in"
-              >
-                Share this on WhatsApp
-              </button>
-            )}
-            <p className="text-[10px] text-ink-muted">Every send is recorded in the Audit tab. Use responsibly — this reaches the whole church.</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── Home text tab: edit the banner + weekly verse ── */}
-      {/* (The Everything tab above covers every key; these stay as guided forms.) */}
-      {tab === 'home' && (
-        <div className="space-y-3">
-          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
-            <div>
-              <h2 className="text-sm font-extrabold">Home screen text</h2>
-              <p className="text-xs text-ink-muted mt-0.5">Edits what every member sees at the top of the Community screen — the purple banner and the weekly encouragement. Changes go live for everyone immediately.</p>
-            </div>
-            {CONTENT_FIELDS.map(f => (
-              <div key={f.key}>
-                <label htmlFor={`ct-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
-                {f.key === 'pastor_usernames' ? (
-                  <div>
-                    <textarea id={`ct-${f.key}`} value={contentValue(f.key) || content.pastor_username || ''}
-                      onChange={e => setContentValue('pastor_usernames', e.target.value.slice(0, f.max))}
-                      rows={3} placeholder={f.hint}
-                      className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 resize-y" />
-                    <p className="text-[10px] text-ink-muted mt-1">Use real usernames, not display names. Multiple pastors are supported.</p>
-                  </div>
-                ) : f.textarea ? (
-                  <textarea
-                    id={`ct-${f.key}`}
-                    value={contentValue(f.key)}
-                    onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))}
-                    rows={2}
-                    placeholder={f.hint}
-                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle resize-y"
-                  />
-                ) : (
-                  <input
-                    id={`ct-${f.key}`}
-                    value={contentValue(f.key)}
-                    onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))}
-                    placeholder={f.hint}
-                    className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 placeholder:text-ink-subtle"
-                  />
-                )}
-                <p className="text-[10px] text-ink-muted text-right mt-0.5">{contentValue(f.key).length}/{f.max}</p>
-              </div>
-            ))}
-            <button
-              onClick={() => void saveContent()}
-              disabled={contentBusy}
-              className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40"
-            >
-              {contentBusy ? 'Saving…' : 'Save home text — live for everyone'}
-            </button>
-            <p className="text-[10px] text-ink-muted">Clear a field to fall back to the shipped wording. Saved changes reach every open screen immediately.</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── Give text tab: edit the giving screen ── */}
-      {tab === 'give' && (
-        <div className="space-y-3">
-          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
-            <div>
-              <h2 className="text-sm font-extrabold">Give screen</h2>
-              <p className="text-xs text-ink-muted mt-0.5">Edit the giving headline, the Paybill fallback details, the giving funds (buttons) and the quick amounts. Saves go live for every member immediately.</p>
-            </div>
-            {GIVE_FIELDS.map(f => (
-              <div key={f.key}>
-                <label htmlFor={`gv-${f.key}`} className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">{f.label}</label>
-                {f.textarea ? (
-                  <textarea id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} rows={2} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent resize-y" />
-                ) : (
-                  <input id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} placeholder={f.hint} className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent" />
-                )}
-              </div>
-            ))}
-            <GivingFundsEditor
-              funds={adminFunds}
-              quick={adminQuick}
-              onChange={(nextFunds, nextQuick) => {
-                setContentValue('giving_funds', JSON.stringify(nextFunds))
-                setContentValue('giving_quick', JSON.stringify(nextQuick))
-              }}
-            />
-            <button
-              onClick={() => void saveContent()}
-              disabled={contentBusy || !contentDraft}
-              className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40"
-            >
-              {contentBusy ? 'Saving…' : 'Save giving changes — live for everyone'}
-            </button>
-            <p className="text-[10px] text-ink-muted">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── Sponsored adverts tab ── */}
-      {tab === 'adverts' && (
-        <div className="space-y-3">
-          <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
-            <div>
-              <h2 className="text-sm font-extrabold">Sponsored adverts</h2>
-              <p className="text-xs text-ink-muted mt-0.5">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
-            </div>
-            <div>
-              <label htmlFor="ad-settings" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Placement and limits</label>
-              <textarea
-                id="ad-settings"
-                value={settingsDraft ?? settingsJson}
-                onChange={e => setSettingsDraft(e.target.value)}
-                rows={4}
-                placeholder={ADVERT_SETTINGS_EXAMPLE}
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
-              />
-              <p className="text-[10px] text-ink-muted mt-0.5">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-surface p-3" data-testid="advert-photo-composer">
-              <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">New advert with a photo</p>
-              <p className="mt-1 text-[10px] text-ink-muted">Upload a picture straight from your phone — no hosting or link needed. It is added to the list below for you to review.</p>
-              <label htmlFor="ad-photo" className="mt-2 flex min-h-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-line bg-surface-sunken">
-                {adPhoto
-                  ? <img src={URL.createObjectURL(adPhoto)} alt="Selected advert" className="h-24 w-full object-cover" />
-                  : <span className="flex items-center gap-2 text-2xs font-bold text-ink-muted"><Icon name="camera" size={18} /> Choose a photo</span>}
-                <input
-                  id="ad-photo"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={e => { setAdPhoto(e.target.files?.[0] || null); e.target.value = '' }}
-                />
-              </label>
-              <input value={adTitle} onChange={e => setAdTitle(e.target.value.slice(0, 80))} placeholder="Headline (e.g. Harvest Bookshop)" className="input-base mt-2" aria-label="Advert headline" />
-              <textarea value={adBody} onChange={e => setAdBody(e.target.value.slice(0, 400))} rows={2} placeholder="One or two lines about the offer" className="input-base mt-2 resize-y" aria-label="Advert body" />
-              <input value={adCta} onChange={e => setAdCta(e.target.value)} placeholder="Link (optional — defaults to the church site)" className="input-base mt-2" aria-label="Advert link" />
-              <button type="button" onClick={() => void addAdvertWithPhoto()} disabled={adBusy || !adPhoto || !adTitle.trim()} className="mt-2 min-h-11 w-full rounded-full bg-ink text-2xs font-extrabold text-white disabled:opacity-40">
-                {adBusy ? 'Uploading photo…' : 'Add this advert'}
-              </button>
-            </div>
-
-            <div>
-              <label htmlFor="ad-list" className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1">Adverts (JSON array)</label>
-              <textarea
-                id="ad-list"
-                value={advertsDraft ?? advertsJson}
-                onChange={e => setAdvertsDraft(e.target.value)}
-                rows={10}
-                placeholder={ADVERT_EXAMPLE}
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-mono outline-none focus:border-accent resize-y"
-              />
-              <p className="text-[10px] text-ink-muted mt-0.5">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_key</b> (an uploaded photo — added by the composer above), <b>image_url</b> (external link), <b>enabled</b>, <b>audience</b> (all | members), <b>advertise_from</b> / <b>advertise_until</b> (ISO date-times for scheduled runs).</p>
-            </div>
-            <button
-              onClick={() => {
-                if (!window.confirm('Publish these adverts to the Home feed?')) return
-                let adverts: unknown
-                let settings: unknown
-                try { adverts = JSON.parse((advertsDraft ?? advertsJson) || '[]') } catch { setError('Adverts must be valid JSON'); return }
-                try { settings = JSON.parse((settingsDraft ?? settingsJson) || '{}') } catch { setError('Placement and limits must be valid JSON'); return }
-                setError('')
-                void (async () => {
-                  setContentBusy(true)
-                  try {
-                    const r = await fetch(`${API}/api/content`, {
-                      method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ sponsor_adverts: JSON.stringify(adverts), advert_settings: JSON.stringify(settings) }),
-                    })
-                    const d = await r.json().catch(() => ({}))
-                    if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
-                    setContent(d.content || content); setAdvertsDraft(null); setSettingsDraft(null)
-                    flash('Adverts published — live on the next feed refresh ✓')
-                  } catch (e: any) { setError(e?.message || 'Could not save adverts') } finally { setContentBusy(false) }
-                })()
-              }}
-              disabled={contentBusy}
-              className="w-full py-3.5 rounded-xl bg-accent text-white text-sm font-extrabold disabled:opacity-50"
-            >
-              {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
-            </button>
-            <p className="text-[10px] text-ink-muted">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── Moderation tab ── */}
-      {tab === 'moderation' && (
-        <>
-          <div className="flex gap-2 mb-4 overflow-auto">
-            {(['pending', 'transcoding', 'rejected'] as const).map(value => <button key={value} onClick={() => setStatus(value)} className={`px-3 py-2 rounded-full text-xs font-bold whitespace-nowrap ${status === value ? 'bg-accent text-white' : 'bg-surface-raised border border-line'}`}>{value[0].toUpperCase() + value.slice(1)}</button>)}
-            <button onClick={() => void cleanup()} disabled={cleanupBusy} className="ml-auto px-3 py-2 rounded-full text-xs font-bold bg-surface-sunken border border-line disabled:opacity-50">{cleanupBusy ? 'Cleaning…' : 'Clean orphaned uploads'}</button>
-          </div>
-          {pending.length === 0 ? <p className="text-sm text-ink-muted text-center py-12">No {status} media — all caught up.</p> : pending.map(item => (
-            <div key={item.id} className="bg-surface-raised border border-line rounded-card p-4 mb-3 shadow-sm">
-              <div className="flex justify-between items-center"><span className="text-xs font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-accent-soft text-accent-strong">{item.type}</span><span className="text-xs text-ink-muted">{new Date(item.created_at).toLocaleString()}</span></div>
-              <p className="text-sm font-semibold mt-3">{item.name || item.username || 'Harvest member'}</p>
-              <p className="text-sm text-ink-muted mt-1">{item.caption || 'No caption'}</p>
-              {item.thumb_url && <img src={item.thumb_url} alt="Pending media" className="w-full max-h-72 object-cover rounded-2xl mt-3 bg-surface-sunken" />}
-              {status === 'pending' && <div className="flex gap-2 mt-3"><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'approve')} className="flex-1 py-2.5 rounded-2xl bg-accent text-white text-sm font-bold disabled:opacity-50">{busy === String(item.id) ? 'Working…' : 'Approve & publish'}</button><button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'reject')} className="flex-1 py-2.5 rounded-2xl bg-surface-sunken text-[#BE185D] text-sm font-bold disabled:opacity-50">Reject</button></div>}
-              {status === 'rejected' && item.reject_reason && <p className="text-xs text-[#BE185D] mt-3">Reason: {item.reject_reason}</p>}
             </div>
           ))}
-        </>
-      )}
+        </div>
+      </nav>
 
-      {/* ── Accounts tab ── */}
-      {tab === 'accounts' && (
-        <>
-          <div className="flex gap-2 mb-3">
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members…" className="flex-1 bg-surface-raised border border-line rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-accent" />
-            <button onClick={() => setShowCreate(v => !v)} className="px-4 py-2.5 rounded-2xl bg-accent text-white text-xs font-bold whitespace-nowrap">＋ New account</button>
+      <main className="space-y-4 p-4 pb-24">
+        {error && <ErrorMessage message={error} />}
+        {notice && <div role="status" className="rounded-2xl border border-success/30 bg-success-soft p-3 text-sm font-semibold text-success">{notice}</div>}
+        {!USE_API && <div className="rounded-2xl border border-gold/40 bg-gold-soft p-4 text-sm">Admin tools require the server API. Enable VITE_USE_API=true in production.</div>}
+
+        {/* ── Overview ── */}
+        {tab === 'dashboard' && (
+          <div className="space-y-3" data-testid="admin-dashboard">
+            {loadingDashboard ? (
+              <div className="rounded-card border border-line bg-surface-raised p-8 text-center text-sm text-ink-muted">Loading today’s operations…</div>
+            ) : (
+              <>
+                {dashboard.pending > 0 && (
+                  <button type="button" onClick={() => setTab('moderation')} className="flex w-full items-center gap-3 rounded-card border border-gold/40 bg-gold-soft p-4 text-left">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold/20 text-gold-strong"><Icon name="alert" size={19} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-extrabold text-ink">{dashboard.pending} item{dashboard.pending === 1 ? '' : 's'} waiting for approval</span>
+                      <span className="block text-2xs text-ink-muted">Members are waiting for their post to reach the church feed.</span>
+                    </span>
+                    <Icon name="chevron-right" size={16} className="shrink-0 text-gold-strong" />
+                  </button>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['Awaiting review', dashboard.pending, 'moderation', 'alert'],
+                    ['Verified members', dashboard.verified, 'accounts', 'check'],
+                    ['New members · 7d', dashboard.members, 'accounts', 'users'],
+                    ['Ministries', dashboard.departments, 'ministries', 'building'],
+                  ] as const).map(([label, count, target, icon]) => (
+                    <button key={label} type="button" onClick={() => setTab(target as Tab)} className="rounded-card border border-line bg-surface-raised p-4 text-left transition hover:border-accent/40 hover:bg-surface-sunken">
+                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-soft text-accent-strong"><Icon name={icon} size={17} /></span>
+                      <p className="mt-2 text-2xl font-extrabold leading-none tabular-nums">{count}</p>
+                      <p className="mt-1 text-2xs font-bold text-ink-muted">{label}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rounded-card border border-line bg-surface-raised p-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-extrabold">Quick actions</h2>
+                    <button onClick={() => void loadDashboard()} className="min-h-8 rounded-full px-2 text-2xs font-extrabold text-accent">Refresh</button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button onClick={() => setTab('moderation')} className="min-h-11 rounded-xl bg-accent text-xs font-extrabold text-white">Review approvals</button>
+                    <button onClick={() => setTab('accounts')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Manage members</button>
+                    <button onClick={() => setTab('ministries')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Ministries</button>
+                    <button onClick={() => onOpenMap?.()} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Live member map</button>
+                    <button onClick={() => setTab('announce')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Send announcement</button>
+                    <button onClick={() => setTab('content')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Church wording</button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-card border border-line bg-surface-raised p-4">
+                    <h2 className="mb-2 text-sm font-extrabold">Recent content</h2>
+                    {dashboard.content.length ? dashboard.content.map((x: any) => (
+                      <div key={x.id} className="border-b border-line py-2 last:border-0">
+                        <p className="truncate text-xs font-bold">{x.caption || x.title || x.username || 'Content'}</p>
+                        <p className="text-[10px] text-ink-muted">{x.type || 'post'} · {x.created_at ? timeAgo(x.created_at) : ''}</p>
+                      </div>
+                    )) : <p className="py-3 text-xs text-ink-muted">No recent content.</p>}
+                  </div>
+                  <div className="rounded-card border border-line bg-surface-raised p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h2 className="text-sm font-extrabold">Recent admin actions</h2>
+                      <button onClick={() => setTab('audit')} className="text-2xs font-extrabold text-accent">View all</button>
+                    </div>
+                    {dashboard.audit.length ? dashboard.audit.map((x: any) => (
+                      <div key={x.id} className="border-b border-line py-2 last:border-0">
+                        <p className="text-xs font-bold capitalize">{String(x.action || '').replace(/_/g, ' ')}</p>
+                        <p className="text-[10px] text-ink-muted">{x.actor_username || 'system'} → {x.target_type} · {new Date(x.created_at).toLocaleString()}</p>
+                      </div>
+                    )) : <p className="py-3 text-xs text-ink-muted">No admin actions recorded yet.</p>}
+                  </div>
+                </div>
+
+                <div className="rounded-card border border-line bg-surface-raised p-4">
+                  <h2 className="mb-2 text-sm font-extrabold">Recent chat activity</h2>
+                  {dashboard.chats.length ? dashboard.chats.map((x: any) => (
+                    <div key={x.conversation_key} className="border-b border-line py-2 last:border-0">
+                      <p className="text-xs font-bold">{x.name}</p>
+                      <p className="truncate text-[10px] text-ink-muted">{x.last_from ? '@' + x.last_from + ' · ' : ''}{x.last_text || 'No messages'} · {x.unread || 0} unread</p>
+                    </div>
+                  )) : <p className="py-3 text-xs text-ink-muted">No recent team chat activity.</p>}
+                </div>
+              </>
+            )}
           </div>
+        )}
 
-          {showCreate && (
-            <div className="bg-surface-raised border border-line rounded-card p-4 mb-3 space-y-2">
-              <p className="text-sm font-bold">Create member account</p>
+        {/* ── Members ── */}
+        {tab === 'accounts' && (
+          <div className="space-y-3" data-testid="admin-accounts">
+            <div className="rounded-card border border-line bg-surface-raised p-3">
               <div className="flex gap-2">
-                <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
-                <input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Full name" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-surface px-3">
+                  <Icon name="search" size={16} className="shrink-0 text-ink-subtle" />
+                  <input
+                    value={q}
+                    onChange={e => setQ(e.target.value)}
+                    placeholder="Search name, username or ministry…"
+                    aria-label="Search members"
+                    className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-subtle"
+                  />
+                </div>
+                <button onClick={() => setShowCreate(v => !v)} className="min-h-11 shrink-0 rounded-xl bg-accent px-3.5 text-xs font-extrabold text-white">
+                  {showCreate ? 'Close' : '＋ New'}
+                </button>
               </div>
-              <div className="flex gap-2">
-                <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
-                <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))} className="bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none">
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
-                <select value={newUser.group_name} onChange={e => setNewUser(u => ({ ...u, group_name: e.target.value }))} className="bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none max-w-[45%]">
+              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {([
+                  ['all', `All ${accounts.length}`],
+                  ['verified', `Verified ${accounts.filter(u => u.verified).length}`],
+                  ['admin', 'Admins'],
+                  ['inactive', 'Inactive'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => setAccountFilter(value)}
+                    className={`min-h-8 shrink-0 rounded-full px-3 text-2xs font-extrabold ${accountFilter === value ? 'bg-ink text-white' : 'border border-line bg-surface-sunken text-ink-muted'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {showCreate && (
+              <div className="space-y-2 rounded-card border border-line bg-surface-raised p-4">
+                <p className="text-sm font-extrabold">Create member account</p>
+                <p className="text-2xs text-ink-muted">Share the PIN privately. New accounts start unverified until you verify them.</p>
+                <div className="flex gap-2">
+                  <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" aria-label="New member username" className="input-base min-w-0 flex-1" />
+                  <input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Full name" aria-label="New member full name" className="input-base min-w-0 flex-1" />
+                </div>
+                <div className="flex gap-2">
+                  <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" aria-label="New member PIN" className="input-base min-w-0 flex-1" />
+                  <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))} aria-label="New member role" className="input-base w-28">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <select value={newUser.group_name} onChange={e => setNewUser(u => ({ ...u, group_name: e.target.value }))} aria-label="New member congregation" className="input-base">
                   {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
+                <button onClick={() => void createUser()} disabled={busy === 'create'} className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50">
+                  {busy === 'create' ? 'Creating…' : 'Create account'}
+                </button>
               </div>
-              <button onClick={() => void createUser()} disabled={busy === 'create'} className="w-full py-2.5 rounded-2xl bg-accent text-white text-sm font-bold disabled:opacity-50">{busy === 'create' ? 'Creating…' : 'Create account'}</button>
-            </div>
-          )}
-
-          {loadingAccounts ? <p className="text-sm text-ink-muted text-center py-10">Loading members…</p> : filteredAccounts.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No members found.</p> : pagedAccounts.map(u => (
-            <div key={u.username} className="bg-surface-raised border border-line rounded-card p-4 mb-2">
-              <button onClick={() => setExpanded(expanded === u.username ? null : u.username)} className="w-full flex gap-3 items-center justify-between text-left">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={14} />}</p>
-                  <p className="text-xs text-ink-muted truncate">@{u.username} · {u.group_name}</p>
-                  {u.phone && <p className="text-xs text-ink-muted truncate">{u.phone}</p>}
-                </div>
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${u.role === 'admin' ? 'bg-accent-soft text-accent-strong' : 'bg-surface-sunken text-ink-muted'}`}>{(u.role || 'member').toUpperCase()}</span>
-              </button>
-              {expanded === u.username && (
-                <div className="mt-3 pt-3 border-t border-surface-sunken space-y-2">
-                  <div className="flex gap-2 flex-wrap">
-                    <select value={u.group_name || GROUPS[0]} onChange={e => void patchUser(u.username, { group_name: e.target.value })} className="flex-1 min-w-[140px] bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none">
-                      {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                    <select value={u.role || 'member'} onChange={e => void patchUser(u.username, { role: e.target.value })} className="bg-surface border border-line rounded-xl px-3 py-2 text-xs outline-none">
-                      <option value="member">Member role</option>
-                      <option value="admin">Admin role</option>
-                    </select>
-                  </div>
-                  {u.role !== 'admin' && (
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted mb-1">Leader powers (grants)</p>
-                      <div className="flex gap-1.5 flex-wrap">
-                      {([
-                        ['post_media', 'Post media'],
-                        ['create_groups', 'Create groups'],
-                        ['manage_groups', 'Manage groups'],
-                        ['manage_communities', 'Manage communities'],
-                        ['delete_media', 'Delete media'],
-                        ['moderate_chat', 'Moderate chats'],
-                        ['manage_sermons', 'Manage sermons'],
-                      ] as const).map(([cap, label]) => {
-                        const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
-                        return (
-                          <button key={cap} disabled={busy === u.username} onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${on ? 'bg-accent text-white border-accent' : 'bg-surface-raised text-ink-muted border-line'}`}>{label}</button>
-                        )
-                      })}
-                      </div>
-                      <p className="text-[10px] text-ink-muted mt-1">Pastors/leaders: tap to grant. Sermon Manager gives full control of the Sermons tab; other grants control their respective areas.</p>
-                    </div>
-                  )}
-                  <div className="flex gap-2 flex-wrap">
-                    <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-surface-sunken text-ink-muted disabled:opacity-50">Reset PIN</button>
-                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { verified: !u.verified })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-accent-soft text-accent-strong disabled:opacity-50">{u.verified ? 'Remove ✓' : 'Verify ✓'}</button>
-                    <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-surface-sunken text-ink-muted disabled:opacity-50">{u.active === false ? 'Reactivate' : 'Deactivate'}</button>
-                    <button disabled={busy === u.username} onClick={() => void removeUser(u.username)} className="flex-1 min-w-[100px] py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 disabled:opacity-50">Delete</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* Pager: bounded DOM weight for large congregations */}
-          {!loadingAccounts && filteredAccounts.length > ACCOUNTS_PAGE_SIZE && (
-            <div className="flex items-center justify-between gap-3 mt-3 px-1">
-              <button
-                onClick={() => setAccountsPage(p => Math.max(1, p - 1))}
-                disabled={safeAccountsPage <= 1}
-                className="px-4 py-2 rounded-full bg-surface-raised border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
-              >← Prev</button>
-              <p className="text-xs text-ink-muted font-semibold">Page {safeAccountsPage} of {accountsPages} · {filteredAccounts.length} members</p>
-              <button
-                onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))}
-                disabled={safeAccountsPage >= accountsPages}
-                className="px-4 py-2 rounded-full bg-surface-raised border border-line text-xs font-bold text-ink-muted disabled:opacity-40"
-              >Next →</button>
-            </div>
-          )}
-
-          <div className="mt-4 bg-surface-raised border border-line rounded-card p-4">
-            <p className="text-sm font-bold">Restore a deactivated account</p>
-            <p className="text-xs text-ink-muted mt-1">Deactivated members can't sign in until restored.</p>
-            <div className="flex gap-2 mt-2">
-              <input value={restoreName} onChange={e => setRestoreName(e.target.value)} placeholder="username" className="flex-1 bg-surface border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-accent" />
-              <button onClick={() => void restoreUser()} disabled={busy === 'restore'} className="px-4 py-2 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">{busy === 'restore' ? '…' : 'Restore'}</button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ── Chat moderation tab ── */}
-      {tab === 'chat' && (
-        <div className="space-y-3">
-          <div className="p-4 rounded-2xl bg-surface-raised border border-line">
-            <h2 className="text-sm font-extrabold">Chat moderation</h2>
-            <p className="text-xs text-ink-muted mt-1">Review and remove messages from church group and department conversations.</p>
-            {loadingChats ? <p className="text-xs py-4">Loading conversations…</p> : (
-              <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} className="w-full mt-3 rounded-xl border border-line bg-surface px-3 py-3 text-sm">
-                <option value="">Choose a conversation</option>
-                {chatConversations.map((x: any) => <option key={x.key} value={x.key}>{x.name || x.key}</option>)}
-              </select>
             )}
-          </div>
-          {selectedChat && (loadingChatMessages ? <p className="text-xs text-center py-8">Loading messages…</p> : chatMessages.length === 0 ? <p className="text-xs text-center py-8 text-ink-muted">No messages in this conversation.</p> : (
-            <div className="space-y-2">{chatMessages.map((m: any) => <div key={m.id} className="bg-surface-raised border border-line rounded-2xl p-3 flex gap-3 items-start"><div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-ink-muted">@{m.from} · {m.at || ''}</p><p className={m.deleted_at ? 'text-xs italic text-ink-subtle' : 'text-sm'}>{m.text}</p></div>{!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">Remove</button>}</div>)}</div>
-          ))}
-        </div>
-      )}
 
-      {/* ── Audit tab ── */}
-      {tab === 'audit' && (
-        loadingAudit ? <p className="text-sm text-ink-muted text-center py-10">Loading audit log…</p> : audit.length === 0 ? <p className="text-sm text-ink-muted text-center py-10">No admin activity recorded yet.</p> : (
-          <div className="space-y-2">
-            {audit.map(entry => (
-              <div key={entry.id} className="bg-surface-raised border border-line rounded-2xl px-4 py-3 flex gap-3 items-start">
-                <span className="text-xs font-bold px-2 py-1 rounded-full bg-surface-sunken text-ink-muted whitespace-nowrap">{entry.action}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold truncate">{entry.actor_username || 'system'} → {entry.target_type} {String(entry.target_id).slice(0, 8)}</p>
-                  <p className="text-[11px] text-ink-muted">{new Date(entry.created_at).toLocaleString()}</p>
+            {loadingAccounts ? (
+              <p className="py-10 text-center text-sm text-ink-muted">Loading members…</p>
+            ) : filteredAccounts.length === 0 ? (
+              <div className="rounded-card border border-line bg-surface-raised px-5 py-10 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent-strong"><Icon name="users" size={22} /></span>
+                <p className="mt-3 text-sm font-extrabold">No members match this view</p>
+                <p className="mt-1 text-xs text-ink-muted">Clear the search or pick another filter.</p>
+              </div>
+            ) : pagedAccounts.map(u => (
+              <div key={u.username} className={`rounded-card border bg-surface-raised ${u.active === false ? 'border-danger/30 opacity-80' : 'border-line'}`}>
+                <button onClick={() => setExpanded(expanded === u.username ? null : u.username)} aria-expanded={expanded === u.username} className="flex w-full items-center gap-3 p-3 text-left">
+                  <span className="relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-sm font-extrabold text-white">
+                    {String(u.name || u.username || '?')[0].toUpperCase()}
+                    {u.online && <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface-raised bg-success" aria-label="Active now" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1 truncate text-sm font-extrabold">
+                      <span className="truncate">{u.name || u.username}</span>
+                      {u.verified && <VerifiedBadge size={14} />}
+                    </span>
+                    <span className="block truncate text-2xs text-ink-muted">@{u.username} · {u.group_name || 'No group'}{u.department_name ? ` · ${u.department_name}` : ''}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-1">
+                      <span className={`badge ${u.verified ? 'bg-success-soft text-success' : 'bg-surface-sunken text-ink-muted'}`}>{u.verified ? 'Verified' : 'Unverified'}</span>
+                      {u.role === 'admin' && <span className="badge bg-accent-soft text-accent-strong">Admin</span>}
+                      {u.active === false && <span className="badge bg-danger-soft text-danger">Inactive</span>}
+                      {u.online && <span className="badge bg-success-soft text-success">Active now</span>}
+                    </span>
+                  </span>
+                  <Icon name="chevron-down" size={16} className={`shrink-0 text-ink-subtle transition ${expanded === u.username ? 'rotate-180' : ''}`} />
+                </button>
+
+                {expanded === u.username && (
+                  <div className="border-t border-line p-3">
+                    <div className="space-y-3">
+                      <div>
+                        <label htmlFor={`ministry-${u.username}`} className="label-caps mb-1 block">Ministry / department</label>
+                        <select
+                          id={`ministry-${u.username}`}
+                          data-testid="member-ministry"
+                          value={u.department_slug || ''}
+                          disabled={busy === u.username}
+                          onChange={e => void changeMinistry(u, e.target.value)}
+                          className="input-base"
+                        >
+                          <option value="">No ministry</option>
+                          {departments.map((d: any) => <option key={d.slug} value={d.slug}>{d.name}</option>)}
+                        </select>
+                        <p className="mt-1 text-[10px] text-ink-muted">Changing this transfers the member straight away — you do not need them to leave first.</p>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <select value={u.group_name || GROUPS[0]} onChange={e => void patchUser(u.username, { group_name: e.target.value })} disabled={busy === u.username} aria-label={`${u.username} congregation`} className="input-base min-w-0 flex-1">
+                          {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                        <select value={u.role || 'member'} onChange={e => void patchUser(u.username, { role: e.target.value })} disabled={busy === u.username || u.username === localStorage.getItem('harvest_username')} aria-label={`${u.username} role`} className="input-base w-32">
+                          <option value="member">Member role</option>
+                          <option value="admin">Admin role</option>
+                        </select>
+                      </div>
+
+                      {u.role !== 'admin' && (
+                        <div>
+                          <p className="label-caps mb-1.5">Leader powers</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {([
+                              ['post_media', 'Post media'],
+                              ['create_groups', 'Create groups'],
+                              ['manage_groups', 'Manage groups'],
+                              ['manage_communities', 'Manage communities'],
+                              ['delete_media', 'Delete media'],
+                              ['moderate_chat', 'Moderate chats'],
+                              ['manage_sermons', 'Manage sermons'],
+                            ] as const).map(([cap, label]) => {
+                              const on = (u.grants || '').split(',').filter(Boolean).includes(cap)
+                              return (
+                                <button
+                                  key={cap}
+                                  disabled={busy === u.username}
+                                  onClick={() => void patchUser(u.username, { grants: on ? (u.grants || '').split(',').filter((g: string) => g && g !== cap) : [...(u.grants || '').split(',').filter(Boolean), cap] })}
+                                  className={`min-h-8 rounded-full px-2.5 text-[10px] font-extrabold ${on ? 'bg-accent text-white' : 'border border-line bg-surface-sunken text-ink-muted'}`}
+                                >
+                                  {label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          <p className="mt-1.5 text-[10px] text-ink-muted">Sermon Manager gives full control of the Sermons tab; each other grant unlocks its own area.</p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-2 border-t border-line pt-3">
+                        <button
+                          data-testid="member-verify"
+                          disabled={busy === u.username}
+                          onClick={() => void patchUser(u.username, { verified: !u.verified })}
+                          className={`min-h-10 rounded-xl text-xs font-extrabold disabled:opacity-50 ${u.verified ? 'border border-line bg-surface-sunken text-ink-muted' : 'bg-accent text-white'}`}
+                        >
+                          {busy === u.username ? 'Saving…' : u.verified ? 'Remove verification' : 'Verify member ✓'}
+                        </button>
+                        <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">Reset PIN</button>
+                        <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">{u.active === false ? 'Reactivate account' : 'Deactivate account'}</button>
+                        <button disabled={busy === u.username} onClick={() => void removeUser(u.username)} className="min-h-10 rounded-xl border border-danger/30 bg-danger-soft text-xs font-extrabold text-danger disabled:opacity-50">Delete permanently</button>
+                      </div>
+                      <p className="text-[10px] text-ink-muted">Every change is written to the audit log. Verification unlocks posts, reels, music and sermon uploads.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {!loadingAccounts && filteredAccounts.length > ACCOUNTS_PAGE_SIZE && (
+              <div className="mt-3 flex items-center justify-between gap-3 px-1">
+                <button onClick={() => setAccountsPage(p => Math.max(1, p - 1))} disabled={safeAccountsPage <= 1} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">← Prev</button>
+                <p className="text-xs font-semibold text-ink-muted">Page {safeAccountsPage} of {accountsPages}</p>
+                <button onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))} disabled={safeAccountsPage >= accountsPages} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">Next →</button>
+              </div>
+            )}
+
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <p className="text-sm font-extrabold">Restore a deactivated account</p>
+              <p className="mt-1 text-xs text-ink-muted">Deactivated members cannot sign in until restored.</p>
+              <div className="mt-2 flex gap-2">
+                <input value={restoreName} onChange={e => setRestoreName(e.target.value)} placeholder="username" aria-label="Username to restore" className="input-base min-w-0 flex-1" />
+                <button onClick={() => void restoreUser()} disabled={busy === 'restore'} className="min-h-11 shrink-0 rounded-xl bg-accent px-4 text-xs font-extrabold text-white disabled:opacity-50">{busy === 'restore' ? '…' : 'Restore'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Ministries ── */}
+        {tab === 'ministries' && (
+          <div className="space-y-3" data-testid="admin-ministries">
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="text-sm font-extrabold">Ministry teams</h2>
+              <p className="mt-1 text-xs text-ink-muted">Rename a ministry (for example to HYP), create a new one, or delete one. Members keep their place when a ministry is renamed.</p>
+              <div className="mt-3 flex gap-2">
+                <input value={newMinistry} onChange={e => setNewMinistry(e.target.value)} placeholder="New ministry name" aria-label="New ministry name" className="input-base min-w-0 flex-1" />
+                <button onClick={() => void createMinistry()} disabled={busy === 'ministry-create' || !newMinistry.trim()} className="min-h-11 shrink-0 rounded-xl bg-accent px-4 text-xs font-extrabold text-white disabled:opacity-50">
+                  {busy === 'ministry-create' ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </div>
+
+            {loadingAccounts && !departments.length ? (
+              <p className="py-10 text-center text-sm text-ink-muted">Loading ministries…</p>
+            ) : !departments.length ? (
+              <div className="rounded-card border border-line bg-surface-raised px-5 py-10 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-accent-soft text-accent-strong"><Icon name="building" size={22} /></span>
+                <p className="mt-3 text-sm font-extrabold">No ministries yet</p>
+                <p className="mt-1 text-xs text-ink-muted">Create the first team above, then assign members from the Members tab.</p>
+              </div>
+            ) : departments.map((d: any) => (
+              <div key={d.slug} className="rounded-card border border-line bg-surface-raised p-3">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor={`ministry-rename-${d.slug}`} className="label-caps mb-1 block">Ministry name</label>
+                    <input
+                      id={`ministry-rename-${d.slug}`}
+                      value={ministryNames[d.slug] ?? d.name ?? ''}
+                      onChange={e => setMinistryNames(prev => ({ ...prev, [d.slug]: e.target.value }))}
+                      className="input-base"
+                    />
+                    <p className="mt-1 text-[10px] text-ink-muted">{d.member_count} serving · {d.slug}</p>
+                  </div>
+                  <button
+                    onClick={() => void renameMinistry(d)}
+                    disabled={busy === `ministry-${d.slug}` || !String(ministryNames[d.slug] ?? d.name ?? '').trim() || (ministryNames[d.slug] ?? d.name) === d.name}
+                    className="min-h-11 shrink-0 rounded-xl bg-ink px-3 text-xs font-extrabold text-white disabled:opacity-40"
+                  >
+                    {busy === `ministry-${d.slug}` ? 'Saving…' : 'Save name'}
+                  </button>
+                </div>
+                <div className="mt-2 flex justify-end">
+                  <button onClick={() => void deleteMinistry(d)} disabled={busy === `ministry-del-${d.slug}`} className="min-h-9 rounded-full border border-danger/30 bg-danger-soft px-3 text-[10px] font-extrabold text-danger disabled:opacity-50">
+                    {busy === `ministry-del-${d.slug}` ? 'Deleting…' : 'Delete ministry'}
+                  </button>
                 </div>
               </div>
             ))}
           </div>
-        )
-      )}
+        )}
+
+        {/* ── Approvals ── */}
+        {tab === 'moderation' && (
+          <div className="space-y-3" data-testid="admin-moderation">
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {(['pending', 'transcoding', 'rejected'] as const).map(value => (
+                <button key={value} onClick={() => setStatus(value)} className={`min-h-9 shrink-0 rounded-full px-3.5 text-2xs font-extrabold capitalize ${status === value ? 'bg-ink text-white' : 'border border-line bg-surface-raised text-ink-muted'}`}>{value}</button>
+              ))}
+              <button onClick={() => void cleanup()} disabled={cleanupBusy} className="ml-auto min-h-9 shrink-0 rounded-full border border-line bg-surface-sunken px-3 text-2xs font-extrabold text-ink-muted disabled:opacity-50">
+                {cleanupBusy ? 'Cleaning…' : 'Clean uploads'}
+              </button>
+            </div>
+            {pending.length === 0 ? (
+              <div className="rounded-card border border-line bg-surface-raised px-5 py-12 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-success-soft text-success"><Icon name="check" size={22} /></span>
+                <p className="mt-3 text-sm font-extrabold">Nothing {status}</p>
+                <p className="mt-1 text-xs text-ink-muted">All caught up — new uploads appear here for review.</p>
+              </div>
+            ) : pending.map(item => (
+              <div key={item.id} className="rounded-card border border-line bg-surface-raised p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="badge bg-accent-soft capitalize text-accent-strong">{item.type}</span>
+                  <span className="text-[10px] text-ink-muted">{new Date(item.created_at).toLocaleString()}</span>
+                </div>
+                <p className="mt-2 text-sm font-extrabold">{item.name || item.username || 'Harvest member'}</p>
+                <p className="mt-1 text-sm text-ink-muted">{item.caption || 'No caption'}</p>
+                {item.thumb_url && <img src={item.thumb_url} alt="Pending media" className="mt-3 max-h-72 w-full rounded-2xl bg-surface-sunken object-cover" />}
+                {status === 'pending' && (
+                  <div className="mt-3 flex gap-2">
+                    <button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'approve')} className="min-h-11 flex-1 rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50">{busy === String(item.id) ? 'Working…' : 'Approve & publish'}</button>
+                    <button disabled={busy === String(item.id)} onClick={() => void moderate(String(item.id), 'reject')} className="min-h-11 flex-1 rounded-xl border border-danger/30 bg-danger-soft text-sm font-extrabold text-danger disabled:opacity-50">Reject</button>
+                  </div>
+                )}
+                {status === 'rejected' && item.reject_reason && <p className="mt-3 text-xs text-danger">Reason: {item.reject_reason}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Announce ── */}
+        {tab === 'announce' && (
+          <div className="space-y-3" data-testid="admin-announce">
+            <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
+              <div>
+                <h2 className="text-sm font-extrabold">Announce to members</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Lands as a direct message in every member’s chat with an unread badge. Members can reply straight back to you.</p>
+              </div>
+              <div>
+                <label htmlFor="ann-group" className="label-caps mb-1 block">Audience</label>
+                <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <button onClick={() => setAnnGroup('')} className={`min-h-8 shrink-0 rounded-full px-3 text-2xs font-extrabold ${annGroup === '' ? 'bg-ink text-white' : 'border border-line bg-surface-sunken text-ink-muted'}`}>All members</button>
+                  {GROUPS.map(g => (
+                    <button key={g} onClick={() => setAnnGroup(g)} className={`min-h-8 shrink-0 rounded-full px-3 text-2xs font-extrabold ${annGroup === g ? 'bg-ink text-white' : 'border border-line bg-surface-sunken text-ink-muted'}`}>{g}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label htmlFor="ann-body" className="label-caps mb-1 block">Announcement</label>
+                <textarea
+                  id="ann-body"
+                  value={annText}
+                  onChange={e => setAnnText(e.target.value.slice(0, 2000))}
+                  rows={5}
+                  placeholder="e.g. Sunday service starts 9:00 AM at Harvest Central. Come with a friend! 🙏"
+                  className="input-base resize-y"
+                />
+                <p className="mt-1 text-right text-[10px] text-ink-muted">{annText.length}/2000</p>
+              </div>
+              {annText.trim().length >= 2 && (
+                <div className="rounded-xl border border-line bg-surface-sunken p-3">
+                  <p className="label-caps">Preview</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm">📣 {annText.trim()}</p>
+                </div>
+              )}
+              <button
+                onClick={sendAnnounce}
+                disabled={annBusy || annText.trim().length < 2}
+                className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                {annBusy ? 'Sending…' : annGroup ? `Send to ${annGroup}` : 'Send to all members'}
+              </button>
+              {annCount !== null && <p className="text-center text-xs font-bold text-success">✓ Last announcement delivered to {annCount} members</p>}
+              {annText.trim().length >= 2 && (
+                <button onClick={() => shareAnnouncementToWhatsApp(annText.trim())} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] text-sm font-extrabold text-white">
+                  Share this on WhatsApp
+                </button>
+              )}
+              <p className="text-[10px] text-ink-muted">Every send is recorded in the Audit tab. This reaches the whole church — use responsibly.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Chats ── */}
+        {tab === 'chat' && (
+          <div className="space-y-3" data-testid="admin-chat">
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="text-sm font-extrabold">Chat moderation</h2>
+              <p className="mt-1 text-xs text-ink-muted">Review and remove messages from church group and department conversations.</p>
+              {loadingChats ? <p className="py-4 text-xs">Loading conversations…</p> : (
+                <select value={selectedChat} onChange={e => setSelectedChat(e.target.value)} aria-label="Conversation to moderate" className="input-base mt-3">
+                  <option value="">Choose a conversation</option>
+                  {chatConversations.map((x: any) => <option key={x.key} value={x.key}>{x.name || x.key}</option>)}
+                </select>
+              )}
+            </div>
+            {selectedChat && (loadingChatMessages ? <p className="py-8 text-center text-xs">Loading messages…</p> : chatMessages.length === 0 ? <p className="py-8 text-center text-xs text-ink-muted">No messages in this conversation.</p> : (
+              <div className="space-y-2">
+                {chatMessages.map((m: any) => (
+                  <div key={m.id} className="flex items-start gap-3 rounded-2xl border border-line bg-surface-raised p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold text-ink-muted">@{m.from} · {m.at || ''}</p>
+                      <p className={m.deleted_at ? 'text-xs italic text-ink-subtle' : 'text-sm'}>{m.text}</p>
+                    </div>
+                    {!m.deleted_at && <button disabled={busy === String(m.id)} onClick={() => void moderateChatMessage(m)} className="min-h-9 shrink-0 rounded-xl border border-danger/30 bg-danger-soft px-3 text-xs font-extrabold text-danger">Remove</button>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Audit ── */}
+        {tab === 'audit' && (
+          <div className="space-y-2" data-testid="admin-audit">
+            {loadingAudit ? <p className="py-10 text-center text-sm text-ink-muted">Loading audit log…</p> : audit.length === 0 ? <p className="py-10 text-center text-sm text-ink-muted">No admin activity recorded yet.</p> : (
+              <ol className="relative ml-3 border-l border-line pl-4">
+                {audit.map(entry => (
+                  <li key={entry.id} className="relative pb-4">
+                    <span className="absolute -left-[23px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-surface bg-accent" aria-hidden="true" />
+                    <div className="rounded-xl border border-line bg-surface-raised px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold capitalize">{String(entry.action || '').replace(/_/g, ' ')}</p>
+                        <span className="shrink-0 text-[10px] text-ink-muted">{new Date(entry.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-ink-muted">{entry.actor_username || 'system'} → {entry.target_type} {String(entry.target_id || '').slice(0, 8)}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+
+        {/* ── Everything: every editable display string, one editor ── */}
+        {tab === 'content' && (
+          <div className="space-y-3" data-testid="admin-content">
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="text-sm font-extrabold">Every word the church reads</h2>
+              <p className="mt-1 text-2xs text-ink-muted">
+                Home banner, giving copy, page titles, contact details, community rules — plus any new
+                <b> copy_</b> or <b> app_</b> key you add below. One save publishes all of it.
+              </p>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-line bg-surface px-3.5">
+                <Icon name="search" size={16} className="text-ink-subtle" />
+                <input value={contentQuery} onChange={e => setContentQuery(e.target.value)} placeholder="Find a setting…" aria-label="Find a content setting" className="min-h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-subtle" />
+                {contentDraft && <span className="shrink-0 rounded-full bg-gold-soft px-2 py-0.5 text-[10px] font-extrabold text-gold-strong">{Object.keys(contentDraft).length} edited</span>}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {[...new Set([...Object.keys(editable), ...Object.keys(content), ...Object.keys(contentDraft || {})])]
+                .filter(k => !contentQuery.trim() || k.includes(contentQuery.trim().toLowerCase().replace(/\s+/g, '_')))
+                .sort()
+                .map(k => {
+                  const limit = editable[k] || customLimit
+                  const value = contentValue(k)
+                  const isJson = /^(giving_funds|giving_quick|giving_payment_methods|sponsor_adverts|advert_settings)$/.test(k)
+                  return (
+                    <div key={k} className="rounded-card border border-line bg-surface-raised p-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <label htmlFor={`all-${k}`} className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">{k.replace(/_/g, ' ')}</label>
+                        <span className="shrink-0 text-[10px] text-ink-subtle">{value.length}/{limit}</span>
+                      </div>
+                      <textarea
+                        id={`all-${k}`}
+                        value={value}
+                        onChange={e => setContentValue(k, e.target.value.slice(0, limit))}
+                        rows={isJson ? 5 : value.length > 90 ? 4 : 2}
+                        spellCheck={false}
+                        className={`mt-1.5 w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent ${isJson ? 'font-mono text-xs' : ''}`}
+                      />
+                    </div>
+                  )
+                })}
+            </div>
+
+            <div className="rounded-card border border-line bg-surface-raised p-3">
+              <label htmlFor="new-content-key" className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Add a new key</label>
+              <div className="mt-2 flex gap-2">
+                <input id="new-content-key" value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="copy_new_heading" className="input-base min-w-0 flex-1" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const k = newKey.trim().toLowerCase()
+                    if (!/^(copy|app)_[a-z0-9_]{1,40}$/.test(k)) { setError('Custom keys must start with copy_ or app_ (a–z, 0–9, _)'); return }
+                    setError('')
+                    setContentValue(k, '')
+                    setNewKey('')
+                    flash(`${k} added — edit it above, then save`)
+                  }}
+                  className="min-h-11 shrink-0 rounded-xl bg-accent px-4 text-2xs font-extrabold text-white"
+                >Add</button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-ink-muted">Use this for new surfaces so no wording ever waits on a code change.</p>
+            </div>
+
+            <button onClick={() => void saveContent()} disabled={contentBusy} data-testid="admin-content-save" className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50">
+              {contentBusy ? 'Saving…' : 'Save every change — live for everyone'}
+            </button>
+          </div>
+        )}
+
+        {/* ── Home text ── */}
+        {tab === 'home' && (
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
+              <div>
+                <h2 className="text-sm font-extrabold">Home screen text</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Edits what every member sees at the top of the Community screen — the banner and the weekly encouragement. Changes go live immediately.</p>
+              </div>
+              {CONTENT_FIELDS.map(f => (
+                <div key={f.key}>
+                  <label htmlFor={`ct-${f.key}`} className="label-caps mb-1 block">{f.label}</label>
+                  {f.key === 'pastor_usernames' ? (
+                    <div>
+                      <textarea id={`ct-${f.key}`} value={contentValue(f.key) || content.pastor_username || ''}
+                        onChange={e => setContentValue('pastor_usernames', e.target.value.slice(0, f.max))}
+                        rows={3} placeholder={f.hint}
+                        className="input-base resize-y" />
+                      <p className="mt-1 text-[10px] text-ink-muted">Use real usernames, not display names. Multiple pastors are supported.</p>
+                    </div>
+                  ) : f.textarea ? (
+                    <textarea id={`ct-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} rows={2} placeholder={f.hint} className="input-base resize-y" />
+                  ) : (
+                    <input id={`ct-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} placeholder={f.hint} className="input-base" />
+                  )}
+                  <p className="mt-0.5 text-right text-[10px] text-ink-muted">{contentValue(f.key).length}/{f.max}</p>
+                </div>
+              ))}
+              <button onClick={() => void saveContent()} disabled={contentBusy} className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-40">
+                {contentBusy ? 'Saving…' : 'Save home text — live for everyone'}
+              </button>
+              <p className="text-[10px] text-ink-muted">Clear a field to fall back to the shipped wording. Saved changes reach every open screen immediately.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Giving copy ── */}
+        {tab === 'give' && (
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
+              <div>
+                <h2 className="text-sm font-extrabold">Give screen</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Edit the giving headline, Paybill fallback details, giving funds and quick amounts. Saves go live for every member immediately.</p>
+              </div>
+              {GIVE_FIELDS.map(f => (
+                <div key={f.key}>
+                  <label htmlFor={`gv-${f.key}`} className="label-caps mb-1 block">{f.label}</label>
+                  {f.textarea ? (
+                    <textarea id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} rows={2} placeholder={f.hint} className="input-base resize-y" />
+                  ) : (
+                    <input id={`gv-${f.key}`} value={contentValue(f.key)} onChange={e => setContentValue(f.key, e.target.value.slice(0, f.max))} placeholder={f.hint} className="input-base" />
+                  )}
+                </div>
+              ))}
+              <GivingFundsEditor
+                funds={adminFunds}
+                quick={adminQuick}
+                onChange={(nextFunds, nextQuick) => {
+                  setContentValue('giving_funds', JSON.stringify(nextFunds))
+                  setContentValue('giving_quick', JSON.stringify(nextQuick))
+                }}
+              />
+              <button onClick={() => void saveContent()} disabled={contentBusy || !contentDraft} className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-40">
+                {contentBusy ? 'Saving…' : 'Save giving changes — live for everyone'}
+              </button>
+              <p className="text-[10px] text-ink-muted">These settings change what members see. The M-Pesa STK push itself is controlled by the server’s Daraja keys, not here.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Adverts ── */}
+        {tab === 'adverts' && (
+          <div className="space-y-3">
+            <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4">
+              <div>
+                <h2 className="text-sm font-extrabold">Sponsored adverts</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Third-party adverts shown inside the Community feed. Each member sees an advert at most “daily cap” times a day — counted on the server, so refreshing cannot show it more.</p>
+              </div>
+              <div>
+                <label htmlFor="ad-settings" className="label-caps mb-1 block">Placement and limits</label>
+                <textarea id="ad-settings" value={settingsDraft ?? settingsJson} onChange={e => setSettingsDraft(e.target.value)} rows={4} placeholder={ADVERT_SETTINGS_EXAMPLE} className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-xs outline-none focus:border-accent" />
+                <p className="mt-0.5 text-[10px] text-ink-muted">placement: <b>feed</b> or <b>none</b> · interval: 3–20 posts between adverts · daily_cap: 1–10 appearances per member per day.</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-surface p-3" data-testid="advert-photo-composer">
+                <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">New advert with a photo</p>
+                <p className="mt-1 text-[10px] text-ink-muted">Upload a picture straight from your phone — no hosting or link needed. It is added to the list below for you to review.</p>
+                <label htmlFor="ad-photo" className="mt-2 flex min-h-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-line bg-surface-sunken">
+                  {adPhoto
+                    ? <img src={URL.createObjectURL(adPhoto)} alt="Selected advert" className="h-24 w-full object-cover" />
+                    : <span className="flex items-center gap-2 text-2xs font-bold text-ink-muted"><Icon name="camera" size={18} /> Choose a photo</span>}
+                  <input id="ad-photo" type="file" accept="image/*" className="hidden" onChange={e => { setAdPhoto(e.target.files?.[0] || null); e.target.value = '' }} />
+                </label>
+                <input value={adTitle} onChange={e => setAdTitle(e.target.value.slice(0, 80))} placeholder="Headline (e.g. Harvest Bookshop)" className="input-base mt-2" aria-label="Advert headline" />
+                <textarea value={adBody} onChange={e => setAdBody(e.target.value.slice(0, 400))} rows={2} placeholder="One or two lines about the offer" className="input-base mt-2 resize-y" aria-label="Advert body" />
+                <input value={adCta} onChange={e => setAdCta(e.target.value)} placeholder="Link (optional — defaults to the church site)" className="input-base mt-2" aria-label="Advert link" />
+                <button type="button" onClick={() => void addAdvertWithPhoto()} disabled={adBusy || !adPhoto || !adTitle.trim()} className="mt-2 min-h-11 w-full rounded-xl bg-ink text-2xs font-extrabold text-white disabled:opacity-40">
+                  {adBusy ? 'Uploading photo…' : 'Add this advert'}
+                </button>
+              </div>
+              <div>
+                <label htmlFor="ad-list" className="label-caps mb-1 block">Adverts (JSON array)</label>
+                <textarea id="ad-list" value={advertsDraft ?? advertsJson} onChange={e => setAdvertsDraft(e.target.value)} rows={10} placeholder={ADVERT_EXAMPLE} className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2.5 font-mono text-xs outline-none focus:border-accent" />
+                <p className="mt-0.5 text-[10px] text-ink-muted">Max 20 adverts. Required: <b>id</b> (a–z, 0–9, - or _), <b>title</b> (80 chars) and <b>cta_url</b> (http/https). Optional: <b>body</b> (400), <b>image_key</b>, <b>image_url</b>, <b>enabled</b>, <b>audience</b>, <b>advertise_from</b> / <b>advertise_until</b>.</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!window.confirm('Publish these adverts to the Home feed?')) return
+                  let adverts: unknown
+                  let settings: unknown
+                  try { adverts = JSON.parse((advertsDraft ?? advertsJson) || '[]') } catch { setError('Adverts must be valid JSON'); return }
+                  try { settings = JSON.parse((settingsDraft ?? settingsJson) || '{}') } catch { setError('Placement and limits must be valid JSON'); return }
+                  setError('')
+                  void (async () => {
+                    setContentBusy(true)
+                    try {
+                      const r = await fetch(`${API}/api/content`, {
+                        method: 'PUT', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sponsor_adverts: JSON.stringify(adverts), advert_settings: JSON.stringify(settings) }),
+                      })
+                      const d = await r.json().catch(() => ({}))
+                      if (!r.ok) throw new Error(d?.error || `Could not save (${r.status})`)
+                      setContent(d.content || content); setAdvertsDraft(null); setSettingsDraft(null)
+                      flash('Adverts published — live on the next feed refresh ✓')
+                    } catch (e: any) { setError(e?.message || 'Could not save adverts') } finally { setContentBusy(false) }
+                  })()
+                }}
+                disabled={contentBusy}
+                className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                {contentBusy ? 'Saving…' : '✓ Save — goes live for everyone'}
+              </button>
+              <p className="text-[10px] text-ink-muted">Leave the list as <b>[]</b> to switch sponsored adverts off. Adverts are always labelled Sponsored and never styled as church posts.</p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Studio ── */}
+        {tab === 'media' && <AdminMedia onBack={() => setTab('moderation')} />}
+      </main>
 
       {/* Unsaved work stays visible wherever the admin has scrolled to. */}
       {contentDraft && Object.keys(contentDraft).length > 0 && (
-        <div className="pointer-events-none sticky bottom-3 z-20 mt-4 flex justify-center">
+        <div className="pointer-events-none sticky bottom-3 z-20 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-ink bg-ink px-3 py-1.5 text-white shadow-card">
             <span className="text-2xs font-extrabold">{Object.keys(contentDraft).length} unsaved change{Object.keys(contentDraft).length === 1 ? '' : 's'}</span>
             <button type="button" onClick={() => void saveContent()} disabled={contentBusy} className="min-h-9 rounded-full bg-gold px-3.5 text-2xs font-extrabold text-ink disabled:opacity-40">

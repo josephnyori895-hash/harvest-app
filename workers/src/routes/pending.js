@@ -168,10 +168,21 @@ export async function handlePending(request, env, ctx) {
     if (!username || typeof verified !== 'boolean') return errorResponse('username and boolean verified are required', 400)
     const { rows } = await query(env, 'UPDATE users SET verified=? WHERE username=? RETURNING id, username, verified', [verified ? 1 : 0, username])
     if (!rows[0]) return errorResponse('user not found', 404)
+    // Columns are actor_id, actor_role, action, target_type, target_id, meta,
+    // created_at. The old statement wrote 'verify_toggle' into actor_role and
+    // left one placeholder short, so the audit trail for verifications was
+    // either malformed or silently swallowed by the catch().
     await query(
       env,
-      `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,'verify_toggle','user',?,?,?,?)`,
-      [fresh.id, rows[0].id, JSON.stringify({ verified }), new Date().toISOString()],
+      `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,?,?, 'user', ?,?,?)`,
+      [
+        fresh.id,
+        fresh.role,
+        verified ? 'user_verified' : 'user_unverified',
+        rows[0].id,
+        JSON.stringify({ username: rows[0].username, verified }),
+        new Date().toISOString(),
+      ],
     ).catch(() => {})
     return jsonResponse({ ok: true, user: { ...rows[0], verified: !!rows[0].verified } })
   }
