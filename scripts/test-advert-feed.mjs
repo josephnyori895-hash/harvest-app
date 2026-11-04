@@ -8,7 +8,9 @@
 import assert from 'node:assert/strict'
 
 const API = process.env.API || 'http://127.0.0.1:8787'
-const login = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'harvest', pin: 'Kipsii@2026#' }) })
+// Credentials come from the environment (E2E_USERNAME/E2E_PIN) — nothing live
+// lives in the repo (see the 2026-11-04 agent-coordination memo).
+const login = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: process.env.E2E_USERNAME, pin: process.env.E2E_PIN }) })
 assert.equal(login.status, 200, `login failed: ${login.status}`)
 const { token } = await login.json()
 assert.ok(token, 'no token')

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { basename as fileBasename } from 'node:path'
 
 // Port of the Phase-1 hardening contract tests to the Cloudflare Workers backend.
 // The old assertions targeted server/src (Fastify); equivalents live in workers/src.
@@ -56,5 +59,18 @@ assert.match(departments, /only the system admin can remove a department leader/
 assert.match(departments, /cannot remove the only department leader/)
 assert.match(securityMigration, /password_hash = NULL/)
 assert.match(securityMigration, /pin_hash = NULL/)
+
+// No live credential is committed in any script: logins take E2E_USERNAME /
+// E2E_PIN from the environment (repo scan, all *.mjs incl. subpaths).
+{
+  const scriptsDir = new URL('./', import.meta.url)
+  for (const f of readdirSync(scriptsDir)) {
+    if (!f.endsWith('.mjs') || f === fileBasename(fileURLToPath(import.meta.url))) continue
+    const src = await readFile(new URL(f, scriptsDir), 'utf8')
+    assert.doesNotMatch(src, /(?:pin|password):\s*['"][^'"]{4,}['"]/, `${f}: hardcoded credential literal`)
+    assert.doesNotMatch(src, /\.(?:type|fill)\(['"#][^'"]*['"],\s*['"][^'"][^'"]*['"]\)(?!.*E2E_)/, `${f}: hardcoded typed password`)
+    assert.doesNotMatch(src, /username:\s*['"][A-Za-z0-9_@.]{3,}['"]/, `${f}: hardcoded username literal`)
+  }
+}
 
 console.log('Security hardening contract tests passed (Cloudflare Workers backend).')

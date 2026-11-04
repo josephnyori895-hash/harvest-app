@@ -7,6 +7,10 @@ const apiResponses = []
 page.on('response', r => { if (r.url().includes('/api/')) apiResponses.push(`${r.status()} ${new URL(r.url()).pathname}`) })
 
 await page.setViewport({ width: 412, height: 915, isMobile: true, hasTouch: true })
+// Credentials come from the environment — nothing live lives in this repo
+// (see the 2026-11-04 agent-coordination memo).
+const LOGIN_ID = process.env.E2E_USERNAME
+const LOGIN_PIN = process.env.E2E_PIN
 await page.goto(process.env.PREVIEW_URL || 'http://localhost:5199/', { waitUntil: 'networkidle2', timeout: 30000 })
 await new Promise(r => setTimeout(r, 800))
 
@@ -18,8 +22,8 @@ await page.evaluate(() => {
 await new Promise(r => setTimeout(r, 400))
 
 // Fill credentials and submit
-await page.type('#login-id', 'allan')
-await page.type('#login-pass', 'Kipsii@2026#')
+await page.type('#login-id', LOGIN_ID)
+await page.type('#login-pass', LOGIN_PIN)
 await page.evaluate(() => {
   const btn = [...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign in →'))
   btn?.click()

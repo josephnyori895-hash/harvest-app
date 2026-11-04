@@ -5,11 +5,13 @@ const browser = await puppeteer.launch({ executablePath: '/usr/bin/chromium', he
 const page = await browser.newPage()
 await page.setViewport({ width: 390, height: 844 })
 await page.goto(baseUrl, { waitUntil: 'networkidle2' })
-await page.evaluate(async () => {
-  const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'harvest', pin: 'Kipsii@2026#' }) })
-  const b = await r.json()
-  if (r.ok && b.token) localStorage.setItem('harvest_token', b.token)
-})
+// Credentials come from the environment — nothing live lives in this repo
+// (see the 2026-11-04 agent-coordination memo).
+const Creds = { username: process.env.E2E_USERNAME, pin: process.env.E2E_PIN }
+await page.evaluate((cp) => {
+  const r = fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cp) })
+  r.then(async (res) => { const b = await res.json(); if (res.ok && b.token) localStorage.setItem('harvest_token', b.token) })
+}, Creds)
 await page.goto(baseUrl, { waitUntil: 'networkidle2' })
 await new Promise(r => setTimeout(r, 4500))
 

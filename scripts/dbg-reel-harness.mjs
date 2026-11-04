@@ -13,8 +13,12 @@ page.on('response', r => {
   if (u.includes('/api/media/')) media.push(`${r.status()} ${decodeURIComponent(new URL(u).pathname.replace('/api/media/', '')).slice(0, 60)}`)
 })
 await page.goto(baseUrl, { waitUntil: 'networkidle2' })
+await page.evaluate((creds) => { window.__E2E__ = creds }, { username: process.env.E2E_USERNAME, pin: process.env.E2E_PIN })
 await page.evaluate(async () => {
-  const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'harvest', pin: 'Kipsii@2026#' }) })
+  // Credentials ride in via the evaluate argument (E2E_USERNAME / E2E_PIN) —
+  // nothing live lives in the repo (see the 2026-11-04 coordination memo).
+  if (!window.__E2E__ || !window.__E2E__.username || !window.__E2E__.pin) return
+  const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(window.__E2E__) })
   const b = await r.json()
   if (r.ok && b.token) localStorage.setItem('harvest_token', b.token)
 })
