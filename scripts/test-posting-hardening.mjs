@@ -46,8 +46,17 @@ assert.match(postCreate, /h-full w-full object-cover/)
 
 // Background transfer must honor the presigned HTTP method and carry signed
 // fields as headers for direct R2 uploads.
-assert.match(uploads, /const method = String\(presign\.method/)
-assert.match(uploads, /directHeaders/)
-assert.match(uploads, /direct \? file : form/)
+assert.match(uploads, /String\(presign\.method \|\| 'POST'\)/, 'presigned method is honored for form uploads')
+assert.match(uploads, /xhrSend\(String\(presign\.url\), 'PUT', file, headers/, 'direct R2 uploads keep their signed headers')
+assert.match(uploads, /up = await xhrSend\(`\$\{API\}\$\{presign\.url\}`/, 'non-direct presigns still post to the Worker path')
+
+// Anything past one chunk goes through the Worker, which is what stopped the
+// single long PUT that died as an opaque XHR "network error" on mobile.
+assert.match(uploads, /if \(file\.size > CHUNK_THRESHOLD\) return uploadChunked\(/, 'big transfers are chunked')
+assert.match(uploads, /api\/media\/multipart\/part/, 'chunks are posted to the Worker')
+assert.match(uploads, /api\/media\/multipart\/status/, 'a retry asks which parts already landed')
+assert.match(uploads, /api\/media\/multipart\/complete/, 'parts are joined server-side')
+assert.match(uploads, /if \(state\.done\[String\(n\)\]\)/, 'stored parts are skipped on resume')
+assert.match(uploads, /up = await xhrSend\(`\$\{API\}\/api\/media\/upload`, 'POST', form/, 'an unreachable R2 falls back to the same-origin proxy')
 
 console.log('Posting hardening contract tests passed.')

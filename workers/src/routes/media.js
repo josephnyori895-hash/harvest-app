@@ -2,7 +2,12 @@
 import { query, uuid } from '../lib/db.js'
 import { requireMember, requireAdmin } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
-import { presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT } from '../lib/media.js'
+import {
+  presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT,
+  mediaKeyFor, mediaSecret, createMultipartUpload, uploadMultipartPart, listMultipartParts,
+  completeMultipartUpload, abortMultipartUpload, MULTIPART_PART_SIZE, MAX_PARTS,
+} from '../lib/media.js'
+import { hmacSign, timingSafeEqualStr } from '../lib/crypto.js'
 import { hasCap } from '../lib/capabilities.js'
 const CAP_DELETE = 'delete_media'
 
@@ -103,6 +108,141 @@ export async function handleMedia(request, env, ctx) {
     }
   }
 
+  // ── CHUNKED (RESUMABLE) UPLOADS ─────────────────────────────────
+  // A device that cannot reach R2 directly — blocked host, or its origin fails
+  // the bucket's CORS preflight — gets an opaque XHR error and no status code,
+  // which is the "network error" admins were reporting. Parts travel through
+  // this Worker instead, and a dropped connection resumes from the last part
+  // the server confirms, never from zero.
+  //
+  // The upload token binds (uploadId, key, owner) so one member cannot keep
+  // writing into another member's open session.
+  const multipartToken = async (fresh, uploadId, key) =>
+    hmacSign(mediaSecret(env), `mp|${uploadId}|${key}|${fresh.id}`)
+
+  if (path === '/api/media/multipart' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const ct = request.headers.get('content-type') || ''
+    if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
+    const body = await readJson(request)
+    const { type, contentType: rawCt, bytes: rawBytes, ext, idempotencyKey } = body
+    if (!type) return errorResponse('type required', 400)
+    if (type === 'sermon_audio' || type === 'sermon_video') {
+      if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
+    } else if (type !== 'story' && type !== 'avatar' && type !== 'chat' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+      return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
+    }
+    try {
+      const declared = String(rawCt || '').toLowerCase().split(';')[0].trim()
+      const probe = `originals/${type}/2000/01/probe.${String(ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin'}`
+      // Android reports an empty or generic type for a picked recording; resolve
+      // it from the extension rather than refusing the upload at the start.
+      const resolvedType = (!declared || declared === 'application/octet-stream') ? contentTypeForKey(probe, '') : declared
+      const bytes = Number(rawBytes) || 0
+      if (bytes <= 0) return errorResponse('bytes required', 400)
+      validatePresign({ type, contentType: resolvedType, bytes })
+      const parts = Math.ceil(bytes / MULTIPART_PART_SIZE)
+      if (parts > MAX_PARTS) return errorResponse('file is too large for chunked upload', 400)
+      const rate = await query(
+        env,
+        'SELECT COUNT(*) AS count FROM media_upload_attempts WHERE user_id=? AND created_at > ?',
+        [fresh.id, new Date(Date.now() - 60_000).toISOString()],
+      )
+      if (Number(rate.rows[0]?.count || 0) >= 10) return errorResponse('upload rate limit 10/min', 429)
+      await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [fresh.id, new Date().toISOString()])
+      const key = mediaKeyFor({ type, ext, contentType: resolvedType, idempotencyKey })
+      const uploadId = await createMultipartUpload(env, { key, contentType: resolvedType, ownerId: fresh.id })
+      const token = await multipartToken(fresh, uploadId, key)
+      return jsonResponse({ key, uploadId, token, partSize: MULTIPART_PART_SIZE, parts, contentType: resolvedType }, 201)
+    } catch (e) {
+      return errorResponse(e.message || 'could not start the upload', e.status || 400)
+    }
+  }
+
+  // POST /api/media/multipart/part — store one chunk. FormData rather than a
+  // raw body so the request stays a plain authored POST the API CORS policy
+  // already permits.
+  if (path === '/api/media/multipart/part' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const form = await request.formData().catch(() => null)
+    if (!form) return errorResponse('multipart/form-data required', 415)
+    const key = String(form.get('key') || '')
+    const uploadId = String(form.get('uploadId') || '')
+    const token = String(form.get('token') || '')
+    const partNumber = Number(form.get('partNumber'))
+    const part = form.get('part')
+    if (!KEY_RE.test(key) || !uploadId || !(part instanceof File) || !Number.isInteger(partNumber) || partNumber < 1) {
+      return errorResponse('key, uploadId, partNumber and part are required', 400)
+    }
+    if (part.size > MULTIPART_PART_SIZE + 1024 * 1024) return errorResponse('part too large', 413)
+    const uploadType = key.split('/')[1]
+    if (uploadType === 'sermon_audio' || uploadType === 'sermon_video') {
+      if (!hasCap(fresh, 'manage_sermons')) return errorResponse('sermon management permission required', 403)
+    } else if (uploadType !== 'story' && uploadType !== 'avatar' && uploadType !== 'chat' && fresh.role !== 'admin' && !hasCap(fresh, 'post_media') && !fresh.verified) {
+      return errorResponse('posting is for verified members — ask an admin to verify your account, or share a story instead', 403)
+    }
+    if (!timingSafeEqualStr(await multipartToken(fresh, uploadId, key), token)) {
+      return errorResponse('upload token does not match this account', 403)
+    }
+    try {
+      const etag = await uploadMultipartPart(env, { key, uploadId, partNumber, body: await part.arrayBuffer() })
+      return jsonResponse({ partNumber, etag })
+    } catch (e) {
+      return errorResponse(e.message || 'part upload failed', e.status || 502)
+    }
+  }
+
+  // POST /api/media/multipart/status — which parts already landed (resume).
+  if (path === '/api/media/multipart/status' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const body = await readJson(request)
+    const key = String(body.key || '')
+    const uploadId = String(body.uploadId || '')
+    const token = String(body.token || '')
+    if (!KEY_RE.test(key) || !uploadId) return errorResponse('key and uploadId required', 400)
+    if (!timingSafeEqualStr(await multipartToken(fresh, uploadId, key), token)) {
+      return errorResponse('upload token does not match this account', 403)
+    }
+    try {
+      return jsonResponse({ parts: await listMultipartParts(env, { key, uploadId }) })
+    } catch (e) {
+      return errorResponse(e.message || 'could not read upload session', e.status || 502)
+    }
+  }
+
+  // POST /api/media/multipart/complete — join the parts into the object.
+  if (path === '/api/media/multipart/complete' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const body = await readJson(request)
+    const key = String(body.key || '')
+    const uploadId = String(body.uploadId || '')
+    const token = String(body.token || '')
+    const parts = Array.isArray(body.parts) ? body.parts : []
+    if (!KEY_RE.test(key) || !uploadId) return errorResponse('key and uploadId required', 400)
+    if (!timingSafeEqualStr(await multipartToken(fresh, uploadId, key), token)) {
+      return errorResponse('upload token does not match this account', 403)
+    }
+    if (!parts.length) return errorResponse('parts required', 400)
+    try {
+      await completeMultipartUpload(env, { key, uploadId, parts: parts.map(p => ({ partNumber: Number(p.partNumber), etag: String(p.etag || '') })) })
+      const head = await env.MEDIA.head(key)
+      return jsonResponse({ key, size: Number(head?.size) || null })
+    } catch (e) {
+      return errorResponse(e.message || 'could not finish the upload', e.status || 502)
+    }
+  }
+
+  // POST /api/media/multipart/abort — give up and release the parts.
+  if (path === '/api/media/multipart/abort' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    const body = await readJson(request)
+    const key = String(body.key || '')
+    const uploadId = String(body.uploadId || '')
+    if (!KEY_RE.test(key) || !uploadId) return errorResponse('key and uploadId required', 400)
+    await abortMultipartUpload(env, { key, uploadId })
+    return jsonResponse({ ok: true })
+  }
+
   // POST /api/media/upload — proxy fallback (used when R2 presign creds are not configured).
   if (path === '/api/media/upload' && method === 'POST') {
     const fresh = await requireMember(env, user)
@@ -130,10 +270,17 @@ export async function handleMedia(request, env, ctx) {
       if (Number(rate.rows[0]?.count || 0) >= 10) return errorResponse('upload rate limit 10/min', 429)
       await query(env, 'INSERT INTO media_upload_attempts (user_id, created_at) VALUES (?,?)', [fresh.id, new Date().toISOString()])
       const buf = await file.arrayBuffer()
-      validatePresign({ type, contentType: file.type, bytes: buf.byteLength })
-      if (expectedContentType && expectedContentType !== file.type) return errorResponse('content type mismatch', 400)
+      // An opaque/empty type from an Android picker is resolved from the key
+      // extension, exactly as presign and multipart do — otherwise the very
+      // files presign accepts are refused here.
+      const fileCt = String(file.type || '').toLowerCase().split(';')[0].trim()
+      const normalized = (!fileCt || fileCt === 'application/octet-stream') ? contentTypeForKey(key, '') : fileCt
+      validatePresign({ type, contentType: normalized, bytes: buf.byteLength })
+      if (expectedContentType && expectedContentType.toLowerCase().split(';')[0].trim() !== normalized) {
+        return errorResponse('content type mismatch', 400)
+      }
       await env.MEDIA.put(key, buf, {
-        httpMetadata: { contentType: file.type },
+        httpMetadata: { contentType: normalized },
         customMetadata: { ownerId: String(fresh.id), uploadedAt: new Date().toISOString() },
       })
       return jsonResponse({ ok: true, key }, 201)

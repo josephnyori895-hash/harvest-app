@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
-import { startBackgroundUpload } from '../lib/backgroundUploads'
+import { startBackgroundUpload, getUploadHistory, subscribeUploads, retryUpload, type UploadHistoryEntry } from '../lib/backgroundUploads'
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
@@ -61,6 +61,8 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
   const [uploadScripture, setUploadScripture] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [failedSermonUpload, setFailedSermonUpload] = useState<UploadHistoryEntry | null>(null)
+  const [dismissedFail, setDismissedFail] = useState('')
   const [canManageSermons, setCanManageSermons] = useState(isAdmin)
   const [managerUsers, setManagerUsers] = useState<any[]>([])
   const [managerBusy, setManagerBusy] = useState('')
@@ -106,6 +108,14 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Why an upload died belongs on this screen. Making the admin dig through
+  // Profile history to find out is how "it just doesn't upload" happens.
+  useEffect(() => {
+    const pick = () => setFailedSermonUpload(getUploadHistory().find(h => h.status === 'failed' && /sermon/i.test(h.label)) || null)
+    pick()
+    return subscribeUploads(pick)
+  }, [])
 
   // Counts on this screen (teachings, plays, downloads, comments) must be live.
   // Refresh quietly instead of freezing at mount.
@@ -391,10 +401,36 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent text-white"><Icon name="plus" size={20} /></span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-extrabold text-ink">Upload a sermon</span>
-              <span className="block text-2xs text-ink-muted">{isAdmin ? 'MP3 or MP4 · publishes immediately' : 'Sermon manager · publishes immediately'}</span>
+              <span className="block text-2xs text-ink-muted">{isAdmin ? 'MP3, M4A, MP4, MKV or 3GP · publishes immediately' : 'Sermon manager · publishes immediately'}</span>
             </span>
             <Icon name="chevron-right" size={18} className="shrink-0 text-ink-subtle" />
           </button>
+        </div>
+      )}
+
+      {failedSermonUpload && failedSermonUpload.id !== dismissedFail && (
+        <div className="px-4 pt-4">
+          <div className="rounded-card border border-line bg-surface-raised p-3">
+            <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-danger">Last sermon upload failed</p>
+            <p className="mt-1 text-sm font-extrabold text-ink">{failedSermonUpload.detail || 'The transfer did not finish.'}</p>
+            <p className="mt-0.5 text-2xs text-ink-muted">{failedSermonUpload.label} · {timeAgo(new Date(failedSermonUpload.at).toISOString())}</p>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => { if (!retryUpload(failedSermonUpload.id)) showToast('That upload can no longer be retried — choose the file again', 'error') }}
+                className="min-h-9 rounded-full bg-accent px-3.5 text-2xs font-extrabold text-white transition active:scale-95"
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedFail(failedSermonUpload.id)}
+                className="min-h-9 rounded-full border border-line px-3.5 text-2xs font-extrabold text-ink-muted"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -608,7 +644,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
               <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'audio' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>MP3 audio</button>
               <button onClick={() => { setUploadKind('video'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'video' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>MP4 video</button>
             </div>
-            <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4' : '.mp3,audio/mpeg,audio/mp3'} onChange={e => {
+            <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4,.mkv,video/x-matroska,.3gp,video/3gpp,.mov,video/quicktime,.m4v,video/x-m4v,.webm,video/webm' : '.mp3,audio/mpeg,.m4a,audio/mp4,.aac,audio/aac,.wav,audio/wav,.ogg,audio/ogg'} onChange={e => {
               const f = e.target.files?.[0] || null
               if (!f) return
               const max = uploadKind === 'video' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024

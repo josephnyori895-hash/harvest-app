@@ -13,7 +13,7 @@ const DEFAULT_TTL = 900
 // PUT — the in-Worker proxy fallback would run out of memory on files this
 // size, so R2 credentials are required for full-length sermon videos.
 // Stories allow short video moments up to 30 MB; photos 10 MB.
-const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 20 * 1024 * 1024, avatar: 5 * 1024 * 1024, chat: 10 * 1024 * 1024, sermon_audio: 2 * 1024 * 1024 * 1024, sermon_video: 5 * 1024 * 1024 * 1024 }
+const MAX_BYTES = { post: 10 * 1024 * 1024, story: 30 * 1024 * 1024, reel: 100 * 1024 * 1024, track: 50 * 1024 * 1024, avatar: 5 * 1024 * 1024, chat: 10 * 1024 * 1024, sermon_audio: 2 * 1024 * 1024 * 1024, sermon_video: 5 * 1024 * 1024 * 1024 }
 export const ALLOW_CT = {
   avatar: ['image/jpeg', 'image/png', 'image/webp'],
   post: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
@@ -21,7 +21,11 @@ export const ALLOW_CT = {
   reel: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp'],
   track: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/wav', 'audio/x-wav', 'audio/x-m4a-aot', 'audio/aac', 'audio/ogg'],
   sermon_audio: ['audio/mpeg', 'audio/mp3', 'audio/m4a', 'audio/x-m4a', 'audio/mp4', 'audio/aac', 'audio/ogg'],
-  sermon_video: ['video/mp4', 'video/webm', 'video/x-m4v', 'video/quicktime'],
+  // Phones hand back whatever container the camera or a download produced.
+  // Matroska, 3GP and AVI are accepted because refusing them left sermon
+  // uploads failing with no usable explanation; the original file keeps its
+  // native container (this Worker stores bytes, it does not transcode).
+  sermon_video: ['video/mp4', 'video/webm', 'video/x-m4v', 'video/quicktime', 'video/x-matroska', 'video/3gpp', 'video/3gpp2', 'video/avi', 'video/x-msvideo', 'video/mpeg'],
   // Chat attachments: images only, referenced directly by chat messages rows.
   chat: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
 }
@@ -100,6 +104,13 @@ const EXTENSION_CONTENT_TYPES = {
   m4v: 'video/x-m4v',
   mov: 'video/quicktime',
   webm: 'video/webm',
+  mkv: 'video/x-matroska',
+  '3gp': 'video/3gpp',
+  '3gpp': 'video/3gpp',
+  '3g2': 'video/3gpp2',
+  avi: 'video/x-msvideo',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
 }
 
 export function contentTypeForKey(key, stored) {
@@ -222,6 +233,159 @@ export async function presignedPost(env, { type, contentType, bytes, ext, ownerI
     maxBytes: max,
     method: 'PUT',
   }
+}
+
+// ── Multipart (chunked, resumable) uploads ──
+// Chunks travel client → Worker → R2, so a device never has to reach
+// *.r2.cloudflarestorage.com itself. That direct host is exactly what failed on
+// mobile devices whose network blocks it, or whose origin fails the bucket's
+// CORS preflight — an opaque XHR "network error" with no HTTP status. 8 MiB
+// keeps each request well inside the Worker body limit while clearing R2's
+// 5 MiB part minimum.
+export const MULTIPART_PART_SIZE = 8 * 1024 * 1024
+export const MAX_PARTS = 10_000
+
+const hexOf = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('')
+
+function r2Credentials(env) {
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID
+  const accessKeyId = env.R2_ACCESS_KEY_ID
+  const secretAccessKey = env.R2_SECRET_ACCESS_KEY
+  if (!accountId || !accessKeyId || !secretAccessKey) return null
+  return { accountId, accessKeyId, secretAccessKey, bucket: env.MEDIA_BUCKET_NAME || BUCKET }
+}
+
+// SigV4 with an Authorization header (not a presigned URL): these calls are
+// made by the Worker itself, so the signature is computed server-side.
+async function r2Request(env, { method, key, query = {}, headers = {}, body }) {
+  const creds = r2Credentials(env)
+  if (!creds) throw Object.assign(new Error('storage credentials are not configured on the server'), { status: 501 })
+  const host = `${creds.accountId}.r2.cloudflarestorage.com`
+  const uri = `/${encodePath(creds.bucket + '/' + key)}`
+  const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+  const date = amzDate.slice(0, 8)
+  const payloadHash = 'UNSIGNED-PAYLOAD'
+  const signed = {
+    ...Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)])),
+    host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  }
+  const names = Object.keys(signed).sort()
+  const canonicalHeaders = names.map(n => `${n}:${signed[n]}\n`).join('')
+  const signedHeaders = names.join(';')
+  const canonicalQuery = Object.keys(query).sort().map(k => `${encodeQuery(k)}=${encodeQuery(query[k])}`).join('&')
+  const scope = `${date}/auto/s3/aws4_request`
+  const canonicalRequest = [method, uri, canonicalQuery, canonicalHeaders, signedHeaders, payloadHash].join('\n')
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256Hex(canonicalRequest)].join('\n')
+  const encoder = new TextEncoder()
+  const kDate = await hmacBytes(encoder.encode('AWS4' + creds.secretAccessKey), date)
+  const kRegion = await hmacBytes(kDate, 'auto')
+  const kService = await hmacBytes(kRegion, 's3')
+  const kSigning = await hmacBytes(kService, 'aws4_request')
+  const signature = hexOf(await hmacBytes(kSigning, stringToSign))
+  return fetch(`https://${host}${uri}${canonicalQuery ? '?' + canonicalQuery : ''}`, {
+    method,
+    headers: {
+      ...Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, String(v)])),
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': amzDate,
+      authorization: `AWS4-HMAC-SHA256 Credential=${creds.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    },
+    body,
+  })
+}
+
+// One key derivation for every upload path, so presign and multipart agree on
+// the shape /confirm and the read routes validate.
+export function mediaKeyFor({ type, ext, contentType, idempotencyKey }) {
+  const now = new Date()
+  const yyyy = String(now.getUTCFullYear())
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const ct = String(contentType || '').toLowerCase()
+  const safeExt = String(ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() ||
+    (ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : ct.includes('mpeg') ? 'mp3' : ct.startsWith('video/') || type === 'reel' ? 'mp4' : 'jpg')
+  const stable = String(idempotencyKey || '').toLowerCase().replace(/[^0-9a-f-]/g, '').slice(0, 36)
+  return `originals/${type}/${yyyy}/${mm}/${stable || crypto.randomUUID().replace(/-/g, '')}.${safeExt}`
+}
+
+const xmlTag = (xml, tag) => {
+  const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(String(xml))
+  return m ? m[1].trim() : ''
+}
+
+export async function createMultipartUpload(env, { key, contentType, ownerId }) {
+  const res = await r2Request(env, {
+    method: 'POST',
+    key,
+    query: { uploads: '' },
+    headers: { 'content-type': contentType, 'x-amz-meta-ownerid': String(ownerId) },
+  })
+  const xml = await res.text()
+  if (!res.ok) throw Object.assign(new Error(`storage refused to start the upload (${res.status})`), { status: 502 })
+  const uploadId = xmlTag(xml, 'UploadId')
+  if (!uploadId) throw Object.assign(new Error('storage did not return an upload id'), { status: 502 })
+  return uploadId
+}
+
+export async function uploadMultipartPart(env, { key, uploadId, partNumber, body }) {
+  const res = await r2Request(env, {
+    method: 'PUT',
+    key,
+    query: { partNumber: String(partNumber), uploadId },
+    headers: { 'content-type': 'application/octet-stream' },
+    body,
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    const message = xmlTag(detail, 'Message')
+    throw Object.assign(new Error(`part ${partNumber} rejected by storage (${res.status})${message ? ': ' + message : ''}`), { status: 502 })
+  }
+  const etag = res.headers.get('etag')
+  if (!etag) throw Object.assign(new Error(`part ${partNumber} was stored without an ETag`), { status: 502 })
+  return etag.replace(/"/g, '')
+}
+
+export async function listMultipartParts(env, { key, uploadId }) {
+  const res = await r2Request(env, { method: 'GET', key, query: { uploadId } })
+  const xml = await res.text()
+  if (!res.ok) {
+    if (res.status === 404) throw Object.assign(new Error('upload session not found — start the upload again'), { status: 404 })
+    throw Object.assign(new Error(`storage could not list parts (${res.status})`), { status: 502 })
+  }
+  const parts = []
+  const re = /<Part>([\s\S]*?)<\/Part>/g
+  let m
+  while ((m = re.exec(xml))) {
+    const partNumber = Number(xmlTag(m[1], 'PartNumber'))
+    const etag = xmlTag(m[1], 'ETag').replace(/"/g, '')
+    if (partNumber && etag) parts.push({ partNumber, etag })
+  }
+  return parts
+}
+
+export async function completeMultipartUpload(env, { key, uploadId, parts }) {
+  const xmlBody = '<CompleteMultipartUpload>' + [...parts]
+    .sort((a, b) => a.partNumber - b.partNumber)
+    .map(p => `<Part><PartNumber>${Number(p.partNumber)}</PartNumber><ETag>"${String(p.etag).replace(/["<>&]/g, '')}"</ETag></Part>`)
+    .join('') + '</CompleteMultipartUpload>'
+  const res = await r2Request(env, {
+    method: 'POST',
+    key,
+    query: { uploadId },
+    headers: { 'content-type': 'application/xml' },
+    body: new TextEncoder().encode(xmlBody),
+  })
+  const xml = await res.text()
+  // S3-family services can answer 200 with an <Error> body; treat both as failure.
+  if (!res.ok || /<Error>/.test(xml)) {
+    throw Object.assign(new Error(xmlTag(xml, 'Message') || `storage could not finish the upload (${res.status})`), { status: 502 })
+  }
+  return { key }
+}
+
+export async function abortMultipartUpload(env, { key, uploadId }) {
+  try { await r2Request(env, { method: 'DELETE', key, query: { uploadId } }) } catch { /* best effort */ }
 }
 
 // GET /api/media/* — signed reads from R2.

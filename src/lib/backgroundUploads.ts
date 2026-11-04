@@ -90,7 +90,7 @@ const getDeferred = (id: string): DeferredHandle => {
 // Checking before the background queue starts avoids a member waiting on a
 // multi-hour upload that can only fail at presign time.
 export const MAX_UPLOAD_MB: Record<string, number> = {
-  avatar: 5, post: 10, story: 30, reel: 100, track: 20,
+  avatar: 5, post: 10, story: 30, reel: 100, track: 50,
   sermon_audio: 2048, sermon_video: 5120,
 }
 export function uploadTooLarge(kind: string, bytes: number): string | null {
@@ -227,7 +227,133 @@ const extOf = (file: File | Blob, filename?: string) =>
 const MIME_BY_EXT: Record<string, string> = {
   mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', wav: 'audio/wav',
   mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm',
+  mkv: 'video/x-matroska', '3gp': 'video/3gpp', '3gpp': 'video/3gpp', avi: 'video/x-msvideo', mpeg: 'video/mpeg', mpg: 'video/mpeg',
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic',
+}
+
+type PresignResponse = { url: string; fields?: Record<string, string>; key: string; method?: string }
+
+// ── Chunked uploads (resumable) ──────────────────────────────────
+// A single long PUT is what fails on a phone: switching from Wi-Fi to data or
+// the screen sleeping kills the socket mid-transfer and the browser reports an
+// opaque "network error" with no status. Photos and short clips finish before
+// that can happen; sermons and songs do not. Uploading in 8 MiB parts keeps a
+// failure seconds wide, and the parts already stored are remembered so a retry
+// resumes instead of re-sending from zero.
+const CHUNK_THRESHOLD = 8 * 1024 * 1024
+const PART_SIZE = 8 * 1024 * 1024
+
+type ChunkState = { uploadId: string; key: string; token: string; partSize: number; size: number; done: Record<string, string> }
+
+const chunkStoreKey = (id: string) => `harvest:chunk:${id}`
+function loadChunkState(id: string): ChunkState | null {
+  try { const raw = localStorage.getItem(chunkStoreKey(id)); return raw ? JSON.parse(raw) as ChunkState : null } catch { return null }
+}
+function saveChunkState(id: string, st: ChunkState) {
+  try { localStorage.setItem(chunkStoreKey(id), JSON.stringify(st)) } catch { /* resume is best-effort */ }
+}
+function clearChunkState(id: string) {
+  try { localStorage.removeItem(chunkStoreKey(id)) } catch {}
+}
+
+// Worker refusals are JSON and carry the real reason; R2's own errors are XML.
+function uploadError(up: { status: number; body: string }): Error {
+  let reason = ''
+  try {
+    const parsed = JSON.parse(up.body || '{}')
+    if (parsed && typeof parsed.error === 'string') reason = parsed.error
+  } catch { /* XML error body, not a server explanation */ }
+  if (reason) return new Error(reason)
+  if (up.status === 403) return new Error('storage link expired — retrying')
+  return new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
+}
+
+async function uploadChunked(
+  file: File | Blob,
+  type: UploadKind | 'post',
+  filename: string | undefined,
+  declaredType: string,
+  idempotencyKey: string,
+  onPct: (p: number) => void,
+): Promise<string> {
+  const fail = (n: number, e: any) => (e instanceof Error && e.message ? e : new Error(`chunk ${n} failed`))
+  let st = loadChunkState(idempotencyKey)
+  if (st && st.size !== file.size) st = null
+  if (!st) {
+    const started = await apiJson(`${API}/api/media/multipart`, tok(), {
+      type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey,
+    }) as { uploadId: string; key: string; token: string; partSize?: number }
+    st = {
+      uploadId: String(started.uploadId), key: String(started.key), token: String(started.token),
+      partSize: Number(started.partSize) || PART_SIZE, size: file.size, done: {},
+    }
+    saveChunkState(idempotencyKey, st)
+  } else {
+    // Ask the server which parts already landed: that is what turns a retry
+    // after a drop into a resume rather than a restart.
+    try {
+      const known = await apiJson(`${API}/api/media/multipart/status`, tok(), {
+        uploadId: st.uploadId, key: st.key, token: st.token,
+      }) as { parts?: { partNumber: number; etag: string }[] }
+      st.done = {}
+      for (const p of Array.isArray(known?.parts) ? known.parts : []) st.done[String(p.partNumber)] = String(p.etag)
+      saveChunkState(idempotencyKey, st)
+    } catch {
+      // Session expired on the storage side — start a fresh one.
+      clearChunkState(idempotencyKey)
+      const started = await apiJson(`${API}/api/media/multipart`, tok(), {
+        type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey,
+      }) as { uploadId: string; key: string; token: string; partSize?: number }
+      st = {
+        uploadId: String(started.uploadId), key: String(started.key), token: String(started.token),
+        partSize: Number(started.partSize) || PART_SIZE, size: file.size, done: {},
+      }
+      saveChunkState(idempotencyKey, st)
+    }
+  }
+  const state: ChunkState = st
+  const partSize = state.partSize || PART_SIZE
+  const totalParts = Math.max(1, Math.ceil(file.size / partSize))
+  for (let n = 1; n <= totalParts; n++) {
+    if (state.done[String(n)]) { onPct(Math.round((n / totalParts) * 100)); continue }
+    const from = (n - 1) * partSize
+    const chunk = file.slice(from, Math.min(file.size, from + partSize))
+    let stored = false
+    let lastError: any = null
+    for (let attempt = 1; attempt <= 3 && !stored; attempt++) {
+      try {
+        const form = new FormData()
+        form.append('key', state.key)
+        form.append('uploadId', state.uploadId)
+        form.append('token', state.token)
+        form.append('partNumber', String(n))
+        form.append('part', chunk, `part-${n}`)
+        const up = await xhrSend(
+          `${API}/api/media/multipart/part`, 'POST', form,
+          { Authorization: `Bearer ${tok()}` },
+          p => onPct(Math.round(((n - 1 + p / 100) / totalParts) * 100)),
+        )
+        if (!up.ok) throw uploadError(up)
+        const data = JSON.parse(up.body || '{}')
+        state.done[String(n)] = String(data.etag || '')
+        saveChunkState(idempotencyKey, state)
+        stored = true
+      } catch (e: any) {
+        lastError = e
+        if (attempt < 3) await new Promise(r => setTimeout(r, 1500 * attempt))
+      }
+    }
+    if (!stored) throw fail(n, lastError)
+  }
+  await apiJson(`${API}/api/media/multipart/complete`, tok(), {
+    uploadId: state.uploadId,
+    key: state.key,
+    token: state.token,
+    parts: Object.entries(state.done).map(([partNumber, etag]) => ({ partNumber: Number(partNumber), etag })),
+  })
+  clearChunkState(idempotencyKey)
+  onPct(100)
+  return state.key
 }
 
 async function uploadOne(
@@ -242,37 +368,33 @@ async function uploadOne(
   const declaredType = file.type && file.type !== 'application/octet-stream'
     ? file.type
     : (MIME_BY_EXT[extOf(file, filename)] || 'application/octet-stream')
-  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey })
-  const direct = /^https?:\/\//.test(presign.url)
-  const method = String(presign.method || (direct ? 'PUT' : 'POST')).toUpperCase()
-  const directHeaders = Object.fromEntries(Object.entries(presign.fields || {}).map(([k, v]) => [k, String(v)]))
-  const form = new FormData()
-  if (!direct) {
+  const span = (p: number) => onPct(pctFrom + Math.round(p * (pctTo - pctFrom)))
+  if (file.size > CHUNK_THRESHOLD) return uploadChunked(file, type, filename, declaredType, idempotencyKey, span)
+  const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey }) as PresignResponse
+  const direct = /^https?:\/\//.test(String(presign.url || ''))
+  let up: { ok: boolean; status: number; body: string }
+  if (direct) {
+    const headers = Object.fromEntries(Object.entries(presign.fields || {}).map(([k, v]) => [k, String(v)]))
+    try {
+      up = await xhrSend(String(presign.url), 'PUT', file, headers, span)
+    } catch {
+      // This device cannot reach R2 at all — a blocked host or a failed bucket
+      // CORS preflight. The Worker can, and it sits on a host the app already
+      // talks to, so finish through the same-origin proxy instead of failing.
+      const form = new FormData()
+      form.append('key', String(presign.key))
+      form.append('contentType', declaredType)
+      form.append('file', file, filename || (file as File).name || 'upload')
+      up = await xhrSend(`${API}/api/media/upload`, 'POST', form, { Authorization: `Bearer ${tok()}` }, span)
+    }
+  } else {
+    const form = new FormData()
     Object.entries(presign.fields || {}).forEach(([k, v]) => form.append(k, String(v)))
     form.append('file', file)
+    up = await xhrSend(`${API}${presign.url}`, String(presign.method || 'POST').toUpperCase(), form, { Authorization: `Bearer ${tok()}` }, span)
   }
-  const up = await xhrSend(
-    direct ? presign.url : `${API}${presign.url}`,
-    method,
-    direct ? file : form,
-    direct ? directHeaders : { Authorization: `Bearer ${tok()}` },
-    p => onPct(pctFrom + Math.round(p * (pctTo - pctFrom))),
-  )
-  if (!up.ok) {
-    // Worker errors are JSON (`{ error: "..." }`); R2's own errors are XML. That
-    // distinction matters: a JSON reason is the real diagnosis and must be shown,
-    // while a bare R2 403 means the signed PUT window closed mid-transfer and a
-    // retry with a fresh URL is the correct response.
-    let reason = ''
-    try {
-      const parsed = JSON.parse(up.body || '{}')
-      if (parsed && typeof parsed.error === 'string') reason = parsed.error
-    } catch { /* R2 XML error body — not a server explanation */ }
-    if (reason) throw new Error(reason)
-    if (up.status === 403) throw new Error('storage link expired — retrying')
-    throw new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
-  }
-  return presign.key as string
+  if (!up.ok) throw uploadError(up)
+  return String(presign.key)
 }
 
 /** Cover art is a thumbnail, not a full-resolution photo. Downscale before the
@@ -341,7 +463,7 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
 function isRetryable(e: any): boolean {
   const msg = String(e?.message || '').toLowerCase()
   if (!msg) return true
-  return /network|timeout|timed out|busy|failed to fetch|rate limit|expired|\(5\d\d\)|429/.test(msg)
+  return /network|timeout|timed out|busy|failed to fetch|rate limit|expired|chunk|rejected by storage|\(5\d\d\)|429/.test(msg)
 }
 
 // --- one attempt lifecycle ---------------------------------------------------
