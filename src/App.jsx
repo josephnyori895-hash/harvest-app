@@ -771,7 +771,7 @@ function InnerApp() {
               markAllPending={notificationMarkAllPending}
               onFilterChange={setNotificationFilter}
               onNotificationPress={handleNotificationPress}
-              onRetry={() => {}}
+              onRetry={() => { void refreshNotifications() }}
               onMarkAllRead={markAllNotificationsRead}
               onDismissActionError={() => setNotificationActionError(null)}
               onBack={() => setShowNotifications(false)}

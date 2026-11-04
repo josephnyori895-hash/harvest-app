@@ -45,3 +45,15 @@ test('Activity screen is merged away — single notifications surface remains', 
   assert.doesNotMatch(app, /tab === 'activity' && <Activity \/>/)
   assert.doesNotMatch(app, /function Activity\(\)/)
 })
+
+test('the profile activity entrance opens that same surface, not a second screen', () => {
+  // Audit item F keeps activity one tap from Profile; both entrances must land
+  // on the one inbox, with activity rows pre-filtered.
+  assert.match(app, /onOpenActivity=\{\(\) => \{ setNotificationFilter\('family'\); setShowNotifications\(true\)/)
+  assert.match(app, /activityRows|withLocalRead\(rows\)\.filter/, 'family activity rides the notification list')
+})
+
+test('the inbox retry actually refreshes — a dead button is a silent failure', () => {
+  assert.doesNotMatch(app, /onRetry=\{\(\) => \{\}\}/)
+  assert.match(app, /onRetry=\{\(\) => \{ void refreshNotifications\(\) \}\}/)
+})
