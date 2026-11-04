@@ -5,7 +5,7 @@ import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js
 import {
   presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT,
   mediaKeyFor, mediaSecret, createMultipartUpload, uploadMultipartPart, listMultipartParts,
-  completeMultipartUpload, abortMultipartUpload, MULTIPART_PART_SIZE, MAX_PARTS,
+  completeMultipartUpload, abortMultipartUpload, MULTIPART_PART_SIZE, MAX_PARTS, STAGED_JOIN_MAX_PARTS,
   isStagedUpload, newStagedUploadId, hasStorageCredentials, stageChunk, listStagedChunks,
   completeStagedChunks, abortStagedChunks,
 } from '../lib/media.js'
@@ -145,6 +145,9 @@ export async function handleMedia(request, env, ctx) {
       validatePresign({ type, contentType: resolvedType, bytes })
       const parts = Math.ceil(bytes / MULTIPART_PART_SIZE)
       if (parts > MAX_PARTS) return errorResponse('file is too large for chunked upload', 400)
+      if (!hasStorageCredentials(env) && parts > STAGED_JOIN_MAX_PARTS) {
+        return errorResponse(`this server cannot join a streamed upload that big yet — the size ceiling is ${(STAGED_JOIN_MAX_PARTS * MULTIPART_PART_SIZE) / (1024 * 1024)} MB until storage credentials are added; smaller file, or ask the site admin`, 413)
+      }
       const rate = await query(
         env,
         'SELECT COUNT(*) AS count FROM media_upload_attempts WHERE user_id=? AND created_at > ?',

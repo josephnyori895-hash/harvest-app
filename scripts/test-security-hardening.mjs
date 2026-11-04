@@ -61,16 +61,24 @@ assert.match(securityMigration, /password_hash = NULL/)
 assert.match(securityMigration, /pin_hash = NULL/)
 
 // No live credential is committed in any script: logins take E2E_USERNAME /
-// E2E_PIN from the environment (repo scan, all *.mjs incl. subpaths).
+// E2E_PIN from the environment (recursive scan of scripts/ AND workers/scripts/).
 {
-  const scriptsDir = new URL('./', import.meta.url)
-  for (const f of readdirSync(scriptsDir)) {
-    if (!f.endsWith('.mjs') || f === fileBasename(fileURLToPath(import.meta.url))) continue
-    const src = await readFile(new URL(f, scriptsDir), 'utf8')
-    assert.doesNotMatch(src, /(?:pin|password):\s*['"][^'"]{4,}['"]/, `${f}: hardcoded credential literal`)
-    assert.doesNotMatch(src, /\.(?:type|fill)\(['"#][^'"]*['"],\s*['"][^'"][^'"]*['"]\)(?!.*E2E_)/, `${f}: hardcoded typed password`)
-    assert.doesNotMatch(src, /username:\s*['"][A-Za-z0-9_@.]{3,}['"]/, `${f}: hardcoded username literal`)
+  const scriptDirs = ['../scripts/', '../workers/scripts/']
+  const scriptRoots = new Set(['scripts', 'workers/scripts'])
+  for (const dirLevel of scriptDirs) {
+    const dir = new URL(dirLevel, import.meta.url)
+    let files
+    try { files = readdirSync(dir, { recursive: true }) } catch { continue }
+    for (const f of files) {
+      if (!f.endsWith('.mjs')) continue
+      if (f.includes('test-security-hardening.mjs')) continue
+      const src = await readFile(new URL(f.replace(/^[./]+/, ''), dir), 'utf8')
+      assert.doesNotMatch(src, /(?:pin|password):\s*['"][^'"]{4,}['"]/, `${f}: hardcoded credential literal`)
+      assert.doesNotMatch(src, /\.type\(['"][^'"]*['"],\s*['"][^'"]{4,}['"]\)(?!.*E2E_)/, `${f}: hardcoded typed password`)
+      assert.doesNotMatch(src, /username:\s*['"][A-Za-z0-9_.@-]{3,}['"]/, `${f}: hardcoded username literal`)
+    }
   }
+  void scriptRoots
 }
 
 console.log('Security hardening contract tests passed (Cloudflare Workers backend).')

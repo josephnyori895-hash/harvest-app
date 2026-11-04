@@ -22,15 +22,16 @@ async function j(method, path, token, body) {
 
 const main = async () => {
   // ── Setup: tokens ──
-  const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
+  const admin = await j('POST', '/api/auth/login', null, { username: process.env.E2E_USERNAME, password: process.env.E2E_PIN })
   check('admin login (harvest)', admin.status === 200 && !!admin.data.token, admin.data.error || '')
   const AT = admin.data.token
 
-  const stamp = Date.now().toString().slice(-6)
+  const SCRATCH_PASSWORD = process.env.E2E_MEMBER_PASSWORD
+const stamp = Date.now().toString().slice(-6)
   const memberReg = await j('POST', '/api/auth/register', null, {
-    username: `gtest${stamp}`, name: 'Grace Tester', phone: `07${stamp}12`, password: 'password123', group_name: 'Harvest Central',
+    username: `gtest${stamp}`, name: 'Grace Tester', phone: `07${stamp}12`, password: SCRATCH_PASSWORD, group_name: 'Harvest Central',
   })
-  const MT = memberReg.data.token || (await j('POST', '/api/auth/login', null, { username: `gtest${stamp}`, password: 'password123' })).data.token
+  const MT = memberReg.data.token || (await j('POST', '/api/auth/login', null, { username: `gtest${stamp}`, password: SCRATCH_PASSWORD })).data.token
   check('member registered + login', !!MT)
 
   // ── Community rule: max 10 groups per community ──
@@ -61,9 +62,9 @@ const main = async () => {
 
   // A regular member must queue for the group admin's approval.
   const reqReg = await j('POST', '/api/auth/register', null, {
-    username: `gtest2${stamp}`, name: 'Second Tester', phone: `07${stamp}34`, password: 'password123',
+    username: `gtest2${stamp}`, name: 'Second Tester', phone: `07${stamp}34`, password: SCRATCH_PASSWORD,
   })
-  const RT = reqReg.data.token || (await j('POST', '/api/auth/login', null, { username: `gtest2${stamp}`, password: 'password123' })).data.token
+  const RT = reqReg.data.token || (await j('POST', '/api/auth/login', null, { username: `gtest2${stamp}`, password: SCRATCH_PASSWORD })).data.token
   check('second member registered', !!RT)
   // New groups are add-only by design; the group admin opens the join queue.
   const openJoin = await j('PATCH', `/api/groups/${slug}/settings`, MT, { invite_only: false })
@@ -88,9 +89,9 @@ const main = async () => {
   check('creator stayed as plain member', mine1.data.groups?.some(g => g.slug === created2.data.group?.slug && g.my_role === 'member'))
 
   // ── Role management ──
-  const promo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'harvest', role: 'admin' })
+  const promo = await j('POST', `/api/groups/${slug}/role`, MT, { username: process.env.E2E_USERNAME, role: 'admin' })
   check('group admin promotes member to admin', promo.status === 200 && promo.data.role === 'admin', promo.data.error || '')
-  const demo = await j('POST', `/api/groups/${slug}/role`, MT, { username: 'harvest', role: 'member' })
+  const demo = await j('POST', `/api/groups/${slug}/role`, MT, { username: process.env.E2E_USERNAME, role: 'member' })
   check('group admin demotes back to member', demo.status === 200 && demo.data.role === 'member', demo.data.error || '')
 
   // ── Leave rules ──

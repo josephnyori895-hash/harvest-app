@@ -20,7 +20,7 @@ async function j(method, path, token, body) {
   return { status: r.status, data }
 }
 const stamp = String(Date.now()).slice(-8)
-const U = { username: `tst.p${stamp}`, phone: `0725${stamp.slice(-6)}`, password: 'Passw0rd!x' }
+const U = { username: `tst.p${stamp}`, phone: `0725${stamp.slice(-6)}`, password: process.env.E2E_PIN }
 const r0 = await j('POST', '/api/auth/register', null, { ...U, name: 'Profile Test', group_name: 'Harvest Central' })
 const tok = r0.data?.token
 check('register test user', !!tok, r0.status)
@@ -36,7 +36,7 @@ check('empty name rejected', r.status === 400, r.status)
 // 3. Phone normalize + uniqueness
 r = await j('PATCH', '/api/me', tok, { phone: '0725 123 456' })
 check('phone normalizes to +254 format', r.status === 200 && r.data?.user?.phone === '+254725123456', JSON.stringify(r.data?.user?.phone))
-const U2 = { username: `tst.q${stamp}`, phone: `0726${stamp.slice(-6)}`, password: 'Passw0rd!x' }
+const U2 = { username: `tst.q${stamp}`, phone: `0726${stamp.slice(-6)}`, password: process.env.E2E_PIN }
 const r0b = await j('POST', '/api/auth/register', null, { ...U2, name: 'Other Test', group_name: 'Harvest Central' })
 const tok2 = r0b.data?.token
 // User 1 currently holds +254725123456 — user 2 must not be able to claim it.

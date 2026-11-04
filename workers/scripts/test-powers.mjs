@@ -17,15 +17,16 @@ async function j(method, path, token, body) {
 }
 
 const main = async () => {
-  const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
+  const admin = await j('POST', '/api/auth/login', null, { username: process.env.E2E_USERNAME, password: process.env.E2E_PIN })
   const AT = admin.data.token
   check('admin login', !!AT)
 
-  const stamp = Date.now().toString().slice(-6)
+  const SCRATCH_PASSWORD = process.env.E2E_MEMBER_PASSWORD
+const stamp = Date.now().toString().slice(-6)
 
   // ── Location-based auto-assignment at registration ──
   // Ruringu centroid ~(-0.432, 36.95)
-  const geo = await j('POST', '/api/auth/register', null, { username: `geo${stamp}`, name: 'Geo Member', phone: `073${stamp}1`, password: 'password123', group_name: 'Harvest Central', lat: -0.4325, lng: 36.9505 })
+  const geo = await j('POST', '/api/auth/register', null, { username: `geo${stamp}`, name: 'Geo Member', phone: `073${stamp}1`, password: SCRATCH_PASSWORD, group_name: 'Harvest Central', lat: -0.4325, lng: 36.9505 })
   check('register with GPS succeeds', geo.status === 201 || geo.status === 200, geo.data.error || '')
   // Since e3844f6 an explicitly chosen congregation always wins over GPS
   // auto-assignment (a member's hand-pick must never be silently overridden);
@@ -33,7 +34,7 @@ const main = async () => {
   check('hand-picked group honored over GPS (choice wins)', geo.data.group_name === 'Harvest Central' && geo.data.assigned_by === 'choice', `got ${geo.data.group_name} via ${geo.data.assigned_by}`)
 
   // Non-GPS registration still works with chosen group.
-  const plain = await j('POST', '/api/auth/register', null, { username: `plain${stamp}`, name: 'Plain Member', phone: `074${stamp}2`, password: 'password123', group_name: 'Harvest Skuta' })
+  const plain = await j('POST', '/api/auth/register', null, { username: `plain${stamp}`, name: 'Plain Member', phone: `074${stamp}2`, password: SCRATCH_PASSWORD, group_name: 'Harvest Skuta' })
   check('register without GPS uses chosen group', (plain.status === 201 || plain.status === 200) && plain.data.group_name === 'Harvest Skuta', `got ${plain.data.group_name}`)
   const MT = plain.data.token
 
@@ -42,13 +43,13 @@ const main = async () => {
   check('admin grants powers to leader', grant.status === 200 && grant.data.user?.grants === 'post_media,manage_groups,create_groups', JSON.stringify(grant.data.user?.grants))
 
   // Leader can now upload a post presign request (policy check only — R2 may be off).
-  const lt = (await j('POST', '/api/auth/login', null, { username: `plain${stamp}`, password: 'password123' })).data.token
+  const lt = (await j('POST', '/api/auth/login', null, { username: `plain${stamp}`, password: SCRATCH_PASSWORD })).data.token
   const presign = await j('POST', '/api/media/presign', lt, { type: 'post', contentType: 'image/jpeg', bytes: 1000, ext: 'jpg' })
   // R2 is not enabled yet: presign may 500 on R2 config. Accept 200 OR the R2-not-ready error, but NOT 403.
   check('granted leader passes upload policy', presign.status !== 403, `got ${presign.status} ${presign.data.error || ''}`)
 
   // Member WITHOUT grants cannot.
-  const mt = (await j('POST', '/api/auth/login', null, { username: `geo${stamp}`, password: 'password123' })).data.token
+  const mt = (await j('POST', '/api/auth/login', null, { username: `geo${stamp}`, password: SCRATCH_PASSWORD })).data.token
   const denied = await j('POST', '/api/media/presign', mt, { type: 'post', contentType: 'image/jpeg', bytes: 1000, ext: 'jpg' })
   check('ungranted member blocked from post upload (403)', denied.status === 403, `got ${denied.status}`)
   check('member can still request story upload (policy ok)', (await j('POST', '/api/media/presign', mt, { type: 'story', contentType: 'image/jpeg', bytes: 1000, ext: 'jpg' })).status !== 403)

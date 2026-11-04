@@ -9,24 +9,25 @@ const j = async (m, p, token, body) => {
   let d = null; try { d = await r.json() } catch {}
   return { status: r.status, data: d }
 }
+const SCRATCH_PASSWORD = process.env.E2E_MEMBER_PASSWORD
 const stamp = String(Date.now()).slice(-8)
-const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
+const admin = await j('POST', '/api/auth/login', null, { username: process.env.E2E_USERNAME, password: process.env.E2E_PIN })
 const AT = admin.data.token
 
 // ── Groups: add-only blocks members, admin walks in
 const g = await j('POST', '/api/groups', AT, { name: `PowerGrp ${stamp}`, community: 'Harvest Central' })
 const slug = g.data?.group?.slug
 check('admin creates add-only group', g.status === 201 && !!slug, g.data?.error || '')
-const memberBlocked = await j('POST', `/api/groups/${slug}/join`, (await j('POST', '/api/auth/register', null, { username: `pw.a${stamp}`, phone: `0731${stamp.slice(-6)}`, password: 'Passw0rd!x', name: 'Power A', group_name: 'Harvest Central' })).data.token)
+const memberBlocked = await j('POST', `/api/groups/${slug}/join`, (await j('POST', '/api/auth/register', null, { username: `pw.a${stamp}`, phone: `0731${stamp.slice(-6)}`, password: SCRATCH_PASSWORD, name: 'Power A', group_name: 'Harvest Central' })).data.token)
 check('member blocked from add-only group', memberBlocked.status === 403, String(memberBlocked.status))
-const m1 = (await j('POST', '/api/auth/login', null, { username: `pw.a${stamp}`, password: 'Passw0rd!x' })).data.token
+const m1 = (await j('POST', '/api/auth/login', null, { username: `pw.a${stamp}`, password: SCRATCH_PASSWORD })).data.token
 const adminJoined = await j('POST', `/api/groups/${slug}/join`, AT)
 check('admin not queued on join (joined/already-in)', adminJoined.status >= 200 && (adminJoined.data?.status === 'joined' || adminJoined.data?.error === 'already a member'), adminJoined.data?.status || adminJoined.data?.error)
 
 // ── Project fixtures
 const proj = await j('POST', '/api/projects/admin', AT, { name: `PowerProbe ${stamp}`, goal_kes: 10000, status: 'active' })
 const pid = proj.data.project.id
-const m2 = (await j('POST', '/api/auth/register', null, { username: `pw.b${stamp}`, phone: `0732${stamp.slice(-6)}`, password: 'Passw0rd!x', name: 'Power B', group_name: 'Harvest Central' })).data.token
+const m2 = (await j('POST', '/api/auth/register', null, { username: `pw.b${stamp}`, phone: `0732${stamp.slice(-6)}`, password: SCRATCH_PASSWORD, name: 'Power B', group_name: 'Harvest Central' })).data.token
 const t1 = await j('POST', `/api/projects/${pid}/participate`, m1, { take: { kind: 'group', name: 'Harvest Ruringu' }, commitment_kes: 4000 })
 const takeId = t1.data.take.id
 const help2 = await j('POST', `/api/projects/${pid}/participate`, m2, { take: { take_id: takeId }, commitment_kes: 1500 })

@@ -12,7 +12,7 @@ const check = (name, cond, extra = '') => {
 }
 
 const stamp = String(Date.now()).slice(-8)
-const U = { username: `tst.r${stamp}`, phone: `0719${stamp.slice(-6)}`, password: 'Passw0rd!x' }
+const U = { username: `tst.r${stamp}`, phone: `0719${stamp.slice(-6)}`, password: process.env.E2E_PIN }
 
 async function j(method, path, token, body) {
   const r = await fetch(`${API}${path}`, {

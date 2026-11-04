@@ -399,6 +399,12 @@ export async function abortMultipartUpload(env, { key, uploadId }) {
 // path — and the R2 bucket stays a single public object per upload.
 export const STAGED_CHUNK_PREFIX = 'tmp/chunks/'
 const STAGED_ID_PREFIX = 'st_'
+// The staged join reads parts 8 MiB apart — one binding GET each — so a join
+// is one subrequest per part. On Workers Free that request flow is bounded at
+// 50 subrequests; refuse past the point of a provable failure rather than
+// letting a 5 GB join die at part 50 every time. Lifting the ceiling is one
+// line the moment an admin mints storage credentials.
+export const STAGED_JOIN_MAX_PARTS = 48
 
 // The id names the backend, so every later call on this session knows which one
 // it is looking at without any D1 row or extra client state.
@@ -454,6 +460,9 @@ export async function abortStagedChunks(env, uploadId) {
 export async function completeStagedChunks(env, { key, uploadId, contentType, ownerId }) {
   const parts = await listStagedChunks(env, uploadId)
   if (!parts.length) throw Object.assign(new Error('no chunks have been uploaded yet — retry the upload'), { status: 400 })
+  if (parts.length > STAGED_JOIN_MAX_PARTS) {
+    throw Object.assign(new Error(`too many parts to join (${parts.length}) — this server has no storage credentials, so the streamed join tops out at ${STAGED_JOIN_MAX_PARTS} parts (~${(STAGED_JOIN_MAX_PARTS * MULTIPART_PART_SIZE) / (1024 * 1024)} MB) until an admin adds them`, ), { status: 413 })
+  }
   for (let i = 0; i < parts.length; i++) {
     if (parts[i].partNumber !== i + 1) {
       throw Object.assign(new Error(`chunk ${i + 1} is missing — retry the upload`), { status: 409 })

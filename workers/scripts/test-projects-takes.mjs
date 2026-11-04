@@ -13,8 +13,9 @@ const j = async (m, p, token, body) => {
   return { status: r.status, data: d }
 }
 
+const SCRATCH_PASSWORD = process.env.E2E_MEMBER_PASSWORD
 const stamp = String(Date.now()).slice(-8)
-const admin = await j('POST', '/api/auth/login', null, { username: 'harvest', password: 'Kipsii@2026#' })
+const admin = await j('POST', '/api/auth/login', null, { username: process.env.E2E_USERNAME, password: process.env.E2E_PIN })
 check('admin login', admin.status === 200 && !!admin.data?.token)
 const AT = admin.data.token
 
@@ -22,8 +23,8 @@ const created = await j('POST', '/api/projects/admin', AT, { name: `TakeProbe ${
 check('create project', created.status === 201 && !!created.data?.project?.id, created.data?.error || '')
 const pid = created.data.project.id
 
-const reg1 = await j('POST', '/api/auth/register', null, { username: `tst.t1${stamp}`, phone: `0721${stamp.slice(-6)}`, password: 'Passw0rd!x', name: 'Take One', group_name: 'Harvest Central' })
-const reg2 = await j('POST', '/api/auth/register', null, { username: `tst.t2${stamp}`, phone: `0722${stamp.slice(-6)}`, password: 'Passw0rd!x', name: 'Take Two', group_name: 'Harvest Central' })
+const reg1 = await j('POST', '/api/auth/register', null, { username: `tst.t1${stamp}`, phone: `0721${stamp.slice(-6)}`, password: SCRATCH_PASSWORD, name: 'Take One', group_name: 'Harvest Central' })
+const reg2 = await j('POST', '/api/auth/register', null, { username: `tst.t2${stamp}`, phone: `0722${stamp.slice(-6)}`, password: SCRATCH_PASSWORD, name: 'Take Two', group_name: 'Harvest Central' })
 check('two members registered', reg1.status === 201 && reg2.status === 201, `${reg1.status}/${reg2.status}`)
 const T1 = reg1.data.token, T2 = reg2.data.token
 

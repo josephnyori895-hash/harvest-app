@@ -8,11 +8,21 @@ import { readFile } from 'node:fs/promises'
 const video = await readFile(new URL('../src/components/FeedMediaPreview.tsx', import.meta.url), 'utf8')
 const card = await readFile(new URL('../src/components/FeedCard.tsx', import.meta.url), 'utf8')
 
-test('media bounds: photos and videos share one window — 4:5 portrait floor, 1.91 ceiling', () => {
-  assert.match(video, /const MIN_RATIO = 0\.8/)
+test('media bounds: photos keep the 4:5 floor, video keeps its natural 9:16 shape, 1.91 ceiling', () => {
+  // A 9:16 recording clamped to the 4:5 photo floor was cropped top and bottom
+  // in the feed — the vertical-video defect from audit item B.
+  assert.match(video, /const MIN_VIDEO_RATIO = 9 \/ 16/)
   assert.match(video, /const MAX_RATIO = 1\.91/)
-  assert.match(video, /const clampRatio = \(ratio: number\) => Math\.min\(Math\.max\(ratio, MIN_RATIO\), MAX_RATIO\)/)
-  assert.match(card, /Math\.min\(Math\.max\(ratio, 0\.8\), 1\.91\)/, 'photo portrait floor is 4:5')
+  assert.match(video, /const clampRatio = \(ratio: number\) => Math\.min\(Math\.max\(ratio, MIN_VIDEO_RATIO\), MAX_RATIO\)/)
+  assert.match(card, /Math\.min\(Math\.max\(ratio, 0\.8\), 1\.91\)/, 'photo portrait floor stays 4:5')
+})
+
+test('portrait video is not re-cropped by the stage height cap', () => {
+  // The ratio fix is worthless if a 70vh clamp trims the frame afterwards:
+  // portrait stages must allow the taller natural shape.
+  assert.match(video, /const stageMaxHeight = \(ratio: number \| null\) => \(ratio && ratio < 1 \? '88vh' : '70vh'\)/)
+  assert.ok(video.includes('maxHeight: stageMaxHeight(boundedRatio)'), 'the stage applies the portrait cap')
+  assert.ok(!/max-h-\[70vh\]/.test(video), 'no leftover fixed 70vh clamp on media children')
 })
 
 test('the video stage spans the full post width and honours the bounded ratio', () => {

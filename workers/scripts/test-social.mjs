@@ -25,8 +25,8 @@ async function j(method, path, token, body) {
 }
 
 const stamp = String(Date.now()).slice(-8) // digits only — phone validator rejects letters
-const A = { username: `tst.a${stamp}`, phone: `0712${stamp.slice(-6)}`, password: 'Passw0rd!x' }
-const B = { username: `tst.b${stamp}`, phone: `0713${stamp.slice(-6)}`, password: 'Passw0rd!x' }
+const A = { username: `tst.a${stamp}`, phone: `0712${stamp.slice(-6)}`, password: process.env.E2E_PIN }
+const B = { username: `tst.b${stamp}`, phone: `0713${stamp.slice(-6)}`, password: process.env.E2E_PIN }
 
 async function register(u) {
   const r = await j('POST', '/api/auth/register', null, { ...u, name: `Test ${u.username}`, group_name: 'Harvest Central' })
@@ -72,7 +72,7 @@ const conv2 = (r.data?.conversations || []).find(c => c.peer === A.username)
 check('seen clears unread', conv2 && conv2.unread === 0, conv2 ? `unread=${conv2.unread}` : 'missing')
 
 // outsider cannot react to a private convo
-const tokC = await register({ username: `tst.c${stamp}`, phone: `0714${stamp.slice(-6)}`, password: 'Passw0rd!x' })
+const tokC = await register({ username: `tst.c${stamp}`, phone: `0714${stamp.slice(-6)}`, password: process.env.E2E_PIN })
 r = await j('POST', `/api/chat/messages/${msgId}/react`, tokC, { reaction: '🔥' })
 check('outsider react forbidden (403)', r.status === 403, r.status)
 
@@ -104,7 +104,7 @@ check('teammate reads department history', r.status === 200 && r.data?.messages?
 r = await j('POST', '/api/chat/seen', tokB, { department: 'media' })
 check('teammate marks dept chat seen', r.status === 200, r.status)
 // Outsider (D never joined) must be locked out.
-const tokD = await register({ username: `tst.d${stamp}`, phone: `0718${stamp.slice(-6)}`, password: 'Passw0rd!x' })
+const tokD = await register({ username: `tst.d${stamp}`, phone: `0718${stamp.slice(-6)}`, password: process.env.E2E_PIN })
 r = await j('GET', '/api/chat/history?department=media', tokD)
 check('outsider blocked from dept chat (403)', r.status === 403, r.status)
 r = await j('POST', '/api/chat/messages', tokD, { department: 'media', body: 'sneak' })

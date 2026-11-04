@@ -27,7 +27,7 @@ async function j(method, path, token, body) {
 }
 
 const stamp = String(Date.now()).slice(-8)
-const U = { username: `tst.s${stamp}`, phone: `0718${stamp.slice(-6)}`, password: 'Passw0rd!x' }
+const U = { username: `tst.s${stamp}`, phone: `0718${stamp.slice(-6)}`, password: process.env.E2E_PIN }
 
 // 1) Register
 const reg = await j('POST', '/api/auth/register', null, { ...U, name: 'Story Test', group_name: 'Harvest Central' })
