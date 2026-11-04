@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
-import 'leaflet/dist/leaflet.css'
-import L from 'leaflet'
+import { lazy, Suspense, useState, useEffect, useRef } from 'react'
 import { AuthProvider, useAuth } from './state/auth'
 import { useCongregations } from './lib/useCongregations'
 import Home from './components/Home'
@@ -9,7 +7,6 @@ import Search from './components/Search'
 import Chat from './components/Chat'
 import ViewUser from './components/ViewUser'
 import EditProfile from './components/EditProfile'
-import HarvestMap from './components/HarvestMap'
 import Music from './components/Music'
 import Sermons from './components/Sermons'
 import Give from './components/Give'
@@ -18,13 +15,12 @@ import Groups from './components/Groups'
 import Departments from './components/Departments'
 import { RequireRole } from './components/Protected'
 import UserListModal from './components/UserListModal'
-import Admin from './components/Admin'
 import { showToast } from './components/Toast'
 import UploadPill from './components/UploadPill'
 import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
-import { Icon } from './ui'
+import { Icon, Spinner } from './ui'
 import { VerifiedBadge } from './components/VerifiedBadge'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 import { describeError } from './lib/actionFeedback'
@@ -34,13 +30,11 @@ import { describeError } from './lib/actionFeedback'
 // instead of Departments/Groups/Activity/comments failing silently.
 installSessionGuard()
 
-// FIX L icon 404 — ensure default marker loads via CDN
-delete L.Icon.Default.prototype._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
+// Heavy screens sit behind a lazy boundary. Importing them statically put the
+// map engine (~240 kB) and the whole admin console in the first-paint bundle,
+// so a member opening the feed downloaded both before seeing a post.
+const HarvestMap = lazy(() => import('./components/HarvestMap'))
+const Admin = lazy(() => import('./components/Admin'))
 
 import { initNotifications, fetchFamilyActivity } from './lib/notifications'
 import { registerPush, disablePushOnLogout } from './lib/push'
@@ -68,9 +62,33 @@ import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } fr
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
+// Placeholder shown while a lazy tab's chunk arrives — the shell, header and
+// bottom bar stay mounted around it.
+function TabFallback({ label }) {
+  return (
+    <div className="grid min-h-[40vh] place-items-center gap-2 px-4 text-center text-sm text-ink-muted">
+      <Spinner size={20} />
+      <p>{label}</p>
+    </div>
+  )
+}
+
 function authHeaders() {
   const t = localStorage.getItem('harvest_token') || ''
   return t ? { Authorization: `Bearer ${t}` } : {}
+}
+
+// Family activity (new members, follows) is derived on the client, so the server
+// has no row to mark read. Without a local read record, every poll resurrected
+// those rows as unread — the bell badge could never be cleared and tapping one
+// sent an unknown id to /api/notifications/:id/read, which 404s.
+const ACTIVITY_READ_KEY = 'harvest:activity-read'
+const isLocalNotification = id => String(id || '').startsWith('activity:')
+function loadActivityRead() {
+  try { return new Set(JSON.parse(localStorage.getItem(ACTIVITY_READ_KEY) || '[]')) } catch { return new Set() }
+}
+function saveActivityRead(read) {
+  try { localStorage.setItem(ACTIVITY_READ_KEY, JSON.stringify([...read].slice(-300))) } catch { /* storage full/private mode */ }
 }
 
 // Real member directory from the server (replaces the old mock user list).
@@ -187,6 +205,14 @@ function InnerApp() {
   const [notificationPendingIds, setNotificationPendingIds] = useState(() => new Set())
   const [notificationMarkAllPending, setNotificationMarkAllPending] = useState(false)
   const notificationMutationQueueRef = useRef(Promise.resolve())
+  const activityReadRef = useRef(null)
+  const activityReadSet = () => (activityReadRef.current ||= loadActivityRead())
+  // Re-apply locally recorded reads whenever activity rows are merged, so the
+  // optimistic read survives the background poll that replaces the list.
+  const withLocalRead = rows => {
+    const read = activityReadSet()
+    return rows.map(r => (isLocalNotification(r.id) && !r.read_at && read.has(String(r.id)) ? { ...r, read_at: 'local' } : r))
+  }
   const [sharedContent, setSharedContent] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search)
@@ -288,6 +314,13 @@ function InnerApp() {
   const markNotificationRead = async (notificationId) => {
     const previous = notifications.find(n => n.id === notificationId)
     if (!previous || previous.read_at) return true
+    if (isLocalNotification(notificationId)) {
+      const read = activityReadSet()
+      read.add(String(notificationId))
+      saveActivityRead(read)
+      setNotifications(current => current.map(n => n.id === notificationId ? { ...n, read_at: new Date().toISOString() } : n))
+      return true
+    }
     const optimisticReadAt = new Date().toISOString()
     setNotifications(current => current.map(n => n.id === notificationId ? { ...n, read_at: optimisticReadAt } : n))
     setNotificationPendingIds(current => new Set(current).add(notificationId))
@@ -323,7 +356,11 @@ function InnerApp() {
     setNotificationsLoading(true)
     fetch(`${API}/api/notifications`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => { if (!cancelled) setNotifications(Array.isArray(d?.notifications) ? d.notifications : []) })
+      .then(d => {
+        if (cancelled) return
+        setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+        setNotificationsError(null)
+      })
       .catch(() => { if (!cancelled) setNotificationsError('Notifications are unavailable right now.') })
       .finally(() => { if (!cancelled) { setNotificationsLoading(false); setNotificationsLoadedOnce(true) } })
     // Family-directory activity rides the same inbox (Activity+Notifications
@@ -335,7 +372,7 @@ function InnerApp() {
           // Activity rides the same inbox; merge by id so the background poll
           // (or a fast panel reopen) can never stack the same row twice.
           const seen = new Set(prev.map(n => String(n.id)))
-          return [...rows.filter(r => !seen.has(String(r.id))), ...prev]
+          return [...withLocalRead(rows).filter(r => !seen.has(String(r.id))), ...prev]
         })
       })
       .catch(() => { /* additive only — never block the inbox on it */ })
@@ -349,11 +386,13 @@ function InnerApp() {
       if (r.ok) {
         const d = await r.json()
         setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+        // A transient failure used to leave "unavailable" on screen forever.
+        setNotificationsError(null)
       }
       const fam = await fetchFamilyActivity().catch(() => null)
       if (fam) setNotifications(prev => {
         const seen = new Set(prev.map(n => String(n.id)))
-        return [...fam.filter(n => !seen.has(String(n.id))), ...prev]
+        return [...withLocalRead(fam).filter(n => !seen.has(String(n.id))), ...prev]
       })
     } catch { /* keep the last good list */ }
     if (!silent) setNotificationsRefreshing(false)
@@ -386,6 +425,14 @@ function InnerApp() {
     if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
     const previous = notifications
     const optimisticReadAt = new Date().toISOString()
+    // Record the derived rows locally first: read-all only touches rows the
+    // server owns, so activity notifications would come back unread otherwise.
+    const readSet = activityReadSet()
+    const addedLocal = []
+    for (const n of notifications) {
+      if (isLocalNotification(n.id) && !readSet.has(String(n.id))) { readSet.add(String(n.id)); addedLocal.push(String(n.id)) }
+    }
+    if (addedLocal.length) saveActivityRead(readSet)
     setNotifications(current => current.map(n => n.read_at ? n : { ...n, read_at: optimisticReadAt }))
     setNotificationMarkAllPending(true)
     setNotificationActionError(null)
@@ -398,6 +445,11 @@ function InnerApp() {
         if (!r.ok) throw new Error('mark all failed')
         return true
       } catch {
+        if (addedLocal.length) {
+          const rollback = activityReadSet()
+          addedLocal.forEach(id => rollback.delete(id))
+          saveActivityRead(rollback)
+        }
         setNotifications(current => current.map(n => {
           if (n.read_at !== optimisticReadAt) return n
           return previous.find(p => p.id === n.id) || n
@@ -656,22 +708,28 @@ function InnerApp() {
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
           {tab === 'give' && <Give />}
-          {tab === 'map' && <HarvestMap users={users} onOpenUser={openProfile} onRefresh={refreshDirectory} />}
+          {tab === 'map' && (
+            <Suspense fallback={<TabFallback label="Loading map…" />}>
+              <HarvestMap users={users} onOpenUser={openProfile} onRefresh={refreshDirectory} />
+            </Suspense>
+          )}
           {tab === 'groups' && <Groups onOpenChat={(slug, name) => openTeamChat('group', slug, name)} onOpenUser={openProfile} />}
           {tab === 'departments' && <Departments onOpenDeptChat={(slug, name) => openTeamChat('department', slug, name)} onOpenUser={openProfile} />}
           {tab === 'admin' && (
             <RequireRole role="admin">
-              <Admin
-                onBack={() => setTab('profile')}
-                users={users}
-                setUsers={()=>{}}
-                onOpenGroups={() => setTab('groups')}
-                onOpenDepartments={() => setTab('departments')}
-                onOpenSermons={() => setTab('sermons')}
-                onOpenMusic={() => setTab('music')}
-                onOpenGive={() => setTab('give')}
-                onOpenMap={() => setTab('map')}
-              />
+              <Suspense fallback={<TabFallback label="Loading admin console…" />}>
+                <Admin
+                  onBack={() => setTab('profile')}
+                  users={users}
+                  setUsers={()=>{}}
+                  onOpenGroups={() => setTab('groups')}
+                  onOpenDepartments={() => setTab('departments')}
+                  onOpenSermons={() => setTab('sermons')}
+                  onOpenMusic={() => setTab('music')}
+                  onOpenGive={() => setTab('give')}
+                  onOpenMap={() => setTab('map')}
+                />
+              </Suspense>
             </RequireRole>
           )}
           </div>

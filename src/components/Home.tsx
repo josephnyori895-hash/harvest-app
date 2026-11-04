@@ -175,6 +175,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
   const [feedOffset, setFeedOffset] = useState(0)
   const [feedHasMore, setFeedHasMore] = useState(false)
+  // Frozen at the first page: every later page replays the same window, so a
+  // post published mid-scroll cannot shift offsets.
+  const [feedCursor, setFeedCursor] = useState('')
   const [feedLoadingMore, setFeedLoadingMore] = useState(false)
   const pendingLikesRef = useRef(new Set<string>())
   const pendingSavesRef = useRef(new Set<string>())
@@ -212,6 +215,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         setFeedLoaded(true)
         setFeedOffset(Number(d?.nextOffset) || 20)
         setFeedHasMore(Boolean(d?.hasMore))
+        setFeedCursor(String(d?.cursor || ''))
         lastFeedFetchRef.current = Date.now()
       })
       .catch((e: any) => {
@@ -232,7 +236,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     if (!api || feedLoadingMore || !feedHasMore) return
     setFeedLoadingMore(true)
     try {
-      const d: any = await fetchFeed(feedOffset, 20)
+      const d: any = await fetchFeed(feedOffset, 20, feedCursor || undefined)
       const incoming: any[] = Array.isArray(d?.posts) ? d.posts : []
       const seen = new Set<string>()
       setLivePosts(prev => {

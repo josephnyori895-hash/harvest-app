@@ -33,6 +33,16 @@ assert.doesNotMatch(reels, /Harvest Videos/)
 assert.doesNotMatch(reels, /Community life/)
 
 assert.match(feed, /hasMore: rows\.length === limit/)
+// Feed cost contract: SQL bounds the candidate window, likes come back in one
+// query, and the per-post lookup that made a feed load cost one round trip per
+// item must not come back.
+assert.match(feed, /const CANDIDATE_WINDOW = \d+/)
+// Stable paging: the window is frozen at a cursor timestamp from page one.
+assert.match(feed, /qp\.cursor/)
+assert.match(feed, /created_at <= \?/)
+assert.match(feed, /ORDER BY p\.is_pinned DESC, p\.created_at DESC\s*\n\s*LIMIT \?/)
+assert.match(feed, /SELECT scope, post_id FROM post_likes WHERE user_id=\? AND post_id IN/)
+assert.doesNotMatch(feed, /posts\.rows, \.\.\.reels\.rows\]\.map\(async/, 'feed must not fetch likes per post')
 assert.match(feed, /music: r\.music_track_id/)
 assert.match(feed, /cover_thumb_key/)
 

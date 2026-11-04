@@ -73,8 +73,12 @@ export async function confirmMedia(body: {key:string,type:string,caption?:string
   return apiJson('/api/media/confirm', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
 }
 
-export async function fetchFeed(offset=0, limit=20) {
-  return apiJson(`/api/feed?offset=${offset}&limit=${limit}`) as Promise<{posts:any[],stories:any[],nextOffset:number,hasMore:boolean}>
+// `cursor` freezes the feed window at the first page's instant, so posts
+// published while the member scrolls cannot shift offsets and duplicate or skip
+// items. The server echoes the frozen timestamp on every page.
+export async function fetchFeed(offset=0, limit=20, cursor?: string) {
+  const q = cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+  return apiJson(`/api/feed?offset=${offset}&limit=${limit}${q}`) as Promise<{posts:any[],stories:any[],nextOffset:number,hasMore:boolean,cursor?:string}>
 }
 
 export async function startGiving(params: {amount:number,phone:string,purpose:string,purpose_id?:string,project_id?:string}) {

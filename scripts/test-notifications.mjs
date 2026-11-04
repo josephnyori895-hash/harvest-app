@@ -18,7 +18,17 @@ test('App merges family activity into the single notifications inbox', () => {
   assert.match(app, /fetchFamilyActivity\(\)/)
   // Merged by id — the 60s poll must not stack duplicate activity rows.
   assert.match(app, /seen\.has\(String\(n\.id\)\)/)
-  assert.match(app, /\[\.\.\.fam\.filter\(n => !seen\.has\(String\(n\.id\)\)\), \.\.\.prev\]/)
+  assert.match(app, /\[\.\.\.withLocalRead\(fam\)\.filter\(n => !seen\.has\(String\(n\.id\)\)\), \.\.\.prev\]/)
+})
+
+test('family-activity reads are recorded on the device, not POSTed as unknown ids', () => {
+  // These rows are derived client-side, so the server has no record to mark.
+  // Posting them 404'd, rolled back the optimistic read, and let the poll put
+  // the unread badge straight back.
+  assert.match(app, /const ACTIVITY_READ_KEY = 'harvest:activity-read'/)
+  assert.match(app, /if \(isLocalNotification\(notificationId\)\)/)
+  assert.match(app, /saveActivityRead\(read\)/)
+  assert.match(app, /withLocalRead\(fam\)/)
 })
 
 test('Inbox press routing opens the member profile from family activity rows', () => {

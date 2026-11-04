@@ -19,6 +19,13 @@ function scoreOne({ created_at, likes = 0, comments = 0, group_name, constituenc
   return 0.45 * recency + 0.25 * engNorm + 0.20 * affinity + 0.10 * (verified ? 1 : 0) + pinnedBoost
 }
 
+// Ranking needs the candidate set in memory, so the window is bounded: the
+// newest N posts and newest N reels (pinned first) are the only rows a feed
+// load reads. 200 + 200 covers ten pages of twenty, and it keeps the cost flat
+// instead of scanning both tables — and one D1 round trip per item — on every
+// request.
+const CANDIDATE_WINDOW = 200
+
 export async function handleFeed(request, env, ctx) {
   const url = new URL(request.url)
   const path = url.pathname
@@ -30,8 +37,14 @@ export async function handleFeed(request, env, ctx) {
   // no guest mode, so anonymous reads here are pure data exposure.
   if (path === '/api/feed' && request.method === 'GET') {
     await requireMember(env, user)
-    const limit = Math.min(parseInt(qp.limit || '20', 10), 50)
-    const offset = parseInt(qp.offset || '0', 10)
+    const limit = Math.min(Math.max(parseInt(qp.limit || '20', 10) || 20, 1), 50)
+    const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
+    const cursorRaw = String(qp.cursor || '').trim()
+    if (cursorRaw && Number.isNaN(new Date(cursorRaw).getTime())) return errorResponse('invalid cursor timestamp', 400)
+    // Freeze the window at the first page's instant and replay that same set for
+    // every later page. A post published mid-scroll then cannot shift offsets,
+    // which is what made offset paging duplicate and skip items.
+    const cursor = cursorRaw || new Date().toISOString()
     let viewer = null
     if (user?.id) {
       const r = await query(env, 'SELECT group_name, constituency, faith FROM users WHERE id=?', [user.id])
@@ -44,7 +57,10 @@ export async function handleFeed(request, env, ctx) {
               p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
               p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
-        WHERE p.approved_at IS NOT NULL`,
+        WHERE p.approved_at IS NOT NULL AND p.created_at <= ?
+        ORDER BY p.is_pinned DESC, p.created_at DESC
+        LIMIT ?`,
+      [cursor, CANDIDATE_WINDOW],
     )
     const reels = await query(
       env,
@@ -52,7 +68,10 @@ export async function handleFeed(request, env, ctx) {
               r.caption, r.music_track_id, r.poster_key AS thumb_key, NULL AS blurhash, r.hls_master_key AS original_key,
               r.likes, r.comments, r.created_at, r.is_pinned, r.group_name, r.constituency, r.faith, 'reel' AS kind
          FROM reels r JOIN users u ON u.id = r.user_id
-        WHERE r.approved_at IS NOT NULL`,
+        WHERE r.approved_at IS NOT NULL AND r.created_at <= ?
+        ORDER BY r.is_pinned DESC, r.created_at DESC
+        LIMIT ?`,
+      [cursor, CANDIDATE_WINDOW],
     )
     const projectRows = await query(env, `SELECT p.id,p.name,p.description,p.goal_kes,p.deadline,p.status,p.icon,p.image_key,p.created_at,
       COALESCE((SELECT SUM(pc.amount_kes) FROM project_contributions pc WHERE pc.project_id=p.id),0) AS raised_kes,
@@ -68,12 +87,26 @@ export async function handleFeed(request, env, ctx) {
     const savedSet = user?.id
       ? new Set((await query(env, 'SELECT post_id FROM saved_posts WHERE user_id=?', [user.id])).rows.map(x => String(x.post_id)))
       : new Set()
-    const items = await Promise.all([...posts.rows, ...reels.rows].map(async r => {
-      const normalized = bool(r, 'verified', 'is_pinned')
-      const liked = user?.id
-        ? Boolean((await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [user.id, r.kind, r.id])).rows[0])
-        : false
-      return { ...normalized, liked, saved: savedSet.has(String(r.id)) }
+    // The viewer's likes for the whole candidate window come back in ONE query.
+    // This used to run a separate post_likes lookup per post, which made a
+    // single feed load cost one D1 round trip per item.
+    const likedSet = new Set()
+    if (user?.id) {
+      const ids = [...posts.rows, ...reels.rows].map(r => r.id)
+      if (ids.length) {
+        const placeholders = ids.map(() => '?').join(',')
+        const likesRes = await query(
+          env,
+          `SELECT scope, post_id FROM post_likes WHERE user_id=? AND post_id IN (${placeholders})`,
+          [user.id, ...ids],
+        )
+        for (const row of likesRes.rows) likedSet.add(`${row.scope}:${row.post_id}`)
+      }
+    }
+    const items = [...posts.rows, ...reels.rows].map(r => ({
+      ...bool(r, 'verified', 'is_pinned'),
+      liked: likedSet.has(`${r.kind}:${r.id}`),
+      saved: savedSet.has(String(r.id)),
     }))
     const projects = await Promise.all(projectRows.rows.map(async p => ({
       id: p.id, kind: 'project', username: 'harvest_family', name: p.name, verified: true,
@@ -86,9 +119,34 @@ export async function handleFeed(request, env, ctx) {
     const ranked = items
       .map(i => ({ ...i, rank_score: scoreOne(i, viewer, maxEngRaw) }))
       .sort((a, b) => b.rank_score - a.rank_score || new Date(b.created_at) - new Date(a.created_at))
-      .slice(offset, offset + limit)
+    // Page a slice of the fixed window, so the same data always yields the same
+    // order for a given offset and SQL remains the only thing touching tables.
+    const page = ranked.slice(offset, offset + limit)
 
-    const enriched = await Promise.all(ranked.map(async r => ({
+    // Music for the page in ONE query — the last of the per-item lookups. Each
+    // post that carries a track used to cost its own `tracks` round trip.
+    const musicIds = [...new Set(page.map(r => r.music_track_id).filter(Boolean))]
+    const musicById = new Map()
+    if (musicIds.length) {
+      const musicMarks = musicIds.map(() => '?').join(',')
+      const tracks = await query(
+        env,
+        `SELECT id, title, artist, original_key, cover_thumb_key FROM tracks WHERE id IN (${musicMarks})`,
+        musicIds,
+      )
+      for (const t of tracks.rows) musicById.set(String(t.id), t)
+    }
+    const musicFor = async (trackId) => {
+      const x = musicById.get(String(trackId))
+      if (!x) return null
+      return {
+        id: x.id, title: x.title, artist: x.artist,
+        url: await mediaUrlOrNull(env, x.original_key, 3600),
+        cover_url: await mediaUrlOrNull(env, x.cover_thumb_key, 3600),
+      }
+    }
+
+    const enriched = await Promise.all(page.map(async r => ({
       ...r,
       avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
       // Reels: thumb_url must be a POSTER image, never the video itself —
@@ -98,7 +156,7 @@ export async function handleFeed(request, env, ctx) {
         ? await mediaUrlOrNull(env, r.thumb_key, 900)
         : await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
       hls_url: r.kind === 'reel' ? await mediaUrlOrNull(env, r.original_key, 900) : null,
-      music: r.music_track_id ? await (async () => { const t = await query(env, 'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[r.music_track_id]); const x=t.rows[0]; return x ? { id:x.id,title:x.title,artist:x.artist,url:await mediaUrlOrNull(env,x.original_key,3600),cover_url:await mediaUrlOrNull(env,x.cover_thumb_key,3600) } : null })() : null,
+      music: r.music_track_id ? await musicFor(r.music_track_id) : null,
     })))
 
     // stories top strip
@@ -185,7 +243,7 @@ export async function handleFeed(request, env, ctx) {
     }
 
     const nextOffset = offset + limit
-    return jsonResponse({ posts: pagePosts, projects, stories, nextOffset, hasMore: enriched.length === limit })
+    return jsonResponse({ posts: pagePosts, projects, stories, nextOffset, hasMore: ranked.length > offset + limit, cursor })
   }
 
   // GET /api/stories

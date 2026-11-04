@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+// Leaflet's stylesheet belongs to the map chunk now that the map is lazy — keep
+// it here so opening the map loads CSS with the code.
+import 'leaflet/dist/leaflet.css'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useAuth } from '../state/auth'

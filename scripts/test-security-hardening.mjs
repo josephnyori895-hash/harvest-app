@@ -42,6 +42,14 @@ assert.doesNotMatch(auth, /pin\s*===\s*env\.ADMIN_PIN/)
 assert.match(media, /if \(!signed\) return errorResponse\('signed media URL required', 401\)/)
 assert.match(media, /x-amz-meta-ownerid/)
 assert.match(chat, /canAccessConversation/)
+// Delegated chat moderation is confined to conversations the moderator can
+// reach: the capability check must be followed by the membership check, or a
+// moderate_chat grant would let someone delete messages in rooms they are not in.
+assert.match(
+  chat,
+  /if \(!hasChatModeration\(fresh\)\)[\s\S]{0,240}?canAccessConversation\(env, fresh, m\.rows\[0\]\.conversation_key\)/,
+  'chat delete must check conversation membership after the capability check',
+)
 assert.doesNotMatch(chat, /conversation_key\.startsWith\('group:'\).*\n.*conversation_key\.startsWith\('department:'/s)
 assert.match(departments, /leaders cannot demote themselves/)
 assert.match(departments, /only the system admin can remove a department leader/)
