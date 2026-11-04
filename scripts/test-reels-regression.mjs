@@ -32,6 +32,14 @@ assert.doesNotMatch(reels, /onClick=\{\(\) => setMuted\(false\)\}/)
 assert.doesNotMatch(reels, /Harvest Videos/)
 assert.doesNotMatch(reels, /Community life/)
 
+// RS-104 (remainder): reel media URLs are signed and expire while the screen
+// stays mounted, so returning to a long-idle tab showed broken posters and dead
+// videos. Reels must re-sign on return, with a staleness window so a quick app
+// switch does not refetch.
+assert.match(reels, /const STALE_MS = 9 \* 60_000/, 'reels use the same nine-minute signed-URL window as Home')
+assert.match(reels, /document\.addEventListener\('visibilitychange', onVisibility\)/, 'reels re-sign when the tab returns')
+assert.match(reels, /Date\.now\(\) - hiddenAt >= STALE_MS\) setReelsLoadKey/, 'only a genuinely stale return refetches')
+
 assert.match(feed, /hasMore: rows\.length === limit/)
 // Feed cost contract: SQL bounds the candidate window, likes come back in one
 // query, and the per-post lookup that made a feed load cost one round trip per

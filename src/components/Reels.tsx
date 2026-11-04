@@ -102,6 +102,24 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     return () => window.removeEventListener('harvest:feed-updated' as any, bump)
   }, [])
 
+  // RS-104 (remainder): poster and video URLs are signed and expire while this
+  // screen stays mounted, so a reel that played ten minutes ago came back broken
+  // after switching tabs. Home re-signs on return and Sermons refreshes on
+  // visibility; Reels had neither. Refetch only when the tab was hidden long
+  // enough for the URLs to be stale, so a quick app switch does not thrash.
+  useEffect(() => {
+    if (!useServer) return
+    const STALE_MS = 9 * 60_000
+    let hiddenAt = 0
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return }
+      if (hiddenAt && Date.now() - hiddenAt >= STALE_MS) setReelsLoadKey(x => x + 1)
+      hiddenAt = 0
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [useServer])
+
   const flash = useCallback((text: string) => {
     setNotice(text)
     window.setTimeout(() => setNotice(''), 1800)
