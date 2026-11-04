@@ -254,7 +254,13 @@ async function uploadOne(
     direct ? directHeaders : { Authorization: `Bearer ${tok()}` },
     p => onPct(pctFrom + Math.round(p * (pctTo - pctFrom))),
   )
-  if (!up.ok) throw new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
+  if (!up.ok) {
+    // R2 answers 403 when the signed PUT window closes mid-transfer — the normal
+    // outcome for a sermon on a slow connection. That is transient: a retry
+    // mints a fresh URL, so it must not be treated as a terminal rejection.
+    if (up.status === 403) throw new Error('storage link expired — retrying')
+    throw new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
+  }
   return presign.key as string
 }
 
@@ -324,7 +330,7 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
 function isRetryable(e: any): boolean {
   const msg = String(e?.message || '').toLowerCase()
   if (!msg) return true
-  return /network|timeout|timed out|busy|failed to fetch|rate limit|\(5\d\d\)|429/.test(msg)
+  return /network|timeout|timed out|busy|failed to fetch|rate limit|expired|\(5\d\d\)|429/.test(msg)
 }
 
 // --- one attempt lifecycle ---------------------------------------------------

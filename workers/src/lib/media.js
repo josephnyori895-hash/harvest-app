@@ -93,7 +93,13 @@ const EXTENSION_CONTENT_TYPES = {
   quicktime: 'video/quicktime',
   mp3: 'audio/mpeg',
   m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
   wav: 'audio/wav',
+  m4v: 'video/x-m4v',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
 }
 
 export function contentTypeForKey(key, stored) {
@@ -126,12 +132,25 @@ function encodeQuery(value) {
 }
 
 export async function presignedPost(env, { type, contentType, bytes, ext, ownerId, idempotencyKey }) {
-  const max = validatePresign({ type, contentType, bytes })
+  // Android pickers often hand back an empty or generic type for a picked
+  // recording. Resolve it from the extension instead of rejecting the upload at
+  // presign — the signature is made for the resolved type and the client sends
+  // back exactly that on the PUT.
+  const declared = String(contentType || '').toLowerCase().split(';')[0].trim()
+  const resolvedType = (!declared || declared === 'application/octet-stream')
+    ? (EXTENSION_CONTENT_TYPES[String(ext || '').toLowerCase()] || contentType)
+    : contentType
+  const max = validatePresign({ type, contentType: resolvedType, bytes })
+  // A sermon is hundreds of megabytes over a mobile link. The 15-minute default
+  // outlives neither a 200 MB video nor a slow uplink, and R2 answers 403 when
+  // the signed window closes — after the whole transfer. Give sermon uploads a
+  // six-hour window; everything social keeps the short one.
+  const ttlSeconds = type === 'sermon_audio' || type === 'sermon_video' ? 6 * 3600 : 900
   const now = new Date()
   const yyyy = String(now.getUTCFullYear())
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0')
   const safeExt = (ext || '').replace(/[^a-z0-9]/gi, '').toLowerCase() ||
-    (contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : type === 'reel' ? 'mp4' : type === 'track' ? 'mp3' : 'jpg')
+    (resolvedType.includes('png') ? 'png' : resolvedType.includes('webp') ? 'webp' : type === 'reel' ? 'mp4' : type === 'track' ? 'mp3' : 'jpg')
   const stable = String(idempotencyKey || '').toLowerCase().replace(/[^0-9a-f-]/g, '').slice(0, 36)
   const idPart = stable || crypto.randomUUID().replace(/-/g, '')
   const key = `originals/${type}/${yyyy}/${mm}/${idPart}.${safeExt}`
@@ -142,9 +161,9 @@ export async function presignedPost(env, { type, contentType, bytes, ext, ownerI
   if (!accountId || !accessKeyId || !secretAccessKey) {
     return {
       url: '/api/media/upload',
-      fields: { key, contentType },
+      fields: { key, contentType: resolvedType },
       key,
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
       maxBytes: max,
       method: 'POST',
     }
@@ -165,7 +184,7 @@ export async function presignedPost(env, { type, contentType, bytes, ext, ownerI
     ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
     ['X-Amz-Credential', `${accessKeyId}/${credentialScope}`],
     ['X-Amz-Date', amzDate],
-    ['X-Amz-Expires', '900'],
+    ['X-Amz-Expires', String(ttlSeconds)],
     ['X-Amz-SignedHeaders', signedHeaders],
   ].sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${encodeQuery(k)}=${encodeQuery(v)}`).join('&')
@@ -195,11 +214,11 @@ export async function presignedPost(env, { type, contentType, bytes, ext, ownerI
   return {
     url: `https://${host}${uri}?${canonicalQuery}&X-Amz-Signature=${signature}`,
     fields: {
-      'Content-Type': contentType,
+      'Content-Type': resolvedType,
       'x-amz-meta-ownerid': owner,
     },
     key,
-    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
     maxBytes: max,
     method: 'PUT',
   }

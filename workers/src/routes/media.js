@@ -147,7 +147,8 @@ export async function handleMedia(request, env, ctx) {
     const fresh = await requireMember(env, user)
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
-    const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw } = await readJson(request)
+    const body = await readJson(request)
+    const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw } = body
     // Optional client-picked video poster (reels): a JPEG the client captured
     // from the chosen frame, uploaded to originals/post/… before confirm.
 
@@ -213,9 +214,9 @@ export async function handleMedia(request, env, ctx) {
       // allowlist presign used — otherwise an m4a recording the server cheerfully
       // presigned would be rejected at confirm, after the full transfer. The
       // original file keeps its native format; no transcoding happens here.
-      const storedCt = contentTypeForKey(key, obj.httpMetadata?.contentType)
+      const storedCt = String(contentTypeForKey(key, obj.httpMetadata?.contentType)).split(';')[0].trim().toLowerCase()
       const kind = type === 'sermon_video' ? 'video' : 'audio'
-      if (!ALLOW_CT[type].includes(storedCt)) return errorResponse(kind === 'audio' ? 'sermon audio format not supported' : 'sermon video format not supported', 400)
+      if (!ALLOW_CT[type].map(t => String(t).toLowerCase()).includes(storedCt)) return errorResponse(kind === 'audio' ? 'sermon audio format not supported' : 'sermon video format not supported', 400)
       const id = uuid()
       await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
         [id, userId, String(title || caption || 'Untitled Sermon').trim().slice(0, 200), String(speaker || '').trim().slice(0, 200) || null, String(scripture || '').trim().slice(0, 200) || null, String(description || caption || '').trim().slice(0, 1000) || null, kind, key, Number(obj.size) || null])
