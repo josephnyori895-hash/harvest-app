@@ -82,8 +82,6 @@ const getDeferred = (id: string): DeferredHandle => {
   handle.promise = new Promise<void>((resolve, reject) => { handle.resolve = resolve; handle.reject = reject })
   deferreds.set(id, handle)
   return handle
-  deferreds.set(id, handle)
-  return handle
 }
 
 // Client-side mirror of the server's MAX_BYTES (workers/src/lib/media.js).
@@ -242,6 +240,9 @@ type PresignResponse = { url: string; fields?: Record<string, string>; key: stri
 // resumes instead of re-sending from zero.
 const CHUNK_THRESHOLD = 8 * 1024 * 1024
 const PART_SIZE = 8 * 1024 * 1024
+// Same-origin proxy runs inside a Worker and buffers the whole body — keep the
+// fallback within a safe slice of the 128 MB Worker memory ceiling.
+const PROXY_SAFE_MAX_BYTES = 96 * 1024 * 1024
 
 type ChunkState = { uploadId: string; key: string; token: string; partSize: number; size: number; done: Record<string, string> }
 
@@ -369,7 +370,19 @@ async function uploadOne(
     ? file.type
     : (MIME_BY_EXT[extOf(file, filename)] || 'application/octet-stream')
   const span = (p: number) => onPct(pctFrom + Math.round(p * (pctTo - pctFrom)))
-  if (file.size > CHUNK_THRESHOLD) return uploadChunked(file, type, filename, declaredType, idempotencyKey, span)
+  if (file.size > CHUNK_THRESHOLD) {
+    try {
+      return await uploadChunked(file, type, filename, declaredType, idempotencyKey, span)
+    } catch (e: any) {
+      // The chunked door needs R2 S3 credentials on the server (its multipart
+      // session is a SigV4 call); the presign path does not — it degrades to the
+      // same-origin proxy. If the server has no credentials yet and the proxy
+      // can still carry the file, fall through and finish there instead of
+      // refusing an upload the storage would accept.
+      const msg = String(e?.message || '')
+      if (!/credentials are not configured/i.test(msg) || file.size > PROXY_SAFE_MAX_BYTES) throw e
+    }
+  }
   const presign = await apiJson(`${API}/api/media/presign`, tok(), { type, contentType: declaredType, bytes: file.size, ext: extOf(file, filename), idempotencyKey }) as PresignResponse
   const direct = /^https?:\/\//.test(String(presign.url || ''))
   let up: { ok: boolean; status: number; body: string }
