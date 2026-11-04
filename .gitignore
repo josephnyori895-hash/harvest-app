@@ -61,3 +61,6 @@ Thumbs.db
 !workers/public/
 workers/public/*
 !workers/public/index.html
+
+# Local test media (waydroid/device fixtures) — never committed; regenerate locally.
+fixtures/
