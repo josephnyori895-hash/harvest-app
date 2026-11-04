@@ -20,10 +20,17 @@ test('People list prevents long names from pushing the verified badge or unread 
   assert.match(chat, /\{u\.verified && <VerifiedBadge \/>\}/)
 })
 
-test('verified badge is a fixed-size non-shrinking inline control', () => {
-  assert.match(chat, /inline-flex shrink-0 items-center justify-center/)
-  assert.match(chat, /h-\[18px\] w-\[18px\]/)
-  assert.match(chat, /<Icon name="check" size=\{size === 'md' \? 13 : 11\}/)
+test('the verified badge is one fixed-size control that cannot shrink or wrap', async () => {
+  const badge = await readFile(new URL('../src/components/VerifiedBadge.tsx', import.meta.url), 'utf8')
+  // Chat must use the shared seal. A local copy is how this app ended up with
+  // two different verification marks, and the copy is what this guard used to
+  // pin — the copy is gone, so the guard now pins the shared component.
+  assert.match(chat, /import \{ VerifiedBadge \} from '\.\/VerifiedBadge'/)
+  assert.doesNotMatch(chat, /function VerifiedBadge/, 'a local badge copy would drift from the rest of the app')
+  // Fixed box, and it refuses to shrink inside a long, truncating row.
+  assert.match(badge, /width=\{size\}/)
+  assert.match(badge, /height=\{size\}/)
+  assert.match(badge, /shrink-0/)
 })
 
 // The screen used to be built on Instagram's dark palette while every other
