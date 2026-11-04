@@ -71,4 +71,16 @@ assert.match(uploads, /api\/media\/multipart\/complete/, 'parts are joined serve
 assert.match(uploads, /if \(state\.done\[String\(n\)\]\)/, 'stored parts are skipped on resume')
 assert.match(uploads, /up = await xhrSend\(`\$\{API\}\/api\/media\/upload`, 'POST', form/, 'an unreachable R2 falls back to the same-origin proxy')
 
+// RS-103: a sermon is the heaviest thing a member uploads, so it must travel
+// through the same manager as everything else (progress, queue, retry) and it
+// must carry a key derived from the recording — not from the button press — or
+// re-picking the file after a give-up publishes a duplicate row.
+const sermons = await readFile(new URL('../src/components/Sermons.tsx', import.meta.url), 'utf8')
+assert.match(sermons, /void startBackgroundUpload\(\{/, 'sermon uploads use the background manager')
+assert.match(sermons, /idempotency_key: sermonUploadKey\(uploadFile\)/, 'the sermon key comes from the file')
+assert.match(sermons, /const sermonUploadKey = \(file: File\) =>/, 'one helper owns the sermon key')
+assert.match(sermons, /hash\.toString\(16\)/, 'the key is hex, so the server sanitiser keeps it whole')
+assert.ok(sermons.includes('`${file.name}|${file.size}|${file.lastModified || 0}`'), 'identity spans name, size and mtime')
+assert.match(sermons, /retryUpload\(failedSermonUpload\.id\)/, 'a failed sermon is retried from the banner')
+
 console.log('Posting hardening contract tests passed.')

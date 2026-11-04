@@ -272,6 +272,19 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
     } finally { setBusy('') }
   }
 
+  // RS-103: a sermon is one logical recording, so its upload key comes from the
+  // file itself rather than from the moment someone pressed the button. The
+  // manager already reuses a task's key for its own retries; deriving it from
+  // name+size+mtime means re-picking the same recording after a give-up replays
+  // onto the same storage key instead of publishing a second copy. Hex only, so
+  // the server's key sanitiser keeps it intact.
+  const sermonUploadKey = (file: File) => {
+    const stamp = `${file.name}|${file.size}|${file.lastModified || 0}`
+    let hash = 0
+    for (let i = 0; i < stamp.length; i++) hash = (hash * 31 + stamp.charCodeAt(i)) >>> 0
+    return `${hash.toString(16).padStart(8, '0')}${file.size.toString(16)}`.slice(0, 36)
+  }
+
   const uploadSermon = async () => {
     if (!uploadFile || !uploadTitle.trim() || uploading) return
     const maxBytes = uploadKind === 'video' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
@@ -287,6 +300,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       task: {
         kind,
         file: uploadFile,
+        idempotency_key: sermonUploadKey(uploadFile),
         caption: uploadDescription,
         title: uploadTitle,
         artist: uploadSpeaker || undefined,
