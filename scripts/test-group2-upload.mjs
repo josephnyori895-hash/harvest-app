@@ -28,6 +28,15 @@ test('1. PostCreate closes the composer at hand-off and never waits on the uploa
   assert.match(bu, /void pushHistory\(\{ id, label: rec\.label, status: \'failed\'/, 'terminal failure lands in upload history')
 })
 
+test('RS-122: the attachment chip survives a failed send', () => {
+  // The send used to clear the chip before the upload started, so a failure ate
+  // the attachment and only an in-memory copy could recover it — lost on reload.
+  assert.doesNotMatch(chat, /const sentReply = replyTo; setText\(''\); setReplyTo\(null\); setAttach\(null\)/, 'send must not clear the chip before the upload')
+  assert.match(chat, /Confirmed \u2014 the attachment has done its job\./, 'a socket-confirmed send releases the chip')
+  assert.match(chat, /Confirmed on the REST path too/, 'a REST-confirmed send releases the chip')
+  assert.match(chat, /failedFileRef\.current = \{ tempId, file: attach \}/, 'the retry keeps an in-memory copy')
+})
+
 test('2. Background manager promise resolves on success / rejects on terminal failure, stays pending while waiting', () => {
   assert.match(bu, /type DeferredHandle = \{ promise: Promise<void>; resolve: \(\) => void; reject: \(e: Error\) => void \}/)
   assert.match(bu, /const getDeferred = \(id: string\): DeferredHandle => \{/)

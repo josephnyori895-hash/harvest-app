@@ -602,7 +602,10 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       media_type: attach ? 'image' : null,
     }
     saveMessages(c => ({ ...c, [conversationKey]: [...(c[conversationKey] || []), optimistic] }))
-    const sentReply = replyTo; setText(''); setReplyTo(null); setAttach(null); attachRef.current = null; setSending(true); setError('')
+    // RS-122: the attachment stays on the composer until the send is actually
+    // confirmed. Clearing it here meant a failed upload silently ate the chip and
+    // left only an in-memory copy for the retry, which a reload could not recover.
+    const sentReply = replyTo; setText(''); setReplyTo(null); setSending(true); setError('')
     sendTyping(false)
 
     try {
@@ -646,6 +649,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [socketConfirmed]) }))
           cursorRef.current[conversationKey] = socketConfirmed.created_at || cursorRef.current[conversationKey]
           failedFileRef.current = null
+          // Confirmed — the attachment has done its job.
+          setAttach(null); attachRef.current = null
           void refreshInbox()
           return
         }
@@ -663,6 +668,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       saveMessages(c => ({ ...c, [conversationKey]: mergeMessages((c[conversationKey] || []).filter(m => String(m.id) !== tempId), [confirmed]) }))
       cursorRef.current[conversationKey] = confirmed.created_at || cursorRef.current[conversationKey]
       failedFileRef.current = null
+      // Confirmed on the REST path too — release the chip only now.
+      setAttach(null); attachRef.current = null
       void refreshInbox()
     } catch (e) {
       const messageError = e instanceof Error ? e.message : 'Message could not be sent'
