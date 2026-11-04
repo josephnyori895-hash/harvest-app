@@ -188,13 +188,17 @@ async function idbAll(): Promise<QueueRecord[]> {
 // --- transfer helpers -------------------------------------------------------
 // Upload with real progress via XMLHttpRequest (fetch cannot report upload
 // progress). Resolves { ok, status } like a fetch response.
-export function xhrSend(url: string, method: string, body: FormData | Blob | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number }> {
+// The response body is kept on failure: the server explains exactly why it
+// refused (wrong container, over the size cap, no sermon permission, rate
+// limit) and throwing that away left members staring at "upload rejected
+// (400)" with nothing to act on.
+export function xhrSend(url: string, method: string, body: FormData | Blob | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open(method, url)
     if (headers) Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
     xhr.upload.onprogress = e => { if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100)) }
-    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status })
+    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: xhr.responseText || '' })
     xhr.onerror = () => reject(new Error('network error'))
     xhr.send(body)
   })
@@ -255,9 +259,16 @@ async function uploadOne(
     p => onPct(pctFrom + Math.round(p * (pctTo - pctFrom))),
   )
   if (!up.ok) {
-    // R2 answers 403 when the signed PUT window closes mid-transfer — the normal
-    // outcome for a sermon on a slow connection. That is transient: a retry
-    // mints a fresh URL, so it must not be treated as a terminal rejection.
+    // Worker errors are JSON (`{ error: "..." }`); R2's own errors are XML. That
+    // distinction matters: a JSON reason is the real diagnosis and must be shown,
+    // while a bare R2 403 means the signed PUT window closed mid-transfer and a
+    // retry with a fresh URL is the correct response.
+    let reason = ''
+    try {
+      const parsed = JSON.parse(up.body || '{}')
+      if (parsed && typeof parsed.error === 'string') reason = parsed.error
+    } catch { /* R2 XML error body — not a server explanation */ }
+    if (reason) throw new Error(reason)
     if (up.status === 403) throw new Error('storage link expired — retrying')
     throw new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
   }
