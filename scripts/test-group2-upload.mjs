@@ -9,12 +9,23 @@ const bu = await readFile(new URL('../src/lib/backgroundUploads.ts', import.meta
 const sermons = await readFile(new URL('../src/components/Sermons.tsx', import.meta.url), 'utf8')
 const chat = await readFile(new URL('../src/components/Chat.tsx', import.meta.url), 'utf8')
 
-test('1. PostCreate onDone fires ONLY on success — failure keeps composer open', () => {
-  const idx = post.indexOf('.catch((e: any) => {')
-  const after = post.slice(idx, idx + 300)
-  assert.match(post, /\.then\(\(\) => onDone\(\)\)\.catch\(\(e: any\) => \{/)
-  assert.match(after, /setNotice\(e\?\.message/)
-  assert.ok(!after.includes('onDone()'), 'catch block must not call onDone')
+test('1. PostCreate closes the composer at hand-off and never waits on the upload', () => {
+  // RS-102, ruling 2026-11-04: the earlier contract kept the composer open until
+  // the manager settled. That froze the composer across the whole retry ladder
+  // (15s -> 10m, five attempts) with no progress in view, and a task restored
+  // from IndexedDB after a restart has no promise to settle at all. The contract
+  // is now: hand off, say what is happening, close, and let the manager's own
+  // surfaces report failure.
+  assert.doesNotMatch(post, /\.then\(\(\) => onDone\(\)\)/, 'no coupling to the upload promise')
+  const idx = post.indexOf('void startBackgroundUpload({')
+  assert.ok(idx > -1, 'the transfer goes to the background manager')
+  const after = post.slice(idx, idx + 2600)
+  assert.ok(after.includes('onDone()'), 'the composer closes at hand-off')
+  assert.ok(!/\.then\(/.test(after.slice(0, after.indexOf('onDone()'))), 'nothing is awaited before the close')
+  assert.ok(after.includes('Uploading \u2014 we will tell you if it fails'), 'closing must not imply the post is live')
+  // The failure path still has an owner: the manager toasts and records it.
+  assert.match(bu, /failed \u2014 tap Retry to try again/, 'terminal failure is reported by the manager')
+  assert.match(bu, /void pushHistory\(\{ id, label: rec\.label, status: \'failed\'/, 'terminal failure lands in upload history')
 })
 
 test('2. Background manager promise resolves on success / rejects on terminal failure, stays pending while waiting', () => {

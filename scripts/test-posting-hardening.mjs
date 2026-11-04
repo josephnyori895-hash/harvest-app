@@ -83,4 +83,18 @@ assert.match(sermons, /hash\.toString\(16\)/, 'the key is hex, so the server san
 assert.ok(sermons.includes('`${file.name}|${file.size}|${file.lastModified || 0}`'), 'identity spans name, size and mtime')
 assert.match(sermons, /retryUpload\(failedSermonUpload\.id\)/, 'a failed sermon is retried from the banner')
 
+// RS-102: the composer hands off and closes. It must not wait for the manager
+// promise — the retry ladder runs 15s -> 10m across five attempts, and a task
+// restored from IndexedDB after a restart has no promise to settle at all — and
+// closing must not imply the post is already live.
+assert.doesNotMatch(postCreate, /\.then\(\(\) => onDone\(\)\)/, 'the composer must not close on the upload promise')
+assert.ok(postCreate.includes("showToast('Uploading \u2014 we will tell you if it fails', 'info', 3000)"), 'hand-off says what is actually happening')
+{
+  const handOff = postCreate.slice(postCreate.indexOf('void startBackgroundUpload('))
+  const closeAt = handOff.indexOf('onDone()')
+  assert.ok(closeAt > 0, 'the composer closes at hand-off')
+  assert.ok(!/\.then\(/.test(handOff.slice(0, closeAt)), 'nothing is chained before the close')
+  assert.ok(closeAt < handOff.indexOf('} else {'), 'onDone is not deferred behind a promise')
+}
+
 console.log('Posting hardening contract tests passed.')

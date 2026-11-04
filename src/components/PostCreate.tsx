@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
 import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
+import { showToast } from './Toast'
 import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
 import VideoAdjuster from './VideoAdjuster'
@@ -254,12 +255,18 @@ export default function PostCreate({ onDone, initialType }: Props) {
             cover_key: coverKey,
             duration_secs: type === 'story' ? duration : undefined,
           },
-        }).then(() => onDone()).catch((e: any) => {
-          // Manager rejects on terminal failure now — the composer stays open,
-          // the member's file + draft remain recoverable for a manual retry.
-          setNotice(e?.message || 'Upload could not start — check your connection and try again')
-          setBusy(false)
+        }).catch(() => {
+          // The manager reports terminal failure itself (toast + upload history),
+          // and a task restored from IndexedDB after a restart has no promise to
+          // settle at all — so nothing here may depend on that promise settling.
         })
+        // RS-102: close at hand-off and say what is actually happening. Waiting on
+        // the manager promise held the composer open across the whole retry ladder
+        // (15s → 10m, up to five attempts) with no progress in view, and closing
+        // silently implied the post was already live. The pill, upload history and
+        // the sermons banner are where a failure surfaces.
+        showToast('Uploading — we will tell you if it fails', 'info', 3000)
+        onDone()
       } else {
         onDone()
       }
