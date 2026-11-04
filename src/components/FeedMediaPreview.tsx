@@ -6,9 +6,21 @@ import { useEffect, useRef, useState } from 'react'
 import VideoThumb from './VideoThumb'
 import { Icon } from '../ui'
 
-const MIN_RATIO = 0.8 // 4:5 — the same portrait floor as photos, so feed media is one shape
+// Feed photos keep the 4:5 portrait floor (FeedCard clamps them there, and the
+// composer's cover crop is the ImageAdjuster contract). Video must not: a 9:16
+// phone recording was clamped to 0.8, so a vertical clip lost its top and
+// bottom in the feed. Video therefore keeps its natural portrait shape down to
+// 9:16, and only taller-than-phone media is bounded so a post cannot collapse
+// into a sliver.
+const MIN_VIDEO_RATIO = 9 / 16 // 0.5625
 const MAX_RATIO = 1.91
-const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_RATIO), MAX_RATIO)
+const clampRatio = (ratio: number) => Math.min(Math.max(ratio, MIN_VIDEO_RATIO), MAX_RATIO)
+// A 9:16 frame at full post width is taller than 70vh on most phones, and the
+// height clamp then crops exactly what the ratio fix just restored. Portrait
+// video gets a taller stage; landscape keeps the shorter cap. Where a viewport
+// is shorter than the natural frame (width / 0.5625), cover still trims a few
+// percent rather than letterboxing — the edge-to-edge contract wins over bars.
+const stageMaxHeight = (ratio: number | null) => (ratio && ratio < 1 ? '88vh' : '70vh')
 // iOS Safari (and a few Android WebViews) play HLS natively in <video>;
 // Chromium cannot — surface that instead of a dead player (P1 don't-assume).
 const HLS_T = 'application/vnd.apple.mpegurl'
@@ -55,8 +67,8 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
   // Full-bleed and cropped: the stage spans the column and the video fills it.
   // No letterbox band, so there is no strip of any colour framing the post.
   const frameStyle = boundedRatio
-    ? { aspectRatio: String(boundedRatio), width: '100%' }
-    : { width: '100%' }
+    ? { aspectRatio: String(boundedRatio), width: '100%', maxHeight: stageMaxHeight(boundedRatio) }
+    : { width: '100%', maxHeight: stageMaxHeight(null) }
   const validPoster = Boolean(poster && !posterFailed)
   // Browsers/WebViews can refuse a sound-on play() even after a tap. Retry
   // muted (controls stay visible so the member can raise the volume) instead
@@ -88,7 +100,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
 
   if (playing) {
     return (
-      <div className="relative w-full max-h-[70vh] overflow-hidden bg-surface-sunken" style={frameStyle}>
+      <div className="relative w-full overflow-hidden bg-surface-sunken" style={frameStyle}>
         <video
           ref={videoRef}
           src={src}
@@ -99,7 +111,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
           preload="metadata"
           onLoadedMetadata={onMetadata}
           onError={() => setVideoFailed(true)}
-          className="block h-full max-h-[70vh] w-full object-cover"
+          className="block h-full w-full object-cover"
           aria-label="Video playback"
         />
         {videoFailed && (
@@ -114,7 +126,7 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
 
   return (
     <div
-      className="relative w-full max-h-[70vh] overflow-hidden bg-surface-sunken cursor-pointer"
+      className="relative w-full overflow-hidden bg-surface-sunken cursor-pointer"
       style={frameStyle}
       onClick={() => { setVideoFailed(false); setPlaying(true) }}
       role="button"
@@ -123,8 +135,8 @@ export default function FeedMediaPreview({ src, poster, alt = '', autoPlay = fal
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setVideoFailed(false); setPlaying(true) } }}
     >
       {validPoster
-        ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full max-h-[70vh] w-full object-cover" />
-        : <div className="aspect-[4/5] max-h-[70vh] w-full">
+        ? <img src={poster} alt={alt} decoding="async" loading="lazy" className="block h-full w-full object-cover" />
+        : <div className="aspect-[4/5] w-full">
             {/* No poster: capture a real frame on a canvas. A bare <video> here
                 painted black (Chromium) or the native play glyph (WebView). */}
             {src
