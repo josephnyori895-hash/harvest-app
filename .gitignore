@@ -64,3 +64,4 @@ workers/public/*
 
 # Local test media (waydroid/device fixtures) — never committed; regenerate locally.
 fixtures/
+.collab/
