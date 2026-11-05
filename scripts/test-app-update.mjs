@@ -41,3 +41,13 @@ test('the prompt offers update and a 24h deferral', () => {
   assert.match(app, /openApkDownload\(update\.apkUrl\)/)
   assert.match(update, /const DISMISS_HOURS = 24/)
 })
+
+test('the check runs on open, not only after sign-in', () => {
+  // Returning <Onboarding/> before UpdateGate meant the first screen — where a
+  // member with an old build actually sits — never ran the check. That is the
+  // case Nyorii reported: open the app, get no update prompt.
+  assert.match(app, /if \(!onboarded\) return \(\s*<UpdateGate>\s*<Onboarding/, 'onboarding sits inside UpdateGate')
+  const onboardingReturn = app.indexOf('if (!onboarded) return')
+  const gate = app.indexOf('<UpdateGate>')
+  assert.ok(gate > 0 && onboardingReturn > 0, 'both the branch and the gate exist')
+})

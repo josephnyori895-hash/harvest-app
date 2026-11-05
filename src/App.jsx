@@ -654,7 +654,16 @@ function InnerApp() {
     }
   }, [])
 
-  if (!onboarded) return <Onboarding onAuthSuccess={handleAuthSuccess} />
+  // The update check has to run on OPEN, not on sign-in. Returning Onboarding
+  // here put the first screen outside UpdateGate, so a member sitting on the
+  // sign-up screen with an outdated build was never told — the exact case the
+  // prompt exists for (verified on Waydroid: 1629 installed, 1632 released, no
+  // prompt until after login).
+  if (!onboarded) return (
+    <UpdateGate>
+      <Onboarding onAuthSuccess={handleAuthSuccess} />
+    </UpdateGate>
+  )
 
   return (
     <UpdateGate>
