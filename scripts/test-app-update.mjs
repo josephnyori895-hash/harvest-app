@@ -51,3 +51,10 @@ test('the check runs on open, not only after sign-in', () => {
   const gate = app.indexOf('<UpdateGate>')
   assert.ok(gate > 0 && onboardingReturn > 0, 'both the branch and the gate exist')
 })
+
+test('Update hands the APK to the system browser, not a WebView popup', () => {
+  // '_blank' inside the Android WebView opened nothing that could save the APK
+  // (Waydroid: app fell to the launcher, /sdcard/Download stayed empty).
+  assert.match(update, /window\.open\(target, native \? '_system' : '_blank', 'noopener'\)/)
+  assert.match(update, /const native = Boolean\(Capacitor\.isNativePlatform\?\.\(\)\)/)
+})

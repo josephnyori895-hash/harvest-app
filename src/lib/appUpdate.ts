@@ -113,5 +113,11 @@ export function isDismissed(versionCode: number): boolean {
 
 export function openApkDownload(apkUrl: string) {
   const target = /^https?:\/\//.test(apkUrl) ? apkUrl : `${BASE}${apkUrl}`
-  window.open(target, '_blank', 'noopener')
+  // In the Android WebView, '_blank' is a throwaway window that saves nothing —
+  // verified on Waydroid: tapping Update dropped the app to the launcher and
+  // /sdcard/Download stayed empty. '_system' hands the URL to the OS browser,
+  // which is the only path that can actually download and install an APK. Web
+  // builds keep the ordinary tab behaviour.
+  const native = Boolean(Capacitor.isNativePlatform?.())
+  window.open(target, native ? '_system' : '_blank', 'noopener')
 }
