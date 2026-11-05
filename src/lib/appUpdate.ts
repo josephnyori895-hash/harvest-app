@@ -7,6 +7,7 @@
 //
 // Web builds (no Capacitor) never prompt — there is nothing to update.
 import { Capacitor } from '@capacitor/core'
+import { App } from '@capacitor/app'
 
 export const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -20,15 +21,53 @@ export type UpdateInfo = {
 const DISMISS_KEY = 'harvest_update_dismissed_code'
 const DISMISS_HOURS = 24
 
-function installedVersionCode(): number {
-  // Config.versionCode is injected at Capacitor build time from
-  // android/app/build.gradle's versionCode (1000 + run number).
+// The installed build has to come from the native package, not from config.
+// Nothing in this repo injects versionCode into Capacitor.Config — the value
+// only exists in android/app/build.gradle — so reading Config.versionCode gave
+// 0 on every device and checkForUpdate returned available:false forever, which
+// is why an out-of-date install (Waydroid, 1629 against a 1630 release) never
+// saw the prompt. App.getInfo() is async and reads the package manager:
+//   build   = versionCode of the installed APK ("1629")
+//   version = versionName of the installed APK ("1.0.629")
+async function installedVersion(): Promise<{ code: number; name: string }> {
+  let code = 0
+  let name = ''
   try {
-    const code = Number((Capacitor as any)?.Config?.versionCode)
-    return Number.isFinite(code) && code > 0 ? code : 0
+    const info = await App.getInfo()
+    name = String(info?.version || '')
+    const build = Number(info?.build)
+    if (Number.isFinite(build) && build > 0) code = build
   } catch {
-    return 0
+    // Plugin unavailable (web build) — fall through to the config fallback.
   }
+  if (!code) {
+    try {
+      const injected = Number((Capacitor as any)?.Config?.versionCode)
+      if (Number.isFinite(injected) && injected > 0) code = injected
+    } catch { /* best-effort */ }
+  }
+  return { code, name }
+}
+
+function versionParts(v: string): number[] {
+  return String(v || '')
+    .replace(/^v/i, '')
+    .split(/[.\-+]/)
+    .map(p => Number(p))
+    .filter(n => Number.isFinite(n))
+}
+
+// Name comparison is the fallback when the build number is unreadable: an
+// install we cannot measure must still be able to learn it is behind.
+function compareVersionNames(a: string, b: string): number {
+  const x = versionParts(a)
+  const y = versionParts(b)
+  const len = Math.max(x.length, y.length)
+  for (let i = 0; i < len; i++) {
+    const d = (x[i] || 0) - (y[i] || 0)
+    if (d !== 0) return d
+  }
+  return 0
 }
 
 export async function checkForUpdate(): Promise<UpdateInfo> {
@@ -38,14 +77,18 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
     const r = await fetch(`${BASE}/api/app-version`)
     if (!r.ok) return { available: false }
     const d = await r.json()
+    if (!d?.update_available) return { available: false }
     const latest = Number(d?.version_code)
-    if (!d?.update_available || !Number.isFinite(latest)) return { available: false }
-    const installed = installedVersionCode()
-    if (installed <= 0 || latest <= installed) return { available: false }
+    const latestName = String(d?.version_name || '')
+    const { code: installed, name: installedName } = await installedVersion()
+    const newer = installed > 0 && Number.isFinite(latest)
+      ? latest > installed
+      : Boolean(installedName && latestName) && compareVersionNames(latestName, installedName) > 0
+    if (!newer) return { available: false }
     return {
       available: true,
-      versionCode: latest,
-      versionName: String(d.version_name || ''),
+      versionCode: Number.isFinite(latest) ? latest : 0,
+      versionName: latestName,
       apkUrl: String(d.apk_url || '/harvest-family.apk'),
     }
   } catch {
