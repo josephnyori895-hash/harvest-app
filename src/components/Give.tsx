@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, overrideGivingPledge, removeGivenParticipant, renameGivingTake, removeFromTake, useApi, presign, uploadToMinio } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
@@ -98,6 +98,10 @@ export default function Give() {
   const [adminData, setAdminData] = useState<{transactions:any[],totals:any} | null>(null)
   const [tab, setTab] = useState<'give'|'admin'>('give')
   const [busy, setBusy] = useState(false)
+  // RS-107: busy alone flips on the next render, so two taps inside the same
+  // commit could both enter pay(). A synchronous ref guard closes that gap;
+  // the server is still asked to dedupe (see workers giving route).
+  const payingRef = useRef(false)
   const [message, setMessage] = useState('')
   const [mpesaEnabled, setMpesaEnabled] = useState<boolean | null>(null)
   const [contentLoaded, setContentLoaded] = useState(false)
@@ -417,6 +421,7 @@ export default function Give() {
   }
 
   const pay = async () => {
+    if (payingRef.current) return
     if (!apiEnabled) { showToast('Giving requires the server API in production', 'error'); return }
     // Field-level validation: fail fast with a specific, visible error instead
     // of a doomed STK push that leaves a permanent "pending" row.
@@ -426,7 +431,7 @@ export default function Give() {
     if (amt > maxGive) { showToast(`For gifts above KES ${maxGive.toLocaleString()} please contact the treasurer`, 'error', 3500); return }
     const normalizedPhone = normalizeMpesaPhone(phone)
     if (!normalizedPhone) { showToast('Enter a valid Safaricom number: 07…, 01… or 2547…', 'error', 3500); return }
-    setBusy(true); setMessage('')
+    setBusy(true); setMessage(''); payingRef.current = true
     try {
       const result = await startGiving({ amount: amt, phone: normalizedPhone, purpose, purpose_id: fund, ...(givingProject?.id ? { project_id: String(givingProject.id) } : {}) })
       setMessage(result.message || 'Check your phone — enter your M-Pesa PIN to complete the gift.')
@@ -444,7 +449,7 @@ export default function Give() {
       } else {
         showToast(msg, 'error')
       }
-    } finally { setBusy(false) }
+    } finally { setBusy(false); payingRef.current = false }
   }
 
   return (

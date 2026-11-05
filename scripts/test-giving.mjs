@@ -63,3 +63,12 @@ test('RS-106: a failed giving-history load is surfaced with a retry', () => {
   assert.match(giveUi, /Could not load your giving history\./)
   assert.match(giveUi, /onClick=\{\(\) => void loadMyGiving\(\)\}/)
 })
+
+test('RS-107: a double-tap on the M-Pesa button cannot fire two STK pushes', () => {
+  // busy only disables after the re-render; the synchronous ref guard is what
+  // actually stops the second tap inside the same commit.
+  assert.match(giveUi, /const payingRef = useRef\(false\)/)
+  assert.match(giveUi, /if \(payingRef\.current\) return/, 're-entry guard runs before validation')
+  assert.match(giveUi, /setBusy\(true\); setMessage\(''\); payingRef\.current = true/)
+  assert.match(giveUi, /finally \{ setBusy\(false\); payingRef\.current = false \}/)
+})
