@@ -43,3 +43,14 @@ test('money and worship failures are announced, not swallowed', () => {
   // The old silent library load must be gone from the component.
   assert.doesNotMatch(music, /fetchMusic\(\)\s*\n?\s*\.then\(r => \{ if \(!cancelled\) setServerTracks\(mapServer\(r\.tracks as any\[\]\)\) \}\)\s*\n?\s*\.catch\(\(\) => \{\}\)/)
 })
+
+test('the signup group select never displays a choice the state does not hold', () => {
+  // Waydroid device pass: an empty group select with no empty option rendered
+  // the first congregation as visually selected while form.group_name stayed
+  // '', so 'Create my account' refused with "Choose your Harvest Group" the
+  // member could not satisfy — the display was a lie. The placeholder keeps
+  // display == state, and the validator gate stays pinned.
+  assert.match(app, /Choose your congregation…/, 'honest placeholder sits first when nothing is chosen')
+  assert.match(app, /if \(!form\.group_name\) \{/, 'the validator still refuses an unchosen group')
+  assert.match(app, /value=\{form\.group_name\}/)
+})

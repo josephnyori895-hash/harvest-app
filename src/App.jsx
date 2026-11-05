@@ -991,6 +991,11 @@ function Onboarding({ onAuthSuccess }) {
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
               <div className="relative">
                 <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-accent focus:ring-2 focus:ring-purple-100">
+                  {/* An empty select with no empty option renders the FIRST
+ congregation as if chosen, while form state stays '' — the waydroid
+ device pass showed 'Alphas 1' checked with the validator still
+ refusing. The placeholder keeps the display honest with the state. */}
+                  {!form.group_name && <option value="" disabled>Choose your congregation…</option>}
                   {!REG_GROUP_OPTIONS.length && <option value="">{groupsLive ? 'No groups available' : 'Loading groups…'}</option>}
                   {REG_GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
