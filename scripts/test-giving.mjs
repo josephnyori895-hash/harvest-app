@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
@@ -71,4 +72,18 @@ test('RS-107: a double-tap on the M-Pesa button cannot fire two STK pushes', () 
   assert.match(giveUi, /if \(payingRef\.current\) return/, 're-entry guard runs before validation')
   assert.match(giveUi, /setBusy\(true\); setMessage\(''\); payingRef\.current = true/)
   assert.match(giveUi, /finally \{ setBusy\(false\); payingRef\.current = false \}/)
+})
+
+test('RS-107: the server refuses a second STK push while one is pending', () => {
+  // The client ref guard cannot cover a retry, a second device, or a tap after
+  // the busy re-render — M-Pesa has no idempotency on this call, so the worker
+  // must not open a second prompt for the same member, phone and amount.
+  const givingRoute = readFileSync(new URL('../workers/src/routes/giving.js', import.meta.url), 'utf8')
+  assert.match(givingRoute, /const DUPLICATE_WINDOW_SECONDS = 90/)
+  assert.match(givingRoute, /WHERE user_id=\? AND status='pending' AND provider='mpesa' AND phone=\? AND amount_kes=\? AND created_at > \?/)
+  assert.match(givingRoute, /An M-Pesa prompt for this gift is already on its way/)
+  // The check must run before a transaction id exists and before the provider call.
+  const checkAt = givingRoute.indexOf("status='pending' AND provider='mpesa'")
+  const insertAt = givingRoute.indexOf('INSERT INTO giving_transactions')
+  assert.ok(checkAt > 0 && checkAt < insertAt, 'duplicate check precedes the insert')
 })

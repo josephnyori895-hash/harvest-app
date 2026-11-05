@@ -84,6 +84,25 @@ export async function handleGiving(request, env, ctx) {
       if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 1 || amount > 1000000) return errorResponse('amount must be a whole number between KES 1 and 1,000,000', 400)
       if (!phone) return errorResponse('valid Kenyan M-Pesa phone number required — use 07…, 01… or 2547… format', 400)
 
+      // RS-107, server half. The client ref guard only covers two taps in the
+      // same commit; it cannot cover a retried request, a second device, or a
+      // tap that lands after the busy re-render. M-Pesa has no idempotency on
+      // this call, so a second STK push for the same member, phone and amount
+      // while one is still pending would let the member answer twice and be
+      // debited twice. Refuse instead of prompting again.
+      const DUPLICATE_WINDOW_SECONDS = 90
+      const pendingCutoff = new Date(Date.now() - DUPLICATE_WINDOW_SECONDS * 1000).toISOString()
+      const pendingSame = await query(
+        env,
+        `SELECT id FROM giving_transactions
+          WHERE user_id=? AND status='pending' AND provider='mpesa' AND phone=? AND amount_kes=? AND created_at > ?
+          LIMIT 1`,
+        [fresh.id, phone, amount, pendingCutoff],
+      )
+      if (pendingSame.rows[0]) {
+        return errorResponse('An M-Pesa prompt for this gift is already on its way — finish it on your phone, or try again in two minutes', 409)
+      }
+
       const shortCode = requiredEnv(env, 'MPESA_SHORTCODE')
       const passkey = requiredEnv(env, 'MPESA_PASSKEY')
       const callbackUrl = requiredEnv(env, 'MPESA_CALLBACK_URL')
