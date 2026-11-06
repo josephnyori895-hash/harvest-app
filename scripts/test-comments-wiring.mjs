@@ -13,10 +13,10 @@ const sermonRoute = await readFile(new URL('../workers/src/routes/sermons.js', i
 const migration = await readFile(new URL('../workers/migrations/0032_sermon_comments.sql', import.meta.url), 'utf8')
 
 test('one comment store serves posts, reels and sermons', () => {
-  assert.match(feed, /sermon: \{ missing: 'sermon not found', table: 'sermons', sql: 'SELECT id FROM sermons WHERE id=\?' \}/)
+  assert.match(feed, /sermon: \{ missing: 'sermon not found', table: 'sermons', sql: 'SELECT id, user_id FROM sermons WHERE id=\?' \}/)
   assert.match(feed, /const commentScope = raw => \(raw === 'reel' \|\| raw === 'sermon' \? raw : 'post'\)/)
-  assert.match(feed, /SELECT id FROM posts WHERE id=\? AND approved_at IS NOT NULL/)
-  assert.match(feed, /SELECT id FROM reels WHERE id=\? AND approved_at IS NOT NULL/)
+  assert.match(feed, /SELECT id, user_id FROM posts WHERE id=\? AND approved_at IS NOT NULL/)
+  assert.match(feed, /SELECT id, user_id FROM reels WHERE id=\? AND approved_at IS NOT NULL/)
 })
 
 test('counters follow the kind instead of defaulting to posts', () => {

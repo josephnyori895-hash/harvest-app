@@ -97,15 +97,37 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
   }
 }
 
-// "Remind me later" suppresses the prompt for this version for a day.
+// "Remind me later" is a snooze, not a mute, so the prompt has to come back.
+// The first version stored only the code and compared it forever, which meant a
+// member who tapped Later was never told about that release again — and
+// DISMISS_HOURS sat unused. Store the code with an expiry and honour both.
 export function dismissUpdate(versionCode: number) {
-  try { localStorage.setItem(DISMISS_KEY, String(versionCode)) } catch { /* best-effort */ }
+  try {
+    localStorage.setItem(DISMISS_KEY, JSON.stringify({
+      code: Number(versionCode) || 0,
+      until: Date.now() + DISMISS_HOURS * 60 * 60 * 1000,
+    }))
+  } catch { /* best-effort */ }
 }
 
 export function isDismissed(versionCode: number): boolean {
   try {
-    if (Number(localStorage.getItem(DISMISS_KEY)) !== versionCode) return false
-    return true
+    const raw = localStorage.getItem(DISMISS_KEY)
+    if (!raw) return false
+    let code = 0
+    let until = 0
+    if (raw.trim().startsWith('{')) {
+      const saved = JSON.parse(raw) as { code?: number; until?: number }
+      code = Number(saved?.code) || 0
+      until = Number(saved?.until) || 0
+    } else {
+      // Plain-number value written by builds before the snooze expiry existed:
+      // it muted that version permanently, so treat it as already expired.
+      code = Number(raw) || 0
+      until = 0
+    }
+    if (code !== Number(versionCode)) return false
+    return until > Date.now()
   } catch {
     return false
   }

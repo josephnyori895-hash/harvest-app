@@ -1,3 +1,5 @@
+> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+
 # Realtime — VPS-only (KES 1k/mo) Socket.IO + Redis/Memory + Coturn
 
 Hybrid: keep PIN bcrypt, no Ably/Pusher. Same VPS runs Postgres + MinIO + Fastify + Socket.IO + Redis (64MB) + coturn 3478/5349. 500 users = single instance sufficient; Redis adapter optional for future scale.

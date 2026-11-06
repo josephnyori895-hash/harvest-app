@@ -6,6 +6,7 @@ import { pbkdf2Hash } from '../lib/crypto.js'
 import { ALL_CAPS, parseGrants } from '../lib/capabilities.js'
 import { nearestCommunity } from '../lib/geo.js'
 import { mediaUrlOrNull } from '../lib/media.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 
 const ROLES = new Set(['member', 'admin'])
 const PROFILE_FIELDS = new Set(['name', 'phone', 'location', 'constituency', 'faith'])
@@ -160,6 +161,16 @@ export async function handleUsers(request, env, ctx, params) {
       return jsonResponse({ following: false, mutual: false })
     }
     await query(env, 'INSERT INTO follows (follower_id, followee_id) VALUES (?,?) ON CONFLICT DO NOTHING', [fresh.id, targetId])
+    // Instagram wiring: a new follower is a notification; unfollowing is silent.
+    void recordNotificationsSafe(env, [{
+      userId: targetId,
+      type: 'follow',
+      category: 'all',
+      title: fresh.name || '@' + fresh.username,
+      body: 'Started following you.',
+      preview: 'New follower',
+      target: { type: 'user', id: fresh.id, username: fresh.username, actor_user_id: fresh.id },
+    }])
     const rev = await query(env, 'SELECT 1 FROM follows WHERE follower_id=? AND followee_id=?', [targetId, fresh.id])
     return jsonResponse({ following: true, mutual: !!rev.rows[0] })
   }

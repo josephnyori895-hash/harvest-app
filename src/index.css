@@ -84,7 +84,22 @@ html, body, #root { min-height: 100%; width: 100%; }
 html, body { overflow-x: hidden; }
 /* Android edge-to-edge safety: keep normal app content clear of display cutouts.
    Full-bleed media can still use their own viewport when explicitly positioned. */
-#root { padding-left: var(--safe-area-inset-left, env(safe-area-inset-left)); padding-right: var(--safe-area-inset-right, env(safe-area-inset-right)); }
+/* Native insets come from MainActivity as CSS variables (Android WebView does
+   not populate env(safe-area-inset-*)); env() stays as the browser fallback. */
+#root {
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+/* Android WebView fitting: stop font boosting from inflating labels, remove the
+   grey tap flash, and keep the rubber-band glow inside the app frame. */
+html, body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body { margin: 0; background: rgb(var(--surface)); color: rgb(var(--ink)); }
 
 @layer base {

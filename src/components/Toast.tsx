@@ -48,7 +48,7 @@ export function ToastContainer() {
   }, [])
 
   return (
-    <div className="pointer-events-none fixed left-3 right-3 top-[calc(env(safe-area-inset-top,0px)+12px)] z-50 space-y-2 sm:left-auto sm:right-4 sm:w-auto">
+    <div className="pointer-events-none fixed left-3 right-3 top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+12px)] z-50 space-y-2 sm:left-auto sm:right-4 sm:w-auto">
       {toasts.map(toast => {
         const tone = TONE[toast.type]
         return (

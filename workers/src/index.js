@@ -22,6 +22,43 @@ import { Realtime } from './realtime.js'
 
 export { Realtime }
 
+const VERSIONED_APK = /^harvest-family-[0-9]+-[0-9a-f]{7}\.apk$/
+
+// The release version travels with the assets, not with the deploy command.
+// Both release paths (the CI workflow and update-apk.sh) write app-version.json
+// next to the staged web app, so this describes exactly what was shipped.
+// It used to come from the deploy-time RELEASE_APK_FILENAME var only, which a
+// plain `wrangler deploy` drops — and then /api/app-version answered
+// update_available:false and the permanent APK URL answered 503, silently
+// ending updates for every installed app.
+async function readAppVersionManifest(env, url) {
+  try {
+    const res = await env.ASSETS.fetch(new Request(new URL('/app-version.json', url.origin).toString()))
+    if (!res.ok) return null
+    const data = await res.json()
+    const code = Number(data?.version_code)
+    if (!Number.isFinite(code) || code <= 0) return null
+    return {
+      version_code: code,
+      version_name: String(data?.version_name || ''),
+      apk_url: String(data?.apk_url || '/harvest-family.apk'),
+    }
+  } catch {
+    return null
+  }
+}
+
+// Which staged APK the permanent URL should serve for this deployment.
+async function resolveReleaseApk(env, url) {
+  const configured = String(env.RELEASE_APK_FILENAME || '')
+  if (VERSIONED_APK.test(configured)) return { filename: configured }
+  const manifest = await readAppVersionManifest(env, url)
+  const fromManifest = String(manifest?.apk_url || '').replace(/^\//, '')
+  if (VERSIONED_APK.test(fromManifest)) return { filename: fromManifest }
+  if (!fromManifest || fromManifest === 'harvest-family.apk') return { filename: 'harvest-family.apk' }
+  return null
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
@@ -30,8 +67,8 @@ export default {
     // unique, immutable filename. The release workflow injects the current
     // filename with `wrangler deploy --var RELEASE_APK_FILENAME:...`.
     if (url.pathname === '/harvest-family.apk' && request.method === 'GET') {
-      const filename = env.RELEASE_APK_FILENAME
-      if (!filename || !/^harvest-family-[0-9]+-[0-9a-f]{7}\.apk$/.test(filename)) {
+      const released = await resolveReleaseApk(env, url)
+      if (!released) {
         return new Response('APK release target unavailable', {
           status: 503,
           headers: {
@@ -40,6 +77,7 @@ export default {
           },
         })
       }
+      const filename = released.filename
 
       const target = new URL('/' + filename, url.origin)
       // Serve the current immutable release directly instead of redirecting.
@@ -72,10 +110,22 @@ export default {
     // Android versionCode = 1000 + run number). No auth: version info and
     // the public download URL are not sensitive.
     if (url.pathname === '/api/app-version' && request.method === 'GET') {
-      const filename = env.RELEASE_APK_FILENAME
-      const match = /^harvest-family-([0-9]+)-[0-9a-f]{7}\.apk$/.exec(String(filename || ''))
+      const manifest = await readAppVersionManifest(env, url)
+      if (manifest) {
+        return withCors(jsonResponse({
+          update_available: true,
+          version_code: manifest.version_code,
+          version_name: manifest.version_name,
+          apk_url: manifest.apk_url,
+        }), env, request)
+      }
+      // Fallback for deployments made before app-version.json shipped.
+      const match = VERSIONED_APK.exec(String(env.RELEASE_APK_FILENAME || ''))
       if (!match) return withCors(jsonResponse({ update_available: false }), env, request)
-      const run = Number(match[1])
+      // VERSIONED_APK has no capture group (it is shared with .test()), so pull
+      // the run number out of the matched filename itself.
+      const run = Number(/-([0-9]+)-[0-9a-f]{7}\.apk$/.exec(match[0])?.[1])
+      if (!Number.isFinite(run)) return withCors(jsonResponse({ update_available: false }), env, request)
       return withCors(jsonResponse({
         update_available: true,
         version_code: 1000 + run,

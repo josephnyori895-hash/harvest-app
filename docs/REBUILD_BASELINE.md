@@ -1,3 +1,5 @@
+> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+
 # Rebuild baseline — M0
 
 ## Scope

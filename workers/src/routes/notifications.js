@@ -94,7 +94,9 @@ export async function handleNotifications(request, env, ctx) {
         const u = (await query(env, 'SELECT username, name, avatar_key FROM users WHERE id=?', [String(target.actor_user_id)])).rows[0]
         if (u) {
           const avatarUrl = u.avatar_key ? await mediaUrlOrNull(env, u.avatar_key, 900) : null
-          actor = { name: u.name || u.username, avatar_url: avatarUrl || undefined }
+          // username is required for tap routing (profile opens) — without it the
+          // panel could render the row but had nothing to navigate to.
+          actor = { name: u.name || u.username, username: u.username, avatar_url: avatarUrl || undefined }
         }
       }
       return {

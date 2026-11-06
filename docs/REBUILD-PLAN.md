@@ -1,3 +1,5 @@
+> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+
 # Harvest Family — Rebuild / Improve Task List
 
 Date: 3 November 2026. Author: Codebuff (local agent), read-only audit of the checkout at

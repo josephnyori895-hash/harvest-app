@@ -10,6 +10,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -26,6 +27,13 @@ public class MainActivity extends BridgeActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        // Bars are transparent over cream content, so their glyphs must be dark.
+        // Default white icons disappeared against the page (the clock read as a
+        // blank strip and the gesture pill was invisible).
+        WindowInsetsControllerCompat barAppearance =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        barAppearance.setAppearanceLightStatusBars(true);
+        barAppearance.setAppearanceLightNavigationBars(true);
 
         View contentView = findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(contentView, (v, windowInsets) -> {

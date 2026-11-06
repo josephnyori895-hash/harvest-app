@@ -3,8 +3,37 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 
 const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const feedRoute = await readFile(new URL('../workers/src/routes/feed.js', import.meta.url), 'utf8')
+const usersRoute = await readFile(new URL('../workers/src/routes/users.js', import.meta.url), 'utf8')
+const socialRoute = await readFile(new URL('../workers/src/routes/social.js', import.meta.url), 'utf8')
+const notificationsRoute = await readFile(new URL('../workers/src/routes/notifications.js', import.meta.url), 'utf8')
 const notif = await readFile(new URL('../src/components/NotificationsScreen.jsx', import.meta.url), 'utf8')
 const lib = await readFile(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8')
+
+test('comments notify the post owner and replies notify the comment author', () => {
+  assert.match(feedRoute, /recordNotificationsSafe/)
+  assert.match(feedRoute, /SELECT id, user_id FROM posts WHERE id=\? AND approved_at IS NOT NULL/)
+  assert.match(feedRoute, /const notifyUserId = parentId \? parentAuthorId : target\.rows\[0\]\?\.user_id/)
+  assert.match(feedRoute, /type: parentId \? 'comment_reply' : 'comment'/)
+})
+
+test('a like notifies the owner and never the actor', () => {
+  assert.match(feedRoute, /if \(liked && target\.rows\[0\]\.user_id && target\.rows\[0\]\.user_id !== fresh\.id\)/)
+  assert.match(feedRoute, /recordNotificationsSafe/)
+})
+
+test('a new follower notifies the followee; a story reply notifies the author', () => {
+  assert.match(usersRoute, /type: 'follow'/)
+  assert.match(usersRoute, /recordNotificationsSafe/)
+  assert.match(socialRoute, /type: 'story_reply'/)
+  assert.match(socialRoute, /SELECT id, user_id FROM stories WHERE id=\? AND expires_at>\?/)
+})
+
+test('inbox press routing opens the liked/commented content, and carries a username', () => {
+  assert.match(app, /notification\.type === 'like' \|\| notification\.type === 'comment' \|\| notification\.type === 'comment_reply'/)
+  assert.match(app, /notification\.type === 'story_reply'/)
+  assert.match(notificationsRoute, /actor = \{ name: u\.name \|\| u\.username, username: u\.username/)
+})
 
 test('family activity is normalized into notification rows by the lib', () => {
   assert.match(lib, /export async function fetchFamilyActivity/)

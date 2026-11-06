@@ -2,6 +2,7 @@ import { query } from '../lib/db.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { requireMember } from '../lib/auth.js'
 import { mediaUrlOrNull } from '../lib/media.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 
 function clean(v, max=1000) { return String(v ?? '').trim().slice(0,max) }
 
@@ -107,10 +108,14 @@ export async function handleSocial(request, env, ctx) {
   // Story replies: authenticated members can reply; owner/admin can read all replies.
   const reply = path.match(/^\/api\/stories\/([^/]+)\/replies$/)
   if (reply && request.method === 'GET') {
-    await requireMember(env, user)
+    const fresh = await requireMember(env, user)
     const sid = reply[1]
-    const exists = await query(env, 'SELECT id FROM stories WHERE id=? AND expires_at>?', [sid,new Date().toISOString()])
+    const exists = await query(env, 'SELECT id, user_id FROM stories WHERE id=? AND expires_at>?', [sid,new Date().toISOString()])
     if (!exists.rows[0]) return errorResponse('story not found',404)
+    // A reply is addressed to the story owner, not published on the story. The
+    // comment above always said owner/admin; the query let any member read the
+    // whole thread, so replies were readable by everyone who opened the story.
+    if (exists.rows[0].user_id !== fresh.id && fresh.role !== 'admin') return errorResponse('forbidden',403)
     const {rows}=await query(env, 'SELECT r.id,r.username,r.body,r.created_at,u.name,u.verified FROM story_replies r LEFT JOIN users u ON u.username=r.username WHERE r.story_id=? ORDER BY r.created_at ASC LIMIT 200',[sid])
     rows.forEach(r=>r.verified=!!r.verified)
     return jsonResponse({replies:rows})
@@ -119,10 +124,23 @@ export async function handleSocial(request, env, ctx) {
     const fresh = await requireMember(env,user)
     const sid=reply[1], body=await readJson(request), text=clean(body.body,1000)
     if(!text) return errorResponse('reply required',400)
-    const story=await query(env,'SELECT id FROM stories WHERE id=? AND expires_at>?',[sid,new Date().toISOString()])
+    const story=await query(env,'SELECT id, user_id FROM stories WHERE id=? AND expires_at>?',[sid,new Date().toISOString()])
     if(!story.rows[0]) return errorResponse('story not found',404)
     const id=crypto.randomUUID()
     await query(env,'INSERT INTO story_replies (id,story_id,user_id,username,body) VALUES (?,?,?,?,?)',[id,sid,fresh.id,fresh.username,text])
+    // Instagram drops a story reply into the author's DM. Here the member-facing
+    // equivalent is a notification owned by the story author.
+    if (story.rows[0].user_id && story.rows[0].user_id !== fresh.id) {
+      void recordNotificationsSafe(env, [{
+        userId: story.rows[0].user_id,
+        type: 'story_reply',
+        category: 'all',
+        title: fresh.name || '@' + fresh.username,
+        body: `Replied to your story: ${text.slice(0, 160)}`,
+        preview: 'Story reply',
+        target: { type: 'story', id: sid, actor_user_id: fresh.id },
+      }])
+    }
     return jsonResponse({reply:{id,username:fresh.username,name:fresh.name,body:text,created_at:new Date().toISOString(),verified:!!fresh.verified}},201)
   }
   if (reply && request.method === 'DELETE') {

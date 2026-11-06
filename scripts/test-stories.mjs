@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 const stories = await readFile(new URL('../src/components/Stories.tsx', import.meta.url), 'utf8')
 const media = await readFile(new URL('../workers/src/routes/media.js', import.meta.url), 'utf8')
 const feed = await readFile(new URL('../workers/src/routes/feed.js', import.meta.url), 'utf8')
+const social = await readFile(new URL('../workers/src/routes/social.js', import.meta.url), 'utf8')
 
 test('viewer derives photo duration from persisted duration_secs', () => {
   assert.match(stories, /duration_secs\)\s*\|\|\s*Number/ )
@@ -39,6 +40,21 @@ test('video stories hide decoration controls (cannot burn into video without re-
   assert.match(stories, /showFilters && !isVideoFile/)
   assert.match(stories, /\.filter\(t => !\(isVideoFile && t\.photoOnly\)\)/)
   assert.match(stories, /new picks reset decorations|setFilter\('Original'\); setTextOverlay\(''\); setStickers\(\[\]\)/)
+})
+
+test('story replies stay with the author instead of rendering on the story', () => {
+  // The viewer used to fetch replies for every member on every story, and the
+  // open panel survived a story change, so reply text appeared publicly and
+  // followed the reader into other people's stories.
+  assert.match(stories, /if \(isStoryAuthor\) void loadReplies\(\)/)
+  assert.match(stories, /setShowReplies\(false\)\s*\n\s*if \(isStoryAuthor\) void loadReplies\(\)/)
+  assert.match(stories, /\{showReplies && isStoryAuthor &&/)
+  assert.doesNotMatch(stories, /\{showReplies && <div/)
+})
+
+test('GET /api/stories/:id/replies is owner/admin only', () => {
+  assert.match(social, /SELECT id, user_id FROM stories WHERE id=\? AND expires_at>\?/)
+  assert.match(social, /exists\.rows\[0\]\.user_id !== fresh\.id && fresh\.role !== 'admin'/)
 })
 
 test('viewer listens to socket-free tap grammar: thirds for prev/next, center pause, hold pause', () => {

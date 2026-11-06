@@ -1,3 +1,5 @@
+> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+
 # Harvest Family — VPS-only Deploy (KES 1k/mo) — Caddy + compose + RPO 24h
 
 > Budget: **KES 1,000/mo fixed**. No managed DB/S3/Redis/transcode SaaS. Offsite is Cloudflare R2 free tier (10 GB free, we use ~1 GB). Cost stays VPS-only.

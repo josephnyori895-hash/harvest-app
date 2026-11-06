@@ -481,7 +481,17 @@ function InnerApp() {
     } else if (notification.type === 'sermon' && target.id) {
       setSearchSermonId(String(target.id))
       setTab('sermons')
-    } else if (notification.type === 'member_joined' || notification.type === 'followed_you' || notification.type === 'you_followed') {
+    } else if (notification.type === 'like' || notification.type === 'comment' || notification.type === 'comment_reply') {
+      // Instagram grammar: the tap lands on the thing that was liked/commented.
+      // Posts have no detail route in this app, so a post comment opens the
+      // member who wrote it instead of a dead link.
+      if (target.type === 'reel' && target.id) { setSearchReelId(String(target.id)); setTab('reels') }
+      else if (target.type === 'sermon' && target.id) { setSearchSermonId(String(target.id)); setTab('sermons') }
+      else {
+        const actor = notification.actor || {}
+        if (actor.username) openProfile({ username: String(actor.username), name: actor.name || String(actor.username), verified: !!actor.verified })
+      }
+    } else if (notification.type === 'story_reply' || notification.type === 'follow' || notification.type === 'member_joined' || notification.type === 'followed_you' || notification.type === 'you_followed') {
       const actor = notification.actor || {}
       if (actor.username) openProfile({ username: String(actor.username), name: actor.name || String(actor.username), verified: !!actor.verified })
     }

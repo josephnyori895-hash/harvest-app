@@ -3,6 +3,7 @@
 import { query, bool } from '../lib/db.js'
 import { jsonResponse, searchParams, errorResponse, readJson } from '../lib/http.js'
 import { requireMember } from '../lib/auth.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 import { hasCap } from '../lib/capabilities.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 
@@ -354,7 +355,7 @@ export async function handleFeed(request, env, ctx) {
     const id = String(body.id || '').slice(0, 64)
     if (!id) return errorResponse('id required', 400)
     const table = scope === 'reel' ? 'reels' : 'posts'
-    const target = await query(env, `SELECT id FROM ${table} WHERE id=? AND approved_at IS NOT NULL`, [id])
+    const target = await query(env, `SELECT id, user_id FROM ${table} WHERE id=? AND approved_at IS NOT NULL`, [id])
     if (!target.rows[0]) return errorResponse('post not found', 404)
     const existing = await query(env, 'SELECT 1 FROM post_likes WHERE user_id=? AND scope=? AND post_id=?', [fresh.id, scope, id])
     let liked
@@ -367,6 +368,19 @@ export async function handleFeed(request, env, ctx) {
       await query(env, `UPDATE ${table} SET likes=likes+1 WHERE id=?`, [id])
       liked = true
     }
+    // Instagram wiring: the owner hears about a like; un-liking stays silent and
+    // nobody is notified for liking their own post.
+    if (liked && target.rows[0].user_id && target.rows[0].user_id !== fresh.id) {
+      void recordNotificationsSafe(env, [{
+        userId: target.rows[0].user_id,
+        type: 'like',
+        category: 'all',
+        title: fresh.name || '@' + fresh.username,
+        body: `Liked your ${scope}.`,
+        preview: scope === 'reel' ? 'Reel' : 'Post',
+        target: { type: scope, id, actor_user_id: fresh.id },
+      }])
+    }
     const current = await query(env, `SELECT likes FROM ${table} WHERE id=?`, [id])
     return jsonResponse({ id, scope, liked, likes: Number(current.rows[0]?.likes) || 0 })
   }
@@ -377,9 +391,9 @@ export async function handleFeed(request, env, ctx) {
   // approved_at gate. The table each kind counts against is declared once here
   // so the counter can never point at the wrong row.
   const COMMENT_TARGETS = {
-    post: { missing: 'post not found', table: 'posts', sql: 'SELECT id FROM posts WHERE id=? AND approved_at IS NOT NULL' },
-    reel: { missing: 'reel not found', table: 'reels', sql: 'SELECT id FROM reels WHERE id=? AND approved_at IS NOT NULL' },
-    sermon: { missing: 'sermon not found', table: 'sermons', sql: 'SELECT id FROM sermons WHERE id=?' },
+    post: { missing: 'post not found', table: 'posts', sql: 'SELECT id, user_id FROM posts WHERE id=? AND approved_at IS NOT NULL' },
+    reel: { missing: 'reel not found', table: 'reels', sql: 'SELECT id, user_id FROM reels WHERE id=? AND approved_at IS NOT NULL' },
+    sermon: { missing: 'sermon not found', table: 'sermons', sql: 'SELECT id, user_id FROM sermons WHERE id=?' },
   }
   const commentScope = raw => (raw === 'reel' || raw === 'sermon' ? raw : 'post')
   const commentTarget = (scope, id) => query(env, COMMENT_TARGETS[scope].sql, [id])
@@ -419,11 +433,13 @@ export async function handleFeed(request, env, ctx) {
     const target = await commentTarget(scope, targetId)
     if (!target.rows[0]) return errorResponse(COMMENT_TARGETS[scope].missing, 404)
     let parentId = null
+    let parentAuthorId = null
     if (body.parent_id) {
-      const p = await query(env, 'SELECT id, post_id, scope, parent_id FROM post_comments WHERE id=?', [String(body.parent_id).slice(0, 64)])
+      const p = await query(env, 'SELECT id, post_id, scope, parent_id, user_id FROM post_comments WHERE id=?', [String(body.parent_id).slice(0, 64)])
       const prow = p.rows[0]
       if (!prow || prow.post_id !== targetId || prow.scope !== scope || prow.parent_id) return errorResponse('invalid parent comment', 400)
       parentId = prow.id
+      parentAuthorId = prow.user_id || null
     }
     const cid = crypto.randomUUID()
     await query(
@@ -433,6 +449,20 @@ export async function handleFeed(request, env, ctx) {
     )
     const col = COMMENT_TARGETS[scope].table
     await query(env, `UPDATE ${col} SET comments = comments + 1 WHERE id=?`, [targetId])
+    // Instagram wiring: a comment notifies the post/reel/sermon owner, a reply
+    // notifies the author of the parent comment. Self-actions never notify.
+    const notifyUserId = parentId ? parentAuthorId : target.rows[0]?.user_id
+    if (notifyUserId && notifyUserId !== fresh.id) {
+      void recordNotificationsSafe(env, [{
+        userId: notifyUserId,
+        type: parentId ? 'comment_reply' : 'comment',
+        category: 'all',
+        title: fresh.name || '@' + fresh.username,
+        body: `${parentId ? 'Replied to your comment' : 'Commented'}: ${text.slice(0, 160)}`,
+        preview: scope === 'sermon' ? 'Sermon comment' : scope === 'reel' ? 'Reel comment' : 'Post comment',
+        target: { type: scope, id: targetId, comment_id: cid, actor_user_id: fresh.id },
+      }])
+    }
     return jsonResponse({ comment: { id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(), verified: !!fresh.verified, likes: 0, liked: false, parent_id: parentId } }, 201)
   }
 

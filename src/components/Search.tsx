@@ -115,6 +115,9 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   const [reels, setReels] = useState<any[] | 'error' | null>(null)
   const [sermons, setSermons] = useState<any[] | 'error' | null>(null)
   const [bump, setBump] = useState(0) // retry counter for failed corpora
+  // Discover is a browse surface, not a member dump: scope chips over a card
+  // rail, with ministries lifted out of the member rows as entry points.
+  const [discoverScope, setDiscoverScope] = useState<'all' | 'verified' | 'ministry'>('all')
 
   const query = q.trim().toLowerCase()
   const showGrid = query === ''
@@ -203,6 +206,29 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
     (u.name || '').toLowerCase().includes(query) ||
     (u.group_name || u.group || '').toLowerCase().includes(query)
   ).sort(byRank(u => [u.name || u.username, u.username])), [users, query])
+
+  const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
+  const myMinistry = useMemo(() => {
+    const mine = users.find(u => u.username === me)
+    return mine?.group_name || mine?.group || ''
+  }, [users, me])
+  // Verified people first, then a stable name order, so the rail is a
+  // deterministic "featured" list instead of raw signup order.
+  const discoverPeople = useMemo(() => {
+    const pool = users.filter(u => u && u.username)
+    const scoped = discoverScope === 'verified' ? pool.filter(u => u.verified)
+      : discoverScope === 'ministry' && myMinistry ? pool.filter(u => (u.group_name || u.group) === myMinistry)
+      : pool
+    return [...scoped].sort((a, b) =>
+      Number(Boolean(b.verified)) - Number(Boolean(a.verified)) ||
+      String(a.name || a.username).localeCompare(String(b.name || b.username))
+    )
+  }, [users, discoverScope, myMinistry])
+  const ministries = useMemo(() => {
+    const counts = new Map<string, number>()
+    users.forEach(u => { const g = u?.group_name || u?.group; if (g) counts.set(g, (counts.get(g) || 0) + 1) })
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
+  }, [users])
 
   const groupHits = useMemo(() => query === '' || !Array.isArray(groups) ? [] : groups.filter(g =>
     (g.name || '').toLowerCase().includes(query) ||
@@ -337,15 +363,82 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
             </div>
           ) : (
           <>
-                    <p className="text-xs text-ink-subtle px-1 mt-3 font-bold uppercase tracking-wider">Suggested • {users.length} members</p>
-          <div className="mt-2 space-y-1">
-            {users.slice(0, 5).map(u => (
-              <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-2 hover:bg-surface-sunken/60 rounded-2xl text-left">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-xs font-extrabold text-accent-strong">{String(u.username)[0].toUpperCase()}</div>
-                <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{u.name || u.username}</p><p className="text-xs text-ink-subtle truncate">@{u.username}{u.group_name ? ` • ${u.group_name}` : ''}</p></div>
-                <span className="text-accent text-sm font-bold shrink-0">View</span>
-              </button>
-            ))}
+          <div className="mt-4 px-1">
+            <div className="flex items-end justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[17px] font-black leading-tight tracking-tight">Discover people</p>
+                <p className="mt-0.5 text-xs text-ink-subtle truncate">
+                  {users.length} member{users.length === 1 ? '' : 's'}
+                  {ministries.length ? ` · ${ministries.length} minister${ministries.length === 1 ? 'y' : 'ies'}` : ''}
+                </p>
+              </div>
+              <button onClick={() => setFilter('members')} className="shrink-0 rounded-full border border-line bg-white px-3 py-1.5 text-2xs font-bold text-accent active:bg-surface-sunken">See all</button>
+            </div>
+
+            {/* Scope chips — the rail answers "who is here?" without a search. */}
+            <div className="mt-2.5 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Discover scope">
+              {([
+                { id: 'all', label: 'Everyone' },
+                { id: 'verified', label: 'Verified' },
+                ...(myMinistry ? [{ id: 'ministry' as const, label: myMinistry }] : []),
+              ] as const).map(c => (
+                <button
+                  key={c.id}
+                  role="tab"
+                  aria-selected={discoverScope === c.id}
+                  onClick={() => setDiscoverScope(c.id)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-2xs font-bold transition ${discoverScope === c.id ? 'bg-accent text-white' : 'bg-white text-ink-muted border border-line'}`}
+                >{c.label}</button>
+              ))}
+            </div>
+
+            {discoverPeople.length ? (
+              <div className="mt-2 flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-2">
+                {discoverPeople.slice(0, 12).map(u => (
+                  <button
+                    key={u.username}
+                    onClick={() => onView(u)}
+                    className="w-[138px] shrink-0 snap-start rounded-3xl border border-line bg-white p-3 text-left shadow-sm transition active:scale-[.98]"
+                    aria-label={`Open ${u.name || u.username}'s profile`}
+                  >
+                    <span className="block w-fit rounded-full bg-gradient-to-tr from-gold to-accent p-[2px]">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-white bg-accent-soft text-sm font-extrabold text-accent-strong">
+                        {String(u.username)[0].toUpperCase()}
+                      </span>
+                    </span>
+                    <span className="mt-2 flex min-w-0 items-center gap-1">
+                      <span className="truncate text-sm font-bold">{u.name || u.username}</span>
+                      {u.verified && <VerifiedBadge size={13} />}
+                    </span>
+                    <span className="block truncate text-2xs text-ink-subtle">@{u.username}</span>
+                    <span className="mt-1.5 block truncate rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-bold text-accent-strong">
+                      {u.group_name || u.group || (u.role === 'admin' ? 'Church admin' : 'Harvest')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 rounded-2xl border border-line bg-white p-4 text-center text-xs text-ink-subtle">
+                {discoverScope === 'ministry' ? `No one else listed under ${myMinistry} yet.` : 'No members to show here yet.'}
+              </p>
+            )}
+
+            {ministries.length > 0 && (
+              <div className="mt-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-ink-subtle">Browse by ministry</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {ministries.map(([name, count]) => (
+                    <button
+                      key={name}
+                      onClick={() => setQ(name)}
+                      className="rounded-full bg-surface-sunken px-3 py-1.5 text-2xs font-bold text-ink-muted active:bg-accent-soft"
+                    >
+                      {name} <span className="text-ink-subtle">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {recentFeed.length > 0 && (
             <div className="mt-4">

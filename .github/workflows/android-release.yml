@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
 
       - name: Install frontend dependencies
@@ -89,6 +89,19 @@ jobs:
         run: |
           echo "HARVEST_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           echo "HARVEST_VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      # The Worker reads the shipped version from the assets, so the
+      # latest-version probe always matches the APK in this deployment. It used
+      # to live only in the deploy-time RELEASE_APK_FILENAME var, which any
+      # plain `wrangler deploy` dropped — after which /api/app-version answered
+      # update_available:false and updates stopped for every install.
+      - name: Write app version manifest
+        run: |
+          set -euo pipefail
+          test -d workers/public || { echo "::error::workers/public was not staged"; exit 1; }
+          printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk"}\n' \
+            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" > workers/public/app-version.json
+          cat workers/public/app-version.json
 
       - name: Sync Capacitor
         run: npx cap sync android

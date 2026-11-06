@@ -6,6 +6,7 @@ const update = readFileSync(new URL('../src/lib/appUpdate.ts', import.meta.url),
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const worker = readFileSync(new URL('../workers/src/index.js', import.meta.url), 'utf8')
 const apkScript = readFileSync(new URL('../update-apk.sh', import.meta.url), 'utf8')
+const workflow = readFileSync(new URL('../.github/workflows/android-release.yml', import.meta.url), 'utf8')
 
 test('the installed build is read from the native package, not from config', () => {
   // Capacitor.Config.versionCode is never injected in this repo, so reading it
@@ -69,4 +70,30 @@ test('Update hands the APK to the system browser, not a WebView popup', () => {
   // (Waydroid: app fell to the launcher, /sdcard/Download stayed empty).
   assert.match(update, /window\.open\(target, native \? '_system' : '_blank', 'noopener'\)/)
   assert.match(update, /const native = Boolean\(Capacitor\.isNativePlatform\?\.\(\)\)/)
+})
+
+test('the shipped version travels with the assets, not with the deploy command', () => {
+  // RELEASE_APK_FILENAME only exists for deploys that pass --var. A plain
+  // `wrangler deploy` (update-apk.sh did exactly that) dropped it, so
+  // /api/app-version answered update_available:false and the permanent APK URL
+  // answered 503 — in-app updates died until the next CI run.
+  assert.match(worker, /app-version\.json/, 'the endpoint reads the manifest from assets')
+  assert.match(worker, /async function readAppVersionManifest/, 'manifest reader exists')
+  assert.match(worker, /async function resolveReleaseApk/, 'the permanent URL resolves its own target')
+  assert.doesNotMatch(worker, /if \(!filename \|\| !\/\^harvest-family-/, 'the hard 503 guard on the deploy var is gone')
+  assert.match(workflow, /app-version\.json/, 'CI writes the manifest')
+  assert.match(apkScript, /app-version\.json/, 'the local release script writes it too')
+})
+
+test('a local build stays below the CI version band', () => {
+  // 1000 + git commit count overtook CI's 1000 + run number, so a locally built
+  // APK claimed to be newer than every release and the phone stopped updating.
+  assert.match(apkScript, /LOCAL_VERSION_CODE=\$\(\( GIT_COMMITS % 900 \)\)/)
+  assert.doesNotMatch(apkScript, /1000 \+ \$\(git rev-list --count HEAD\)/)
+})
+
+test('"Remind me later" snoozes for 24h instead of muting that version forever', () => {
+  // The code-only value made Later permanent and left DISMISS_HOURS unused.
+  assert.match(update, /until: Date\.now\(\) \+ DISMISS_HOURS \* 60 \* 60 \* 1000/)
+  assert.match(update, /return until > Date\.now\(\)/)
 })

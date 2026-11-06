@@ -73,7 +73,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     } catch(e:any){ setViewerError(e?.message||'Could not delete reply') }
   }
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||'Could not load replies'); setReplies(Array.isArray(d.replies)?d.replies:[])} catch(e:any){ setViewerError(e?.message||'Could not load replies')} }
-  const sendReply = async () => { if(!reply.trim()||replyBusy||!s?.username)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json', ...(t?{Authorization:'Bearer '+t}:{}),},body:JSON.stringify({body:reply.trim()})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||'Could not send reply'); setReply(''); setReplySent(true); setTimeout(()=>setReplySent(false),1500); void loadReplies() } catch(e:any){ setViewerError(e?.message||'Could not send reply') } finally { setReplyBusy(false) } }
+  const sendReply = async () => { if(!reply.trim()||replyBusy||!s?.username)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json', ...(t?{Authorization:'Bearer '+t}:{}),},body:JSON.stringify({body:reply.trim()})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||'Could not send reply'); setReply(''); setReplySent(true); setTimeout(()=>setReplySent(false),1500) } catch(e:any){ setViewerError(e?.message||'Could not send reply') } finally { setReplyBusy(false) } }
 
   useEffect(() => {
     const vv = window.visualViewport
@@ -189,7 +189,17 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
     }).catch(() => {})
   }, [s?.id, onViewed])
 
-  useEffect(() => { if (s?.id) { setReplies([]); setReply(''); void loadReplies() } }, [s?.id])
+  // Replies belong to the story owner only (Instagram sends them to the author's
+  // inbox). Opening a story used to fetch them for every member, and the open
+  // panel was not reset when the viewer advanced — so once an author tapped the
+  // replies toggle it stayed open and followed them into other people's stories.
+  useEffect(() => {
+    if (!s?.id) return
+    setReplies([])
+    setReply('')
+    setShowReplies(false)
+    if (isStoryAuthor) void loadReplies()
+  }, [s?.id, isStoryAuthor])
   const loadViews = async () => {
     try {
       const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -335,7 +345,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
             )) : <p className="text-xs text-stone-400">No views yet — they appear here as members watch.</p>}
           </div>
         )}
-        {showReplies && <div onClick={e=>e.stopPropagation()} className="pointer-events-auto max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white">
+        {showReplies && isStoryAuthor && <div onClick={e=>e.stopPropagation()} className="pointer-events-auto max-h-40 overflow-auto rounded-2xl bg-black/80 p-3 text-white">
           {replies.length ? replies.map((r: any) => {
             const canRemove = isAdmin || isStoryAuthor || (r.username && r.username === me)
             return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={() => void deleteReply(String(r.id))} className="text-stone-400">×</button>}</div>

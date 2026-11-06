@@ -14,7 +14,13 @@ BUILD_TYPE="debug"
 [[ "${1:-}" == "--release" ]] && BUILD_TYPE="release"
 
 JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
-HARVEST_VERSION_CODE="${HARVEST_VERSION_CODE:-$((1000 + $(git rev-list --count HEAD)))}"
+# CI stamps 1000 + run number, so a local build has to stay in the low band or
+# it would advertise itself as newer than every release and the phone would stop
+# seeing CI updates. Same scheme as the fallback in android/app/build.gradle.
+GIT_COMMITS="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+LOCAL_VERSION_CODE=$(( GIT_COMMITS % 900 ))
+(( LOCAL_VERSION_CODE < 1 )) && LOCAL_VERSION_CODE=1
+HARVEST_VERSION_CODE="${HARVEST_VERSION_CODE:-$LOCAL_VERSION_CODE}"
 HARVEST_VERSION_NAME="${HARVEST_VERSION_NAME:-1.0.${HARVEST_VERSION_CODE}}"
 export HARVEST_VERSION_CODE HARVEST_VERSION_NAME
 
@@ -41,15 +47,27 @@ else
 fi
 cd ..
 
+echo "▸ 4/6 Staging web app, APK and version manifest…"
 STAGED="workers/downloads/harvest-family.apk"
 cp "android/$SRC" "$STAGED"
+# Worker assets are replaced wholesale on every deploy and the Worker reads the
+# release version from them, so staging here is what keeps in-app updates alive
+# after a local deploy (it used to drop RELEASE_APK_FILENAME, which disabled the
+# update prompt and 503'd the download URL).
+rm -rf workers/public
+mkdir -p workers/public
+cp -r dist/. workers/public/
+rm -f workers/public/_redirects workers/public/_headers
+cp "$STAGED" workers/public/harvest-family.apk
+printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk"}\n' \
+  "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" > workers/public/app-version.json
 
-echo "▸ 4/5 Deploying worker + APK to Cloudflare…"
+echo "▸ 5/6 Deploying worker + APK to Cloudflare…"
 cd workers
 npx wrangler deploy | tail -3
 cd ..
 
-echo "▸ 5/5 Verifying live download…"
+echo "▸ 6/6 Verifying live download…"
 sleep 3
 LIVE_SHA256=$(curl -fsSL --retry 5 --retry-delay 3 -m 120 https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | sha256sum | cut -d' ' -f1)
 LOCAL_SHA256=$(sha256sum "$STAGED" | cut -d' ' -f1)
