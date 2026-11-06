@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../state/auth'
 import { canCreateContent, type ContentType } from '../state/permissions'
-import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
+import { startBackgroundUpload, uploadTooLarge, sermonKindOf } from '../lib/backgroundUploads'
 import { showToast } from './Toast'
 import { presign, uploadToMinio } from '../lib/api'
 import ImageAdjuster, { captureVideoFrame } from './ImageAdjuster'
@@ -137,7 +137,10 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
   const serverTypeOf = (f: File | Blob) => type === 'video' ? 'reel'
     : type === 'music' ? 'track'
-    : type === 'sermon' ? (f.type.startsWith('video/') ? 'sermon_video' : 'sermon_audio')
+    // Kind comes from the file itself, not the reported MIME: an .m4a labelled
+    // video/mp4 by the picker is still sermon audio, and sending it as video
+    // gets it refused at confirm after the whole transfer.
+    : type === 'sermon' ? (sermonKindOf(f) === 'video' ? 'sermon_video' : 'sermon_audio')
     : type
 
   const takeFile = (f: File) => {
@@ -344,7 +347,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-extrabold text-ink">{file ? file.name : type === 'music' ? 'Choose an audio file' : 'Choose an audio or video file'}</span>
-                  <span className="mt-0.5 block text-2xs text-ink-muted">{file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : type === 'music' ? 'Up to 20 MB' : 'Audio up to 2 GB · video up to 5 GB'}</span>
+                  <span className="mt-0.5 block text-2xs text-ink-muted">{file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : type === 'music' ? 'Up to 50 MB' : 'Audio up to 2 GB · video up to 5 GB'}</span>
                 </span>
                 {file && <span className="shrink-0 text-2xs font-bold text-accent">Replace</span>}
               </button>

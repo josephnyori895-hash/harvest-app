@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './Toast'
-import { startBackgroundUpload, getUploadHistory, subscribeUploads, retryUpload, type UploadHistoryEntry } from '../lib/backgroundUploads'
+import { startBackgroundUpload, getUploadHistory, subscribeUploads, retryUpload, sermonKindOf, type UploadHistoryEntry } from '../lib/backgroundUploads'
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
@@ -426,7 +426,8 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
         <div className="px-4 pt-4">
           <div className="rounded-card border border-line bg-surface-raised p-3">
             <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-danger">Last sermon upload failed</p>
-            <p className="mt-1 text-sm font-extrabold text-ink">{failedSermonUpload.detail || 'The transfer did not finish.'}</p>
+            {/* The server's own refusal, verbatim — every upload path preserves it. */}
+            <p className="mt-1 text-sm font-extrabold text-ink">{failedSermonUpload.detail || 'No reason came back from the server — the transfer was cut off. Try again.'}</p>
             <p className="mt-0.5 text-2xs text-ink-muted">{failedSermonUpload.label} · {timeAgo(new Date(failedSermonUpload.at).toISOString())}</p>
             <div className="mt-2.5 flex gap-2">
               <button
@@ -655,15 +656,21 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
               <button onClick={() => !uploading && setUploadOpen(false)} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted" aria-label="Close upload"><Icon name="close" size={17} /></button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'audio' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>MP3 audio</button>
-              <button onClick={() => { setUploadKind('video'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'video' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>MP4 video</button>
+              <button onClick={() => { setUploadKind('audio'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'audio' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>Audio file</button>
+              <button onClick={() => { setUploadKind('video'); setUploadFile(null) }} className={`min-h-11 rounded-xl border text-2xs font-extrabold ${uploadKind === 'video' ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line bg-surface text-ink-muted'}`}>Video file</button>
             </div>
             <input ref={uploadInput} type="file" accept={uploadKind === 'video' ? '.mp4,video/mp4,.mkv,video/x-matroska,.3gp,video/3gpp,.mov,video/quicktime,.m4v,video/x-m4v,.webm,video/webm' : '.mp3,audio/mpeg,.m4a,audio/mp4,.aac,audio/aac,.wav,audio/wav,.ogg,audio/ogg'} onChange={e => {
               const f = e.target.files?.[0] || null
               if (!f) return
               const max = uploadKind === 'video' ? 5 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024
-              const valid = uploadKind === 'video' ? f.type === 'video/mp4' : f.type === 'audio/mpeg' || f.type === 'audio/mp3'
-              if (!valid) { showToast(uploadKind === 'video' ? 'Choose an MP4 video.' : 'Choose an MP3 audio file.', 'error'); e.target.value = ''; return }
+              // Judge the pick by extension first, MIME second: a phone reports
+              // an empty or generic type for a chosen recording, and one that
+              // sends audio/mp4 for a plain .mp3 must not be turned away here.
+              if (sermonKindOf(f) !== uploadKind) {
+                showToast(uploadKind === 'video' ? 'Choose an MP4, MKV, 3GP, MOV or WEBM video.' : 'Choose an MP3, M4A, AAC, WAV or OGG audio file.', 'error')
+                e.target.value = ''
+                return
+              }
               if (f.size > max) { showToast(uploadKind === 'video' ? 'Video is limited to 5 GB.' : 'Audio is limited to 2 GB.', 'error'); e.target.value = ''; return }
               setUploadFile(f)
             }} className="hidden" />

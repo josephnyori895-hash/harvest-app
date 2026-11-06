@@ -436,9 +436,12 @@ export default function Music() {
             </div>
           </div>
           <button onClick={() => audioInputRef.current?.click()} className="w-full rounded-xl border border-dashed border-line bg-surface-sunken px-3 py-3 text-2xs font-bold text-ink-muted">
-            {upFile ? `${upFile.name} · ${(upFile.size / 1024 / 1024).toFixed(1)} MB — tap to change` : 'Choose audio file (MP3, M4A, WAV — up to 20 MB)'}
+            {upFile ? `${upFile.name} · ${(upFile.size / 1024 / 1024).toFixed(1)} MB — tap to change` : 'Choose audio file (MP3, M4A, AAC, WAV, OGG — up to 50 MB)'}
           </button>
-          <input ref={audioInputRef} type="file" accept="audio/mpeg,audio/mp3,audio/m4a,audio/x-m4a,audio/mp4,audio/wav,audio/aac,audio/ogg" onChange={e => setUpFile(e.target.files?.[0] || null)} className="hidden" />
+          {/* MIME names only left an .m4a the device reports as an empty or
+              generic type greyed out in the picker — the extensions keep every
+              format the server accepts selectable. */}
+          <input ref={audioInputRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.wav" onChange={e => setUpFile(e.target.files?.[0] || null)} className="hidden" />
           {upBusy && <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken"><div className="h-full bg-accent transition-all" style={{ width: `${upPct}%` }} /></div>}
           <button onClick={() => void submitUpload()} disabled={upBusy || !upFile || !upTitle.trim()} className="min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-40">
             {upBusy ? `Uploading… ${upPct}%` : 'Add to library'}

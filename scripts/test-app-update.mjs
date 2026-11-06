@@ -5,6 +5,7 @@ import test from 'node:test'
 const update = readFileSync(new URL('../src/lib/appUpdate.ts', import.meta.url), 'utf8')
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const worker = readFileSync(new URL('../workers/src/index.js', import.meta.url), 'utf8')
+const apkScript = readFileSync(new URL('../update-apk.sh', import.meta.url), 'utf8')
 
 test('the installed build is read from the native package, not from config', () => {
   // Capacitor.Config.versionCode is never injected in this repo, so reading it
@@ -50,6 +51,17 @@ test('the check runs on open, not only after sign-in', () => {
   const onboardingReturn = app.indexOf('if (!onboarded) return')
   const gate = app.indexOf('<UpdateGate>')
   assert.ok(gate > 0 && onboardingReturn > 0, 'both the branch and the gate exist')
+})
+
+test('the APK build bakes an API origin, so the check can reach the Worker', () => {
+  // RS-137: update-apk.sh built the web bundle without VITE_API_URL. Inside the
+  // WebView every relative /api call then resolves to Capacitor's local server,
+  // so checkForUpdate could not parse a manifest and always answered
+  // available:false — an APK from the documented local script never prompted.
+  // The GitHub workflow exported this; the script must match it.
+  assert.match(apkScript, /export VITE_API_URL="\$\{VITE_API_URL:-https:\/\/harvestfamily-api\.harvestfamily\.workers\.dev\}"/,
+    'the local release script exports the API origin before building')
+  assert.ok(apkScript.indexOf('VITE_API_URL') < apkScript.indexOf('npm run build'), 'the origin is set before vite runs')
 })
 
 test('Update hands the APK to the system browser, not a WebView popup', () => {

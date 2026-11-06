@@ -18,6 +18,12 @@ HARVEST_VERSION_CODE="${HARVEST_VERSION_CODE:-$((1000 + $(git rev-list --count H
 HARVEST_VERSION_NAME="${HARVEST_VERSION_NAME:-1.0.${HARVEST_VERSION_CODE}}"
 export HARVEST_VERSION_CODE HARVEST_VERSION_NAME
 
+# The APK must bake the API origin. Without it, the WebView's relative /api
+# calls resolve to Capacitor's local server, so the app cannot reach the backend
+# and the update check always answers available:false — a locally built APK
+# would never prompt. The GitHub release workflow exports this; match it here.
+export VITE_API_URL="${VITE_API_URL:-https://harvestfamily-api.harvestfamily.workers.dev}"
+
 echo "▸ 1/5 Building web app (Vite)…"
 npm run build --silent
 

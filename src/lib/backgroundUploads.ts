@@ -202,6 +202,14 @@ export function xhrSend(url: string, method: string, body: FormData | Blob | nul
   })
 }
 
+// R2 answers with an S3 XML error carrying the real sentence in <Message>.
+// This Worker answers with JSON. Both are the server's own words, so neither is
+// thrown away: a failed upload must be able to say exactly what was refused.
+function xmlMessage(xml: string): string {
+  const m = /<Message>([\s\S]*?)<\/Message>/.exec(String(xml || ''))
+  return m ? m[1].trim() : ''
+}
+
 // Small JSON fetch helper for presign/confirm calls inside a job.
 export async function apiJson(url: string, token: string, body: unknown, method = 'POST') {
   const r = await fetch(url, {
@@ -209,8 +217,11 @@ export async function apiJson(url: string, token: string, body: unknown, method 
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error((data as any)?.error || `request failed (${r.status})`)
+  // Read once as text: the reason is JSON from this Worker and XML from R2.
+  const text = await r.text().catch(() => '')
+  let data: any = {}
+  try { data = JSON.parse(text) } catch { /* not JSON */ }
+  if (!r.ok) throw new Error(data?.error || xmlMessage(text) || `request failed (${r.status})`)
   return data
 }
 
@@ -227,6 +238,24 @@ const MIME_BY_EXT: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm',
   mkv: 'video/x-matroska', '3gp': 'video/3gpp', '3gpp': 'video/3gpp', avi: 'video/x-msvideo', mpeg: 'video/mpeg', mpg: 'video/mpeg',
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic',
+}
+
+const AUDIO_EXTS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'oga', 'wav'])
+const VIDEO_EXTS = new Set(['mp4', 'm4v', 'mov', 'webm', 'mkv', '3gp', '3gpp', 'avi', 'mpeg', 'mpg'])
+
+/** Which side of the sermon library a picked file belongs to. The device's
+ *  reported MIME is trusted last: Android hands back an empty or generic type
+ *  for a chosen recording, and some pickers label an .m4a as video/mp4 — so a
+ *  recognised extension decides first, and the MIME family only as a fallback. */
+export function sermonKindOf(file: File | Blob): 'audio' | 'video' | null {
+  const name = (file as File).name || ''
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  if (AUDIO_EXTS.has(ext)) return 'audio'
+  if (VIDEO_EXTS.has(ext)) return 'video'
+  const mime = String(file.type || '').toLowerCase().split(';')[0].trim()
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime.startsWith('video/')) return 'video'
+  return null
 }
 
 type PresignResponse = { url: string; fields?: Record<string, string>; key: string; method?: string }
@@ -263,7 +292,8 @@ function uploadError(up: { status: number; body: string }): Error {
   try {
     const parsed = JSON.parse(up.body || '{}')
     if (parsed && typeof parsed.error === 'string') reason = parsed.error
-  } catch { /* XML error body, not a server explanation */ }
+  } catch { /* not JSON — R2 sends XML */ }
+  if (!reason) reason = xmlMessage(up.body)
   if (reason) return new Error(reason)
   if (up.status === 403) return new Error('storage link expired — retrying')
   return new Error(up.status >= 500 || up.status === 429 ? `server busy (${up.status})` : `upload rejected (${up.status})`)
@@ -357,6 +387,19 @@ async function uploadChunked(
   return state.key
 }
 
+/** The content type an upload must declare. The extension wins whenever it is
+ *  one we know and the reported MIME's family disagrees: a picker that calls an
+ *  .m4a "video/mp4" would otherwise get the whole file refused at presign.
+ *  Same-family detail (audio/x-wav) is kept as reported, so nothing valid is
+ *  overridden. Shared with the admin media console so every upload path agrees. */
+export function resolveUploadMime(file: File | Blob, filename?: string): string {
+  const extType = MIME_BY_EXT[extOf(file, filename)]
+  const reported = String(file.type || '').toLowerCase().split(';')[0].trim()
+  if (!reported || reported === 'application/octet-stream') return extType || 'application/octet-stream'
+  if (extType && reported.split('/')[0] !== extType.split('/')[0]) return extType
+  return reported
+}
+
 async function uploadOne(
   file: File | Blob,
   type: UploadKind | 'post',
@@ -366,9 +409,7 @@ async function uploadOne(
   pctTo: number,
   idempotencyKey: string,
 ): Promise<string> {
-  const declaredType = file.type && file.type !== 'application/octet-stream'
-    ? file.type
-    : (MIME_BY_EXT[extOf(file, filename)] || 'application/octet-stream')
+  const declaredType = resolveUploadMime(file, filename)
   const span = (p: number) => onPct(pctFrom + Math.round(p * (pctTo - pctFrom)))
   if (file.size > CHUNK_THRESHOLD) {
     try {

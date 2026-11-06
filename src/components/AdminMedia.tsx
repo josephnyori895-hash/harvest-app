@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ErrorMessage from './ErrorMessage'
 import { Icon } from '../ui'
 import { timeAgo } from '../lib/time'
+import { resolveUploadMime } from '../lib/backgroundUploads'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Item = {
@@ -23,7 +24,10 @@ async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track'
   const token = localStorage.getItem('harvest_token') || ''
   const presignResponse = await fetch(`${API}/api/media/presign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ type, contentType: file.type, bytes: file.size, ext: (file.name.split('.').pop() || 'bin').toLowerCase() }),
+    // Resolve the type the way every other upload path does: a picked .m4a is
+    // often reported as an empty type or video/mp4, and either one is refused
+    // at presign before the transfer starts.
+    body: JSON.stringify({ type, contentType: resolveUploadMime(file, file.name), bytes: file.size, ext: (file.name.split('.').pop() || 'bin').toLowerCase() }),
   })
   const presign = await presignResponse.json().catch(() => ({}))
   if (!presignResponse.ok) throw new Error(presign.error || 'Unable to prepare upload')
@@ -38,7 +42,14 @@ async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track'
     body: form,
     headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
   })
-  if (!up.ok) throw new Error('Upload failed — check your connection and file size')
+  if (!up.ok) {
+    // The server names the refusal (format not allowed, over the cap, no
+    // permission). A generic message here hides the one thing that can be acted on.
+    const text = await up.text().catch(() => '')
+    let reason = ''
+    try { reason = String(JSON.parse(text)?.error || '') } catch { /* XML or plain body */ }
+    throw new Error(reason || `Upload failed (${up.status}) — check your connection and file size`)
+  }
   const confirm = await fetch(`${API}/api/media/confirm`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ key: presign.key, type, caption: meta.caption, title: meta.title, artist: meta.artist }),

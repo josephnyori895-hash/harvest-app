@@ -83,6 +83,36 @@ assert.match(sermons, /hash\.toString\(16\)/, 'the key is hex, so the server san
 assert.ok(sermons.includes('`${file.name}|${file.size}|${file.lastModified || 0}`'), 'identity spans name, size and mtime')
 assert.match(sermons, /retryUpload\(failedSermonUpload\.id\)/, 'a failed sermon is retried from the banner')
 
+// RS-135: the sermon picker advertised MP3/M4A/AAC/WAV/OGG and MP4/MKV/3GP/MOV,
+// then gated on an exact MIME string (audio/mpeg, audio/mp3, video/mp4). A phone
+// reports an empty or generic type for a chosen recording and labels .m4a as
+// audio/mp4, so valid recordings were refused before any transfer started.
+// Classification is extension-first, with the MIME family only as a fallback.
+assert.match(sermons, /sermonKindOf\(f\) !== uploadKind/, 'the picker classifies the pick instead of matching one MIME')
+assert.doesNotMatch(sermons, /f\.type === 'audio\/mpeg'/, 'no exact-MIME gate on audio picks')
+assert.doesNotMatch(sermons, /f\.type === 'video\/mp4'/, 'no exact-MIME gate on video picks')
+assert.match(uploads, /export function sermonKindOf/, 'one helper owns audio-vs-video classification')
+assert.match(uploads, /AUDIO_EXTS\.has\(ext\)/, 'a recognised audio extension decides first')
+assert.ok(/export function resolveUploadMime[\s\S]*?reported\.split\('\/'\)\[0\] !== extType\.split\('\/'\)\[0\]/.test(uploads), 'a wrong MIME family is overridden by the extension')
+assert.match(postCreate, /sermonKindOf\(f\) === 'video'/, 'the composer uses the same classification')
+
+// RS-136: the worship track path had the same type-gate problem. The admin
+// console sent the picker's raw MIME (empty, octet-stream, or video/mp4 for an
+// .m4a) straight to presign and then replaced the server's refusal with a
+// generic sentence; the worship room's picker offered MIME names only, and its
+// size hint claimed a 20 MB ceiling the server does not enforce.
+const adminMedia = await readFile(new URL('../src/components/AdminMedia.tsx', import.meta.url), 'utf8')
+const music = await readFile(new URL('../src/components/Music.tsx', import.meta.url), 'utf8')
+assert.match(uploads, /export function resolveUploadMime/, 'one helper resolves the declared content type')
+assert.match(adminMedia, /resolveUploadMime\(file, file\.name\)/, 'the admin console resolves the upload type')
+assert.match(adminMedia, /JSON\.parse\(text\)\?\.error/, 'the admin console surfaces the server refusal')
+assert.doesNotMatch(adminMedia, /contentType: file\.type/, 'no raw picker MIME is sent to presign')
+assert.match(uploads, /if \(!reason\) reason = xmlMessage\(up\.body\)/, 'an R2 XML refusal keeps its message')
+assert.match(uploads, /xmlMessage\(text\)/, 'a non-JSON refusal keeps its message at presign')
+assert.match(music, /\.m4a,/, 'the worship picker lists extensions, not MIME names only')
+assert.doesNotMatch(music, /up to 20 MB/, 'the size hint no longer undercuts the server ceiling')
+assert.match(music, /up to 50 MB/, 'the size hint matches the server ceiling')
+
 // RS-102: the composer hands off and closes. It must not wait for the manager
 // promise — the retry ladder runs 15s -> 10m across five attempts, and a task
 // restored from IndexedDB after a restart has no promise to settle at all — and
