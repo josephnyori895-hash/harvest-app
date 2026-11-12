@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
 import { Icon } from '../ui'
+import { useModalFocus } from '../lib/useModalFocus'
 import { VerifiedBadge } from './VerifiedBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -201,8 +202,13 @@ export default function Comments({
 
   const total = comments.length
 
+  // The sheet is a dialog: focus moves in, Tab is trapped, Escape closes, focus
+  // returns to the comment button, and the feed behind stops scrolling.
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useModalFocus(true, sheetRef, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-label="Comments">
+    <div ref={sheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-label="Comments">
       <div
         className="comments-sheet flex max-h-[min(82dvh,720px)] w-full min-h-0 flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-raised sm:max-w-lg sm:rounded-3xl"
         onClick={e => e.stopPropagation()}

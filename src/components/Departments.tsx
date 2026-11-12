@@ -276,14 +276,14 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     const canManage = isAdmin || isDepartmentLeader
     return (
       <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line px-3 bg-surface z-10">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted" aria-label="Back"><Icon name="arrow-left" size={19} /></button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
           {detail?.department?.slug && <button onClick={() => (detail.department.joined ? void leave(detail.department.slug) : void join(detail.department.slug))} disabled={busy === detail.department.slug} className={`min-h-9 rounded-full px-3 text-2xs font-extrabold ${detail.department.joined ? 'border border-line bg-surface-sunken text-ink-muted' : 'bg-accent text-white'}`}>{detail.department.joined ? 'Leave' : 'Join'}</button>}
           {canManage && detail?.department && <button onClick={() => setEditing(v => !v)} className="grid h-10 w-10 place-items-center rounded-full border border-line bg-surface-raised text-ink-muted" aria-label="Department settings" title="Department settings"><Icon name="pencil" size={17} /></button>}
         </div>
         {!detail ? <p className="py-10 text-center text-sm text-ink-muted">Loading…</p> : (
-          <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
+          <div className="department-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] space-y-2">
             {editing && canManage ? (
               <div className="mb-3 rounded-xl border border-gold bg-surface-raised p-3">
                 <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Department settings</p>

@@ -378,7 +378,7 @@ export default function Music() {
   const playingNow = Boolean(activeTrack)
   return (
     <div className="min-h-[calc(100dvh-72px)] bg-surface pb-28 text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 px-4 pb-3 pt-4 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/95 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-xl font-extrabold tracking-tight">Worship</h1>
@@ -566,7 +566,7 @@ export default function Music() {
 
       {/* Persistent mini-player — stays while browsing tabs, seekable, dismissible */}
       {playingNow && (
-        <div className="fixed inset-x-0 bottom-[calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))+124px)] z-30 px-3">
+        <div className="fixed inset-x-0 bottom-[calc(var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))+124px)] z-30 px-3">
           <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-sunken">

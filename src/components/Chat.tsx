@@ -153,7 +153,7 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
-export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser }: {
+export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, compact = false }: {
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
@@ -163,6 +163,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
   onOpenUser?: (user: any) => void
+  /** Rendered inside the small floating DM card: drop the brand eyebrow and
+      the community/avatar rails so the header does not eat the whole card. */
+  compact?: boolean
 }) {
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
@@ -832,7 +835,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <div className="flex min-w-0 items-center gap-2">
               <button type="button" onClick={onBack} className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink lg:hidden" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
               <div className="min-w-0">
-                <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family</p>
+                {!compact && <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family</p>}
                 <h1 className="truncate text-xl font-extrabold text-ink">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
               </div>
             </div>
@@ -860,10 +863,13 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       ) : tab === 'inbox' ? (
         <>
           {/* Team chats: your departments + groups, always at the top of the inbox. */}
-          <TeamChatsRail
-            onOpen={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
-          />
-          {/* Instagram-style avatar rail */}
+          {!compact && (
+            <TeamChatsRail
+              onOpen={(t) => { setError(''); setActive(null); setReplyTo(null); setReactingFor(null); setActionFor(null); setTeam(t); setChatView('chats') }}
+            />
+          )}
+          {/* Instagram-style avatar rail — only when there is someone to show. */}
+          {!compact && inbox.length > 0 && (
           <section className="border-b border-line px-4 pb-1 pt-4">
             <div className="flex gap-4 overflow-x-auto pb-3">
               {inbox.slice(0, 12).map(c => (
@@ -877,6 +883,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               ))}
             </div>
           </section>
+          )}
           {/* Search + tab pill row */}
           <section className="border-b border-line px-4 py-3">
             <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2.5">
@@ -1245,7 +1252,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
 
   return (
     <main className="flex h-full min-h-0 w-full overflow-hidden bg-surface text-ink">
-      <div className="flex h-full w-full flex-col overflow-y-auto overflow-x-hidden lg:w-[336px] lg:shrink-0 lg:border-r lg:border-line">
+      <div className="flex h-full w-full flex-col overflow-y-auto overflow-x-hidden overscroll-contain lg:w-[336px] lg:shrink-0 lg:border-r lg:border-line">
         {inboxPane}
       </div>
       <div className="hidden flex-1 items-center justify-center px-10 lg:flex">

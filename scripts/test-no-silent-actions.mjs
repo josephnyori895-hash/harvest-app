@@ -51,6 +51,6 @@ test('the signup group select never displays a choice the state does not hold', 
   // member could not satisfy — the display was a lie. The placeholder keeps
   // display == state, and the validator gate stays pinned.
   assert.match(app, /Choose your congregation…/, 'honest placeholder sits first when nothing is chosen')
-  assert.match(app, /if \(!form\.group_name\) \{/, 'the validator still refuses an unchosen group')
+  assert.match(app, /if \(!f\.group_name\)/, 'the validator still refuses an unchosen group')
   assert.match(app, /value=\{form\.group_name\}/)
 })

@@ -14,6 +14,7 @@ import SocialEditor from './SocialEditor'
 import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
 import { Icon, Spinner, type IconName } from '../ui'
+import { useModalFocus } from '../lib/useModalFocus'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
@@ -46,7 +47,7 @@ const quickLinks: { tab: string; icon: IconName; title: string }[] = [
   { tab: 'give', icon: 'gift', title: 'Give' },
 ]
 
-export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, refreshKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; refreshKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
+export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [likesTick, setLikesTick] = useState(0)
@@ -58,6 +59,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [showNoPastor, setShowNoPastor] = useState(false)
   const [editPost, setEditPost] = useState<any | null>(null)
   const [menuPost, setMenuPost] = useState<{ key: string; kind: 'post' | 'reel'; id: string; user: string; caption: string; mine: boolean } | null>(null)
+  // The post options sheet is a dialog too: focus in, Tab trapped, Escape out.
+  const postMenuRef = useRef<HTMLDivElement>(null)
+  useModalFocus(!!menuPost, postMenuRef, () => setMenuPost(null))
   // Admin-editable home content (hero banner + weekly verse). Falls back to
   // the shipped defaults when the fetch fails or values are not set.
   const [content, setContent] = useState<Record<string, string>>({})
@@ -280,13 +284,24 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [api])
 
+  // Choosing Home lands on the newest thing in the feed (the latest post, reel
+  // or campaign card), not on whatever scroll position was left behind. Runs
+  // after paint so the first card can be measured once the tab is visible.
   useEffect(() => {
-    if (!refreshKey) return
-    setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedTick(x => x + 1)
-    containerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-    showToast('Community refreshed', 'success', 1200)
-    const t = setTimeout(() => setRefreshing(false), 700); return () => clearTimeout(t)
-  }, [refreshKey])
+    if (!focusLatestKey) return
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        const c = containerRef.current
+        if (!c) return
+        const target = c.querySelector('[data-post-id]') || c.querySelector('#home-community')
+        if (!target) { c.scrollTo({ top: 0, behavior: 'smooth' }); return }
+        const top = target.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 8
+        c.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' })
+      })
+    })
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+  }, [focusLatestKey])
 
   // Map API rows onto the card shape this screen already renders.
   const liveMoments = useMemo(() => liveStories.map((s: any) => ({
@@ -713,7 +728,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </section>
       )}
 
-      <section className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div><div className="-mx-4 divide-y divide-line border-t border-line">{!feedLoaded && !feedLoadFailed && [0, 1].map(i => (
+      <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div><div className="-mx-4 divide-y divide-line border-t border-line">{!feedLoaded && !feedLoadFailed && [0, 1].map(i => (
           <div key={`sk_${i}`} className="bg-surface py-4" aria-hidden="true">
             <div className="flex items-center gap-2.5 px-3">
               <div className="skeleton h-8 w-8 rounded-full" />
@@ -760,7 +775,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </div>
     </main>
     {menuPost && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 backdrop-blur-sm" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
+      <div ref={postMenuRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 outline-none backdrop-blur-sm" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
         <div className="w-full rounded-t-[24px] border-t border-line bg-surface-raised p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shadow-raised sm:max-w-lg sm:rounded-[24px]" onClick={e => e.stopPropagation()}>
           <div className="mx-auto my-2 h-1 w-10 rounded-full bg-line" />
           {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-ink transition hover:bg-surface-sunken active:bg-surface-sunken"><Icon name="copy" size={17} className="text-ink-muted" /> Edit caption</button> : null}

@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState, useEffect, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react'
+import { useModalFocus } from './lib/useModalFocus'
 import { AuthProvider, useAuth } from './state/auth'
 import { useCongregations } from './lib/useCongregations'
 import Home from './components/Home'
@@ -170,7 +171,7 @@ function UpdateGate({ children }) {
   return (
     <>
       {update && !hidden && (
-        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-ink text-white shadow-2xl border border-accent/40 flex items-center gap-3">
+        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-ink text-white shadow-2xl border border-accent/40 flex items-center gap-3">
           <Icon name="sparkle" size={22} className="shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
@@ -191,6 +192,14 @@ function UpdateGate({ children }) {
   )
 }
 
+// The app's floating panels — the notifications inbox and the DM card — are
+// dialogs, so they behave like one: focus moves inside on open, Tab is trapped,
+// Escape closes, and focus goes back to whatever opened it. Without this the
+// feed behind the card kept the focus and nothing was reachable by keyboard.
+// A stacked overlay (a comment sheet, an image viewer) keeps Escape for itself
+// while it is the topmost dialog. The behaviour itself lives in
+// src/lib/useModalFocus so the comment and post options sheets share it.
+
 function InnerApp() {
   const { setUsername, setRole, setVerified, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
@@ -204,7 +213,21 @@ function InnerApp() {
   const [notificationActionError, setNotificationActionError] = useState(null)
   const [notificationPendingIds, setNotificationPendingIds] = useState(() => new Set())
   const [notificationMarkAllPending, setNotificationMarkAllPending] = useState(false)
+  // Paging: the inbox shows the newest page and asks for older activity as the
+  // member scrolls, so a year of activity is reachable instead of only the
+  // first screenful.
+  const [notificationsNextOffset, setNotificationsNextOffset] = useState(0)
+  const [notificationsHasMore, setNotificationsHasMore] = useState(false)
+  const [notificationsLoadingMore, setNotificationsLoadingMore] = useState(false)
+  // Scroll handoff can fire twice before React re-renders; guard synchronously.
+  const notificationsPagingRef = useRef(false)
   const notificationMutationQueueRef = useRef(Promise.resolve())
+  const dmLayerRef = useRef(null)
+  const notificationsDrawerRef = useRef(null)
+  // One derivation for the badge, the bell's label and the panel's mark-all
+  // button — the count used to be recomputed three times a render, which is
+  // how the label and the visible badge drift apart.
+  const unreadCount = useMemo(() => notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0), [notifications])
   const activityReadRef = useRef(null)
   const activityReadSet = () => (activityReadRef.current ||= loadActivityRead())
   // Re-apply locally recorded reads whenever activity rows are merged, so the
@@ -227,7 +250,9 @@ function InnerApp() {
       return null
     } catch { return null }
   })
-  const [homeRefresh, setHomeRefresh] = useState(0)
+  // Bumped whenever Home is chosen from the nav, so the feed can take the
+  // member to the newest post instead of leaving them wherever they were.
+  const [homeFocusKey, setHomeFocusKey] = useState(0)
   useEffect(() => {
     if (!sharedContent) return
     if (sharedContent.kind === 'reel') setTab('reels')
@@ -277,11 +302,14 @@ function InnerApp() {
       const el = document.querySelector('.app-content')
       if (el && el.scrollTop > 0) scrollMemoryRef.current[tab] = el.scrollTop
     }
-    if (t === 'home' && tab === 'home') setHomeRefresh(x=>x+1)
+    if (t === 'home') setHomeFocusKey(x => x + 1)
     if (t === 'chat' && tab !== 'chat') {
       setChatReturnTab(tab)
       setTeamChat(null)
     }
+    // The nav sits above the drawer, so leaving it open across a tab switch
+    // landed an old inbox over a new screen. Close it with the navigation.
+    if (t !== tab) setShowNotifications(false)
     setTab(t)
   }
   const [viewUser, setViewUser] = useState(null)
@@ -354,11 +382,13 @@ function InnerApp() {
     if (!onboarded) return
     let cancelled = false
     setNotificationsLoading(true)
-    fetch(`${API}/api/notifications`, { headers: authHeaders() })
+    fetch(`${API}/api/notifications?limit=40`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(d => {
         if (cancelled) return
         setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+        setNotificationsNextOffset(Number(d?.nextOffset) || 0)
+        setNotificationsHasMore(Boolean(d?.hasMore))
         setNotificationsError(null)
       })
       .catch(() => { if (!cancelled) setNotificationsError('Notifications are unavailable right now.') })
@@ -382,20 +412,52 @@ function InnerApp() {
   const refreshNotifications = async (silent = false) => {
     if (!silent) setNotificationsRefreshing(true)
     try {
-      const r = await fetch(`${API}/api/notifications`, { headers: authHeaders() })
-      if (r.ok) {
-        const d = await r.json()
-        setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
-        // A transient failure used to leave "unavailable" on screen forever.
-        setNotificationsError(null)
-      }
+      const r = await fetch(`${API}/api/notifications?limit=40`, { headers: authHeaders() })
+      if (!r.ok) throw new Error(String(r.status))
+      const d = await r.json()
+      setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+      setNotificationsNextOffset(Number(d?.nextOffset) || 0)
+      setNotificationsHasMore(Boolean(d?.hasMore))
+      // A transient failure used to leave "unavailable" on screen forever.
+      setNotificationsError(null)
       const fam = await fetchFamilyActivity().catch(() => null)
       if (fam) setNotifications(prev => {
         const seen = new Set(prev.map(n => String(n.id)))
         return [...withLocalRead(fam).filter(n => !seen.has(String(n.id))), ...prev]
       })
-    } catch { /* keep the last good list */ }
-    if (!silent) setNotificationsRefreshing(false)
+    } catch {
+      // Never fail silently: the last good list stays, the panel shows its
+      // "couldn't refresh" banner with a retry, and a stale badge is visible
+      // instead of being mistaken for a live one.
+      setNotificationsError('Notifications are unavailable right now.')
+    } finally {
+      if (!silent) setNotificationsRefreshing(false)
+    }
+  }
+
+  const loadMoreNotifications = async () => {
+    if (notificationsPagingRef.current || !notificationsHasMore) return
+    notificationsPagingRef.current = true
+    setNotificationsLoadingMore(true)
+    try {
+      const r = await fetch(`${API}/api/notifications?limit=40&offset=${notificationsNextOffset}`, { headers: authHeaders() })
+      if (!r.ok) throw new Error(String(r.status))
+      const d = await r.json()
+      const incoming = Array.isArray(d?.notifications) ? d.notifications : []
+      setNotifications(prev => {
+        // Family activity is merged into this list locally, so dedupe by id
+        // rather than trusting the server page to be non-overlapping.
+        const seen = new Set(prev.map(n => String(n.id)))
+        return [...prev, ...incoming.filter(n => !seen.has(String(n.id)))]
+      })
+      setNotificationsNextOffset(Number(d?.nextOffset) || notificationsNextOffset + incoming.length)
+      setNotificationsHasMore(Boolean(d?.hasMore))
+    } catch {
+      setNotificationActionError('Couldn’t load older notifications. Check your connection and try again.')
+    } finally {
+      notificationsPagingRef.current = false
+      setNotificationsLoadingMore(false)
+    }
   }
 
   // The badge has to be live. Loading the inbox only at sign-in and when the
@@ -407,7 +469,9 @@ function InnerApp() {
     const tick = () => {
       if (busy || document.visibilityState === 'hidden') return
       busy = true
-      void refreshNotifications(true).finally(() => { busy = false })
+      // Ride the same queue as the read mutations: a poll that resolves after
+      // a mark-read POST must not put the row back to unread.
+      void enqueueNotificationMutation(() => refreshNotifications(true)).finally(() => { busy = false })
     }
     const onVisible = () => { if (document.visibilityState === 'visible') tick() }
     const id = window.setInterval(tick, 60_000)
@@ -420,6 +484,9 @@ function InnerApp() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarded])
+
+  useModalFocus(showNotifications, notificationsDrawerRef, () => setShowNotifications(false))
+  useModalFocus(dmSheet, dmLayerRef, () => setDmSheet(false), () => document.querySelector('[data-testid="chat-fab"]'))
 
   const markAllNotificationsRead = async () => {
     if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
@@ -462,9 +529,12 @@ function InnerApp() {
     })
   }
 
-  const handleNotificationPress = (notification) => {
+  const handleNotificationPress = (notification, alsoIds = []) => {
     if (!notification) return
     if (!notification.read_at) void markNotificationRead(notification.id)
+    // Aggregated rows ("Joy and 3 others liked") stand for several records;
+    // opening one marks all of them read so the badge cannot disagree.
+    for (const id of alsoIds) void markNotificationRead(id)
     const target = notification.target || {}
     if (target.type === 'chat' && target.user_id) {
       openDm({ id: target.user_id, username: target.peer_username || target.username, name: target.peer_name || target.name })
@@ -682,18 +752,22 @@ function InnerApp() {
       {/* Fluid on phones; on desktop the content column sits beside the rail
           instead of stretching a phone layout across the whole window. */}
       <div className="app-shell relative mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[560px] xl:max-w-[620px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+        {/* absolute, not fixed: the content column is centred beside the desktop
+            rail, so a viewport-anchored bell floated in the empty page margin —
+            far from the drawer it opens. */}
         <button
           type="button"
           onClick={() => setShowNotifications(v => { const next = !v; if (next) void refreshNotifications(); return next })}
-          aria-pressed={showNotifications}
-          aria-label={showNotifications ? 'Close notifications' : `Notifications${notifications.some(n => !n.read_at) ? `, ${notifications.filter(n => !n.read_at).length} unread` : ''}`}
-          className="fixed right-3 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface text-ink shadow-card focus:outline-none focus-visible:ring-2"
+          aria-expanded={showNotifications}
+          aria-controls="notifications-drawer"
+          aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+          className="absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface text-ink shadow-card focus:outline-none focus-visible:ring-2"
           style={{ top: 'calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 8px)' }}
         >
           <Icon name="bell" size={20} />
-          {notifications.some(n => !n.read_at) && (
-            <span className="absolute -right-0.5 -top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger px-1 text-2xs font-bold leading-none text-white">
-              {notifications.filter(n => !n.read_at).length > 99 ? '99+' : notifications.filter(n => !n.read_at).length}
+          {unreadCount > 0 && (
+            <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger px-1 text-2xs font-bold leading-none text-white">
+              {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
         </button>
@@ -703,7 +777,7 @@ function InnerApp() {
               scroll position and loaded feed state survive the round-trip —
               the IG feel. Other tabs still mount on demand. */}
           <div className={tab === 'home' ? 'contents' : 'hidden'}>
-            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} refreshKey={homeRefresh} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />
+            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} focusLatestKey={homeFocusKey} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />
           </div>
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
@@ -768,15 +842,17 @@ function InnerApp() {
             data-testid="notifications-drawer-backdrop"
             className="absolute inset-0 z-20 cursor-default bg-ink/30 backdrop-blur-[2px]"
           />
-          {/* A floating card anchored to the right edge — inset from the top
-              bar and the bottom bar on phones, a 400px panel on wider
-              surfaces. Never edge-to-edge full height: the feed, header and
-              nav stay visible around it. */}
+          {/* Phone: the Activity experience — full width, from under the bell to
+              the top of the tab bar, no floating-card margin. Desktop keeps the
+              compact dropdown beside the feed. */}
           <div
             id="notifications-drawer"
+            ref={notificationsDrawerRef}
             role="dialog"
+            aria-modal="true"
             aria-label="Notifications drawer"
-            className="drawer-anim absolute inset-x-2 top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+56px)] bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-2 sm:w-[400px] lg:top-[72px]"
+            tabIndex={-1}
+            className="drawer-anim absolute inset-x-0 top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top))+56px)] bottom-[calc(var(--safe-area-inset-bottom,0px)+60px)] z-30 flex flex-col overflow-hidden border-y border-line bg-surface outline-none sm:inset-x-auto sm:right-3 sm:bottom-auto sm:h-[min(70dvh,560px)] sm:w-[380px] sm:rounded-3xl sm:border sm:shadow-2xl lg:top-[72px]"
           >
             <NotificationsScreen
               notifications={notifications}
@@ -785,7 +861,7 @@ function InnerApp() {
               refreshing={notificationsRefreshing}
               error={notificationsError}
               actionError={notificationActionError}
-              unreadCount={notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0)}
+              unreadCount={unreadCount}
               pendingNotificationIds={notificationPendingIds}
               markAllPending={notificationMarkAllPending}
               onFilterChange={setNotificationFilter}
@@ -794,6 +870,9 @@ function InnerApp() {
               onMarkAllRead={markAllNotificationsRead}
               onDismissActionError={() => setNotificationActionError(null)}
               onBack={() => setShowNotifications(false)}
+              hasMore={notificationsHasMore}
+              loadingMore={notificationsLoadingMore}
+              onLoadMore={() => { void loadMoreNotifications() }}
             />
           </div>
           </>
@@ -811,13 +890,17 @@ function InnerApp() {
               className="absolute inset-0 z-20 cursor-default bg-ink/30 backdrop-blur-[2px]"
             />
             <div
+              ref={dmLayerRef}
               id="dm-layer"
               role="dialog"
+              aria-modal="true"
               aria-label="Messages"
+              tabIndex={-1}
               data-testid="dm-layer"
-              className="drawer-anim absolute inset-x-2 top-[calc(var(--safe-area-inset-top, env(safe-area-inset-top))+56px)] bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-2 sm:w-[400px] lg:top-[72px]"
+              className="drawer-anim absolute inset-x-3 top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top))+56px)] z-30 flex h-[min(56dvh,380px)] flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-3 sm:w-[380px] lg:top-[72px]"
             >
               <Chat
+                compact
                 onBack={() => setDmSheet(false)}
                 users={users}
                 teamChat={teamChat}
@@ -862,10 +945,42 @@ export default function App() {
   )
 }
 
+// Mirror of the server's rules (workers/src/routes/auth.js:32-41) so the
+// member learns what to fix before waiting on the network. The server stays
+// the authority for uniqueness, reserved usernames and the group existing.
+const REG_USERNAME_RE = /^[a-z0-9._-]{3,32}$/
+const REG_PHONE_RE = /^(?:\+?254|0)?[17]\d{8}$/
+const cleanPhone = v => String(v || '').replace(/[^\d+]/g, '')
+const REG_FIELD_IDS = {
+  username: 'reg-username', name: 'reg-name', phone: 'reg-phone',
+  password: 'reg-password', confirm: 'reg-confirm', group_name: 'reg-group',
+}
+
+function validateRegister(f) {
+  const errors = {}
+  const username = String(f.username || '').trim().toLowerCase()
+  if (!username) errors.username = 'Choose a username — it is how you sign in.'
+  else if (!REG_USERNAME_RE.test(username)) errors.username = 'Use at least 3 letters, numbers, dots, dashes or underscores — no spaces.'
+  if (String(f.name || '').trim().length < 2) errors.name = 'Enter your full name as the church knows you.'
+  if (!REG_PHONE_RE.test(cleanPhone(f.phone))) errors.phone = 'Enter a Safaricom or Airtel number, e.g. 0712 345 678.'
+  if (String(f.password || '').length < 8) errors.password = 'Use at least 8 characters.'
+  else if (String(f.password).length > 128) errors.password = 'Keep your password under 128 characters.'
+  if (!f.confirm) errors.confirm = 'Re-type your password to confirm it.'
+  else if (f.confirm !== f.password) errors.confirm = 'The two passwords do not match.'
+  if (!f.group_name) errors.group_name = 'Choose your Harvest Group.'
+  return errors
+}
+
 function Onboarding({ onAuthSuccess }) {
-  const [mode, setMode] = useState('register') // 'register' | 'login'
-  const { congregations: REG_GROUP_OPTIONS, live: groupsLive } = useCongregations()
-  const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', group_name: '' })
+  // A member who already signed in on this phone is returning, so the first
+  // thing they should see is the sign-in form — including after the session
+  // expires (the toast tells them to sign in again). A fresh install has no
+  // stored username and starts on registration.
+  const [mode, setMode] = useState(() => {
+    try { return localStorage.getItem('harvest_username') ? 'login' : 'register' } catch { return 'register' }
+  })
+  const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations()
+  const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', confirm: '', group_name: '' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
   const [showRegPass, setShowRegPass] = useState(false)
@@ -875,39 +990,56 @@ function Onboarding({ onAuthSuccess }) {
   // Which kind of auth error is showing: 'network' | 'credentials' | 'server'
   // — drives the banner styling and the recovery hint per kind.
   const [errorKind, setErrorKind] = useState('')
+  // Per-field messages, rendered under the field that needs fixing.
+  const [fieldErrors, setFieldErrors] = useState({})
+  const errorRef = useRef(null)
 
-  // Ask the device for GPS (best effort — permission may be denied).
-  const getPosition = () => new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null)
-    navigator.geolocation.getCurrentPosition(
-      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 },
-    )
-  })
-
-  // GPS is an optional helper: only collected when the member taps
-  // "Use my location". A hand-picked group is always honoured by the server.
-  const [useMyLocation, setUseMyLocation] = useState(false)
-  const [gpsStatus, setGpsStatus] = useState('') // '' | 'locating' | 'ok' | 'denied'
-
-  const captureLocation = () => {
-    setGpsStatus('locating')
-    getPosition().then(pos => {
-      if (pos) { setGpsStatus('ok'); setUseMyLocation(true) }
-      else { setGpsStatus('denied'); setUseMyLocation(false) }
+  // Put the server/network banner where the member is looking instead of
+  // letting it sit off-screen below the form after a failed submit.
+  const showAuthError = (kind, message) => {
+    setErrorKind(kind); setError(message)
+    requestAnimationFrame(() => {
+      const el = errorRef.current
+      if (!el) return
+      el.scrollIntoView({ block: 'nearest' })
+      el.focus({ preventScroll: true })
     })
+  }
+
+  // Any edit invalidates the message about the previous attempt: a stale
+  // "password too short" while the member fixes the password reads as if the
+  // fix did not take.
+  const clearErrors = (field) => {
+    if (error) { setError(''); setErrorKind('') }
+    if (field) {
+      setFieldErrors(fe => {
+        if (!fe[field]) return fe
+        const next = { ...fe }; delete next[field]; return next
+      })
+    }
+  }
+
+  // Switching between sign-in and sign-up must not carry the other form's
+  // rejection across (a signup error under "Welcome back" is nonsense).
+  const switchMode = () => {
+    setMode(m => (m === 'register' ? 'login' : 'register'))
+    setError(''); setErrorKind(''); setFieldErrors({})
   }
 
   // Map a fetch failure to a member-useful message: network problems are the
   // common case on mobile data, and "wrong password" must never be conflated
   // with "the internet is down" (members otherwise retry forever).
-  const authError = (e, fallback) => {
+  // `keepServerMessage` is for signup: every register rejection is actionable
+  // (short password, taken username, bad phone number), so replacing it with a
+  // generic "couldn't create your account" hides the one thing the member must
+  // change. Sign-in keeps the safe fallback so a wrong password never leaks
+  // which half of the credentials was wrong.
+  const authError = (e, fallback, { keepServerMessage = false } = {}) => {
     if (e instanceof TypeError || /fetch|network|Failed to fetch/i.test(String(e?.message))) {
       return { kind: 'network', message: "No connection — check your internet, then try again. Your details haven't been shared with anyone." }
     }
     const msg = String(e?.message || '')
-    if (/401|403/.test(msg) || /password|pin|credentials|incorrect|invalid/i.test(msg)) {
+    if (!keepServerMessage && (/401|403/.test(msg) || /password|pin|credentials|incorrect|invalid/i.test(msg))) {
       return { kind: 'credentials', message: fallback }
     }
     return { kind: 'server', message: msg || fallback }
@@ -915,33 +1047,57 @@ function Onboarding({ onAuthSuccess }) {
 
   const submitRegister = async () => {
     if (busy) return
+    // Check locally first: every empty or too-short field would otherwise be
+    // a network round trip on mobile data just to learn the same rule.
+    const problems = validateRegister(form)
+    setFieldErrors(problems)
+    if (Object.keys(problems).length) {
+      setError(''); setErrorKind('')
+      const firstId = REG_FIELD_IDS[Object.keys(problems)[0]]
+      requestAnimationFrame(() => {
+        const el = firstId ? document.getElementById(firstId) : null
+        el?.scrollIntoView?.({ block: 'center' })
+        el?.focus?.()
+      })
+      return
+    }
     setBusy(true); setError(''); setErrorKind('')
     try {
-      if (!form.group_name) {
-        setErrorKind('server'); setError('Choose your Harvest Group before creating your account.'); return
+      // `confirm` is a local check only — never sent.
+      const payload = {
+        username: form.username.trim(),
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        password: form.password,
+        group_name: form.group_name,
       }
-      // Only include GPS when the member opted in AND the pick is the
-      // auto/nearest option — never let a guess override a real choice.
-      let pos = null
-      if (useMyLocation && !form.group_name) pos = await getPosition()
-      const payload = { ...form, ...(pos || {}) }
       const response = await fetch(`${API}/api/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.token) throw new Error(data.error || 'Registration failed')
       onAuthSuccess?.(data)
-      if (data.assigned_by === 'location' && data.group_name) {
-        showToast(`Karibu! You've been placed in your nearest group: ${data.group_name}`, 'success', 4000)
-      }
+      showToast(`Karibu! You're in ${data.group_name || form.group_name}.`, 'success', 4000)
     } catch (e) {
-      const kind = authError(e, 'We couldn’t create your account. Check the details and try again.')
-      setErrorKind(kind.kind)
-      setError(kind.message)
+      const kind = authError(e, 'We couldn’t create your account. Check the details and try again.', { keepServerMessage: true })
+      // A server rejection belongs to a field when we can tell which one:
+      // showing it under that input beats a banner that repeats the rule.
+      const msg = String(kind.message || '')
+      const field = /username/i.test(msg) ? 'username'
+        : /full name|name/i.test(msg) ? 'name'
+          : /number|phone/i.test(msg) ? 'phone'
+            : /password/i.test(msg) ? 'password'
+              : /group/i.test(msg) ? 'group_name' : ''
+      if (field) {
+        setFieldErrors({ [field]: msg })
+        requestAnimationFrame(() => document.getElementById(REG_FIELD_IDS[field])?.focus())
+      } else {
+        showAuthError(kind.kind, kind.message)
+      }
     } finally { setBusy(false) }
   }
 
   const submitLogin = async () => {
     if (busy) return
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setErrorKind('')
     try {
       const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginId, password: loginPass }) })
       const data = await response.json().catch(() => ({}))
@@ -949,12 +1105,15 @@ function Onboarding({ onAuthSuccess }) {
       onAuthSuccess?.(data)
     } catch (e) {
       const kind = authError(e, 'We couldn’t sign you in. Check your username or phone number and password, then try again.')
-      setErrorKind(kind.kind)
-      setError(kind.message)
+      showAuthError(kind.kind, kind.message)
     } finally { setBusy(false) }
   }
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
+  const set = (k) => (e) => {
+    const value = e.target.value
+    setForm(f => ({ ...f, [k]: value }))
+    clearErrors(k)
+  }
 
   return (
     <div className="min-h-[100dvh] bg-white flex justify-center">
@@ -968,104 +1127,125 @@ function Onboarding({ onAuthSuccess }) {
               <p className="text-[11px] font-bold tracking-wide text-accent">NYERI</p>
             </div>
           </div>
-          <button onClick={() => setMode(mode === 'register' ? 'login' : 'register')} className="shrink-0 text-[13px] font-bold px-4 py-2.5 rounded-full border border-zinc-300 bg-zinc-50 text-accent-strong active:bg-zinc-100">
+          <button type="button" onClick={switchMode} aria-label={mode === 'register' ? 'Switch to sign in' : 'Switch to create an account'} className="shrink-0 text-[13px] font-bold px-4 min-h-11 rounded-full border border-zinc-300 bg-zinc-50 text-accent-strong active:bg-zinc-100">
             {mode === 'register' ? 'Sign in' : 'New here?'}
           </button>
         </div>
 
         <div className="rounded-[22px] mx-5 mt-3 p-5 bg-gradient-to-br from-accent-soft via-accent-wash to-gold-soft border border-accent-soft shadow-sm">
-          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-gold text-white px-3 py-1.5 rounded-full">Karibu</span>
+          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-gold-strong text-white px-3 py-1.5 rounded-full">Karibu</span>
           <h1 className="mt-3.5 text-[30px] font-extrabold leading-[1.12] tracking-tight text-accent-strong">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
           <div className="mt-3 h-px bg-accent-soft" />
           <p className="mt-2.5 text-[12px] font-extrabold tracking-[0.22em] text-accent">COMPEL · RAISE · RELEASE</p>
         </div>
 
         {mode === 'register' ? (
-          <div className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
+          <form id="auth-form" noValidate onSubmit={e => { e.preventDefault(); void submitRegister() }} className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
             <div>
               <h2 className="text-[17px] font-extrabold text-zinc-900">Create your account</h2>
               <p className="text-[13px] text-zinc-600 mt-1">Use your phone number and a password you'll remember.</p>
             </div>
+            {error && (
+              <div ref={errorRef} tabIndex={-1} className="outline-none">
+                <ErrorMessage kind={errorKind} message={error} />
+              </div>
+            )}
             <div>
               <label htmlFor="reg-username" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username</label>
-              <input id="reg-username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-username" name="username" autoComplete="username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={!!fieldErrors.username} aria-describedby={fieldErrors.username ? 'reg-username-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              {fieldErrors.username && <p id="reg-username-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.username}</p>}
             </div>
             <div>
               <label htmlFor="reg-name" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Full name</label>
-              <input id="reg-name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-name" name="name" autoComplete="name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" maxLength={120} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? 'reg-name-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              {fieldErrors.name && <p id="reg-name-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.name}</p>}
             </div>
             <div>
               <label htmlFor="reg-phone" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Phone number</label>
-              <input id="reg-phone" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              <input id="reg-phone" name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" maxLength={16} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? 'reg-phone-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              {fieldErrors.phone && <p id="reg-phone-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.phone}</p>}
             </div>
             <div>
               <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
               <div className="relative">
-                <input id="reg-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
+                <input id="reg-password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
               </div>
-              <p className="text-[11px] text-zinc-500 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap Show to check what you typed.'}</p>
+              {fieldErrors.password && <p id="reg-password-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.password}</p>}
+              <p className="text-[12px] text-zinc-600 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap Show to check what you typed.'}</p>
+            </div>
+            <div>
+              <label htmlFor="reg-confirm" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Confirm password</label>
+              <input id="reg-confirm" name="confirm-password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="Re-type your password" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.confirm} aria-describedby={fieldErrors.confirm ? 'reg-confirm-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              {fieldErrors.confirm
+                ? <p id="reg-confirm-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.confirm}</p>
+                : <p className="text-[12px] text-zinc-600 mt-1.5">Both boxes must match. Tap Show above to compare them.</p>}
             </div>
             <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
               <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
               <div className="relative">
-                <select id="reg-group" value={form.group_name} onChange={set('group_name')} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-accent focus:ring-2 focus:ring-purple-100">
+                <select id="reg-group" value={form.group_name} onChange={set('group_name')} aria-invalid={!!fieldErrors.group_name} aria-describedby={fieldErrors.group_name ? 'reg-group-error' : undefined} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-accent focus:ring-2 focus:ring-purple-100">
                   {/* An empty select with no empty option renders the FIRST
  congregation as if chosen, while form state stays '' — the waydroid
  device pass showed 'Alphas 1' checked with the validator still
  refusing. The placeholder keeps the display honest with the state. */}
                   {!form.group_name && <option value="" disabled>Choose your congregation…</option>}
-                  {!REG_GROUP_OPTIONS.length && <option value="">{groupsLive ? 'No groups available' : 'Loading groups…'}</option>}
+                  {!REG_GROUP_OPTIONS.length && <option value="">{groupsLoading ? 'Loading groups…' : groupsLive ? 'No groups available' : 'Couldn’t load groups'}</option>}
                   {REG_GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
                 <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-base">▾</span>
               </div>
-              <p className="text-[11px] font-medium text-zinc-600 mt-2.5">This exact group is saved on your profile — GPS is never used to change it.</p>
+              {fieldErrors.group_name && <p id="reg-group-error" className="text-[12px] font-semibold text-danger mt-2">{fieldErrors.group_name}</p>}
+              <p className="text-[12px] font-medium text-zinc-600 mt-2">This exact group is saved on your profile.</p>
               {!groupsLive && (
-                <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1">
-                  <Icon name="alert" size={14} className="shrink-0" /> Couldn't reach the latest group list — showing the default congregations.
-                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2">
+                  <p className="text-[12px] text-amber-800 flex items-center gap-1">
+                    <Icon name="alert" size={14} className="shrink-0" /> {groupsLoading ? 'Fetching the latest group list…' : 'Couldn’t load the group list.'}
+                  </p>
+                  {!groupsLoading && (
+                    <button type="button" onClick={retryGroups} className="text-[12px] font-bold text-accent-strong underline underline-offset-2 min-h-11 px-1">Retry</button>
+                  )}
+                </div>
               )}
-              <div className="mt-3 flex items-center gap-2">
-                <button type="button" onClick={captureLocation} disabled={gpsStatus === 'locating'} className="px-3 py-2 rounded-full bg-white border border-zinc-300 text-[11px] font-bold text-zinc-700 disabled:opacity-50">
-                  {gpsStatus === 'locating' ? 'Locating…' : gpsStatus === 'ok' ? 'Location saved' : 'Use my location (optional)'}
-                </button>
-                {gpsStatus === 'denied' && <span className="text-[10px] text-zinc-500">Location off — pick your group above instead</span>}
-              </div>
-              <p className="text-[10px] text-zinc-500 mt-1.5">We use your location once, only to suggest the group nearest to you. It's never required.</p>
+              {groupsLive && !REG_GROUP_OPTIONS.length && (
+                <p className="text-[12px] text-amber-800 mt-1.5">No Harvest Groups exist yet — ask a church admin to add one.</p>
+              )}
             </div>
-            {error && <ErrorMessage kind={errorKind} message={error} />}
-          </div>
+          </form>
         ) : (
-          <div className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
+          <form id="auth-form" noValidate onSubmit={e => { e.preventDefault(); void submitLogin() }} className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
             <div>
               <h2 className="text-[17px] font-extrabold text-zinc-900">Welcome back</h2>
               <p className="text-[13px] text-zinc-600 mt-1">Sign in with your username or phone number.</p>
             </div>
+            {error && (
+              <div ref={errorRef} tabIndex={-1} className="outline-none">
+                <ErrorMessage
+                  kind={errorKind}
+                  title={errorKind === 'credentials' ? 'We couldn’t sign you in' : undefined}
+                  message={error}
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="login-id" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username or phone</label>
-              <input id="login-id" value={loginId} onChange={e => setLoginId(e.target.value)} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              <input id="login-id" name="username" autoComplete="username" value={loginId} onChange={e => { setLoginId(e.target.value); clearErrors() }} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
             </div>
             <div>
               <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
               <div className="relative">
-                <input id="login-pass" value={loginPass} onChange={e => setLoginPass(e.target.value)} onKeyDown={e => e.key === 'Enter' && void submitLogin()} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
+                <input id="login-pass" name="password" autoComplete="current-password" value={loginPass} onChange={e => { setLoginPass(e.target.value); clearErrors() }} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} maxLength={128} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
               </div>
+              <p className="text-[12px] text-zinc-600 mt-1.5">Forgot your password? Ask a church admin to reset it for you.</p>
             </div>
-            {error && (
-              <ErrorMessage
-                kind={errorKind}
-                title={errorKind === 'credentials' ? 'We couldn’t sign you in' : undefined}
-                message={error}
-              />
-            )}
-          </div>
+          </form>
         )}
 
         <div className="px-5 pt-4 pb-5">
           <button
-            onClick={() => void (mode === 'register' ? submitRegister() : submitLogin())}
+            type="submit"
+            form="auth-form"
             disabled={busy}
             className={`w-full py-4 rounded-full font-extrabold text-[16px] flex items-center justify-center gap-2 shadow-sm ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-accent text-white active:bg-accent-strong'}`}
           >

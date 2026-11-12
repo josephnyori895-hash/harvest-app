@@ -4,7 +4,8 @@
 // review.
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 
 const tailwind = await readFile(new URL('../tailwind.config.js', import.meta.url), 'utf8')
 const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8')
@@ -57,4 +58,30 @@ test('dialog is accessible by construction', () => {
   assert.match(ui, /aria-modal="true"/)
   assert.match(ui, /e\.key === 'Escape'/)
   assert.match(ui, /role="status" aria-live="polite"/)
+})
+
+// A Tailwind arbitrary value with a literal space is split into several
+// classes and the utility never compiles — the element silently keeps its
+// static position. That is how the notification drawer and the DM card ended
+// up painting at top:0 over the bell, so the whole tree is checked, not just
+// the files that were broken at the time.
+async function sourceFiles(dir) {
+  const out = []
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = `${dir}/${entry.name}`
+    if (entry.isDirectory()) out.push(...await sourceFiles(full))
+    else if (/\.(jsx?|tsx?)$/.test(entry.name)) out.push(full)
+  }
+  return out
+}
+
+test('arbitrary Tailwind values contain no spaces (spaces drop the utility)', async () => {
+  const offenders = []
+  for (const file of await sourceFiles(fileURLToPath(new URL('../src', import.meta.url)))) {
+    const text = await readFile(file, 'utf8')
+    for (const match of text.matchAll(/\[calc\([^\]"'\n]* [^\]"'\n]*\]/g)) {
+      offenders.push(`${file.split('/src/')[1]}: ${match[0]}`)
+    }
+  }
+  assert.deepEqual(offenders, [], 'arbitrary calc() values must not contain spaces — use no space, or "_" for a space')
 })

@@ -8,7 +8,25 @@ failures, fix minimally, re-run only the failed rows.
 - APK versionCode/Name: ______ (must match `/api/app-version`)  Build/run: ______
 - Tester: ______
 
-Legend: ✅ pass · ❌ fail (note the row ID + symptom) · N/A with reason
+Legend: ✅ pass · ❌ fail (note the row ID + symptom) · ◑ partial (note what was covered) · N/A with reason
+
+**Two different columns, never conflated.** *Device result* is the only one
+that counts for release: it is filled by a human on the physical APK. The
+*Emulated* column comes from `scripts/qa-android-notifications.mjs` — headless
+Chromium at 320 / 360 / 390 px against a local worker and local D1. It catches
+layout, target-size and state bugs early, but it cannot see real insets, the
+soft keyboard, push delivery, or an installed APK. A ✅ there is **not** a
+device pass.
+
+```bash
+# worker: cd workers && npx wrangler dev --port 8787
+# app:    E2E_API_TARGET=http://127.0.0.1:8787 npx vite --port 5273
+E2E_BASE_URL=http://127.0.0.1:5273 E2E_USERNAME=<member> E2E_PASSWORD=<pw> \
+E2E_CHROME_PATH=/usr/bin/chromium node scripts/qa-android-notifications.mjs
+```
+
+Last emulated run: 2026-11-11, 30 notification rows (21 unread), 800 px tall
+viewport. Result: 8/8 checks green at each of 320 / 360 / 390 px, no failures.
 
 ## 1. Install & identity
 
@@ -108,28 +126,44 @@ Legend: ✅ pass · ❌ fail (note the row ID + symptom) · N/A with reason
 
 ## 10. Notifications
 
-| # | Check | Result | Notes |
-|---|---|---|---|
-| 10.1 | Bell + unread badge render; rows don't overflow at 320px | | |
-| 10.2 | Filters stay on one line, scroll horizontally only | | |
-| 10.3 | Mark one/all read updates optimistically; rollback on failure | | |
-| 10.4 | (After Gate 1) test push arrives; tap deep-links to the right screen | | |
-| 10.5 | (After Gate 1) chat push tap opens that conversation | | |
+| # | Check | Device result | Notes | Emulated (Chromium)* |
+|---|---|---|---|---|
+| 10.1 | Bell + unread badge render; rows don't overflow at 320px | | | ✅ bell 44×44 with badge; label `Notifications, N unread`; drawer is a floating 400 px card (296 / 336 / 366 px wide at 320 / 360 / 390, 12 px inset, top 56 px below the bell) — never fullscreen; 30 rows, zero row or panel overflow |
+| 10.2 | Filters stay on one line, scroll horizontally only | | | ✅ all five tabs on one line at 320 / 360 / 390 |
+| 10.3 | Mark one/all read updates optimistically; rollback on failure | | | ✅ 21 unread → 0 immediately; forced `read-all` failure restored 21 and showed the error banner; a successful retry cleared the badge and hid the mark-all control |
+| 10.4 | (After Gate 1) test push arrives; tap deep-links to the right screen | | | — device only |
+| 10.5 | (After Gate 1) chat push tap opens that conversation | | | — device only |
 
 ## 11. Cross-cutting
 
-| # | Check | Result | Notes |
-|---|---|---|---|
-| 11.1 | No horizontal overflow at 320 / 360 / 390 px on: Home, Chat, Notifications, Comments, Groups settings | | |
-| 11.2 | Bottom nav never overlaps Comments composer or chat input | | |
-| 11.3 | Rotation/re-entry doesn't crash; insets correct after orientation change | | |
-| 11.4 | Offline → recovery: screens show retry, data reloads when back online | | |
-| 11.5 | Accessibility: bell, badges, retry buttons, filters have labels; touch targets ≥ 40px | | |
+| # | Check | Device result | Notes | Emulated (Chromium)* |
+|---|---|---|---|---|
+| 11.1 | No horizontal overflow at 320 / 360 / 390 px on: Home, Chat, Notifications, Comments, Groups settings | | | ◑ Home and Notifications clean at all three widths (page and panel overflow 0); Chat / Comments / Groups settings not measured |
+| 11.2 | Bottom nav never overlaps Comments composer or chat input | | | — needs a live conversation; not measured |
+| 11.3 | Rotation/re-entry doesn't crash; insets correct after orientation change | | | — device only |
+| 11.4 | Offline → recovery: screens show retry, data reloads when back online | | | ◑ notifications: offline shows "Couldn't refresh notifications. Retry"; reconnect + Retry restores all 30 rows. Other screens not measured |
+| 11.5 | Accessibility: bell, badges, retry buttons, filters have labels; touch targets ≥ 40px | | | ✅ bell 44×44 with name + expanded state; badge is aria-hidden (count spoken once by the bell); Back and mark-all 40×40 and labelled; five filter tabs 40 px tall; drawer is aria-modal with focus moved inside |
 
 ## Sign-off
 
 - All rows ✅ (or N/A with reason) → release verified for original scope.
 - Any ❌ → fix minimally, re-run that section, append note + commit/run here.
+
+Pre-flight fixes found during the emulated run (2026-11-11), worth a glance on
+device: the notification drawer, the DM card, the update banner, the mini
+player and the Groups/Departments detail padding all carried a `calc()` inside
+a Tailwind arbitrary class **with literal spaces**, so the class never compiled
+and the element fell back to its static position — the drawer and DM card were
+painting at `top: 0`, over the bell. Fixed in `App.jsx`, `Music.tsx`,
+`Groups.tsx`, `Departments.tsx`.
+
+Card sizes after the phone-viewport review: notification drawer 400 px
+(`min(58dvh, 400px)`), chat card 380 px (`min(56dvh, 380px)`), both anchored
+56 px below the bell with a 12 px inset. The chat card also renders the Chat
+panel in `compact` mode — no "Harvest Family" eyebrow, no community/avatar
+rails — because that header stack used 314 px of the card on its own and left
+no room for a single conversation row. Watch the chat card on device with a
+populated inbox and with the soft keyboard up (11.2, 11.3).
 
 | Section | Result | Re-run after fix (commit) |
 |---|---|---|

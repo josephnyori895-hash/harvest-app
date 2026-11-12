@@ -134,7 +134,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
        <div data-profile-user-id={profile.id || ''} data-profile-username={profile.username || ''} data-profile-name={displayName} data-profile-congregation={groupName} data-profile-verified={profile.verified ? 'true' : 'false'} data-profile-role={profile.role || 'member'} className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
-      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-3 px-4 h-14">
+      <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-3 pl-4 pr-14 h-14">
         <button onClick={onBack} aria-label="Back" className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-2xl hover:bg-neutral-100 active:scale-95 transition">‹</button>
         <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <h1 className="min-w-0 truncate font-bold text-lg leading-6">{displayName}</h1>

@@ -9,6 +9,9 @@ const socialRoute = await readFile(new URL('../workers/src/routes/social.js', im
 const notificationsRoute = await readFile(new URL('../workers/src/routes/notifications.js', import.meta.url), 'utf8')
 const notif = await readFile(new URL('../src/components/NotificationsScreen.jsx', import.meta.url), 'utf8')
 const lib = await readFile(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8')
+const hook = await readFile(new URL('../src/lib/useModalFocus.ts', import.meta.url), 'utf8')
+const commentsSheet = await readFile(new URL('../src/components/Comments.tsx', import.meta.url), 'utf8')
+const homeFeed = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
 
 test('comments notify the post owner and replies notify the comment author', () => {
   assert.match(feedRoute, /recordNotificationsSafe/)
@@ -85,4 +88,70 @@ test('the profile activity entrance opens that same surface, not a second screen
 test('the inbox retry actually refreshes — a dead button is a silent failure', () => {
   assert.doesNotMatch(app, /onRetry=\{\(\) => \{\}\}/)
   assert.match(app, /onRetry=\{\(\) => \{ void refreshNotifications\(\) \}\}/)
+})
+
+test('the bell anchors to the app column and controls the drawer it opens', () => {
+  assert.match(app, /aria-expanded=\{showNotifications\}/)
+  assert.match(app, /aria-controls="notifications-drawer"/)
+  assert.doesNotMatch(app, /className="fixed right-3 z-30 flex h-10 w-10/, 'a viewport-fixed bell floats away from the centred column on desktop')
+  assert.match(app, /className="absolute right-3 z-30 flex h-11 w-11/)
+})
+
+test('the badge is decorative — the count is announced once, by the button', () => {
+  assert.match(app, /aria-hidden="true" className="absolute -right-0\.5 -top-0\.5/)
+})
+
+test('the inbox behaves like a dialog: modal, focus in, Escape out', () => {
+  assert.match(app, /id="notifications-drawer"[\s\S]{0,200}aria-modal="true"/)
+  assert.match(app, /notificationsDrawerRef/)
+  assert.match(hook, /e\.key === 'Escape'/)
+  // Restore falls back to a selector-resolved opener because the chat button
+  // unmounts in the same commit that opens the card.
+  assert.match(hook, /if \(opener && opener !== document\.body && opener\.isConnected\)/)
+  assert.match(hook, /requestAnimationFrame\(\(\) => \{ getReturnFocus\(\)\?\.focus\?\.\(\) \}\)/)
+  assert.match(app, /useModalFocus\(dmSheet, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
+})
+
+test('the inbox and the DM card stay floating cards, never fullscreen', () => {
+  assert.match(app, /id="notifications-drawer"[\s\S]*?sm:h-\[min\(70dvh,560px\)\]/)
+  assert.doesNotMatch(app, /id="notifications-drawer"[\s\S]{0,600}bottom-\[calc\(env\(safe-area-inset-bottom\)\+72px\)\]/)
+  assert.match(app, /id="dm-layer"[\s\S]*?h-\[min\(56dvh,380px\)\]/)
+  // The chat panel is cropped for the card, otherwise its header stack leaves
+  // no room for a single conversation row.
+  assert.match(app, /id="dm-layer"[\s\S]*?<Chat\s+compact/)
+})
+
+test('a failed refresh is reported instead of leaving a stale badge', () => {
+  assert.match(app, /if \(!r\.ok\) throw new Error\(String\(r\.status\)\)/)
+  assert.match(app, /Notifications are unavailable right now\./)
+})
+
+test('the background poll rides the read-mutation queue', () => {
+  assert.match(app, /enqueueNotificationMutation\(\(\) => refreshNotifications\(true\)\)/)
+})
+
+test('an open card freezes the feed behind it, then unfreezes on close', () => {
+  // The feed lives in .app-content.app-scroll, which is a sibling of the cards,
+  // so the lock has to target the shell's scroller and put its overflow back.
+  assert.match(hook, /function lockScroll\(panel: HTMLElement \| null\)[\s\S]*?querySelector\('\.app-content\.app-scroll'\)/)
+  assert.match(hook, /scrollLockDepth === 0\) scrollLockRestore\(\)/)
+  assert.match(hook, /const releaseScroll = lockScroll\(panel\)/)
+  assert.match(hook, /releaseScroll\(\)/)
+  assert.match(hook, /node\.style\.overflow = previous\[i\]\.overflow/)
+})
+
+test('the comment sheet and the post options sheet use the shared dialog hook', () => {
+  assert.match(commentsSheet, /import \{ useModalFocus \} from '\.\.\/lib\/useModalFocus'/)
+  assert.match(commentsSheet, /useModalFocus\(true, sheetRef, onClose\)/)
+  assert.match(commentsSheet, /ref=\{sheetRef\} tabIndex=\{-1\}/)
+  assert.match(homeFeed, /import \{ useModalFocus \} from '\.\.\/lib\/useModalFocus'/)
+  assert.match(homeFeed, /useModalFocus\(!!menuPost, postMenuRef, \(\) => setMenuPost\(null\)\)/)
+  assert.match(homeFeed, /ref=\{postMenuRef\} tabIndex=\{-1\}/)
+})
+
+test('the DM card is a dialog too: modal, focus in, Escape out', () => {
+  assert.match(app, /ref=\{dmLayerRef\}[\s\S]{0,200}aria-modal="true"/)
+  assert.match(app, /useModalFocus\(dmSheet, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
+  assert.match(app, /useModalFocus\(showNotifications, notificationsDrawerRef, \(\) => setShowNotifications\(false\)\)/)
+  assert.match(hook, /const dialogs = Array\.from\(document\.querySelectorAll\('\[role="dialog"\]'\)\)/)
 })

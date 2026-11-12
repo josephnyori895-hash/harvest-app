@@ -308,13 +308,13 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
       <div className="group-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line px-3 bg-surface/95 backdrop-blur z-10">
+        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface/95 backdrop-blur z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-accent-strong" aria-label="Back">‹</button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
         </div>
         {!detail ? <p className="text-ink-subtle text-sm text-center py-10">Loading…</p> : (
-          <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] space-y-2">
+          <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] space-y-2">
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
