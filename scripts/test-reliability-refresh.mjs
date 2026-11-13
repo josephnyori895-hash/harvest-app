@@ -21,7 +21,10 @@ test('2. background sermon upload dispatches harvest:sermons-updated', () => {
 
 test('3. Home consumes harvest:feed-updated → feed refetch', () => {
   assert.match(home, /addEventListener\('harvest:feed-updated' as any, bumpFeed\)/)
-  assert.match(home, /const bumpFeed = \(\) => setFeedTick\(x => x \+ 1\)/)
+  // RS-220 changed this contract on purpose: the listener merges the head in
+  // place, so a background upload cannot reset a reader four pages deep.
+  assert.match(home, /const bumpFeed = \(\) => \{ void mergeHeadRef\.current\(\) \}/)
+  assert.doesNotMatch(home, /const bumpFeed = \(\) => setFeedTick\(x => x \+ 1\)/)
   assert.match(home, /harvest:feed-updated' as any, bumpFeed\)/)
 })
 

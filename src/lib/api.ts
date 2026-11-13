@@ -26,7 +26,19 @@ async function apiJson(path: string, init: RequestInit = {}) {
       let message = `API request failed (${r.status})`
       try {
         const body = await r.text()
-        if (body) message = body
+        if (body) {
+          // A JSON error body is a message for a person, not a payload to show.
+          // Throwing the raw text put `{"error":"…"}` in the toast.
+          try {
+            const parsed = JSON.parse(body)
+            if (typeof parsed?.error === 'string' && parsed.error) message = parsed.error
+            else if (typeof parsed?.message === 'string' && parsed.message) message = parsed.message
+          } catch {
+            // An HTML error page is not a sentence: keep the status message
+            // rather than showing markup or a truncated stack.
+            message = body.length > 200 ? `API request failed (${r.status})` : body
+          }
+        }
       } catch { /* keep status message */ }
       throw new Error(message)
     }

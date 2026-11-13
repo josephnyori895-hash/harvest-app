@@ -1,7 +1,9 @@
 // IG-style relative timestamps for user-facing date displays.
-export function timeAgo(iso?: string): string {
+// `now` lets a caller that re-renders on a timer (Home's minute tick) keep the
+// stamp honest without every caller having to pass it.
+export function timeAgo(iso?: string, now = Date.now()): string {
   if (!iso) return 'Just now'
-  const ms = Date.now() - new Date(iso).getTime()
+  const ms = now - new Date(iso).getTime()
   if (!Number.isFinite(ms) || ms < 0) return 'Just now'
   const m = Math.floor(ms / 60000)
   if (m < 1) return 'Just now'

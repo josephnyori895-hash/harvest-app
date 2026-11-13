@@ -51,12 +51,19 @@ const quickLinks: { tab: string; icon: IconName; title: string }[] = [
   { tab: 'give', icon: 'gift', title: 'Give' },
 ]
 
+// A long scroll used to mount every loaded card, so a member who read 200
+// updates held 200 live FeedCards (decoders, layout, timers) on a low-end
+// phone. The feed keeps a bounded newest-first window and says so when it is
+// full instead of growing without limit.
+const FEED_MAX_LOADED = 120
+
 export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [, setLikesTick] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const startYRef = useRef<number | null>(null)
+  const startXRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const quickRailRef = useRef<HTMLDivElement>(null)
   const quickRailMore = useOverflowX(quickRailRef)
@@ -134,8 +141,12 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     ? users
       .filter((u: any) => Boolean(u?.verified))
       .filter((u: any) =>
-        /(^|[._-])(pastor|pst|rev)([._-]|$)/i.test(String(u.username || '')) ||
-        /(^|\\s)(pastor|pst|rev)(\\.?)(\\s|$)/i.test(String(u.name || ''))
+        // One rule for both fields. The display-name copy used to be a regex
+        // literal with a doubled backslash, so it matched a literal backslash
+        // and was false for "Pastor John" — only the username pattern matched.
+        // The trailing lookahead keeps "Trevor" and "pastoral" out while still
+        // accepting "pastor_john", "pst.mary" and "Rev. Kim".
+        /(^|[^a-z0-9])(pastor|pst|rev)(?![a-z0-9])/i.test(`${String(u.username || '')} ${String(u.name || '')}`)
       )
       .map((u: any) => ({
         username: normName(String(u.username || '')),
@@ -185,6 +196,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
+  // A failed request is not always the server's fault: offline and a 500 read
+  // differently to the member, so the error card's kind depends on this.
+  const [feedFailedOffline, setFeedFailedOffline] = useState(false)
   const [feedOffset, setFeedOffset] = useState(0)
   const [feedHasMore, setFeedHasMore] = useState(false)
   // Frozen at the first page: every later page replays the same window, so a
@@ -194,6 +208,14 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const pendingLikesRef = useRef(new Set<string>())
   const pendingSavesRef = useRef(new Set<string>())
   const lastFeedFetchRef = useRef(0)
+  // Relative times are computed at render and Home stays mounted across tab
+  // switches, so "2m" could sit on screen for an hour. One 60 s tick keeps the
+  // visible stamps honest without polling anything.
+  const [clockNow, setClockNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setClockNow(Date.now()), 60_000)
+    return () => window.clearInterval(id)
+  }, [])
 
 
   useEffect(() => {
@@ -230,6 +252,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       })
       .catch((e: any) => {
         if (cancelled) return
+        // apiJson lets fetch's TypeError through untouched, so this is the only
+        // place that can tell "no connection" from "the server said no".
+        setFeedFailedOffline(!navigator.onLine || e?.name === 'TypeError')
         setFeedLoadFailed(true)
         setFeedLoaded(true)
         lastFeedFetchRef.current = Date.now()
@@ -248,10 +273,15 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     try {
       const d: any = await fetchFeed(feedOffset, 20, feedCursor || undefined)
       const incoming: any[] = Array.isArray(d?.posts) ? d.posts : []
-      const seen = new Set<string>()
+      const atCap = livePosts.length + incoming.length >= FEED_MAX_LOADED
       setLivePosts(prev => {
         const next = [...prev]
+        // Seed the set from what is already mounted: an overlapping window (a
+        // pinned post repeats on every page) must not double-insert, and a
+        // duplicate React key unmounts and re-creates both cards.
+        const seen = new Set(next.map((p: any) => `api_${p.kind}_${p.id}`))
         for (const p of incoming) {
+          if (next.length >= FEED_MAX_LOADED) break
           const k = `api_${p.kind}_${p.id}`
           if (seen.has(k)) continue
           seen.add(k)
@@ -260,7 +290,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         return next
       })
       setFeedOffset(Number(d?.nextOffset) || feedOffset + 20)
-      setFeedHasMore(Boolean(d?.hasMore))
+      // Stop offering "Load more" once the window is full; the feed says so
+      // rather than silently dropping the next page.
+      setFeedHasMore(atCap ? false : Boolean(d?.hasMore))
     } catch (e: any) {
       showToast(e?.message || 'Could not load more updates', 'error', 2200)
     } finally {
@@ -268,9 +300,48 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     }
   }
 
+  // A post finishing in the background must not yank the reader back to page 1:
+  // four loaded pages collapsing to twenty cards under the reader is worse than
+  // a stale order. Refetch the head, replace rows already on screen (fresh
+  // signed media URLs and counts) and prepend the genuinely new ones. Only an
+  // explicit refresh resets to page one.
+  const headMergeRef = useRef(false)
+  const mergeHead = async () => {
+    if (!api || headMergeRef.current) return
+    headMergeRef.current = true
+    try {
+      const d: any = await fetchFeed(0, 20, feedCursor || undefined)
+      const incoming: any[] = Array.isArray(d?.posts) ? d.posts : []
+      if (!incoming.length) return
+      setLivePosts(prev => {
+        const next = [...prev]
+        const index = new Map(next.map((p: any, i: number) => [`api_${p.kind}_${p.id}`, i]))
+        const fresh: any[] = []
+        for (const p of incoming) {
+          const at = index.get(`api_${p.kind}_${p.id}`)
+          if (at === undefined) fresh.push(p)
+          else next[at] = { ...next[at], ...p }
+        }
+        return fresh.length ? [...fresh, ...next] : next
+      })
+      lastFeedFetchRef.current = Date.now()
+    } catch {
+      // Silent: the head merge is a background courtesy. An explicit Refresh
+      // is where a real failure is reported.
+    } finally {
+      headMergeRef.current = false
+    }
+  }
+  // The listener is registered once, so it reads the current mergeHead through
+  // a ref rather than capturing the first render's closure.
+  const mergeHeadRef = useRef(mergeHead)
+  // Written in an effect, not during render: a render-time ref write is not
+  // safe under concurrent rendering.
+  useEffect(() => { mergeHeadRef.current = mergeHead })
+
   useEffect(() => {
     const bump = () => setApprovedTick(x => x + 1)
-    const bumpFeed = () => setFeedTick(x => x + 1)
+    const bumpFeed = () => { void mergeHeadRef.current() }
     window.addEventListener('storage', bump); window.addEventListener('harvest:approved' as any, bump); window.addEventListener('harvest:verified' as any, bump)
     window.addEventListener('harvest:feed-updated' as any, bumpFeed)
     return () => { window.removeEventListener('storage', bump); window.removeEventListener('harvest:approved' as any, bump); window.removeEventListener('harvest:verified' as any, bump); window.removeEventListener('harvest:feed-updated' as any, bumpFeed) }
@@ -343,11 +414,15 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     return {
     id: p.id,
     key: `api_${p.kind}_${p.id}`,
+    // The raw row kind, for every action that must name a server resource.
+    // `kind` below is a presentation label ("Pinned") and cannot be trusted
+    // for scope: a pinned reel would open comments as a post.
+    sourceKind: p.kind === 'reel' ? 'reel' : 'post',
     user: p.name || p.username || 'Harvest member',
     username: p.username,
     verified: Boolean(p.verified),
     loc: [p.group_name, p.constituency].filter(Boolean).join(' · ') || 'Harvest Family Church',
-    time: timeAgo(p.created_at),
+    time: timeAgo(p.created_at, clockNow),
     likes: Number(p.likes) || 0,
     comments: Number(p.comments) || 0,
     // Reels: the video itself is the preview (posters are optional). Only real
@@ -360,7 +435,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     liked: Boolean(p.liked),
     saved: Boolean(p.saved),
     }
-  }), [livePosts])
+    // clockNow is a dependency on purpose: timeAgo ran once per post change,
+    // so the stamp never aged until something else in the list moved.
+  }), [livePosts, clockNow])
 
   // Viewer list: live stories ONLY. The 'Your moment' composer placeholder must
   // never be in here or the viewer lands on an empty black story at the end.
@@ -499,11 +576,21 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
   const reelCount = livePosts.filter((p: any) => p.kind === 'reel').length
 
-  const onTouchStart = (e: any) => { startYRef.current = e.touches[0].clientY }
+  // Pull-to-refresh only for a vertical pull with nothing open above it. These
+  // handlers wrap the whole screen, so a diagonal swipe on the story rail (or a
+  // downward swipe inside a sheet) used to refresh the feed underneath.
+  const overlaysOpen = Boolean(momentIdx !== null || commentTarget || menuPost || editPost || showPastorPicker || showNoPastor || showPastorUnavailable || showDirectoryError)
+  const onTouchStart = (e: any) => {
+    if (overlaysOpen) { startYRef.current = null; startXRef.current = null; return }
+    startYRef.current = e.touches[0].clientY
+    startXRef.current = e.touches[0].clientX
+  }
   const onTouchEnd = (e: any) => {
-    if (startYRef.current === null) return
-    const dy = e.changedTouches[0].clientY - startYRef.current; startYRef.current = null
-    if (dy > 80 && containerRef.current && containerRef.current.scrollTop < 5 && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
+    if (startYRef.current === null || startXRef.current === null) return
+    const dy = e.changedTouches[0].clientY - startYRef.current
+    const dx = Math.abs(e.changedTouches[0].clientX - startXRef.current)
+    startYRef.current = null; startXRef.current = null
+    if (dy > 80 && dx < 40 && containerRef.current && containerRef.current.scrollTop < 5 && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
   }
 
   return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-surface text-ink">
@@ -648,7 +735,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             <button
               key={q.tab}
               onClick={() => setTab(q.tab)}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3.5 py-2 text-2xs font-extrabold text-ink transition hover:border-accent/40 hover:text-accent-strong"
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3.5 text-2xs font-extrabold text-ink transition hover:border-accent/40 hover:text-accent-strong"
             >
               <Icon name={q.icon} size={15} className="text-accent" />
               {q.title}
@@ -713,7 +800,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         {storyGroups.length === 0 && <p className="text-sm text-ink-subtle py-6">No stories yet — be the first to share a moment.</p>}
       </div></section>
 
-      {feedLoadFailed && <div className="mt-5"><ErrorMessage message="We couldn’t load the latest community updates." action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} className="text-xs font-bold underline">Retry</button>} /></div>}
+      {feedLoadFailed && <div className="mt-5"><ErrorMessage kind={feedFailedOffline ? 'network' : 'error'} message={feedFailedOffline ? 'You appear to be offline. Reconnect and try again.' : 'We couldn’t load the latest community updates.'} action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} className="inline-flex min-h-11 items-center px-1 text-xs font-bold underline">Retry</button>} /></div>}
       {liveProjects.length > 0 && (
       <section className="mt-7">
         <div className="mb-3">
@@ -744,7 +831,11 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </section>
       )}
 
-      <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div><div className="-mx-4 divide-y divide-line border-t border-line">{!feedLoaded && !feedLoadFailed && [0, 1].map(i => (
+      <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div>{/* aria-busy marks the region itself; the status line is what a screen
+          reader actually announces while the skeletons are aria-hidden. */}<div className="-mx-4 divide-y divide-line border-t border-line" aria-busy={Boolean(api) && !feedLoaded && !feedLoadFailed}>
+        <p role="status" aria-live="polite" className="sr-only">{!api ? 'Community updates are unavailable in this build' : feedLoadFailed ? 'Community updates failed to load' : !feedLoaded ? 'Loading community updates' : `Showing ${allUpdates.length} community updates`}</p>
+        {!api && <p className="px-3 py-6 text-sm leading-6 text-ink-muted">Community updates need the Harvest server. This build runs without it, so there is nothing to show here.</p>}
+        {Boolean(api) && !feedLoaded && !feedLoadFailed && [0, 1].map(i => (
           <div key={`sk_${i}`} className="bg-surface py-4" aria-hidden="true">
             <div className="flex items-center gap-2.5 px-3">
               <div className="skeleton h-8 w-8 rounded-full" />
@@ -762,19 +853,29 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           liked={liked}
           displayLikes={displayLikes}
           menuOpen={menuPost?.key === key}
-          onToggleMenu={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })}
+          onToggleMenu={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.sourceKind, id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })}
           onLike={() => toggleLike(key)}
-          onComment={() => setCommentTarget({ scope: p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post', id: String(p.id), key })}
-          onShare={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post' })}
+          onComment={() => setCommentTarget({ scope: p.sourceKind, id: String(p.id), key })}
+          onShare={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.sourceKind })}
           saved={api ? Boolean(p.saved) : false}
           onSave={api ? () => toggleSave(key) : undefined}
           onOpenUser={onOpenUser}
         />
       ) })}</div>
+        {api && feedLoaded && !feedLoadFailed && allUpdates.length === 0 && (
+          <div className="px-3 py-10 text-center">
+            <p className="text-sm font-extrabold text-ink">No community updates yet</p>
+            <p className="mx-auto mt-1 max-w-[280px] text-2xs leading-5 text-ink-muted">When someone shares a post or a video it appears here. You could be the first.</p>
+            <button type="button" onClick={() => setTab('post')} className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-accent px-4 text-2xs font-extrabold text-white"><Icon name="plus" size={14} /> Share something</button>
+          </div>
+        )}
         {feedHasMore && (
           <button type="button" onClick={() => void loadMoreFeed()} disabled={!api || feedLoadingMore} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface-raised text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40">
             {feedLoadingMore ? <><Spinner size={14} /> Loading more…</> : 'Load more updates'}
           </button>
+        )}
+        {api && !feedHasMore && allUpdates.length >= FEED_MAX_LOADED && (
+          <p className="mt-4 text-center text-2xs text-ink-subtle">Showing the latest {FEED_MAX_LOADED} updates. Refresh to start again from the top.</p>
         )}
       </section>
 
