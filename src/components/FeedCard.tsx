@@ -1,14 +1,6 @@
-// Harvest Family community post card.
-//
-// Anatomy follows a real feed post: no card frame, media edge-to-edge, an
-// icon-only monochrome action row, then the text stack (count, caption,
-// comments link, timestamp). Colour is reserved for meaning — a liked heart —
-// rather than decorating each button.
-//
-// Music attached to a photo or clip follows the feed convention: a spinning
-// album-art disc sits in the corner of the media. It is the only music control
-// on the post — spinning while the song plays, still when it is paused, and a
-// tap toggles it (which is also how the member mutes music for good).
+// Harvest Family community post card: no card frame, edge-to-edge media,
+// monochrome action row, colour reserved for meaning (a liked heart).
+// Attached music is the spinning disc in the media corner — tap toggles.
 
 import { useEffect, useRef, useState } from 'react'
 import { setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
@@ -59,11 +51,9 @@ const fmtCount = (n: number): string => {
 }
 
 import { VerifiedBadge } from './VerifiedBadge'
+import { initials } from '../lib/initials'
 
-// Sponsored project slot — a 2026 advert, not a banner. Full-bleed artwork,
-// one loud number (progress toward the goal), the human detail underneath and
-// a single action. It is always labelled Sponsored and never mimics an organic
-// post: church projects get a campaign card, not a grey box with a link.
+// Sponsored slot — always labelled, never mimics an organic post.
 export type ProjectAdvert = {
   id: string
   advert_id?: string
@@ -98,12 +88,9 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
     ? Math.ceil((deadline.getTime() - Date.now()) / 86_400_000)
     : null
   const open = () => { if (onOpen) onOpen(); else if (advert.cta_url) window.open(advert.cta_url, '_blank', 'noopener') }
-  const initials = title.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
   const cover = advert.image_url || project?.image_url || null
 
-  // Church project → dark campaign card: one number, a thin gold progress line,
-  // the human detail in small caps, one action. No pastel chips, no stacked
-  // borders — this is the shape of a funded campaign in 2026.
+  // Church project → dark campaign card: one number, one action.
   if (project && goal > 0) {
     return (
       <article className="overflow-hidden rounded-3xl bg-ink text-surface shadow-card" data-advert-id={advert.advert_id || advert.id}>
@@ -157,9 +144,7 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
     )
   }
 
-  // Partner advert → image-forward editorial card. Big title over a cinematic
-  // crop, one "Learn more". A sponsor without artwork still looks designed:
-  // deep navy tile with the partner's monogram, not a grey placeholder.
+  // Partner advert → image-forward card; artworkless sponsors get the navy monogram tile.
   return (
     <article className="overflow-hidden rounded-3xl border border-line bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id}>
       <button type="button" onClick={open} className="relative block w-full text-left" aria-label={`Open ${title}`}>
@@ -168,7 +153,7 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
             ? <img src={advert.image_url} alt={title} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
             : (
               <div className="grid h-full w-full place-items-center bg-black">
-                <span aria-hidden="true" className="text-6xl font-extrabold tracking-tighter text-white/10">{initials}</span>
+                <span aria-hidden="true" className="text-6xl font-extrabold tracking-tighter text-white/10">{initials(title)}</span>
               </div>
             )}
           <span className="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-transparent" />

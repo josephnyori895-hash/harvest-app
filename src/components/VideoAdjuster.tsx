@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { captureVideoFrame } from './ImageAdjuster'
+import { useModalFocus } from '../lib/useModalFocus'
 
 type Props = {
   file: File
@@ -14,6 +15,10 @@ export default function VideoAdjuster({ file, onCancel, onDone }: Props) {
   const [cover, setCover] = useState<Blob | null>(null)
   const [coverUrl, setCoverUrl] = useState('')
   const [busy, setBusy] = useState(false)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // Mounted only while the editor is open, so it is always "open" here: focus
+  // goes to Cancel, Tab stays inside the editor, Escape cancels.
+  useModalFocus(true, panelRef, onCancel)
 
   useEffect(() => {
     const u = URL.createObjectURL(file)
@@ -45,7 +50,7 @@ export default function VideoAdjuster({ file, onCancel, onDone }: Props) {
   }, [time])
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black flex flex-col text-white">
+    <div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit video" className="fixed inset-0 z-[80] bg-black flex flex-col text-white outline-none">
       <header className="h-16 shrink-0 px-4 flex items-center justify-between border-b border-white/10">
         <button type="button" onClick={onCancel} className="min-w-11 min-h-11 text-sm font-bold">Cancel</button>
         <div className="text-center"><p className="text-[10px] uppercase tracking-[.16em] text-white/50">Harvest Family</p><p className="text-sm font-extrabold">Edit video</p></div>

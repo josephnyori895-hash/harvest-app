@@ -3,6 +3,7 @@ import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participat
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 import { timeAgo } from '../lib/time'
+import { useModalFocus } from '../lib/useModalFocus'
 import { Icon } from '../ui'
 
 import { DEFAULT_FUNDS, DEFAULT_QUICK, parseFunds, parseQuick } from '../lib/givingDefaults'
@@ -119,6 +120,13 @@ export default function Give() {
   const [projectReminder, setProjectReminder] = useState(true)
   const [projectBusy, setProjectBusy] = useState(false)
   const [editingProject, setEditingProject] = useState<any | null>(null)
+  // Both project sheets behave like every other dialog in the app: focus moves
+  // inside, Tab is trapped, Escape closes, focus returns to the trigger, and the
+  // page underneath stops scrolling while the sheet is up.
+  const projectSheetRef = useRef<HTMLDivElement | null>(null)
+  const editProjectSheetRef = useRef<HTMLDivElement | null>(null)
+  useModalFocus(Boolean(selectedProject), projectSheetRef, () => setSelectedProject(null))
+  useModalFocus(Boolean(editingProject), editProjectSheetRef, () => setEditingProject(null))
 
   // Take modes: an individual commitment (project_participants) or a team
   // take under a group / department / community (project_takes + helpers).
@@ -544,7 +552,7 @@ export default function Give() {
         const s = projectStats(selectedProject)
         const backers = selectedProject.participants_list || []
         return <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 backdrop-blur-sm" onClick={() => setSelectedProject(null)}>
-          <div className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-surface shadow-raised" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${selectedProject.name} project`}>
+          <div ref={projectSheetRef} tabIndex={-1} className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-surface shadow-raised outline-none" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${selectedProject.name} project`}>
             {/* Campaign hero: the cover is the whole story, so the status, name
                 and deadline sit on it instead of in a header bar above it. */}
             <div className="relative">
@@ -743,7 +751,7 @@ export default function Give() {
         </div>
         <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Manage projects</h2><p className="text-xs text-ink-muted mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projects.length === 0 && <p className="text-xs text-ink-muted mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-line"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-accent ml-1">{p.status}</span></p><p className="text-xs text-ink-muted mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-gold-soft border border-gold text-gold-strong text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-success-soft border border-success text-success text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
         <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Create project</h2><p className="text-xs text-ink-muted mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
-        {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5" onClick={e=>e.stopPropagation()}><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-10 h-10 rounded-full bg-surface-raised border border-line" aria-label="Close">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}
+        {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div ref={editProjectSheetRef} tabIndex={-1} className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5 outline-none" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Edit project"><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-10 h-10 rounded-full bg-surface-raised border border-line" aria-label="Close">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}
         <div className="grid grid-cols-2 gap-3"><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Pending</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.pending_kes||0).toLocaleString()} <span className="text-[11px] font-bold text-ink-subtle">({adminData?.totals?.pending_count||0} awaiting M-Pesa)</span></p></div></div>
         <div className="rounded-card border border-line bg-surface-raised p-4">{(adminData?.transactions||[]).map(t => <div key={t.id} className="py-3 border-b last:border-0 border-line"><div className="flex justify-between gap-3"><p className="font-semibold">KES {Number(t.amount_kes).toLocaleString()} · {t.purpose}</p><span className="text-xs font-bold capitalize">{t.status}</span></div><p className="text-xs text-ink-muted">{t.username || 'member'} · {t.receipt_number || 'No receipt yet'}</p></div>)}</div>
       </div>}

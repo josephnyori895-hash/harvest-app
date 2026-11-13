@@ -1,4 +1,15 @@
-> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+> **RETIRED — historical design record. Do not implement it, and do not use it to
+> judge how the app behaves today.**
+>
+> This document specifies the `server/` VPS stack (Fastify + Postgres + MinIO +
+> Socket.IO, KES 1k/mo). That stack was retired; `server/` is now an empty
+> directory. The live backend is the Cloudflare Worker in `workers/` (see
+> `workers/wrangler.toml`). Any `server/...` path below is historical and no
+> longer exists.
+>
+> **Read instead:** `src/lib/realtime.ts` and `workers/src/realtime.js` — live realtime is a
+> WebSocket to a Cloudflare Realtime Durable Object, not Socket.IO. Chat history
+> and updates still fall back to polling `GET /api/chat/updates?after=`.
 
 # Realtime — VPS-only (KES 1k/mo) Socket.IO + Redis/Memory + Coturn
 

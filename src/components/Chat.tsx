@@ -170,7 +170,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const { username: authUsername } = useAuth()
   const [tab, setTab] = useState<'inbox' | 'people'>('inbox')
   const [chatView, setChatView] = useState<'chats' | 'community'>('chats')
-  const [section, setSection] = useState<Section>('personal')
+  const [section] = useState<Section>('personal')
   const [active, setActive] = useState<ChatUser | null>(null)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -823,10 +823,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     return searched
   }, [users, currentUser, section, peopleQuery])
 
-  // ── Conversation list ────────────────────────────────────────────────────
-  // Rendered on its own (mobile) and as the left pane of the desktop
-  // master/detail layout (wide screens), so it lives here rather than in a
-  // duplicated return branch.
+  // Conversation list — one renderer serves the phone view and the desktop
+  // master/detail left pane (no duplicated return branch).
   const inboxPane = (
     <>
       <header className="sticky top-0 z-20 border-b border-line bg-surface/90 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">

@@ -7,11 +7,10 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [admin, map, badge, icons, app, auth, users, pending] = await Promise.all([
+const [admin, map, badge, app, auth, users, pending] = await Promise.all([
   read('src/components/Admin.tsx'),
   read('src/components/HarvestMap.tsx'),
   read('src/components/VerifiedBadge.tsx'),
-  read('src/components/Icons.jsx'),
   read('src/App.jsx'),
   read('src/state/auth.tsx'),
   read('workers/src/routes/users.js'),
@@ -108,8 +107,6 @@ test('one premium verification seal is used everywhere', () => {
   assert.match(badge, /useId\(\)/, 'badge gradients must get a unique id')
   assert.match(badge, /linearGradient/, 'badge must use the brand gradient seal')
   assert.match(badge, /<title>\{label\}<\/title>/, 'badge must expose a readable title')
-  assert.match(icons, /export \{ VerifiedBadge \} from '\.\/VerifiedBadge'/, 'the legacy badge must be the same component')
-  assert.doesNotMatch(icons, /text-green-600/, 'the old green badge must be gone')
 })
 
 console.log('Admin, map, ministry and verification contract tests passed.')
@@ -135,10 +132,10 @@ test('the admin map accounts for every member, including those who never shared'
 
 test('no legacy emoji or dark card survives the swept screens', async () => {
   const swept = [
-    'src/components/Toast.tsx', 'src/components/CallScreen.tsx', 'src/components/Protected.tsx',
+    'src/components/Toast.tsx', 'src/components/Protected.tsx',
     'src/components/VideoThumb.tsx', 'src/components/UploadPill.tsx', 'src/components/EditProfile.tsx',
     'src/components/Search.tsx', 'src/components/ViewUser.tsx', 'src/components/AdminMedia.tsx',
-    'src/components/Admin.tsx', 'src/components/Departments.tsx', 'src/components/AccountSwitcher.tsx',
+    'src/components/Admin.tsx', 'src/components/Departments.tsx',
     'src/components/SocialEditor.tsx', 'src/components/NotificationsScreen.jsx', 'src/App.jsx',
   ]
   const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u

@@ -5,12 +5,9 @@ import { useCongregations } from '../lib/useCongregations'
 import { Icon } from '../ui'
 
 import ErrorMessage from './ErrorMessage'
-// EditProfile — self-service profile editing (name, photo, phone, location,
-// faith, congregation). The avatar uploads through the background manager
-// (retries on flaky network), then attaches via PATCH /api/me. Text fields
-// save directly; the server is the source of truth and echoes back the
-// canonical user, which we propagate to the rest of the app via
-// 'harvest:profile-updated'.
+import { initials } from '../lib/initials'
+// EditProfile — self-service profile editing. Avatar rides the background
+// upload manager; the server's canonical echo propagates via 'harvest:profile-updated'.
 export default function EditProfile({ onDone }: { onDone: () => void }) {
   const { congregations: GROUPS } = useCongregations()
   const [me, setMe] = useState<any | null>(null)
@@ -109,7 +106,6 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
     faith !== (me?.faith || '') ||
     groupName !== (me?.group_name || '')
   )
-  const initials = (name || me?.username || '?').split(/[\s_.]/).filter(Boolean).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()
   const FIELD = 'mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-raised px-4 text-sm text-ink outline-none placeholder:text-ink-subtle focus:border-accent focus:ring-2 focus:ring-accent/20'
 
   return (
@@ -140,7 +136,7 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
               <img src={avatarUrl} alt="" className="h-full w-full rounded-full border-[3px] border-surface object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center rounded-full border-[3px] border-surface bg-surface-sunken text-xl font-extrabold">
-                {initials}
+                {initials(name || me?.username || '')}
               </div>
             )}
           </div>

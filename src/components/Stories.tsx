@@ -1,7 +1,5 @@
-import MediaThumbnail from './MediaThumbnail'
 import { useState, useEffect, useRef } from 'react'
 import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
-import { shareStoryToWhatsApp } from '../lib/whatsappShare'
 import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
 
@@ -11,7 +9,7 @@ import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId 
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
-export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpenUser, onDeleted, onViewed }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[]; onOpenUser?: (u: any) => void; onDeleted?: (id: string) => void; onViewed?: (id: string) => void }) {
+export default function StoryViewer({ idx, setIdx, allStories, users: _users = [], onOpenUser, onDeleted, onViewed }: { idx: number; setIdx: (n: number | null) => void; allStories: any[]; users?: any[]; onOpenUser?: (u: any) => void; onDeleted?: (id: string) => void; onViewed?: (id: string) => void }) {
   const s = allStories[idx]
   const [progress, setProgress] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
@@ -33,12 +31,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   const [showViews, setShowViews] = useState(false)
   const [viewerError, setViewerError] = useState('')
   const [editing, setEditing] = useState(false)
-  const [musicPreviewId, setMusicPreviewId] = useState<string | null>(activeInlineMediaTrackId())
+  const [, setMusicPreviewId] = useState<string | null>(activeInlineMediaTrackId())
   const isVideo = Boolean(s?.video)
-  const toggleMusic = () => {
-    if (!s?.music?.id || isVideo) return
-    void toggleInlineMediaTrack({ id: String(s.music.id), url: s.music.url }, setMusicPreviewId)
-  }
   useEffect(() => {
     stopInlineMediaAudio()
     if (s?.music?.id && !isVideo && !isPaused) {
@@ -55,7 +49,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users = [], onOpe
   // play in full (onEnded). Composer-chosen duration rides the upload task.
   const storyDurationSec = Number((s as any)?.duration_secs) || Number((s as any)?.duration) || 4
   const duration = isVideo ? 0 : storyDurationSec * 1000
-  const isLastStory = idx >= allStories.length - 1
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
   const canDelete = Boolean(s?.id && (s.username === me || isAdmin))
@@ -381,7 +374,7 @@ export function StoryCreate({ onDone }: { onDone: () => void }) {
   const [caption, setCaption] = useState('')
   const [fileUrl, setFileUrl] = useState<string | null>(null)
   const [fileObj, setFileObj] = useState<File | null>(null)
-  const [fileName, setFileName] = useState<string | null>(null)
+  const [, setFileName] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [filter, setFilter] = useState('Original')

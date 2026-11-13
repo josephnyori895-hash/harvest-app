@@ -1,4 +1,14 @@
-> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+> **RETIRED — historical design record. Do not implement it, and do not use it to
+> judge how the app behaves today.**
+>
+> This document specifies the `server/` VPS stack (Fastify + Postgres + MinIO +
+> Socket.IO, KES 1k/mo). That stack was retired; `server/` is now an empty
+> directory. The live backend is the Cloudflare Worker in `workers/` (see
+> `workers/wrangler.toml`). Any `server/...` path below is historical and no
+> longer exists.
+>
+> **Read instead:** `docs/release-ledger.md` and `docs/release-checklist.md`. This M0
+> snapshot is kept only as a record of where the rebuild started.
 
 # Rebuild baseline — M0
 

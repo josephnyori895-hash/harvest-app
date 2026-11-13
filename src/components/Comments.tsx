@@ -5,6 +5,7 @@ import { timeAgo } from '../lib/time'
 import { Icon } from '../ui'
 import { useModalFocus } from '../lib/useModalFocus'
 import { VerifiedBadge } from './VerifiedBadge'
+import { initials } from '../lib/initials'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Comment = {
@@ -12,18 +13,8 @@ type Comment = {
   likes?: number; liked?: boolean; parent_id?: string | null
 }
 
-const initials = (name: string) => {
-  const parts = String(name || '?').replace(/^@/, '').split(/[\s._-]+/).filter(Boolean)
-  const out = parts.map(p => p[0]).slice(0, 2).join('').toUpperCase()
-  return out || '?'
-}
-
-// Comments sheet for posts and reels, on post_comments.
-//
-// Row grammar follows a feed comment: avatar, "username body", a quiet meta
-// line (time · likes · Reply), and the reaction on the right edge. One level of
-// replies nests under its parent. Members can react and reply; authors and
-// admins can delete. The composer is pinned above the safe area.
+// Comments sheet (post_comments): avatar + "username body" + quiet meta line,
+// one reply level; react/reply for members, delete for authors and admins.
 export default function Comments({
   scope,
   postId,
@@ -207,8 +198,7 @@ export default function Comments({
   const sheetRef = useRef<HTMLDivElement>(null)
   useModalFocus(true, sheetRef, onClose)
 
-  return (
-    <div ref={sheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-label="Comments">
+  return (      <div ref={sheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-modal="true" aria-label="Comments">
       <div
         className="comments-sheet flex max-h-[min(82dvh,720px)] w-full min-h-0 flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-raised sm:max-w-lg sm:rounded-3xl"
         onClick={e => e.stopPropagation()}

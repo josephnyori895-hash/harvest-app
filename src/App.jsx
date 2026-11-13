@@ -130,28 +130,9 @@ function useDirectory(enabled, refreshMs = 30000) {
   }, [enabled, refreshMs])
   return [users, setUsers, loading, error, load]
 }
-function IgIcon({ name, active }) {
-  // Warm palette: brand purple when active, soft warm gray when not.
-  const c = active ? '#7C3AED' : '#A49A8E'
-  const s = active ? 2.2 : 1.6
-  if (name === 'home') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M3 10L12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4z" /></svg>
-  if (name === 'search') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={s}><circle cx="11" cy="11" r="7" /><path d="M16.5 16.5L21 21" /></svg>
-  if (name === 'reels') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M10 8l6 4-6 4z" fill={active ? '#FFFBF0' : 'none'} stroke="none" /></svg>
-  if (name === 'post') return <div className={`w-6 h-6 rounded-lg border flex items-center justify-center ${active ? 'bg-accent text-white border-accent' : 'border-ink-subtle'}`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={active ? '#FFFBF0' : '#A49A8E'} strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg></div>
-  if (name === 'activity') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 21s-6-4-6-10a6 6 0 0 1 12 0c0 6-6 10-6 10z" /></svg>
-  if (name === 'music') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-  if (name === 'give') return <Icon name="gift" size={active ? 22 : 20} className={active ? '' : 'opacity-75'} />
-  if (name === 'map') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" /><path d="M8 2v16M16 6v16" /></svg>
-  if (name === 'chat') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-4 2v-4.2A7.5 7.5 0 1 1 20 11.5z" /><path d="M8 11h8M8 14h5" strokeLinecap="round" /></svg>
-  if (name === 'departments') return <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? c : 'none'} stroke={c} strokeWidth={s}><path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" /><path d="M3 12l9 4.5 9-4.5" /><path d="M3 16.5L12 21l9-4.5" /></svg>
-  if (name === 'profile') return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={s}><path d="M20 21v-2a4 4 0 0 0-4-4H10a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-  return null
-}
 
-// In-app update prompt for the Android build: on open, compare the
-// installed versionCode against the latest release (Worker /api/app-version).
-// Shows a dismissible card above the app when an update is available;
-// 'Later' hides it for 24h for that version. Web builds never see it.
+// In-app update prompt (Android): compares installed versionCode against the
+// Worker's release; 'Later' hides for 24h. Web builds never see it.
 function UpdateGate({ children }) {
   const [update, setUpdate] = useState(null)
   const [hidden, setHidden] = useState(true)
@@ -192,13 +173,8 @@ function UpdateGate({ children }) {
   )
 }
 
-// The app's floating panels — the notifications inbox and the DM card — are
-// dialogs, so they behave like one: focus moves inside on open, Tab is trapped,
-// Escape closes, and focus goes back to whatever opened it. Without this the
-// feed behind the card kept the focus and nothing was reachable by keyboard.
-// A stacked overlay (a comment sheet, an image viewer) keeps Escape for itself
-// while it is the topmost dialog. The behaviour itself lives in
-// src/lib/useModalFocus so the comment and post options sheets share it.
+// Floating panels (inbox, DM card) are dialogs: focus in, Tab trapped,
+// Escape topmost-only, focus returned on close. Behaviour lives in lib/useModalFocus.
 
 function InnerApp() {
   const { setUsername, setRole, setVerified, verified, isAdmin } = useAuth()
@@ -1026,14 +1002,10 @@ function Onboarding({ onAuthSuccess }) {
     setError(''); setErrorKind(''); setFieldErrors({})
   }
 
-  // Map a fetch failure to a member-useful message: network problems are the
-  // common case on mobile data, and "wrong password" must never be conflated
-  // with "the internet is down" (members otherwise retry forever).
-  // `keepServerMessage` is for signup: every register rejection is actionable
-  // (short password, taken username, bad phone number), so replacing it with a
-  // generic "couldn't create your account" hides the one thing the member must
-  // change. Sign-in keeps the safe fallback so a wrong password never leaks
-  // which half of the credentials was wrong.
+  // Fetch failure -> member-useful message: never conflate "wrong password"
+  // with "the internet is down". Signup keeps the server's actionable message
+  // (short password, taken username, bad phone); sign-in stays generic so a
+  // wrong password never leaks which half was wrong.
   const authError = (e, fallback, { keepServerMessage = false } = {}) => {
     if (e instanceof TypeError || /fetch|network|Failed to fetch/i.test(String(e?.message))) {
       return { kind: 'network', message: "No connection — check your internet, then try again. Your details haven't been shared with anyone." }
@@ -1652,17 +1624,12 @@ function Nav({ tab, setTab }) {
 
 // Desktop-only navigation rail. Static (not fixed) so it never covers content,
 // and it retires the phone layout as the only way to move around the app.
+// It carries navigation only: the logo and wordmark live in the Home header,
+// and showing them in both places put the same brand twice on a wide screen.
 function Sidebar({ tab, setTab }) {
   return (
     <aside className="hidden shrink-0 border-r border-line bg-surface-raised lg:flex lg:w-[248px] lg:flex-col" aria-label="Primary">
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <img src="/logo.png" alt="" className="h-9 w-9 rounded-xl bg-gold object-contain" />
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-extrabold text-ink">Harvest Family</p>
-          <p className="text-2xs font-bold uppercase tracking-[0.14em] text-accent">Nyeri</p>
-        </div>
-      </div>
-      <nav className="flex flex-col gap-1 px-3">
+      <nav className="flex flex-col gap-1 px-3 pt-5">
         {NAV_ITEMS.map(item => {
           const active = tab === item.id
           return (

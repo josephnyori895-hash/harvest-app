@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { VerifiedBadge } from './VerifiedBadge'
 import { Icon, type IconName } from '../ui'
+import { useOverflowX } from '../lib/useOverflowX'
 
 // PreviewTile — IG-style browse tile: a muted looping preview of the actual
 // reel. One video element per tile, mounted once (remounting stalls and
@@ -87,12 +88,21 @@ const loadRecent = (): string[] => {
   try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, RECENT_MAX) : [] } catch { return [] }
 }
 
-// Tile image that degrades to the gradient/emoji fallback if the object is
-// missing or corrupt instead of showing the browser's broken-image glyph.
-function TileImg({ src, className = 'w-full h-full object-cover' }: { src?: string | null; className?: string }) {
+// Tile image that degrades to the gradient fallback if the object is missing
+// or corrupt, instead of showing the browser's broken-image glyph. It renders
+// that fallback itself rather than returning null: returning null left the
+// tile's own bg-surface-sunken showing, which is why expired signed thumbs and
+// reels with no poster read as a grid of blank grey squares.
+function TileImg({ src, className = 'w-full h-full object-cover', icon = 'reels' }: { src?: string | null; className?: string; icon?: IconName }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => { setFailed(false) }, [src])
-  if (!src || failed) return null
+  if (!src || failed) {
+    return (
+      <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft" aria-hidden="true">
+        <Icon name={icon} size={22} className="text-accent-strong/60" />
+      </span>
+    )
+  }
   return <img src={src} alt="" loading="lazy" className={className} onError={() => setFailed(true)} />
 }
 
@@ -107,6 +117,8 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
 }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const filterRailRef = useRef<HTMLDivElement>(null)
+  const filterMore = useOverflowX(filterRailRef)
   const [recentFeed, setRecentFeed] = useState<any[]>([])
   const [recentSearches, setRecentSearches] = useState<string[]>(loadRecent)
   // Lazy-loaded search corpora. null = not fetched, 'error' = failed (retryable).
@@ -304,19 +316,24 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
       {/* Screen-reader announcement of result counts as the query changes. */}
       <p aria-live="polite" className="sr-only">{showGrid ? '' : loading ? 'Searching…' : `${totalHits} results found`}</p>
 
-      {/* Filter chips */}
-      <div className="flex gap-1.5 mt-2.5 overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Search filters">
-        {FILTERS.map(f => (
-          <button
-            key={f.id}
-            role="tab"
-            aria-selected={filter === f.id}
-            onClick={() => setFilter(f.id)}
-            className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${filter === f.id ? 'bg-accent text-white border-accent shadow-sm' : 'bg-white text-ink-muted border-line'}`}
-          >
-            <span className="inline-flex items-center gap-1.5"><Icon name={f.icon} size={13} />{f.label}</span>
-          </button>
-        ))}
+      {/* Filter chips — same rail treatment as Home: trailing room so the last
+          filter can scroll clear of the edge instead of being cut in half. */}
+      <div className="relative mt-2.5 -mx-1">
+        <div ref={filterRailRef} className="flex gap-1.5 overflow-x-auto scroll-px-1 pb-1 pr-1 px-1" role="tablist" aria-label="Search filters">
+          {FILTERS.map(f => (
+            <button
+              key={f.id}
+              role="tab"
+              aria-selected={filter === f.id}
+              onClick={() => setFilter(f.id)}
+              className={`shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition ${filter === f.id ? 'bg-accent text-white border-accent shadow-sm' : 'bg-white text-ink-muted border-line'}`}
+            >
+              <span className="inline-flex items-center gap-1.5"><Icon name={f.icon} size={13} />{f.label}</span>
+            </button>
+          ))}
+        </div>
+        {/* Signals the filters that are off-screen; hidden once they all fit. */}
+        {filterMore && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />}
       </div>
 
       {showGrid ? (
@@ -516,10 +533,13 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                   videoSrc={r.hls_url || undefined}
                   ariaLabel={`Reel by ${r.username}`}
                   onClick={() => onOpenReel ? onOpenReel(String(r.id)) : onOpenUser?.({ username: r.username, name: r.username })}
-                  fallback={r.thumb_url ? <img src={r.thumb_url} alt="" className="w-full h-full object-cover" /> : r.hls_url
+                  fallback={r.thumb_url ? <TileImg src={r.thumb_url} /> : r.hls_url
                     ? <video src={`${r.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" />
                     : <div className="w-full h-full bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center" aria-hidden="true"><Icon name="reels" size={22} className="text-accent-strong/60" /></div>}
                   overlay={<>
+                    {/* Scrim: the @handle is white, and a missing thumb now falls
+                        back to a pale gradient where white text vanished. */}
+                    <span className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-ink/55 to-transparent" aria-hidden="true" />
                     <span className="absolute bottom-1 left-1 right-1 text-[9px] font-bold text-white truncate drop-shadow">@{r.username}</span>
                     <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>
                   </>}

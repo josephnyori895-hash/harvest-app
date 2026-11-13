@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FILTERS, composeLook, lookCss, neutralAdjust, type Adjustments } from '../lib/imageFilters'
+import { useModalFocus } from '../lib/useModalFocus'
 
 // ImageAdjuster — Harvest Family photo editing, modelled on Instagram's create
 // screen: a dark immersive canvas that fills the width, two tabs (Filters ·
@@ -51,8 +52,13 @@ export default function ImageAdjuster({
   const [zoom, setZoom] = useState(1)
   const [saving, setSaving] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // The editor fills the screen and is mounted only while it is open, so it is
+  // always "open": Escape cancels, focus stays on the controls, and the page
+  // behind it cannot scroll.
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const pinchRef = useRef<{ dist: number; baseScale: number } | null>(null)
+  useModalFocus(true, panelRef, onCancel)
 
   useEffect(() => {
     const url = URL.createObjectURL(file)
@@ -210,7 +216,7 @@ export default function ImageAdjuster({
   ]
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white" role="dialog" aria-label="Adjust image">
+    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-black text-white outline-none" role="dialog" aria-modal="true" aria-label="Adjust image">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-2">
         <button onClick={onCancel} className="grid h-10 w-10 place-items-center rounded-full" aria-label="Cancel">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>

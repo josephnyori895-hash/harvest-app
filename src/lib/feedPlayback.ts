@@ -4,7 +4,7 @@
 // opt-in pref + the browser interaction flag; the global worship/sermon player
 // owns the audio element exclusively while it plays, so feed music yields.
 import { startInlineMediaTrack, stopInlineMediaAudio, isInlinePlaying } from './inlineMediaAudio'
-import { audioAutoplayReady, markAudioUnlocked, isGlobalPlayerPlaying, getFeedAutoplayPref } from './audioPlayer'
+import { audioAutoplayReady, isGlobalPlayerPlaying, getFeedAutoplayPref } from './audioPlayer'
 
 let activePostId: string | null = null
 

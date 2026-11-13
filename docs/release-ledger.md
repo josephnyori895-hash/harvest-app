@@ -81,3 +81,14 @@ Successful releases should expose, at minimum:
 - permanent URL verification result
 - previous verified release and rollback SHA256
 - restoration SHA256
+
+## Audit records — 2026-11-12 (folded into the bug register)
+
+Two read-only screen audits are no longer separate files. Both were folded into `docs/BUG-REGISTER.md` on 12 November 2026 and the originals deleted:
+
+| Audit | Covered | Register rows | Outcome |
+|---|---|---|---|
+| Sign in / sign up | `Onboarding` in `src/App.jsx`, `src/lib/useCongregations.ts`, `workers/src/routes/auth.js` | `RS-201`–`RS-216` (A1–A16) | All fixed in `src/App.jsx` on 2026-11-12 |
+| Home feed | `src/components/Home.tsx`, `src/lib/api.ts`, `/api/feed` | `RS-217`–`RS-229` (H1–H13) | Open — live defects, not yet fixed |
+
+Neither audit ran a browser or Android pass; findings are code review plus curl against the local Worker. **No release implication:** this records committed source, not code proven in a deployed APK, so the release authority rules above are unchanged.

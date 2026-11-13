@@ -1,4 +1,16 @@
-> **Status:** `server/` is retired — it is an empty directory. The live backend is the Cloudflare Worker in `workers/` (see `workers/wrangler.toml`). Any `server/...` path below is historical, not a file you can edit.
+> **RETIRED — historical design record. Do not implement it, and do not use it to
+> judge how the app behaves today.**
+>
+> This document specifies the `server/` VPS stack (Fastify + Postgres + MinIO +
+> Socket.IO, KES 1k/mo). That stack was retired; `server/` is now an empty
+> directory. The live backend is the Cloudflare Worker in `workers/` (see
+> `workers/wrangler.toml`). Any `server/...` path below is historical and no
+> longer exists.
+>
+> **Read instead:** `workers/src/routes/media.js` for uploads and R2 limits,
+> `workers/src/routes/feed.js` for feed ordering (pinned first, then
+> `created_at DESC` — the ranked feed described here was never built), and
+> `src/lib/feedPlayback.ts` for playback.
 
 # Harvest Family — Media Pipeline + Ranked Feed Architecture
 **VPS-only · KES 1k/mo · 500 users · Hybrid pending→approve · MinIO `harvest-media`**

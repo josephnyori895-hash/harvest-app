@@ -1,5 +1,3 @@
-import MediaThumbnail from './MediaThumbnail'
-import VideoThumb from './VideoThumb'
 import FeedCard from './FeedCard'
 import { AdvertCard } from './FeedCard'
 import { useState, useMemo, useEffect, useRef } from 'react'
@@ -15,6 +13,8 @@ import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
 import { Icon, Spinner, type IconName } from '../ui'
 import { useModalFocus } from '../lib/useModalFocus'
+import { useOverflowX } from '../lib/useOverflowX'
+import { initials } from '../lib/initials'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
@@ -23,8 +23,12 @@ import { useModalFocus } from '../lib/useModalFocus'
 function CenterNotice({ label, icon, kicker = 'bg-accent-soft text-accent', title, body, primary, onClose }: {
   label: string; icon: React.ReactNode; kicker?: string; title: string; body: React.ReactNode; primary: React.ReactNode; onClose: () => void
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  // A centre notice is still a dialog: focus moves in, Tab is trapped, Escape
+  // closes it, and focus returns to whatever raised it.
+  useModalFocus(true, panelRef, onClose)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-6 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label={label}>
+    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-6 outline-none backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label={label}>
       <div className="w-full max-w-[350px] rounded-[24px] border border-line bg-surface-raised p-6 text-center shadow-raised" onClick={e => e.stopPropagation()}>
         <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${kicker}`}>{icon}</div>
         <h2 className="mt-4 text-center text-base font-extrabold text-ink">{title}</h2>
@@ -47,14 +51,16 @@ const quickLinks: { tab: string; icon: IconName; title: string }[] = [
   { tab: 'give', icon: 'gift', title: 'Give' },
 ]
 
-export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, onDeleteStory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; onDeleteStory?: (id: string) => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
+export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
-  const [likesTick, setLikesTick] = useState(0)
+  const [, setLikesTick] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const startYRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [approvedTick, setApprovedTick] = useState(0)
+  const quickRailRef = useRef<HTMLDivElement>(null)
+  const quickRailMore = useOverflowX(quickRailRef)
+  const [, setApprovedTick] = useState(0)
   // 'Pray with Pastor' — popup shown when no pastor account is configured/found.
   const [showNoPastor, setShowNoPastor] = useState(false)
   const [editPost, setEditPost] = useState<any | null>(null)
@@ -141,6 +147,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const effectivePastors = configuredPastorNames.length ? configuredPastors : discoveredPastors
   const availablePastors = effectivePastors.filter((entry: any) => Boolean(entry.user))
   const [showPastorPicker, setShowPastorPicker] = useState(false)
+  const pastorPickerRef = useRef<HTMLDivElement>(null)
+  useModalFocus(showPastorPicker, pastorPickerRef, () => setShowPastorPicker(false))
   const [showPastorUnavailable, setShowPastorUnavailable] = useState<string | null>(null)
   const [showDirectoryError, setShowDirectoryError] = useState(false)
   const openPastorChat = () => {
@@ -187,8 +195,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const pendingSavesRef = useRef(new Set<string>())
   const lastFeedFetchRef = useRef(0)
 
-  const approvedMoments: any[] = [] // demo approval flow removed — server API is the source of truth
-  const approvedPosts: any[] = []
 
   useEffect(() => {
     if (!api) return undefined
@@ -503,7 +509,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-surface text-ink">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {showPastorPicker && (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 backdrop-blur-sm" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
+      <div ref={pastorPickerRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 outline-none backdrop-blur-sm" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
         <div className="max-h-[82dvh] w-full overflow-auto rounded-t-[28px] border-t border-line bg-surface-raised p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-raised sm:max-w-lg sm:rounded-[28px]" onClick={e => e.stopPropagation()}>
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
           <div className="mb-1 flex items-center justify-between gap-3">
@@ -548,7 +554,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                 {configuredPastors.map((entry: any) => {
                   const pastor = entry.user
                   const displayName = pastor?.name || entry.username
-                  const initials = String(displayName).split(/[\s_.-]/).filter(Boolean).map((part: string) => part[0]).slice(0, 2).join('').toUpperCase()
+                  const pastorInitials = initials(displayName)
                   return (
                     <button
                       key={pastor?.id || `configured_${entry.username}`}
@@ -561,7 +567,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
                       }}
                       className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border px-3 text-left transition-colors ${pastor ? 'border-line bg-surface-sunken hover:bg-accent-wash' : 'cursor-not-allowed border-line bg-surface-sunken/60 opacity-60'}`}
                     >
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">{initials}</div>
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">{pastorInitials}</div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-ink">{pastor?.name || entry.username}</p>
                         <p className="truncate text-2xs text-ink-muted">@{entry.username}</p>
@@ -616,22 +622,28 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       {/* pr-14 reserves the footprint of the shell's floating notification bell,
           so the header's own actions never sit underneath it. */}
       <div className="flex items-center justify-between gap-2 py-3 pl-4 pr-14">
-        <button onClick={() => onSwitchAccount?.()} className="flex items-center gap-3 text-left" aria-label="Open account switcher">
-          <img src="/logo.png" alt="" className="h-10 w-10 rounded-2xl border border-line bg-surface-sunken object-contain" />
-          <span>
-            <span className="block text-2xs font-bold uppercase tracking-[0.18em] text-accent">Harvest Family</span>
+        <button onClick={() => onSwitchAccount?.()} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open account switcher">
+          <img src="/logo.png" alt="" className="h-10 w-10 shrink-0 rounded-2xl border border-line bg-surface-sunken object-contain" />
+          <span className="min-w-0">
+            {/* whitespace-nowrap: at 390px the kicker used to break into
+                "HARVEST" / "FAMILY" on two lines and shove the header taller. */}
+            <span className="block truncate whitespace-nowrap text-2xs font-bold uppercase tracking-[0.18em] text-accent">Harvest Family</span>
             <span className="block truncate text-heading font-extrabold leading-tight text-ink">Nyeri</span>
           </span>
         </button>
         <div className="flex items-center gap-2">
-          <button onClick={() => setTab('music')} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken" aria-label="Songs & worship" title="Songs & worship"><Icon name="music" size={16} />Songs &amp; worship</button>
+          {/* Below sm the label is dropped: the logo, wordmark and this chip on
+              one 390px row left no room for the kicker, which wrapped. */}
+          <button onClick={() => setTab('music')} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken" aria-label="Songs & worship" title="Songs & worship"><Icon name="music" size={16} /><span className="hidden sm:inline">Songs &amp; worship</span></button>
         </div>
       </div>
     </header>
 
     <main className="px-4 pb-8">
       <nav aria-label="Quick actions" className="sticky top-16 z-10 -mx-4 border-b border-line/60 bg-surface/90 px-4 py-2 backdrop-blur-xl">
-        <div className="flex gap-2 overflow-x-auto scrollbar-none">
+        {/* pr-2 + scroll-px-2 leave the last chip room to come fully into view
+            instead of being sliced flush against the viewport edge. */}
+        <div ref={quickRailRef} className="flex gap-2 overflow-x-auto scroll-px-2 pr-2 scrollbar-none">
           {quickLinks.map(q => (
             <button
               key={q.tab}
@@ -643,6 +655,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             </button>
           ))}
         </div>
+        {/* Only while the rail actually continues: a static fade would dim a
+            last chip that already fits. */}
+        {quickRailMore && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />}
       </nav>
 
       <section className="pt-4">
@@ -680,7 +695,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </section>
 
 
-      <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div><div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+      <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div>{/* pr-[68px] keeps the rails clear of the floating chat button (48px + its
+          12px inset), so a story's name is never parked under it. */}<div className="flex gap-3 overflow-x-auto scroll-px-3 pr-[68px] pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
         <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; const firstUnviewed = myStoryGroup.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || myStoryGroup.items[0]).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-surface-sunken">{myStoryGroup?.items[0]?.img
           ? <img src={myStoryGroup.items[0].img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
@@ -775,7 +791,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </div>
     </main>
     {menuPost && (
-      <div ref={postMenuRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 outline-none backdrop-blur-sm" onClick={() => setMenuPost(null)} role="dialog" aria-label="Post options">
+      <div ref={postMenuRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 outline-none backdrop-blur-sm" onClick={() => setMenuPost(null)} role="dialog" aria-modal="true" aria-label="Post options">
         <div className="w-full rounded-t-[24px] border-t border-line bg-surface-raised p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))] shadow-raised sm:max-w-lg sm:rounded-[24px]" onClick={e => e.stopPropagation()}>
           <div className="mx-auto my-2 h-1 w-10 rounded-full bg-line" />
           {menuPost.mine || isAdmin ? <button onClick={() => { const m=menuPost; setMenuPost(null); setEditPost(m) }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-ink transition hover:bg-surface-sunken active:bg-surface-sunken"><Icon name="copy" size={17} className="text-ink-muted" /> Edit caption</button> : null}

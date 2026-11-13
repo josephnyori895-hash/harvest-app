@@ -155,12 +155,6 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     } catch (e: any) { showToast(e?.message || 'Could not create department') } finally { setBusy('') }
   }
 
-  const startEdit = () => {
-    if (!detail?.department) return
-    setEditName(detail.department.name || '')
-    setEditDesc(detail.department.description || '')
-    setEditing(true)
-  }
 
   const saveEdit = async () => {
     if (!detail?.department || busy === 'edit') return

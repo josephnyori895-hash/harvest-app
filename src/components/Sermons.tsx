@@ -15,6 +15,7 @@ import { startBackgroundUpload, getUploadHistory, subscribeUploads, retryUpload,
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
+import { useModalFocus } from '../lib/useModalFocus'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
 
@@ -71,6 +72,14 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
   const [sermonKind, setSermonKind] = useState<'all' | 'audio' | 'video'>('all')
   const [sermonSort, setSermonSort] = useState<'newest' | 'oldest' | 'largest' | 'smallest' | 'longest' | 'shortest' | 'topic'>('newest')
   const uploadInput = useRef<HTMLInputElement | null>(null)
+  const uploadSheetRef = useRef<HTMLDivElement | null>(null)
+  const editSheetRef = useRef<HTMLDivElement | null>(null)
+  // Both sheets are dialogs in the shared sense: focus moves inside on open,
+  // Tab stays in, Escape closes, and focus returns to whatever opened them.
+  // The upload sheet refuses Escape while an upload is running, so the same
+  // guard the scrim uses has to live in the close handler.
+  useModalFocus(uploadOpen, uploadSheetRef, () => { if (!uploading) setUploadOpen(false) })
+  useModalFocus(Boolean(editing), editSheetRef, () => setEditing(null))
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const loadedRef = useRef(0)
   useEffect(() => { loadedRef.current = sermons.length }, [sermons.length])
@@ -649,7 +658,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       )}
 
       {uploadOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 backdrop-blur-[2px]" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-label="Upload sermon">
+        <div ref={uploadSheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={() => !uploading && setUploadOpen(false)} role="dialog" aria-modal="true" aria-label="Upload sermon">
           <div className="w-full space-y-3 rounded-t-3xl border border-line bg-surface-raised p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] sm:max-w-lg" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <p className="text-sm font-extrabold text-ink">Upload sermon</p>
@@ -687,7 +696,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 backdrop-blur-[2px]" onClick={() => setEditing(null)} role="dialog" aria-label="Edit sermon">
+        <div ref={editSheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={() => setEditing(null)} role="dialog" aria-modal="true" aria-label="Edit sermon">
           <div className="w-full space-y-3 rounded-t-3xl border border-line bg-surface-raised p-4 pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] sm:max-w-lg" onClick={e => e.stopPropagation()}>
             <p className="text-sm font-extrabold text-ink">Edit sermon</p>
             <input value={editing.title || ''} onChange={e => setEditing((x: any) => ({ ...x, title: e.target.value }))} placeholder="Title" className="input-base" />

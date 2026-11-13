@@ -1,62 +1,83 @@
+// Guardrails for the admin account controls. The control centre is a wall of
+// inline actions (role, congregation, verification, grants, PIN reset, active
+// state, delete), so these are source-contract tests: we pin the request shape,
+// the busy guard that stops double-submits, the error surfacing, and the
+// self-protection rules the server enforces behind the disabled controls.
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { test } from 'node:test'
 
-const source = await readFile(new URL('../src/components/AccountSwitcher.tsx', import.meta.url), 'utf8')
+const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+const [admin, users] = await Promise.all([
+  read('src/components/Admin.tsx'),
+  read('workers/src/routes/users.js'),
+])
 
-const expectSource = (pattern, message) => {
-  assert.match(source, pattern, message)
-}
-
-test('admin controls expose server-backed Edit profile action', () => {
-  expectSource(/Edit profile/, 'Edit profile control is missing')
-  expectSource(/\/api\/admin\/users\/\$\{encodeURIComponent\(u\.username\)\}/, 'Admin user endpoint is missing')
-  expectSource(/method:'PATCH'/, 'Edit/profile updates must use PATCH')
-  expectSource(/name:\(document\.getElementById\('admin-name'\)/, 'Edit form does not submit the name field')
-  expectSource(/phone:\(document\.getElementById\('admin-phone'\)/, 'Edit form does not submit the phone field')
-  expectSource(/constituency:\(document\.getElementById\('admin-constituency'\)/, 'Edit form does not submit constituency')
+test('every member control goes through one PATCH helper with an encoded username', () => {
+  assert.match(admin, /const patchUser = async \(username: string, body: Record<string, any>\)/, 'the shared PATCH helper is missing')
+  assert.match(admin, /`\$\{API\}\/api\/admin\/users\/\$\{encodeURIComponent\(username\)\}`/, 'member updates must hit the admin users route')
+  assert.match(admin, /method: 'PATCH'/, 'member updates must PATCH')
+  assert.match(admin, /Authorization: `Bearer \$\{token\(\)\}`/, 'member updates must carry the admin token')
+  assert.match(admin, /body: JSON\.stringify\(body\)/, 'member updates must send the patch as JSON')
 })
 
-test('Edit action has loading and error handling', () => {
-  expectSource(/const \[busy,setBusy\]=useState\(false\)/, 'Busy state is missing')
-  expectSource(/disabled=\{busy\} onClick=\{\(\)=>void updateUser\(edit/, 'Save profile is not disabled while busy')
-  expectSource(/\{busy\?'Saving…':'Save profile'\}/, 'Save loading label is missing')
-  expectSource(/setError\(e\.message\)/, 'Request errors are not surfaced')
-  expectSource(/Changes are saved on the server and audited/, 'Edit confirmation/audit messaging is missing')
+test('one busy flag blocks double-submits and disables the row while saving', () => {
+  assert.match(admin, /const patchUser = async[\s\S]{0,80}if \(busy\) return/, 'the helper must refuse while another write is in flight')
+  assert.match(admin, /setBusy\(username\); setError\(''\)/, 'the row must enter its busy state and clear the last error')
+  assert.match(admin, /finally \{ setBusy\(null\) \}/, 'the busy state must be released on every path')
+  assert.match(admin, /disabled=\{busy === u\.username\}/, 'member controls must disable while saving')
+  assert.match(admin, /busy === u\.username \? 'Saving…'/, 'the saving state must be visible')
 })
 
-test('Deactivate, Restore, and Delete require confirmation', () => {
-  expectSource(/window\.confirm\(prompt\)/, 'Lifecycle actions do not require confirmation')
-  expectSource(/Deactivate @\$\{u\.username\}\?/, 'Deactivate confirmation text is missing')
-  expectSource(/Restore @\$\{u\.username\} and allow them to sign in again\?/, 'Restore confirmation text is missing')
-  expectSource(/Permanently delete @\$\{u\.username\}\? This cannot be undone\./, 'Delete confirmation text is missing')
-  expectSource(/action:'deactivate'\|'restore'\|'delete'/, 'Deactivate action is missing')
-  expectSource(/action:'deactivate'\|'restore'\|'delete'/, 'Restore action is missing')
-  expectSource(/api\/admin\/users\/\$\{encodeURIComponent\(u\.username\)\}\$\{action==='delete'\?'':`\/\$\{action\}`\}/, 'Lifecycle endpoint construction is missing')
-  expectSource(/method=action==='delete'\?'DELETE':'POST'/, 'Lifecycle HTTP methods are incorrect')
+test('the admin cannot demote or deactivate their own account from the row', () => {
+  assert.match(admin, /disabled=\{busy === u\.username \|\| u\.username === localStorage\.getItem\('harvest_username'\)\}/, 'the role select must stay locked on your own row')
+  assert.match(users, /before\.username === fresh\.username && role !== undefined && role !== 'admin'/, 'the server must refuse self-demotion')
+  assert.match(users, /before\.username === fresh\.username && body\.active === false/, 'the server must refuse self-deactivation')
 })
 
-test('Lifecycle actions have loading, success, and error states', () => {
-  expectSource(/setBusy\(true\);setMessage\(''\);setError\(''\)/, 'Lifecycle busy state is not initialized')
-  expectSource(/finally\{setBusy\(false\)\}/, 'Lifecycle busy state is not cleared')
-  expectSource(/setMessage\(action==='delete'\?`@\$\{u\.username\} permanently deleted`:/, 'Lifecycle success message is missing')
-  expectSource(/await loadAudit\(\)/, 'Lifecycle changes do not refresh audit log')
-  expectSource(/\{error&&<div[^>]*>\{error\}<\/div>\}/, 'Lifecycle error state is not rendered')
+test('the last administrator cannot be removed', () => {
+  assert.match(users, /countAdmins\(env, before\.id\)\) < 1/, 'the last-admin guard is missing')
+  assert.match(users, /cannot remove the last active administrator/, 'the last-admin refusal must be explained')
 })
 
-test('Audit Log loads from the protected admin endpoint and renders entries', () => {
-  expectSource(/const \[audit,setAudit\]=useState<any\[\]>\(\[\]\)/, 'Audit state is missing')
-  expectSource(/\/api\/admin\/audit\?limit=100/, 'Audit endpoint is missing')
-  expectSource(/setAudit\(d\.audit\|\|\[\]\)/, 'Audit response is not stored')
-  expectSource(/\[\['users','Members'\],\['moderation','Moderation'\],\['giving','Giving'\],\['audit','Audit'\]\]/, 'Audit tab is missing')
-  expectSource(/tab==='audit'/, 'Audit panel is missing')
-  expectSource(/x\.action.*x\.target_type/, 'Audit entries do not render action/target information')
+test('failed writes surface the server message instead of failing silently', () => {
+  assert.match(admin, /const data = await response\.json\(\)\.catch\(\(\) => \(\{\}\)\)/, 'a non-JSON error body must not throw')
+  assert.match(admin, /if \(!response\.ok\) throw new Error\(data\.error \|\| 'Update failed'\)/, 'the server reason must be surfaced')
+  assert.match(admin, /setError\(e\?\.message \|\| 'Unable to update account'\)/, 'the catch must fall back to a readable message')
+  assert.match(admin, /setError\(''\)/, 'a fresh attempt must clear the stale error')
 })
 
-test('Admin self-protection prevents Allan from lifecycle-editing himself', () => {
-  expectSource(/u\.username===username/, 'Self-protection check is missing')
-  expectSource(/disabled=\{busy\|\|u\.username===username\} onClick=\{\(\)=>void lifecycle\(u,'deactivate'\)\}/, 'Self-deactivate must be disabled')
-  expectSource(/disabled=\{busy\|\|u\.username===username\} onClick=\{\(\)=>void lifecycle\(u,'delete'\)\}/, 'Self-delete must be disabled')
+test('the server validates every field the panel can send', () => {
+  assert.match(users, /if \(role !== undefined && !ROLES\.has\(role\)\) return errorResponse\('role must be member or admin', 400\)/)
+  assert.match(users, /if \(verified !== undefined && typeof verified !== 'boolean'\) return errorResponse\('verified must be boolean', 400\)/)
+  assert.match(users, /if \(groupName !== undefined && groupName !== null && !await groupExists\(env, groupName\)\)/)
+  assert.match(users, /if \(!Array\.isArray\(body\.grants\)\) return errorResponse\('grants must be an array', 400\)/, 'power grants must be validated')
+  assert.match(users, /if \(!\/\^\\d\{4,6\}\$\/\.test\(pin\)\) return errorResponse\('PIN must be 4-6 digits', 400\)/, 'PIN resets must be validated')
+  assert.match(users, /if \(!target\.rows\[0\]\) return errorResponse\('user not found', 404\)/, 'unknown members must 404, not 500')
 })
 
-console.log('Admin control source-contract tests passed.')
+test('a successful write re-syncs the row from the server response', () => {
+  assert.match(admin, /const updated = data\.user/, 'the response user must drive the update')
+  assert.match(admin, /setAccounts\(list => list\.map\(u => u\.username === username \? \{ \.\.\.u, \.\.\.updated \} : u\)\)/, 'the account list must adopt the server copy')
+  assert.match(admin, /setUsers\(users\.map\(u => u\.username === username/, 'the dashboard counts must follow the update')
+  assert.match(admin, /flash\(`\$\{username\} updated`\)/, 'the admin must get confirmation')
+  assert.match(users, /await audit\(env, fresh, 'user_profile_update'/, 'every profile write must be audited')
+})
+
+test('no admin control is tested through a component the app does not mount', async () => {
+  // The retired account switcher was never mounted, and only this test kept it
+  // alive. The rule from here: a source-text test may not be the only thing
+  // holding a file in the repo, and nothing may import a path that is gone.
+  const retired = 'src/components/Account' + 'Switcher.tsx'
+  await assert.rejects(readFile(new URL(`../${retired}`, import.meta.url), 'utf8'), 'the retired switcher must stay deleted')
+  assert.doesNotMatch(admin, new RegExp(retired.split('/').pop()), 'the panel must not reach for the retired switcher')
+
+  const scripts = await readdir(new URL('../scripts/', import.meta.url))
+  for (const name of scripts.filter(n => n.endsWith('.mjs'))) {
+    const src = await read(`scripts/${name}`)
+    assert.ok(!src.includes(retired), `${name} still reads the retired switcher`)
+    assert.doesNotMatch(src, /import\.meta\.env/, `${name} relies on Vite-only globals`)
+  }
+})
+
+console.log('Admin account control contract tests passed.')
