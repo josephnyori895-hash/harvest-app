@@ -10,6 +10,7 @@
 import { query } from './lib/db.js'
 import { jwtVerify } from './lib/crypto.js'
 import { sendFanOut } from './lib/fcm.js'
+import { recordNotificationsSafe } from './lib/notif.js'
 
 export class Realtime {
   constructor(state, env) {
@@ -53,6 +54,27 @@ export class Realtime {
       this.safeSend(upgrade[1], { event: 'presence:snapshot', data: this.presenceSnapshot() })
 
       return new Response(null, { status: 101, webSocket: upgrade[0] })
+    }
+
+    // Worker → DO: live bell update for a just-recorded notification.
+    if (url.pathname === '/notify' && request.method === 'POST') {
+      try {
+        const payload = await request.json()
+        const { rows } = await query(this.env, 'SELECT username FROM users WHERE id=? LIMIT 1', [String(payload?.userId || '')])
+        if (rows[0]?.username) {
+          this.sendToUser(rows[0].username, {
+            event: 'notification:new',
+            data: { type: payload.type || 'general', title: payload.title || '', body: payload.body || '' },
+          })
+        }
+      } catch { /* best effort */ }
+      return new Response('ok')
+    }
+
+    // Live socket truth for GET /api/presence: a closed socket is offline now,
+    // not "online for another 90 s" because last_seen only moves when it closes.
+    if (url.pathname === '/presence' && request.method === 'GET') {
+      return Response.json(this.presenceSnapshot())
     }
 
     if (url.pathname === '/publish' && request.method === 'POST') {
@@ -187,6 +209,26 @@ export class Realtime {
                 requestKey: `chatmsg:${id}`,
                 actor: me.username,
               })
+              // The socket path is how the app normally sends, so it has to
+              // write the same bell record as the REST path — otherwise a push
+              // arrives but the inbox stays empty.
+              await recordNotificationsSafe(this.env, deptRecipients.map(pid => ({
+                userId: pid,
+                type: 'department_chat',
+                category: 'departments',
+                title: `@${me.username}`,
+                body: String(text || '').slice(0, 200),
+                preview: `Team chat · ${slug}`,
+                target: {
+                  type: 'department_chat',
+                  peer_username: me.username,
+                  peer_name: me.username,
+                  actor_user_id: me.id,
+                  conversation_key: conv,
+                  slug,
+                  department_slug: slug,
+                },
+              })), false)
             }
           } catch { /* push fan-out must never fail the send */ }
           return ack({ ok: true, id, serverId: id, at: msg.at, status: 'sent' })
@@ -219,6 +261,23 @@ export class Realtime {
                 requestKey: `chatmsg:${id}`,
                 actor: me.username,
               })
+              await recordNotificationsSafe(this.env, groupRecipients.map(pid => ({
+                userId: pid,
+                type: 'group_chat',
+                category: 'groups',
+                title: `@${me.username}`,
+                body: String(text || '').slice(0, 200),
+                preview: 'Team chat',
+                target: {
+                  type: 'group_chat',
+                  peer_username: me.username,
+                  peer_name: me.username,
+                  actor_user_id: me.id,
+                  conversation_key: conv,
+                  slug,
+                  group_id: g.rows[0].id,
+                },
+              })), false)
             }
           } catch { /* push fan-out must never fail the send */ }
           return ack({ ok: true, id, serverId: id, at: msg.at, status: 'sent' })
@@ -248,6 +307,22 @@ export class Realtime {
               requestKey: `chatmsg:${id}`,
               actor: me.username,
             })
+            await recordNotificationsSafe(this.env, [{
+              userId: recipient.rows[0].id,
+              type: 'chat',
+              category: 'messages',
+              title: `@${me.username}`,
+              body: String(text || '').slice(0, 200),
+              preview: `Direct message · ${me.username}`,
+              target: {
+                type: 'chat',
+                user_id: me.id,
+                peer_username: me.username,
+                peer_name: me.username,
+                actor_user_id: me.id,
+                conversation_key: conv,
+              },
+            }], false)
           }
         } catch { /* push fan-out must never fail the send */ }
         return ack({ ok: true, id, serverId: id, at: payload.at, status: 'sent' })

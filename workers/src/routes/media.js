@@ -1,7 +1,7 @@
 // Port of server/src/routes/media.js (pg/Blobs → D1/R2).
 import { query, uuid } from '../lib/db.js'
-import { requireMember, requireAdmin } from '../lib/auth.js'
-import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
+import { requireMember } from '../lib/auth.js'
+import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 import {
   presignedPost, validatePresign, isReadableKey, handleMediaRead, mediaUrlOrNull, contentTypeForKey, ALLOW_CT,
   mediaKeyFor, mediaSecret, createMultipartUpload, uploadMultipartPart, listMultipartParts,
@@ -256,7 +256,7 @@ export async function handleMedia(request, env, ctx) {
 
   // POST /api/media/multipart/abort — give up and release the parts.
   if (path === '/api/media/multipart/abort' && method === 'POST') {
-    const fresh = await requireMember(env, user)
+    await requireMember(env, user)
     const body = await readJson(request)
     const key = String(body.key || '')
     const uploadId = String(body.uploadId || '')

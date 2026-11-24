@@ -95,19 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={{ role, pin, username, verified, isAdmin, isVerified, isMember, login, logout, setUsername, setRole, setVerified }}>{children}</Ctx.Provider>
 }
 
-const LS_FOLLOWS_MAP = 'harvest_follows_map'
-const LS_FOLLOWING_LEGACY = 'harvest_following'
-export function getFollowsMap(): Record<string, string[]> {
-  try { const raw = localStorage.getItem(LS_FOLLOWS_MAP); if (raw) return JSON.parse(raw) } catch {}
-  try { const legacy = localStorage.getItem(LS_FOLLOWING_LEGACY); const uname = localStorage.getItem(LS_USERNAME) || (localStorage.getItem('harvest_users') && JSON.parse(localStorage.getItem('harvest_users')!).find((u: any) => u.me)?.username); if (legacy && uname) return { [uname]: JSON.parse(legacy) } } catch {}
-  return {}
-}
-export function setFollowsMap(map: Record<string, string[]>) { localStorage.setItem(LS_FOLLOWS_MAP, JSON.stringify(map)) }
-export function isFollowing(viewer: string, target: string) { return !!viewer && !!target && (getFollowsMap()[viewer] ?? []).includes(target) }
-export function isMutual(viewer: string, target: string) { if (!viewer || !target) return false; if (viewer === target) return true; const map = getFollowsMap(); return (map[viewer] ?? []).includes(target) && (map[target] ?? []).includes(viewer) }
-export function toggleFollowMutual(viewer: string, target: string): Record<string, string[]> { const map = getFollowsMap(); const arr = map[viewer] ?? []; const next = arr.includes(target) ? arr.filter(x => x !== target) : [...arr, target]; const updated = { ...map, [viewer]: next }; setFollowsMap(updated); localStorage.setItem(LS_FOLLOWING_LEGACY, JSON.stringify(next)); return updated }
-
 const LS_LIKES = 'harvest_likes_table'
 export function getLikesTable(): Record<string, boolean> { try { const s = localStorage.getItem(LS_LIKES); return s ? JSON.parse(s) : {} } catch { return {} } }
-export function setLikesTable(t: Record<string, boolean>) { localStorage.setItem(LS_LIKES, JSON.stringify(t)) }
+function setLikesTable(t: Record<string, boolean>) { localStorage.setItem(LS_LIKES, JSON.stringify(t)) }
 export function toggleLikeKey(key: string): Record<string, boolean> { const tbl = getLikesTable(); const next = { ...tbl, [key]: !tbl[key] }; if (!next[key]) delete next[key]; setLikesTable(next); return next }

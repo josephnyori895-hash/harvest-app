@@ -11,7 +11,7 @@ const APK_URL = '/harvest-family.apk'
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c])
 
-export async function handleShare(request, env, ctx, params) {
+export async function handleShare(request, env, _ctx, _params) {
   const url = new URL(request.url)
   if (request.method !== 'GET') return null
   if (url.pathname !== '/' && url.pathname !== '/index.html') return null

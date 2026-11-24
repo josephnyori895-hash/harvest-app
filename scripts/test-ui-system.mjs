@@ -39,6 +39,14 @@ test('design system exports every primitive screens need', () => {
   }
 })
 
+test('the toast host is mounted, so showToast() is actually visible', async () => {
+  // showToast publishes to a subscriber set. ToastContainer was exported and
+  // never rendered, so every success/error toast in the app went nowhere.
+  const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+  assert.match(app, /import \{ showToast, ToastContainer \} from '\.\/components\/Toast'/, 'the host must be imported')
+  assert.match(app, /<ToastContainer \/>/, 'the host must be rendered')
+})
+
 test('icon set covers the navigation and domain glyphs emoji used to fake', () => {
   const names = [...ui.matchAll(/^\s{2}'?([a-z-]+)'?:/gm)].map(m => m[1])
   const unique = new Set(names)

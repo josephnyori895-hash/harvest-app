@@ -36,7 +36,6 @@ const stamp = Date.now().toString().slice(-6)
   // Non-GPS registration still works with chosen group.
   const plain = await j('POST', '/api/auth/register', null, { username: `plain${stamp}`, name: 'Plain Member', phone: `074${stamp}2`, password: SCRATCH_PASSWORD, group_name: 'Harvest Skuta' })
   check('register without GPS uses chosen group', (plain.status === 201 || plain.status === 200) && plain.data.group_name === 'Harvest Skuta', `got ${plain.data.group_name}`)
-  const MT = plain.data.token
 
   // ── Grants: admin grants post_media to a leader ──
   const grant = await j('PATCH', `/api/admin/users/plain${stamp}`, AT, { grants: ['post_media', 'manage_groups', 'create_groups'] })

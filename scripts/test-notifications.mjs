@@ -12,6 +12,9 @@ const lib = await readFile(new URL('../src/lib/notifications.ts', import.meta.ur
 const hook = await readFile(new URL('../src/lib/useModalFocus.ts', import.meta.url), 'utf8')
 const commentsSheet = await readFile(new URL('../src/components/Comments.tsx', import.meta.url), 'utf8')
 const homeFeed = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
+const realtime = await readFile(new URL('../workers/src/realtime.js', import.meta.url), 'utf8')
+const pendingRoute = await readFile(new URL('../workers/src/routes/pending.js', import.meta.url), 'utf8')
+const notifLib = await readFile(new URL('../workers/src/lib/notif.js', import.meta.url), 'utf8')
 
 test('comments notify the post owner and replies notify the comment author', () => {
   assert.match(feedRoute, /recordNotificationsSafe/)
@@ -35,7 +38,9 @@ test('a new follower notifies the followee; a story reply notifies the author', 
 test('inbox press routing opens the liked/commented content, and carries a username', () => {
   assert.match(app, /notification\.type === 'like' \|\| notification\.type === 'comment' \|\| notification\.type === 'comment_reply'/)
   assert.match(app, /notification\.type === 'story_reply'/)
-  assert.match(notificationsRoute, /actor = \{ name: u\.name \|\| u\.username, username: u\.username/)
+  // Actor resolution is batched now, but the shape still carries a username so
+  // the row has somewhere to route.
+  assert.match(notificationsRoute, /actors\.set\(String\(u\.id\), \{ name: u\.name \|\| u\.username, username: u\.username/)
 })
 
 test('family activity is normalized into notification rows by the lib', () => {
@@ -109,20 +114,22 @@ test('the inbox behaves like a dialog: modal, focus in, Escape out', () => {
   // unmounts in the same commit that opens the card.
   assert.match(hook, /if \(opener && opener !== document\.body && opener\.isConnected\)/)
   assert.match(hook, /requestAnimationFrame\(\(\) => \{ getReturnFocus\(\)\?\.focus\?\.\(\) \}\)/)
-  assert.match(app, /useModalFocus\(dmSheet, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
+  assert.match(app, /useModalFocus\(dmSheet && !dmMinimized, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
 })
 
 test('the inbox and the DM card stay floating cards, never fullscreen', () => {
   assert.match(app, /id="notifications-drawer"[\s\S]*?sm:h-\[min\(70dvh,560px\)\]/)
   assert.doesNotMatch(app, /id="notifications-drawer"[\s\S]{0,600}bottom-\[calc\(env\(safe-area-inset-bottom\)\+72px\)\]/)
-  assert.match(app, /id="dm-layer"[\s\S]*?h-\[min\(56dvh,380px\)\]/)
+  assert.match(app, /id="dm-layer"[\s\S]*?h-\[min\(46dvh,380px\)\]/, 'Mini Chat stays a compact card, not most of the screen')
   // The chat panel is cropped for the card, otherwise its header stack leaves
   // no room for a single conversation row.
   assert.match(app, /id="dm-layer"[\s\S]*?<Chat\s+compact/)
 })
 
 test('a failed refresh is reported instead of leaving a stale badge', () => {
-  assert.match(app, /if \(!r\.ok\) throw new Error\(String\(r\.status\)\)/)
+  // The refresh now goes through apiGet (timeout + one retry), which rejects on
+  // a non-OK response; the catch still has to put the failure on screen.
+  assert.match(app, /const d = await apiGet\([^)]*\/api\/notifications\?limit=40/)
   assert.match(app, /Notifications are unavailable right now\./)
 })
 
@@ -149,9 +156,97 @@ test('the comment sheet and the post options sheet use the shared dialog hook', 
   assert.match(homeFeed, /ref=\{postMenuRef\} tabIndex=\{-1\}/)
 })
 
-test('the DM card is a dialog too: modal, focus in, Escape out', () => {
-  assert.match(app, /ref=\{dmLayerRef\}[\s\S]{0,200}aria-modal="true"/)
-  assert.match(app, /useModalFocus\(dmSheet, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
+test('the Mini Chat is a compact non-blocking panel: focus in, Escape out', () => {
+  // It must not claim modality: the member keeps scrolling the app underneath.
+  assert.match(app, /ref=\{dmLayerRef\}[\s\S]{0,200}aria-modal="false"/)
+  assert.match(app, /ref=\{dmLayerRef\}[\s\S]{0,400}aria-label="Mini chat"/)
+  assert.match(app, /useModalFocus\(dmSheet && !dmMinimized, dmLayerRef, \(\) => setDmSheet\(false\), \(\) => document\.querySelector\('\[data-testid="chat-fab"\]'\)\)/)
+  assert.match(app, /onMinimize=\{\(\) => setDmMinimized\(true\)\}/)
+  assert.match(app, /data-testid="chat-mini-bubble"/)
   assert.match(app, /useModalFocus\(showNotifications, notificationsDrawerRef, \(\) => setShowNotifications\(false\)\)/)
   assert.match(hook, /const dialogs = Array\.from\(document\.querySelectorAll\('\[role="dialog"\]'\)\)/)
+})
+
+test('a message sent over the socket lands in the inbox, not only in push', () => {
+  // Chat prefers the realtime DO path. That path used to fan out FCM only, so
+  // the bell stayed empty for most messages while REST-sent ones appeared.
+  assert.match(realtime, /import \{ recordNotificationsSafe \} from '\.\/lib\/notif\.js'/)
+  assert.match(realtime, /type: 'department_chat'[^}]*category: 'departments'/s)
+  assert.match(realtime, /type: 'group_chat'[^}]*category: 'groups'/s)
+  assert.match(realtime, /type: 'chat'[^}]*category: 'messages'/s)
+  // The DM row must carry the peer so the tap opens that conversation.
+  assert.match(realtime, /peer_username: me\.username[^}]*conversation_key: conv/s)
+  const recordsInRealtime = (realtime.match(/recordNotificationsSafe\(this\.env/g) || []).length
+  assert.equal(recordsInRealtime, 3, 'DM, group and department sends all record')
+})
+
+test('chat collapses to one unread row per conversation, not one per message', () => {
+  assert.match(notifLib, /const CHAT_TYPES = new Set\(\['chat', 'group_chat', 'department_chat'\]\)/)
+  assert.match(notifLib, /DELETE FROM notifications[\s\S]{0,160}read_at IS NULL AND target LIKE \? ESCAPE '\\\\'/)
+  // Wildcards inside the conversation key must not widen the match.
+  assert.match(notifLib, /replace\(\/\[\\\\%_\]\/g, ch => `\\\\\$\{ch\}`\)/)
+  // A batch carrying several messages for one conversation still inserts one row.
+  assert.match(notifLib, /lastChatRow\.get\(`\$\{r\.userId\}\|\$\{r\.type\}\|\$\{key\}`\) === i/)
+  // Big fan-outs are chunked under D1's bound-parameter cap.
+  assert.match(notifLib, /const INSERT_CHUNK = 25/)
+})
+
+test('an admin announcement reaches the bell and push, not just the chat inbox', () => {
+  assert.match(usersRoute, /SELECT id, username FROM users WHERE active=1 AND id<>\\?/)
+  assert.match(usersRoute, /const announcementId = uuid\(\)/)
+  assert.match(usersRoute, /recordNotificationsSafe\(env, records\)/)
+  assert.match(usersRoute, /collapseKey: `chat:announce:\$\{announcementId\}`/)
+  assert.match(usersRoute, /requestKey: `announce:\$\{announcementId\}`/)
+})
+
+test('moderation outcomes are reported to the member whose upload was reviewed', () => {
+  assert.match(pendingRoute, /type: 'moderation'/)
+  assert.match(pendingRoute, /Your upload is live/)
+  assert.match(pendingRoute, /Your upload was not approved/)
+  assert.match(pendingRoute, /Reason: \$\{reason\}/)
+  assert.match(pendingRoute, /userId: item\.user_id/)
+  assert.match(pendingRoute, /userId: rows\[0\]\.user_id/)
+})
+
+test('the badge reflects the server unread total, not the loaded page size', () => {
+  // A 40-row page can only count 40; the count endpoint answers for the account.
+  assert.match(notificationsRoute, /SELECT COUNT\(\*\) AS unread FROM notifications WHERE user_id=\? AND read_at IS NULL/)
+  assert.match(notificationsRoute, /unread: Number\(unreadRow\.rows\[0\]\?\.unread\) \|\| 0/)
+  assert.match(app, /const unreadCount = serverUnread \+ activityUnread/)
+  assert.match(app, /setServerUnread\(count => Math\.max\(0, count - 1\)\)/)
+  assert.match(app, /setServerUnread\(previousUnread\)/)
+})
+
+test('the bell badge updates live for announcements and DMs', () => {
+  // One session-wide socket is the source of truth; the 60s poll is only a
+  // fallback for when no socket is connected.
+  assert.match(app, /connectSocket\(\)/)
+  assert.match(app, /const offNew = onSocket\('notification:new', refreshBadge\)/)
+  assert.match(app, /const offMessage = onSocket\('chat:message', refreshBadge\)/)
+  assert.match(app, /enqueueNotificationMutation\(\(\) => refreshNotifications\(true\)\)/)
+  // Announcements write bell rows and wake the recipient's socket.
+  assert.match(usersRoute, /recordNotificationsSafe\(env, records\)/)
+  assert.match(notifLib, /if \(live\) await Promise\.all\(list\.map\(record => publishLive\(env, record\)\)\)/)
+  assert.match(realtime, /event: 'notification:new'/)
+  // Incoming DMs also emit a chat frame, so the badge wakes even if the inbox
+  // row lands a moment before the notification wake-up.
+  assert.match(realtime, /event: 'chat:message', data:/)
+})
+
+test('signing out clears the previous member\'s inbox and derived read state', () => {
+  assert.match(app, /const resetNotificationState = \(\) => \{/)
+  assert.match(app, /localStorage\.removeItem\(ACTIVITY_READ_KEY\)/)
+  assert.match(app, /disconnectSocket\(\)\n    resetNotificationState\(\)/, 'the realtime channel closes with the session')
+  assert.match(app, /resetNotificationState\(\)\n    setOnboarded\(false\)/)
+})
+
+test('the inbox table is pruned by the cron, and actors load in one query', () => {
+  assert.match(pendingRoute, /DELETE FROM notifications[\s\S]{0,200}read_at IS NOT NULL AND created_at < \?/)
+  assert.match(notificationsRoute, /FROM users WHERE id IN \(\$\{placeholders\}\)/)
+})
+
+test('a push delivered while the app is open is surfaced, not silently dropped', () => {
+  assert.match(app, /useForegroundPushToast\(\)/)
+  assert.match(app, /addEventListener\('harvest:push-received', onPush\)/)
+  assert.match(app, /showToast\(body \? `\$\{title\} — \$\{body\}` : title, 'info'/)
 })

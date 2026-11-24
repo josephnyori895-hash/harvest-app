@@ -8,7 +8,7 @@ import ErrorMessage from './ErrorMessage'
 import { Icon } from '../ui'
 import { showToast } from './Toast'
 import { runAction } from '../lib/actionFeedback'
-import { presign, uploadToMinio } from '../lib/api'
+import { apiGet, presign, uploadToMinio } from '../lib/api'
 import GivingFundsEditor from './GivingFundsEditor'
 import { VerifiedBadge } from './VerifiedBadge'
 import { parseFunds, parseQuick } from '../lib/givingDefaults'
@@ -232,19 +232,18 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
   const loadDashboard = useCallback(async () => {
     setLoadingDashboard(true); setError('')
-    const headers = { Authorization: 'Bearer ' + token() }
     try {
-      const [pendingR, usersR, groupsR, departmentsR, contentR, chatsR, auditR] = await Promise.all([
-        fetch(API + '/api/pending?status=pending', { headers }),
-        fetch(API + '/api/users/map', { headers }),
-        fetch(API + '/api/groups', { headers }),
-        fetch(API + '/api/departments', { headers }),
-        fetch(API + '/api/feed?limit=8', { headers }),
-        fetch(API + '/api/chat/conversations', { headers }),
-        fetch(API + '/api/admin/audit?limit=8', { headers }),
+      // apiGet bounds each request and retries once, so one lost packet cannot
+      // hang the whole dashboard on a spinner (Promise.all waits for all).
+      const [p,u,g,d,feed,ch,a] = await Promise.all([
+        apiGet<any>('/api/pending?status=pending'),
+        apiGet<any>('/api/users/map'),
+        apiGet<any>('/api/groups'),
+        apiGet<any>('/api/departments'),
+        apiGet<any>('/api/feed?limit=8'),
+        apiGet<any>('/api/chat/conversations'),
+        apiGet<any>('/api/admin/audit?limit=8'),
       ])
-      const read = async (r: Response) => r.ok ? r.json() : {}
-      const [p,u,g,d,feed,ch,a] = await Promise.all([read(pendingR),read(usersR),read(groupsR),read(departmentsR),read(contentR),read(chatsR),read(auditR)])
       setDashboard({
         pending: (p.pending || []).length,
         members: (u.users || []).filter((member: any) => {
@@ -266,9 +265,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     if (!USE_API) { setPending([]); return }
     try {
       setError('')
-      const response = await fetch(`${API}/api/pending?status=${status}`, { headers: { Authorization: `Bearer ${token()}` } })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Unable to load moderation queue')
+      const data = await apiGet<any>(`/api/pending?status=${status}`)
       setPending(data.pending || [])
     } catch (e: any) {
       setError(e?.message || 'Unable to load moderation queue')
@@ -282,15 +279,12 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
       setError('')
       // Members and ministries load together: the member card needs each
       // person's current ministry to offer a valid change.
-      const [response, depsResponse] = await Promise.all([
-        fetch(`${API}/api/users/map`, { headers: { Authorization: `Bearer ${token()}` } }),
-        fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${token()}` } }),
+      const [data, deps] = await Promise.all([
+        apiGet<any>('/api/users/map'),
+        apiGet<any>('/api/departments').catch(() => ({ departments: [] })),
       ])
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Unable to load accounts')
       setAccounts(data.users || [])
-      const deps = await depsResponse.json().catch(() => ({}))
-      if (depsResponse.ok) setDepartments(deps.departments || [])
+      setDepartments(deps.departments || [])
     } catch (e: any) {
       setError(e?.message || 'Unable to load accounts')
     } finally { setLoadingAccounts(false) }
@@ -299,9 +293,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const loadChatConversations = useCallback(async () => {
     setLoadingChats(true); setError('')
     try {
-      const r = await fetch(API + '/api/chat/conversations', { headers: { Authorization: 'Bearer ' + token() } })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'Unable to load conversations')
+      const d = await apiGet<any>('/api/chat/conversations')
       const team = (d.conversations || []).filter((x: any) => x.key?.startsWith('group:') || x.key?.startsWith('department:'))
       setChatConversations(team)
       if (!selectedChat && team[0]?.key) setSelectedChat(team[0].key)
@@ -314,9 +306,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     try {
       const prefix = selectedChat.startsWith('group:') ? 'group' : 'department'
       const slug = selectedChat.slice(prefix.length + 1)
-      const r = await fetch(API + '/api/chat/history?' + prefix + '=' + encodeURIComponent(slug) + '&limit=100', { headers: { Authorization: 'Bearer ' + token() } })
-      const d = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(d.error || 'Unable to load messages')
+      const d = await apiGet<any>('/api/chat/history?' + prefix + '=' + encodeURIComponent(slug) + '&limit=100')
       setChatMessages(d.messages || [])
     } catch (e: any) { setError(e?.message || 'Unable to load messages') } finally { setLoadingChatMessages(false) }
   }, [selectedChat])
@@ -326,9 +316,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     setLoadingAudit(true)
     try {
       setError('')
-      const response = await fetch(`${API}/api/admin/audit?limit=60`, { headers: { Authorization: `Bearer ${token()}` } })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Unable to load audit log')
+      const data = await apiGet<any>('/api/admin/audit?limit=60')
       setAudit(data.audit || [])
     } catch (e: any) {
       setError(e?.message || 'Unable to load audit log')
@@ -641,7 +629,10 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
       {/* ── Navigation: direct shortcuts + grouped sections ── */}
       <nav className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur" data-testid="admin-nav" aria-label="Admin sections">
-        <div className="flex gap-1.5 overflow-x-auto px-3 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Six shortcut chips do not fit across a phone; an overflow rail hid
+            “Live map” and made the row look broken. Wrap so every shortcut is
+            visible without a horizontal gesture. */}
+        <div className="flex flex-wrap gap-1.5 px-3 pt-2">
           {([
             ['Groups', 'users', () => onOpenGroups?.()],
             ['Departments', 'building', () => onOpenDepartments?.()],
@@ -665,7 +656,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           ] as [string, [Tab, string][]][]).map(([group, entries]) => (
             <div key={group} className="flex items-center gap-2">
               <span className="w-[52px] shrink-0 text-[9px] font-extrabold uppercase tracking-[0.12em] text-ink-subtle">{group}</span>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label={`${group} admin sections`}>
+              <div className="flex flex-wrap gap-1.5 pb-0.5" role="tablist" aria-label={`${group} admin sections`}>
                 {entries.map(([value, label]) => (
                   <button
                     key={value}

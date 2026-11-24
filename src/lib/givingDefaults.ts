@@ -4,7 +4,7 @@
 
 export type GivingFund = { id: string; label: string; sub?: string; icon?: string }
 
-export const DEFAULT_FUNDS: GivingFund[] = [
+const DEFAULT_FUNDS: GivingFund[] = [
   { id: 'tithe', label: 'Tithe', sub: 'First fruits', icon: '💰' },
   { id: 'offering', label: 'Offering', sub: 'Thanksgiving', icon: '🙏' },
   { id: 'building', label: 'Building Fund', sub: 'Church development', icon: '🏗️' },
@@ -13,7 +13,7 @@ export const DEFAULT_FUNDS: GivingFund[] = [
   { id: 'ministry', label: 'HYP', sub: 'Outreach + missions', icon: '🌍' },
 ]
 
-export const DEFAULT_QUICK = [100, 200, 500, 1000, 2500, 5000]
+const DEFAULT_QUICK = [100, 200, 500, 1000, 2500, 5000]
 
 /** Parse the stored JSON. Anything malformed or empty falls back to the
  *  defaults rather than leaving the giving screen with no purposes at all. */

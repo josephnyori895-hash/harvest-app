@@ -33,12 +33,24 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {})
   Object.entries(authHeaders()).forEach(([key, value]) => headers.set(key, value))
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  const response = await fetch(`${API}${path}`, { ...options, headers })
-  const raw = await response.text()
-  let data: any = {}
-  try { data = raw ? JSON.parse(raw) : {} } catch { data = {} }
-  if (!response.ok) throw new Error(data.error || data.message || raw || `Request failed (${response.status})`)
-  return data as T
+  // Without a timeout a stalled socket leaves the thread on "Loading…"
+  // forever; the poller then stacks more requests behind the dead one.
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 20_000)
+  try {
+    const response = await fetch(`${API}${path}`, { ...options, headers, signal: options.signal || controller.signal })
+    const raw = await response.text()
+    let data: any = {}
+    try { data = raw ? JSON.parse(raw) : {} } catch { data = {} }
+    if (!response.ok) throw new Error(data.error || data.message || raw || `Request failed (${response.status})`)
+    return data as T
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('Request timed out — check your connection and try again')
+    if (e instanceof TypeError) throw new Error('Could not reach the church server — check your connection and try again')
+    throw e
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 // Returns the SAME array reference when nothing actually changed. Callers feed
@@ -153,7 +165,7 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
 
-export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, compact = false }: {
+export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, onActiveChange, onMinimize, onExpand, compact = false }: {
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
@@ -163,6 +175,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
   onOpenUser?: (user: any) => void
+  /** Reports the open 1:1 peer so the mini panel can reopen it full-screen. */
+  onActiveChange?: (user: ChatUser | null) => void
+  /** Compact-panel-only window controls. */
+  onMinimize?: () => void
+  onExpand?: () => void
   /** Rendered inside the small floating DM card: drop the brand eyebrow and
       the community/avatar rails so the header does not eat the whole card. */
   compact?: boolean
@@ -172,6 +189,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const [chatView, setChatView] = useState<'chats' | 'community'>('chats')
   const [section] = useState<Section>('personal')
   const [active, setActive] = useState<ChatUser | null>(null)
+  useEffect(() => { onActiveChange?.(active) }, [active, onActiveChange])
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -206,11 +224,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const u = String(dmTarget.username)
     // The database user ID is canonical. The username is retained only because
     // the existing chat API uses it as the peer address/conversation key.
+    // The mini panel knows the peer by username; the database ID is canonical
+    // for full-screen opens. Match either, but never open a mismatched account.
+    const wanted = u.trim().toLowerCase().replace(/^@/, '')
     const dir = (users as any[]).find(x => String(x.id) === id)
-    if (!dir || String(dir.username || '').trim().toLowerCase().replace(/^@/, '') !== u.trim().toLowerCase().replace(/^@/, '')) return
+      || (users as any[]).find(x => String(x.username || '').trim().toLowerCase().replace(/^@/, '') === wanted)
+    if (!dir || String(dir.username || '').trim().toLowerCase().replace(/^@/, '') !== wanted) return
     setActive({
       ...dir,
-      id,
+      id: String(dir.id || id),
       username: String(dir.username),
       name: dir.name || dmTarget.name || u,
       verified: dir.verified,
@@ -618,24 +640,38 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         const target = /^https?:\/\//.test(pre.url) ? pre.url : `${API}${pre.url}`
         const isDirectR2 = /^https?:\/\//.test(pre.url)
         let up
-        if (isDirectR2 && pre.method === 'PUT') {
-          // Direct R2 uploads are presigned PUTs; send the signed headers exactly
-          // as returned by the Worker and never attach the Harvest bearer token.
-          up = await fetch(target, {
-            method: 'PUT',
-            body: attach,
-            headers: { ...(pre.fields || {}) },
-          })
-        } else {
-          const fd = new FormData()
-          Object.entries(pre.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
-          fd.append('file', attach)
-          const token = localStorage.getItem('harvest_token') || ''
-          up = await fetch(target, {
-            method: 'POST',
-            body: fd,
-            headers: { Authorization: `Bearer ${token}` },
-          })
+        // A photo send must end in success or a retryable failure — a dead
+        // socket used to leave the bubble on "sending" forever.
+        const uploadController = new AbortController()
+        const uploadTimer = window.setTimeout(() => uploadController.abort(), 90_000)
+        try {
+          if (isDirectR2 && pre.method === 'PUT') {
+            // Direct R2 uploads are presigned PUTs; send the signed headers exactly
+            // as returned by the Worker and never attach the Harvest bearer token.
+            up = await fetch(target, {
+              method: 'PUT',
+              body: attach,
+              headers: { ...(pre.fields || {}) },
+              signal: uploadController.signal,
+            })
+          } else {
+            const fd = new FormData()
+            Object.entries(pre.fields || {}).forEach(([k, v]) => fd.append(k, String(v)))
+            fd.append('file', attach)
+            const token = localStorage.getItem('harvest_token') || ''
+            up = await fetch(target, {
+              method: 'POST',
+              body: fd,
+              headers: { Authorization: `Bearer ${token}` },
+              signal: uploadController.signal,
+            })
+          }
+        } catch (e: any) {
+          if (e?.name === 'AbortError') throw new Error('Photo upload timed out — tap Retry to send it again')
+          if (e instanceof TypeError) throw new Error('Could not reach media storage — check your connection and tap Retry')
+          throw e
+        } finally {
+          window.clearTimeout(uploadTimer)
         }
         if (!up.ok) throw new Error('Media storage is not enabled yet — text messages still work')
         media_key = pre.key
@@ -831,15 +867,23 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={onBack} className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink lg:hidden" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
+              <button type="button" onClick={onBack} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
               <div className="min-w-0">
                 {!compact && <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family</p>}
                 <h1 className="truncate text-xl font-extrabold text-ink">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
               </div>
             </div>
-            <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="touch-target shrink-0 rounded-full border border-line bg-surface-raised text-ink transition hover:bg-surface-sunken" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>
-              <Icon name={tab === 'people' ? 'arrow-left' : 'plus'} size={20} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {compact && onMinimize && (
+                <button type="button" onClick={onMinimize} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Minimise chat" title="Minimise"><Icon name="chevron-down" size={18} /></button>
+              )}
+              {compact && onExpand && (
+                <button type="button" onClick={onExpand} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Open full-screen chat" title="Open full-screen chat"><Icon name="arrow-right" size={18} /></button>
+              )}
+              <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="touch-target shrink-0 rounded-full border border-line bg-surface-raised text-ink transition hover:bg-surface-sunken" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>
+                <Icon name={tab === 'people' ? 'arrow-left' : 'plus'} size={20} />
+              </button>
+            </div>
           </div>
           {tab === 'inbox' && (
             <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
@@ -1030,7 +1074,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     return (
       <main
         className="chat-screen flex min-h-0 w-full overflow-hidden bg-surface text-ink"
-        style={{ height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
+        style={compact
+          ? { height: '100%', maxHeight: '100%' }
+          : { height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
       >
         {wide && (
           <aside className="w-[336px] shrink-0 overflow-hidden border-r border-line">
@@ -1038,8 +1084,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           </aside>
         )}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="z-20 flex h-[68px] shrink-0 items-center gap-3 border-b border-line bg-surface/80 pl-3 pr-14 backdrop-blur-xl">
-          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 lg:hidden" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
+        <header className="z-20 flex h-[68px] shrink-0 items-center gap-3 border-b border-line bg-surface/80 pl-3 pr-3 backdrop-blur-xl">
+          <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
           <div className="relative h-11 w-11 shrink-0">
             <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent-soft font-bold text-accent-strong">
               {isTeam ? <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} /> : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
@@ -1065,6 +1111,12 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             </button>
           )}
           {sending ? <Spinner size={14} className="text-ink-subtle" /> : null}
+          {compact && onMinimize && (
+            <button type="button" onClick={onMinimize} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Minimise chat" title="Minimise"><Icon name="chevron-down" size={18} /></button>
+          )}
+          {compact && onExpand && (
+            <button type="button" onClick={onExpand} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Open full-screen chat" title="Open full-screen chat"><Icon name="arrow-right" size={18} /></button>
+          )}
         </header>
 
         <div className="relative min-h-0 min-w-0 flex-1">
@@ -1270,6 +1322,8 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
   onOpenDepartments?: () => void
 }) {
   const [teams, setTeams] = useState<TeamChat[]>([])
+  const [hubError, setHubError] = useState('')
+  const [hubRetry, setHubRetry] = useState(0)
   useEffect(() => {
     let live = true
     const load = async () => {
@@ -1277,21 +1331,26 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
       if (!token) return
       const headers = { Authorization: `Bearer ${token}` }
       const out: TeamChat[] = []
+      let failed = 0
       try {
         const r = await fetch(`${API}/api/departments`, { headers })
         if (r.ok) {
           const d = await r.json()
           ;(d.departments || []).filter((x: any) => x.joined || x.leader).forEach((x: any) => out.push({ kind: 'department', slug: x.slug, name: x.name }))
-        }
-      } catch {}
+        } else failed++
+      } catch { failed++ }
       try {
         const r = await fetch(`${API}/api/groups/mine`, { headers })
         if (r.ok) {
           const d = await r.json()
           ;(d.groups || []).forEach((x: any) => out.push({ kind: 'group', slug: x.slug, name: x.name }))
-        }
-      } catch {}
-      if (live) setTeams(out)
+        } else failed++
+      } catch { failed++ }
+      if (live) {
+        setTeams(out)
+        // Empty is a real answer only when both lists actually loaded.
+        setHubError(failed > 0 && out.length === 0 ? 'We couldn’t load your groups and departments. Check your connection and try again.' : '')
+      }
     }
     void load()
     // Groups/departments can be created, joined or deleted in their own tabs —
@@ -1303,7 +1362,7 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
       window.removeEventListener('harvest:groups-changed', load)
       window.removeEventListener('harvest:departments-updated', load)
     }
-  }, [])
+  }, [hubRetry])
 
   return (
     <section className="min-h-[calc(100vh-150px)] bg-surface px-4 pb-10 pt-5">
@@ -1331,7 +1390,13 @@ function CommunityHub({ onOpenTeam, onOpenGroups, onOpenDepartments }: {
             </div>
             <span className="shrink-0 text-2xs text-ink-subtle">{teams.length} spaces</span>
           </div>
-          {teams.length === 0 ? (
+          {hubError ? (
+            <ErrorMessage
+              message={hubError}
+              kind="network"
+              action={<button type="button" onClick={() => setHubRetry(n => n + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>}
+            />
+          ) : teams.length === 0 ? (
             <div className="rounded-2xl border border-line bg-surface-raised p-6 text-center text-sm text-ink-muted">Your joined groups and departments will appear here.</div>
           ) : (
             <div className="grid grid-cols-2 gap-3">

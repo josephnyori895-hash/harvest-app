@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { basename as fileBasename } from 'node:path'
 
 // Port of the Phase-1 hardening contract tests to the Cloudflare Workers backend.
 // The old assertions targeted server/src (Fastify); equivalents live in workers/src.
@@ -36,8 +34,10 @@ assert.match(auth, /requireRole/)
 // JWT algorithm pinned to HS256.
 assert.match(await readFile(new URL('../workers/src/lib/crypto.js', import.meta.url), 'utf8'), /HS256/)
 
-// PBKDF2 (not plaintext) password verification on login.
-assert.match(auth, /pbkdf2Verify/)
+// PBKDF2 (not plaintext) password verification on login. The check lives in
+// the login route; the middleware lib should not be importing a password hash.
+assert.match(routesAuth, /pbkdf2Verify\(p, user\.password_hash\)/)
+assert.doesNotMatch(auth, /pbkdf2Verify/, 'auth middleware must not verify passwords')
 
 // Admin PIN bootstrap stays bcrypt-hashed — never plaintext comparison.
 assert.match(auth, /bcrypt\.compare/)

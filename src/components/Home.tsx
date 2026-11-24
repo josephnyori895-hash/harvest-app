@@ -192,7 +192,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const api = useApi()
   const [livePosts, setLivePosts] = useState<any[]>([])
   const [liveStories, setLiveStories] = useState<any[]>([])
-  const [liveProjects, setLiveProjects] = useState<any[]>([])
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
@@ -226,7 +225,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       .then((d: any) => {
         if (cancelled) return
         setLivePosts(Array.isArray(d?.posts) ? d.posts : [])
-        setLiveProjects(Array.isArray(d?.projects) ? d.projects : [])
         const nextStories = Array.isArray(d?.stories) ? d.stories : []
         setLiveStories(nextStories)
         // Rehydrate viewed state from the server while preserving stories already
@@ -260,6 +258,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         lastFeedFetchRef.current = Date.now()
         console.warn('[feed] load failed', e?.message || e)
       })
+      .finally(() => { if (!cancelled) setRefreshing(false) })
     return () => { cancelled = true }
   }, [api, feedTick])
 
@@ -305,6 +304,10 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   // a stale order. Refetch the head, replace rows already on screen (fresh
   // signed media URLs and counts) and prepend the genuinely new ones. Only an
   // explicit refresh resets to page one.
+  // Tapping Home is an explicit refresh, not just a scroll. This flag makes the
+  // scroll wait for the fresh page instead of parking on the stale first card
+  // while “Refreshing community…” shows.
+  const homeFocusPendingRef = useRef(false)
   const headMergeRef = useRef(false)
   const mergeHead = async () => {
     if (!api || headMergeRef.current) return
@@ -361,11 +364,24 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [api])
 
-  // Choosing Home lands on the newest thing in the feed (the latest post, reel
-  // or campaign card), not on whatever scroll position was left behind. Runs
-  // after paint so the first card can be measured once the tab is visible.
+  // Choosing Home refreshes the head and lands on the newest thing in the feed
+  // (the latest post, reel or campaign card), not on whatever scroll position
+  // was left behind. The old version only scrolled, so “Refreshing” could finish
+  // without the new post ever appearing.
   useEffect(() => {
     if (!focusLatestKey) return
+    homeFocusPendingRef.current = true
+    setRefreshing(true)
+    setFeedLoadFailed(false)
+    setFeedFailedOffline(false)
+    setApprovedTick(x => x + 1)
+    setLikesTick(x => x + 1)
+    setFeedTick(x => x + 1)
+  }, [focusLatestKey])
+
+  useEffect(() => {
+    if (!homeFocusPendingRef.current || !feedLoaded) return
+    homeFocusPendingRef.current = false
     let inner = 0
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => {
@@ -378,7 +394,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       })
     })
     return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
-  }, [focusLatestKey])
+  }, [livePosts, feedLoaded, focusLatestKey])
 
   // Map API rows onto the card shape this screen already renders.
   const liveMoments = useMemo(() => liveStories.map((s: any) => ({
@@ -728,9 +744,10 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
     <main className="px-4 pb-8">
       <nav aria-label="Quick actions" className="sticky top-16 z-10 -mx-4 border-b border-line/60 bg-surface/90 px-4 py-2 backdrop-blur-xl">
-        {/* pr-2 + scroll-px-2 leave the last chip room to come fully into view
-            instead of being sliced flush against the viewport edge. */}
-        <div ref={quickRailRef} className="flex gap-2 overflow-x-auto scroll-px-2 pr-2 scrollbar-none">
+        {/* Four chips do not fit across a 320 px phone, and a horizontal rail
+            sliced “Departments” at the right edge. Wrapping keeps every label
+            whole without hiding a destination behind a scroll gesture. */}
+        <div ref={quickRailRef} className="flex flex-wrap gap-2">
           {quickLinks.map(q => (
             <button
               key={q.tab}
@@ -801,36 +818,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </div></section>
 
       {feedLoadFailed && <div className="mt-5"><ErrorMessage kind={feedFailedOffline ? 'network' : 'error'} message={feedFailedOffline ? 'You appear to be offline. Reconnect and try again.' : 'We couldn’t load the latest community updates.'} action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} className="inline-flex min-h-11 items-center px-1 text-xs font-bold underline">Retry</button>} /></div>}
-      {liveProjects.length > 0 && (
-      <section className="mt-7">
-        <div className="mb-3">
-          <h2 className="text-heading font-extrabold text-ink">Church projects</h2>
-          <p className="mt-0.5 text-2xs text-ink-muted">Shared goals from Harvest Family.</p>
-        </div>
-        <div className="space-y-3">
-          {/* Same campaign card as the sponsored slot inside the feed and the
-              Give screen — one project design everywhere, never a bespoke tile. */}
-          {liveProjects.map((p: any) => {
-            const project = p.project || p
-            return (
-              <AdvertCard
-                key={p.id}
-                advert={{
-                  ...p,
-                  kind: 'advert',
-                  title: project.name || p.name,
-                  body: project.description || p.caption || '',
-                  project,
-                }}
-                onOpen={() => setTab('give')}
-                onBrowseProjects={() => setTab('give')}
-              />
-            )
-          })}
-        </div>
-      </section>
-      )}
-
       <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div>{/* aria-busy marks the region itself; the status line is what a screen
           reader actually announces while the skeletons are aria-hidden. */}<div className="-mx-4 divide-y divide-line border-t border-line" aria-busy={Boolean(api) && !feedLoaded && !feedLoadFailed}>
         <p role="status" aria-live="polite" className="sr-only">{!api ? 'Community updates are unavailable in this build' : feedLoadFailed ? 'Community updates failed to load' : !feedLoaded ? 'Loading community updates' : `Showing ${allUpdates.length} community updates`}</p>

@@ -202,11 +202,19 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         await uploadToMinio(pre.url, pre.fields || {}, file)
         const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
         const token = localStorage.getItem('harvest_token') || ''
-        const r = await fetch(`${API}/api/reels/${encodeURIComponent(String(curId))}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ poster_key: pre.key }),
-        })
+        const patchController = new AbortController()
+        const patchTimer = window.setTimeout(() => patchController.abort(), 20_000)
+        let r: Response
+        try {
+          r = await fetch(`${API}/api/reels/${encodeURIComponent(String(curId))}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ poster_key: pre.key }),
+            signal: patchController.signal,
+          })
+        } finally {
+          window.clearTimeout(patchTimer)
+        }
         if (!r.ok) throw new Error(`save failed (${r.status})`)
         setGeneratedPoster('')
         setPosterFailed(false)
@@ -214,7 +222,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         flash('Poster saved — feed and grids show this frame now')
       }
     } catch (e: any) {
-      flash(e?.message || 'Could not save poster')
+      flash(e?.name === 'AbortError' ? 'Saving the poster timed out — try again' : (e?.message || 'Could not save poster'))
     } finally {
       setPosterBusy(false)
     }

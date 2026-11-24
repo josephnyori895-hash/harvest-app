@@ -181,7 +181,7 @@ export async function handleProjects(request, env, ctx) {
 
   const overrideTake = path.match(/^\/api\/projects\/admin\/([^/]+)\/takes\/([^/]+)$/)
   if (overrideTake && request.method === 'DELETE') {
-    const fresh = await requireAdmin(env, user)
+    await requireAdmin(env, user)
     const projectId = overrideTake[1]
     const t = (await query(env, 'SELECT id FROM project_takes WHERE id=? AND project_id=?', [overrideTake[2], projectId])).rows[0]
     if (!t) return errorResponse('take not found', 404)
@@ -189,7 +189,7 @@ export async function handleProjects(request, env, ctx) {
     return jsonResponse({ removed: true, take_id: t.id })
   }
   if (overrideTake && request.method === 'PATCH') {
-    const fresh = await requireAdmin(env, user)
+    await requireAdmin(env, user)
     const projectId = overrideTake[1]
     const body = await readJson(request)
     const t = (await query(env, 'SELECT id, kind, name, taken_by FROM project_takes WHERE id=? AND project_id=?', [overrideTake[2], projectId])).rows[0]
@@ -349,14 +349,28 @@ export async function handleProjects(request, env, ctx) {
     return jsonResponse({ project: (await baseProjects(env, fresh.id)).find(x => x.id === id) })
   }
   if (adminProject && request.method === 'DELETE') {
-    const fresh = await requireAdmin(env, user)
+    await requireAdmin(env, user)
     const id = adminProject[1]
-    const existing = (await query(env, 'SELECT id FROM projects WHERE id=?', [id])).rows[0]
+    const existing = (await query(env, 'SELECT id, name FROM projects WHERE id=?', [id])).rows[0]
     if (!existing) return errorResponse('project not found', 404)
+    // Money already given to a project is financial history. Deleting the
+    // project would cascade project_contributions away and zero the record of
+    // what was raised, so a funded project is closed, never deleted.
+    const funded = await query(
+      env,
+      `SELECT
+         (SELECT COUNT(*) FROM project_contributions WHERE project_id=?) AS contributions,
+         (SELECT COUNT(*) FROM giving_transactions WHERE project_id=?) AS gifts`,
+      [id, id],
+    )
+    if (Number(funded.rows[0]?.contributions || 0) > 0 || Number(funded.rows[0]?.gifts || 0) > 0) {
+      return errorResponse(
+        `${existing.name} has giving records and cannot be deleted. Set its status to completed or closed instead — the ledger keeps every gift.`,
+        409,
+      )
+    }
     await query(env, 'DELETE FROM project_takes WHERE project_id=?', [id])
     await query(env, 'DELETE FROM project_participants WHERE project_id=?', [id])
-    // Participation rows follow the project out; contribution rows are kept
-    // as the audit trail for money already moved against this project.
     await query(env, 'DELETE FROM projects WHERE id=?', [id])
     return jsonResponse({ deleted: true, id })
   }

@@ -8,14 +8,6 @@ import { audioAutoplayReady, isGlobalPlayerPlaying, getFeedAutoplayPref } from '
 
 let activePostId: string | null = null
 
-export function getActiveFeedPostId(): string | null {
-  return activePostId
-}
-
-export function feedPostHasTrack(p: any): boolean {
-  return Boolean(p?.music?.id && p?.music?.url)
-}
-
 export function stopFeedPlayback(p?: any): void {
   // Scoped stop: a card scrolling out pauses only its own track — either the
   // one it armed through the coordinator, or the one it manually started via

@@ -191,16 +191,34 @@ export async function handleFeed(request, env, ctx) {
     const interval = Number.isInteger(Number(settings.interval)) ? Number(settings.interval) : 6
     const dailyCap = Number.isInteger(Number(settings.daily_cap)) ? Number(settings.daily_cap) : 2
     const allAdverts = placement !== 'none' && interval >= 1 ? parseJsonSafe(contentMap.get('sponsor_adverts'), []) : []
+    // Promoted church projects are campaigns too. They used to be a separate
+    // vertical strip above the feed while external adverts were interleaved,
+    // which gave the church two promotion systems and cluttered Home. Both now
+    // share this one placement/frequency/cap pipeline and render through the
+    // same sponsored card (AdvertCard recognises `project`).
+    const projectCampaigns = placement !== 'none' && interval >= 1 ? projects.map(p => ({
+      id: `project_${p.id}`,
+      sponsor_kind: 'project',
+      title: p.project?.name || p.name,
+      body: p.project?.description || p.caption || '',
+      image_url: p.project?.image_url || p.image_url || null,
+      project: p.project,
+      enabled: true,
+      audience: 'all',
+    })) : []
     const nowIso = new Date().toISOString()
     const inSchedule = (ad) => {
       const from = typeof ad.advertise_from === 'string' && Date.parse(ad.advertise_from) ? ad.advertise_from : null
       const until = typeof ad.advertise_until === 'string' && Date.parse(ad.advertise_until) ? ad.advertise_until : null
       return (!from || from <= nowIso) && (!until || until >= nowIso)
     }
-    const eligibleRaw = (Array.isArray(allAdverts) ? allAdverts : []).filter(ad =>
+    const eligibleAdverts = (Array.isArray(allAdverts) ? allAdverts : []).filter(ad =>
       ad && ad.enabled !== false && typeof ad.title === 'string' && ad.title.trim()
       && inSchedule(ad)
       && (String(ad.audience || 'all') !== 'members' || Boolean(user?.id)))
+    // Projects are included only when their own advertise window already
+    // matched in the project query above.
+    const eligibleRaw = [...eligibleAdverts, ...projectCampaigns]
     let eligible = eligibleRaw
     let servedCounter = null
     if (user?.id) {
@@ -225,9 +243,11 @@ export async function handleFeed(request, env, ctx) {
         const adImage = ad.image_url || (ad.image_key ? await mediaUrlOrNull(env, ad.image_key, 6 * 3600) : null)
         pagePosts.push({
           id: `advert_${ad.id}`, kind: 'advert', advert_id: ad.id,
+          sponsor_kind: ad.sponsor_kind || 'advert',
           name: 'Harvest Family', verified: true,
           caption: ad.body || ad.title, title: ad.title, body: ad.body || '',
           cta_url: ad.cta_url || null, image_url: adImage,
+          ...(ad.project ? { project: ad.project } : {}),
         })
       }
     }

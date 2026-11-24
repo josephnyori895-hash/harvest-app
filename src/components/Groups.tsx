@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
+import { apiGet } from '../lib/api'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -83,10 +84,11 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
 
   const load = useCallback(() => {
     setLoading(true)
-    fetch(`${API}/api/groups`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load groups'))))
+    // apiGet retries once on a dropped packet and carries a timeout, so a
+    // flaky mobile connection does not become a permanent error screen.
+    apiGet<{ groups: any[] }>('/api/groups')
       .then(d => { setGroups(Array.isArray(d.groups) ? d.groups : []) ; setError('') })
-      .catch(e => setError(e.message))
+      .catch(e => setError(e?.message || 'Could not load groups'))
       .finally(() => setLoading(false))
   }, [])
 

@@ -1,7 +1,7 @@
 // Sermons — admin-published audio (mp3/m4a) and video (mp4/webm) teachings.
 // Members stream in-app or download the original file. Downloads set the
 // Content-Disposition filename and increment a counter.
-import { query, uuid } from '../lib/db.js'
+import { query } from '../lib/db.js'
 import { requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { mediaUrlOrNull, isReadableKey } from '../lib/media.js'

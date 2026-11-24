@@ -20,15 +20,31 @@ type Item = {
 
 type Props = { onBack: () => void }
 
+// Every admin upload step is bounded: a dead socket must fail into the visible
+// error banner, never leave the form on "Uploading…" indefinitely.
+async function timedFetch(input: RequestInfo | URL, init: RequestInit = {}, ms = 60_000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('Upload timed out — check your connection and try again')
+    if (e instanceof TypeError) throw new Error('Could not reach the church server — check your connection and try again')
+    throw e
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track', meta: { caption?: string; title?: string; artist?: string }) {
   const token = localStorage.getItem('harvest_token') || ''
-  const presignResponse = await fetch(`${API}/api/media/presign`, {
+  const presignResponse = await timedFetch(`${API}/api/media/presign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     // Resolve the type the way every other upload path does: a picked .m4a is
     // often reported as an empty type or video/mp4, and either one is refused
     // at presign before the transfer starts.
     body: JSON.stringify({ type, contentType: resolveUploadMime(file, file.name), bytes: file.size, ext: (file.name.split('.').pop() || 'bin').toLowerCase() }),
-  })
+  }, 20_000)
   const presign = await presignResponse.json().catch(() => ({}))
   if (!presignResponse.ok) throw new Error(presign.error || 'Unable to prepare upload')
   const form = new FormData()
@@ -37,11 +53,11 @@ async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track'
   // Proxy fallback uploads hit our own API and need the bearer token
   // (direct-to-R2 presigned posts would reject extra auth headers).
   const isDirectR2 = /^https?:\/\//.test(presign.url)
-  const up = await fetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
+  const up = await timedFetch(isDirectR2 ? presign.url : `${API}${presign.url}`, {
     method: 'POST',
     body: form,
     headers: isDirectR2 ? undefined : { Authorization: `Bearer ${token}` },
-  })
+  }, 180_000)
   if (!up.ok) {
     // The server names the refusal (format not allowed, over the cap, no
     // permission). A generic message here hides the one thing that can be acted on.
@@ -50,10 +66,10 @@ async function uploadMedia(file: File, type: 'post' | 'story' | 'reel' | 'track'
     try { reason = String(JSON.parse(text)?.error || '') } catch { /* XML or plain body */ }
     throw new Error(reason || `Upload failed (${up.status}) — check your connection and file size`)
   }
-  const confirm = await fetch(`${API}/api/media/confirm`, {
+  const confirm = await timedFetch(`${API}/api/media/confirm`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ key: presign.key, type, caption: meta.caption, title: meta.title, artist: meta.artist }),
-  })
+  }, 20_000)
   const result = await confirm.json().catch(() => ({}))
   if (!confirm.ok) throw new Error(result.error || 'Unable to publish')
   return result

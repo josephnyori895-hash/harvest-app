@@ -24,7 +24,7 @@ function openWa(text: string) {
   }
 }
 
-export function shareToWhatsApp(text: string) {
+function shareToWhatsApp(text: string) {
   openWa(`${text}\n\n— ${BRAND}`)
 }
 
@@ -35,16 +35,6 @@ export function sharePostToWhatsApp(opts: { author?: string; caption?: string; u
     opts.url || contentUrl(opts.kind || 'post', opts.id),
   ].filter(Boolean)
   shareToWhatsApp(bits.join('\n\n'))
-  window.dispatchEvent(new CustomEvent('harvest:whatsapp-share', { detail: { author: opts.author, caption: opts.caption } }))
-}
-
-export function shareStoryToWhatsApp(opts: { author?: string; caption?: string; id?: string }) {
-  const bits = [
-    opts.author ? `🙏 ${opts.author}'s 24h story on the Harvest app:` : '🙏 A 24h story on the Harvest app:',
-    opts.caption || 'Tap to catch it before it disappears!',
-    contentUrl('story', opts.id),
-  ].filter(Boolean)
-  shareToWhatsApp(bits.join('\n'))
   window.dispatchEvent(new CustomEvent('harvest:whatsapp-share', { detail: { author: opts.author, caption: opts.caption } }))
 }
 

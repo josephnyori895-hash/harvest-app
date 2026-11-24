@@ -3,7 +3,7 @@
 // Group admins: approve join requests, promote/demote members, remove members.
 // Members: request to join, leave, see who's in the group.
 import { query, uuid } from '../lib/db.js'
-import { requireMember, requireAdmin } from '../lib/auth.js'
+import { requireMember } from '../lib/auth.js'
 import { hasCap } from '../lib/capabilities.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 
@@ -30,9 +30,8 @@ async function audit(env, actor, action, targetId, meta = {}) {
 }
 
 // A community (congregation) hosts between 3 and 10 small groups.
-// MAX is a hard rule enforced at creation; MIN is advisory status shown in the UI.
+// MAX is a hard rule enforced at creation.
 const COMMUNITY_MAX_GROUPS = 10
-const COMMUNITY_MIN_GROUPS = 3
 
 async function communityGroupCounts(env) {
   const { rows } = await query(env, `SELECT community, COUNT(*) AS n FROM groups WHERE community <> '' GROUP BY community`)

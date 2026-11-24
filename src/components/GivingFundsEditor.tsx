@@ -22,6 +22,16 @@ export default function GivingFundsEditor({
   const patch = (index: number, next: Partial<GivingFund>) =>
     onChange(funds.map((f, i) => (i === index ? { ...f, ...next } : f)), quick)
   const remove = (index: number) => onChange(funds.filter((_, i) => i !== index), quick)
+  // Order is member-facing: the Give screen renders purposes in this array's
+  // order, so moving a row up or down changes what members see first.
+  const move = (index: number, delta: number) => {
+    const next = index + delta
+    if (next < 0 || next >= funds.length) return
+    const copy = [...funds]
+    const [row] = copy.splice(index, 1)
+    copy.splice(next, 0, row)
+    onChange(copy, quick)
+  }
 
   const addFund = () => {
     const name = label.trim()
@@ -46,7 +56,7 @@ export default function GivingFundsEditor({
     <div className="space-y-4" data-testid="giving-funds-editor">
       <div>
         <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-muted">Giving purposes</p>
-        <p className="mt-0.5 text-[10px] text-ink-muted">Each purpose becomes a card on the Give screen. The icon is optional.</p>
+        <p className="mt-0.5 text-[10px] text-ink-muted">Each purpose becomes a card on the Give screen, in this order. The icon is optional.</p>
         <div className="mt-2 space-y-2">
           {funds.map((f, i) => (
             <div key={`${f.id}_${i}`} className="rounded-2xl border border-line bg-surface p-2.5">
@@ -64,6 +74,20 @@ export default function GivingFundsEditor({
                   aria-label={`${f.label} name`}
                   className="min-h-10 min-w-0 flex-1 rounded-xl border border-line bg-surface-raised px-3 text-sm font-bold outline-none focus:border-accent"
                 />
+                <button
+                  type="button"
+                  onClick={() => move(i, -1)}
+                  disabled={i === 0}
+                  aria-label={`Move ${f.label} up`}
+                  className="grid h-10 w-8 shrink-0 place-items-center rounded-lg border border-line bg-surface-raised text-sm font-extrabold transition disabled:opacity-30"
+                >↑</button>
+                <button
+                  type="button"
+                  onClick={() => move(i, 1)}
+                  disabled={i === funds.length - 1}
+                  aria-label={`Move ${f.label} down`}
+                  className="grid h-10 w-8 shrink-0 place-items-center rounded-lg border border-line bg-surface-raised text-sm font-extrabold transition disabled:opacity-30"
+                >↓</button>
                 <button
                   type="button"
                   onClick={() => remove(i)}

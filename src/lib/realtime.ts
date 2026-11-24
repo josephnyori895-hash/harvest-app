@@ -1,8 +1,7 @@
 // src/lib/realtime.ts — realtime client for the Cloudflare Realtime Durable Object.
 // Wire protocol: JSON frames {event, data, ackId?} → server; server sends
-// {event, data} and {event:'__ack', ackId, payload}. REST fallbacks (fetchHistory)
-// work even if the socket is offline. Set VITE_REALTIME_URL (or VITE_API_URL) to
-// the Workers origin; empty disables realtime entirely (Netlify-only deploys).
+// {event, data} and {event:'__ack', ackId, payload}. Set VITE_REALTIME_URL (or
+// VITE_API_URL) to the Workers origin; empty disables realtime entirely.
 
 const BASE = (import.meta.env.VITE_REALTIME_URL || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -15,7 +14,6 @@ const pendingAcks = new Map<number, (res: any) => void>()
 let ackSeq = 1
 let currentToken = ''
 
-export function getSocket(): WebSocket | null { return sock }
 export function realtimeEnabled(): boolean { return BASE !== '' }
 
 function dispatch(event: string, ...args: any[]) {
@@ -92,54 +90,4 @@ export function emitSocket(event: string, data: any, ack?: (res: any) => void) {
     }, 15_000)
   }
   try { sock.send(JSON.stringify(frame)) } catch { ack?.({ error: 'send failed' }) }
-}
-
-export const keyFor = (a: string, b: string) => `harvest:chat:${[a, b].sort().join(':')}`
-export const groupKey = (slug: string) => `group:${slug}`
-
-// REST history fallback (works even if socket offline)
-export async function fetchHistory(peer?: string, groupSlug?: string) {
-  const token = localStorage.getItem('harvest_token')
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
-  // REST history is served by the API (Workers), same origin as the socket.
-  if (groupSlug) {
-    const r = await fetch(`${BASE}/api/chat/history?group=${encodeURIComponent(groupSlug)}`, { headers })
-    if (!r.ok) throw new Error(await r.text())
-    return r.json() as Promise<{ messages: any[]; conversation_key: string }>
-  }
-  if (peer) {
-    const r = await fetch(`${BASE}/api/chat/history?peer=${encodeURIComponent(peer)}`, { headers })
-    if (!r.ok) throw new Error(await r.text())
-    return r.json() as Promise<{ messages: any[]; conversation_key: string }>
-  }
-  throw new Error('peer or groupSlug required')
-}
-
-// coturn ICE servers for WebRTC (VPS 3478/5349) — 60% Nyeri 3G symmetric NAT needs TURN.
-// STUN-only works for many networks; TURN requires the VPS (can be added later).
-export function getIceServers(): RTCConfiguration {
-  const host = import.meta.env.VITE_COTURN_HOST || ''
-  const user = import.meta.env.VITE_COTURN_USER || ''
-  const pass = import.meta.env.VITE_COTURN_PASS || ''
-  const servers: RTCIceServer[] = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ]
-  if (host) {
-    servers.push({ urls: `stun:${host}:3478` })
-    if (user && pass) {
-      servers.push(
-        { urls: `turn:${host}:3478`, username: user, credential: pass },
-        { urls: `turn:${host}:3478?transport=tcp`, username: user, credential: pass },
-        { urls: `turns:${host}:5349`, username: user, credential: pass },
-        { urls: `turns:${host}:5349?transport=tcp`, username: user, credential: pass },
-      )
-    }
-  }
-  return {
-    iceServers: servers,
-    iceCandidatePoolSize: 10,
-    iceTransportPolicy: 'all',
-    bundlePolicy: 'max-bundle',
-  }
 }

@@ -98,12 +98,14 @@ test('the panel handed to the hook is the element carrying role="dialog"', () =>
   }
 })
 
-test('modal dialogs that stack declare aria-modal', () => {
+test('dialogs declare whether they are modal', () => {
   for (const [path, src] of dialogFiles) {
     for (const match of src.matchAll(TAGS)) {
       const tag = match[0]
       if (!tag.includes('role="dialog"')) continue
-      assert.match(tag, /aria-modal="true"/, `${rel(path)} has a dialog that does not declare aria-modal`)
+      // Mini Chat is deliberately non-modal: the member keeps using the app
+      // underneath, so it declares aria-modal="false" rather than lying.
+      assert.match(tag, /aria-modal="(true|false)"/, `${rel(path)} has a dialog that does not declare aria-modal`)
     }
   }
 })

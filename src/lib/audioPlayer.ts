@@ -40,7 +40,6 @@ let state: PlayerState = { track: null, playing: false, currentTime: 0, duration
 // remembered so the Worship screen can offer "Continue listening" tomorrow.
 let queue: PlayerTrack[] = []
 let queueIndex = -1
-let repeatOne = false
 const LAST_KEY = 'harvest_last_played'
 const emitQueueFlags = () => patch({ hasNext: queueIndex >= 0 && queueIndex < queue.length - 1, hasPrev: queueIndex > 0 })
 const remember = (track: PlayerTrack | null, position: number) => {
@@ -58,10 +57,6 @@ export function getLastPlayed(): { track: PlayerTrack; position: number; at: num
     return parsed?.track?.url ? parsed : null
   } catch { return null }
 }
-export const getQueue = (): PlayerTrack[] => [...queue]
-export const getQueueIndex = (): number => queueIndex
-export const setRepeatOne = (v: boolean): void => { repeatOne = v }
-export const getRepeatOne = (): boolean => repeatOne
 // Browsers (and the Android WebView) refuse sound-producing autoplay until the
 // member has interacted with audio at least once. Feed posts with a song track
 // use this to decide between auto-start (IG-style) and tap-to-play.
@@ -85,7 +80,6 @@ export const setFeedAutoplayPref = (v: boolean): void => {
 
 const emit = () => { listeners.forEach(l => l(state)) }
 const patch = (p: Partial<PlayerState>) => { state = { ...state, ...p }; emit() }
-export const getPlayerState = (): PlayerState => state
 
 export function subscribePlayer(fn: (s: PlayerState) => void): () => void {
   listeners.add(fn)
@@ -128,11 +122,7 @@ const ensureAudio = (): HTMLAudioElement => {
   audio = new Audio()
   audio.preload = 'metadata'
   audio.addEventListener('ended', () => {
-    // Worship never dead-ends: repeat-one, or advance the queue.
-    if (repeatOne) {
-      try { audio!.currentTime = 0; void audio!.play() } catch { /* ignore */ }
-      return
-    }
+    // Worship never dead-ends: advance the queue, otherwise rest at the end.
     if (queue.length > 1 && queueIndex >= 0 && queueIndex < queue.length - 1) {
       void nextTrack()
       return
@@ -239,10 +229,6 @@ export function closePlayer(): void {
   queueIndex = -1
   state = { track: null, playing: false, currentTime: 0, duration: 0, error: null }
   emit()
-}
-
-export function isPlayingId(id: string): boolean {
-  return !!state.track && state.track.id === id && state.playing
 }
 
 /**

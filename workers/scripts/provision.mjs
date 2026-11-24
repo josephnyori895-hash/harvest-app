@@ -33,7 +33,7 @@ if (toml.includes('PLACEHOLDER_RUN_D1_CREATE')) {
     toml = toml.replace('PLACEHOLDER_RUN_D1_CREATE', id)
     writeToml(toml)
     console.log(`✔ D1 database created: ${id}`)
-  } catch (e) {
+  } catch {
     console.error('✘ D1 create failed — if the database already exists, run:')
     console.error("  npx wrangler d1 info harvestfamily  # then paste database_id into wrangler.toml")
     process.exitCode = 1

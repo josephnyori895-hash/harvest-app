@@ -15,6 +15,7 @@ import { startBackgroundUpload, getUploadHistory, subscribeUploads, retryUpload,
 import { playTrack, togglePlay as togglePlayGlobal, seekToFraction, pausePlayer, subscribePlayer, type PlayerState, type PlayerTrack } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
+import { apiGet } from '../lib/api'
 import { useModalFocus } from '../lib/useModalFocus'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
@@ -102,9 +103,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
     const offset = opts.offset ?? 0
     if (!silent && offset === 0) setLoading(true)
     try {
-      const r = await fetch(`${API}/api/sermons?limit=${limit}&offset=${offset}`, { headers: authHeaders() })
-      if (!r.ok) throw new Error('Could not load sermons')
-      const d = await r.json().catch(() => ({}))
+      const d = await apiGet<{ sermons: any[]; total?: number }>(`/api/sermons?limit=${limit}&offset=${offset}`)
       const rows = Array.isArray(d.sermons) ? d.sermons : []
       setTotal(Number(d.total) || rows.length)
       setSermons(prev => (offset > 0 ? [...prev, ...rows.filter(x => !prev.some(p => String(p.id) === String(x.id)))] : rows))

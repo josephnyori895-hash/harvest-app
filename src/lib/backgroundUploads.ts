@@ -87,7 +87,7 @@ const getDeferred = (id: string): DeferredHandle => {
 // Client-side mirror of the server's MAX_BYTES (workers/src/lib/media.js).
 // Checking before the background queue starts avoids a member waiting on a
 // multi-hour upload that can only fail at presign time.
-export const MAX_UPLOAD_MB: Record<string, number> = {
+const MAX_UPLOAD_MB: Record<string, number> = {
   avatar: 5, post: 10, story: 30, reel: 100, track: 50,
   sermon_audio: 2048, sermon_video: 5120,
 }
@@ -190,15 +190,38 @@ async function idbAll(): Promise<QueueRecord[]> {
 // refused (wrong container, over the size cap, no sermon permission, rate
 // limit) and throwing that away left members staring at "upload rejected
 // (400)" with nothing to act on.
-export function xhrSend(url: string, method: string, body: FormData | Blob | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number; body: string }> {
+const STALL_MS = 90_000
+
+function xhrSend(url: string, method: string, body: FormData | Blob | null, headers: Record<string, string> | undefined, onPct: (pct: number) => void): Promise<{ ok: boolean; status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    // A socket can die without firing `error` or `load` — the transfer simply
+    // stops. Without this watchdog the pill sat at 47% forever and the queue
+    // never learned it should retry. Abort after 90 s with no bytes moved.
+    let stalled = false
+    let timer = 0
+    const arm = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => { stalled = true; xhr.abort() }, STALL_MS)
+    }
+    const settle = () => window.clearTimeout(timer)
     xhr.open(method, url)
     if (headers) Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
-    xhr.upload.onprogress = e => { if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100)) }
-    xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: xhr.responseText || '' })
-    xhr.onerror = () => reject(new Error('network error'))
-    xhr.send(body)
+    xhr.upload.onprogress = e => {
+      arm()
+      if (e.lengthComputable) onPct(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onprogress = () => arm()
+    xhr.onload = () => { settle(); resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: xhr.responseText || '' }) }
+    xhr.onerror = () => { settle(); reject(new Error('network error')) }
+    xhr.onabort = () => { settle(); reject(new Error(stalled ? 'upload stalled — no progress for 90s' : 'upload cancelled')) }
+    arm()
+    try {
+      xhr.send(body)
+    } catch (e) {
+      settle()
+      reject(e instanceof Error ? e : new Error('upload could not start'))
+    }
   })
 }
 
@@ -212,17 +235,30 @@ function xmlMessage(xml: string): string {
 
 // Small JSON fetch helper for presign/confirm calls inside a job.
 export async function apiJson(url: string, token: string, body: unknown, method = 'POST') {
-  const r = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  // Read once as text: the reason is JSON from this Worker and XML from R2.
-  const text = await r.text().catch(() => '')
-  let data: any = {}
-  try { data = JSON.parse(text) } catch { /* not JSON */ }
-  if (!r.ok) throw new Error(data?.error || xmlMessage(text) || `request failed (${r.status})`)
-  return data
+  // A dead connection must fail the step so the queue can retry it; waiting
+  // forever on presign/confirm froze the upload at its last percentage.
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 25_000)
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    })
+    // Read once as text: the reason is JSON from this Worker and XML from R2.
+    // Inside the timer window, so a stalled response body cannot hang either.
+    const text = await r.text().catch(() => '')
+    let data: any = {}
+    try { data = JSON.parse(text) } catch { /* not JSON */ }
+    if (!r.ok) throw new Error(data?.error || xmlMessage(text) || `request failed (${r.status})`)
+    return data
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('server did not respond — timed out')
+    throw e instanceof Error ? e : new Error('network error')
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 const extOf = (file: File | Blob, filename?: string) =>
@@ -475,7 +511,7 @@ async function coverThumbnail(file: File | Blob, max = 720, quality = 0.85): Pro
 }
 
 // presign → upload (with progress) → confirm, for any task kind.
-export async function performUpload(task: UploadTask, onPct: (p: number) => void) {
+async function performUpload(task: UploadTask, onPct: (p: number) => void) {
   const idempotencyKey = task.idempotency_key || newUploadId()
   // Avatars tile small and phones hand back HEIC 12MP originals the server does
   // not allow — decode here and ship a compact JPEG instead.
@@ -520,7 +556,7 @@ export async function performUpload(task: UploadTask, onPct: (p: number) => void
 function isRetryable(e: any): boolean {
   const msg = String(e?.message || '').toLowerCase()
   if (!msg) return true
-  return /network|timeout|timed out|busy|failed to fetch|rate limit|expired|chunk|rejected by storage|\(5\d\d\)|429/.test(msg)
+  return /network|timeout|timed out|busy|failed to fetch|rate limit|expired|chunk|rejected by storage|stall|cancel|did not respond|\(5\d\d\)|429/.test(msg)
 }
 
 // --- one attempt lifecycle ---------------------------------------------------
@@ -605,7 +641,7 @@ export function startBackgroundUpload(opts: { label: string; successMsg: string;
 }
 
 // Retry every queued upload whose backoff has elapsed (online only).
-export async function flushQueue() {
+async function flushQueue() {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return
   const now = Date.now()
   for (const rec of [...records.values()]) {

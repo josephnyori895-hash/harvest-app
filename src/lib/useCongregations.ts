@@ -4,8 +4,7 @@
 // real groups table instead of a hardcoded list that can resurrect
 // deleted congregations as profile ghosts.
 import { useCallback, useEffect, useState } from 'react'
-
-const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+import { apiGet } from './api'
 
 export function useCongregations(enabled = true): {
   congregations: string[]
@@ -22,9 +21,7 @@ export function useCongregations(enabled = true): {
     let cancelled = false
     const load = () => {
       if (!cancelled) setLoading(true)
-      const t = localStorage.getItem('harvest_token') || ''
-      fetch(`${BASE}/api/groups`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
-        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      apiGet<any>('/api/groups')
         .then(d => {
           if (cancelled) return
           const rows: any[] = Array.isArray(d?.groups) ? d.groups : []

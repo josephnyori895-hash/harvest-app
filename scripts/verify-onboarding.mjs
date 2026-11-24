@@ -58,7 +58,6 @@ const report = await page.evaluate(() => {
   out.cta = { fontSize: ccs.fontSize, weight: ccs.fontWeight, height: cta.offsetHeight }
 
   // vertical gap between stacked form fields
-  const fields = [...document.querySelectorAll('main input, div > input[id]')]
   const u = document.querySelector('#reg-username')?.getBoundingClientRect()
   const n = document.querySelector('#reg-name')?.getBoundingClientRect()
   out.fieldGap = u && n ? Math.round(n.top - u.bottom) : 'n/a'

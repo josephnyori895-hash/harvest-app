@@ -92,3 +92,20 @@ Two read-only screen audits are no longer separate files. Both were folded into 
 | Home feed | `src/components/Home.tsx`, `src/lib/api.ts`, `/api/feed` | `RS-217`–`RS-229` (H1–H13) | Fixed 2026-11-13 in `Home.tsx` + `api.ts`; pinned by `scripts/test-home-feed-contracts.mjs` (13/13, in `test:all`). Device-only checks (H9 target size, H11 ticker, H8 overlay gesture) still need REP-DEVICE |
 
 Neither audit ran a browser or Android pass; findings are code review plus curl against the local Worker. **No release implication:** this records committed source, not code proven in a deployed APK, so the release authority rules above are unchanged.
+
+## Unreleased batch — 2026-11-24 (reliability + Giving administration)
+
+Committed locally on `main`; not pushed and not deployed. Recorded here so the next release run can be reconciled against it.
+
+| Item | State |
+|---|---|
+| Source HEAD | `7d1dce8` (3 commits ahead of `origin/main` = `ce1cee4`, 6 Nov) |
+| Working tree | 50 files + this batch's new work (see the register rows RS-230–RS-238) |
+| Live deployment at time of audit | version `1.0.641` / versionCode `1641`, CI run #641 (built from `ce1cee4`) |
+| Live asset | `assets/index-QheDy9j7.js` — different from the committed `workers/public` build (Oct 29) |
+| Gates run locally | test:all 28 steps, typecheck, lint, build, workers notifications — results in the batch report |
+| Giving payments | still manual; no Daraja configuration changed, no live payment destination changed |
+| Migrations added | `0034_giving_admin_audit.sql` (additive columns + `giving_transaction_audit`) |
+| Releases since | none: a release requires a push to `main`, which needs client approval |
+
+The installed Android app runs the JS bundled in its APK, so none of this reaches phones until a new APK is built and installed, even though the Worker hosts the web app.

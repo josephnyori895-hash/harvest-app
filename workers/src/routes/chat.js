@@ -3,7 +3,7 @@ import { query } from '../lib/db.js'
 import { sendFanOut } from '../lib/fcm.js'
 import { recordNotificationsSafe } from '../lib/notif.js'
 import { requireMember } from '../lib/auth.js'
-import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
+import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 import { hasCap } from '../lib/capabilities.js'
 
@@ -345,7 +345,21 @@ export async function handleChat(request, env, ctx) {
          FROM users ORDER BY last_seen DESC LIMIT 100`,
       [cutoff],
     )
-    rows.forEach(r => { r.online = !!r.online; r.verified = !!r.verified })
+    // The DO knows which sockets are actually open. Falling back to last_seen
+    // alone kept a signed-out member "online" for up to 90 seconds because
+    // closing a socket writes last_seen. Prefer live socket truth when the
+    // realtime binding is available.
+    let live = null
+    try {
+      const stub = env.REALTIME.get(env.REALTIME.idFromName('singleton'))
+      const res = await stub.fetch('https://realtime.internal/presence')
+      if (res.ok) live = await res.json()
+    } catch { /* fall back to last_seen */ }
+    rows.forEach(r => {
+      if (live && typeof live === 'object') r.online = Boolean(live[r.username]?.online)
+      r.online = !!r.online
+      r.verified = !!r.verified
+    })
     return jsonResponse({ users: rows, server_time: new Date().toISOString() })
   }
 

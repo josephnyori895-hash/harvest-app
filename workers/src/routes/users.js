@@ -1,12 +1,12 @@
 // Port of server/src/routes/users.js (pg → D1).
 import { query, uuid, bool, stmt, batch } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
-import { jsonResponse, errorResponse, readJson, searchParams, httpError } from '../lib/http.js'
+import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { pbkdf2Hash } from '../lib/crypto.js'
 import { ALL_CAPS, parseGrants } from '../lib/capabilities.js'
-import { nearestCommunity } from '../lib/geo.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 import { recordNotificationsSafe } from '../lib/notif.js'
+import { sendFanOut } from '../lib/fcm.js'
 
 const ROLES = new Set(['member', 'admin'])
 const PROFILE_FIELDS = new Set(['name', 'phone', 'location', 'constituency', 'faith'])
@@ -54,7 +54,7 @@ export async function handleUsers(request, env, ctx, params) {
 
   // GET /api/users?q=
   if (path === '/api/users' && method === 'GET') {
-    const fresh = await requireMember(env, user)
+    await requireMember(env, user)
     const q = String(searchParams(url).q || '').trim().toLowerCase()
     if (!q || q.length < 2) return jsonResponse({ users: [] })
     const { rows } = await query(
@@ -353,9 +353,11 @@ export async function handleUsers(request, env, ctx, params) {
     const targetGroup = cleanString(body.target_group, 80) || null
 
     // Resolve recipients: all active members, optionally one group. Excludes the sender.
+    // Ids are fetched alongside usernames so the same pass can write bell
+    // records and push — an announcement used to land in chat with no badge.
     const { rows: recipients } = targetGroup
-      ? await query(env, `SELECT username FROM users WHERE active=1 AND id<>? AND group_name=?`, [fresh.id, targetGroup])
-      : await query(env, `SELECT username FROM users WHERE active=1 AND id<>?`, [fresh.id])
+      ? await query(env, `SELECT id, username FROM users WHERE active=1 AND id<>? AND group_name=?`, [fresh.id, targetGroup])
+      : await query(env, `SELECT id, username FROM users WHERE active=1 AND id<>?`, [fresh.id])
     if (!recipients.length) return errorResponse('no members to announce to', 400)
 
     // D1 caps bound parameters per statement; insert in chunks of 50.
@@ -375,6 +377,40 @@ export async function handleUsers(request, env, ctx, params) {
       await batch(env, statements)
       inserted += slice.length
     }
+
+    // Bell + push: one unread row per member's DM with the announcer, plus a
+    // collapsed push. Best-effort — the announcement itself is already stored.
+    const announcementId = uuid()
+    const records = recipients.map(r => ({
+      userId: r.id,
+      type: 'chat',
+      category: 'messages',
+      title: `@${fresh.username}`,
+      body: text.slice(0, 400),
+      preview: 'Church announcement',
+      target: {
+        type: 'chat',
+        user_id: fresh.id,
+        peer_username: fresh.username,
+        peer_name: fresh.name || fresh.username,
+        actor_user_id: fresh.id,
+        conversation_key: `harvest:chat:${[fresh.username, r.username].sort().join(':')}`,
+      },
+    }))
+    const sideEffects = Promise.all([
+      recordNotificationsSafe(env, records),
+      sendFanOut(env, {
+        recipients: recipients.map(r => r.id),
+        title: `📣 ${fresh.name || fresh.username}`,
+        body: text.slice(0, 200),
+        data: { kind: 'chat', type: 'dm', peer: fresh.username, peer_user_id: fresh.id, peer_name: fresh.name || fresh.username, message_id: announcementId },
+        collapseKey: `chat:announce:${announcementId}`,
+        requestKey: `announce:${announcementId}`,
+        actor: fresh.username,
+      }),
+    ]).catch(() => {})
+    if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(sideEffects)
+    else await sideEffects
 
     await audit(env, fresh, 'announcement_sent', fresh.id, {
       recipients: inserted,

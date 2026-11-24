@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, overrideGivingPledge, removeGivenParticipant, renameGivingTake, removeFromTake, useApi, presign, uploadToMinio } from '../lib/api'
+import { fetchGivingAdmin, fetchMyGiving, startGiving, fetchProjects, participateInProject, participateByTake, fetchGroupDirectory, fetchDepartmentDirectory, createGivingProject, updateGivingProject, deleteGivingProject, overrideGivingPledge, removeGivenParticipant, renameGivingTake, removeFromTake, useApi, presign, uploadToMinio, recordManualGiving, correctGivingTransaction, fetchGivingAudit, downloadGivingCsv } from '../lib/api'
 import { showToast } from './Toast'
 import { scheduleProjectReminders } from '../lib/notifications'
 import { timeAgo } from '../lib/time'
 import { useModalFocus } from '../lib/useModalFocus'
 import { Icon } from '../ui'
+import ErrorMessage from './ErrorMessage'
+import { describeError } from '../lib/actionFeedback'
 
-import { DEFAULT_FUNDS, DEFAULT_QUICK, parseFunds, parseQuick } from '../lib/givingDefaults'
+import { parseFunds, parseQuick } from '../lib/givingDefaults'
 
-const PAYBILL_FALLBACK = { number: '4138895', name: 'Harvest Family Church' }
 const MIN_GIVE = 1 // Daraja's floor; church can raise later
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 // Kenyan mobile: 07XXXXXXXX, 01XXXXXXXX, +2547…, 2547… — normalised to 2547…
-export function normalizeMpesaPhone(raw: string): string | null {
+function normalizeMpesaPhone(raw: string): string | null {
   const v = String(raw || '').replace(/[\s-]/g, '')
   if (/^0[17]\d{8}$/.test(v)) return `254${v.slice(1)}`
   if (/^254[17]\d{8}$/.test(v)) return v
@@ -96,7 +97,21 @@ export default function Give() {
   const [phone, setPhone] = useState('')
   const [transactions, setTransactions] = useState<any[]>([])
   const [historyError, setHistoryError] = useState('')
-  const [adminData, setAdminData] = useState<{transactions:any[],totals:any} | null>(null)
+  const [adminData, setAdminData] = useState<{transactions:any[],totals:any,total?:number} | null>(null)
+  const [adminError, setAdminError] = useState('')
+  const [projectsError, setProjectsError] = useState('')
+  const [moneyReload, setMoneyReload] = useState(0)
+  // Treasurer tools. Filters are applied explicitly so typing a receipt number
+  // does not fire a request per keystroke.
+  const [ledgerFilter, setLedgerFilter] = useState({ status: '', q: '', from: '', to: '' })
+  const [appliedFilter, setAppliedFilter] = useState({ status: '', q: '', from: '', to: '' })
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manual, setManual] = useState({ amount_kes: '', purpose: '', method: 'paybill', phone: '', receipt_number: '', note: '', member_username: '', received_at: '' })
+  const [manualBusy, setManualBusy] = useState(false)
+  const [correcting, setCorrecting] = useState<any>(null)
+  const [correction, setCorrection] = useState({ amount_kes: '', purpose: '', status: '', receipt_number: '', reason: '' })
+  const [correctionBusy, setCorrectionBusy] = useState(false)
+  const [audit, setAudit] = useState<any[] | null>(null)
   const [tab, setTab] = useState<'give'|'admin'>('give')
   const [busy, setBusy] = useState(false)
   // RS-107: busy alone flips on the next render, so two taps inside the same
@@ -125,8 +140,10 @@ export default function Give() {
   // page underneath stops scrolling while the sheet is up.
   const projectSheetRef = useRef<HTMLDivElement | null>(null)
   const editProjectSheetRef = useRef<HTMLDivElement | null>(null)
+  const correctionSheetRef = useRef<HTMLDivElement | null>(null)
   useModalFocus(Boolean(selectedProject), projectSheetRef, () => setSelectedProject(null))
   useModalFocus(Boolean(editingProject), editProjectSheetRef, () => setEditingProject(null))
+  useModalFocus(Boolean(correcting), correctionSheetRef, () => setCorrecting(null))
 
   // Take modes: an individual commitment (project_participants) or a team
   // take under a group / department / community (project_takes + helpers).
@@ -189,7 +206,7 @@ export default function Give() {
   }
 
   const removeProject = async (p: any) => {
-    if (!window.confirm(`Delete "${p.name}"? Participation is removed; contributions already recorded stay in the ledger.`)) return
+    if (!window.confirm(`Delete "${p.name}"? This is refused if any gift was recorded against it — close or complete a funded project instead.`)) return
     try {
       await deleteGivingProject(String(p.id))
       setProjects(prev => prev.filter(x => x.id !== p.id))
@@ -225,8 +242,12 @@ export default function Give() {
   // Giving limits are church copy, not constants: the admin sets them.
   const minGive = Math.max(1, Math.floor(Number(content.giving_min_kes) || MIN_GIVE))
   const maxGive = Math.min(1_000_000, Math.floor(Number(content.giving_max_kes) || 1_000_000))
-  const paybillName = content.paybill_name || PAYBILL_FALLBACK.name
   const selectedPayment = paymentConfigs[fund] || { method: 'stk', enabled: true, instructions: '', payment_number: '', account_reference: '' }
+  // Never invent a destination. The number comes from what an admin saved on
+  // this purpose, then the site-wide Paybill setting; when neither exists the
+  // screen says so instead of showing an old hardcoded number members might
+  // still pay into.
+  const fallbackPaybill = String(selectedPayment.payment_number || paybill || content.paybill_number || '').trim()
   const savePaymentConfigs = async () => {
     setPaymentSaving(true)
     try {
@@ -246,6 +267,71 @@ export default function Give() {
   }
   const updatePaymentConfig = (id: string, patch: Record<string, any>) => {
     setPaymentConfigs(prev => ({ ...prev, [id]: { method: 'stk', enabled: true, instructions: '', payment_number: '', account_reference: '', ...(prev[id] || {}), ...patch } }))
+  }
+
+  // ── Manual giving records (treasurer) ──
+  const submitManual = async () => {
+    const amount = Number(manual.amount_kes)
+    if (!Number.isInteger(amount) || amount < 1) { showToast('Enter the amount received, in whole shillings', 'error'); return }
+    if (!manual.purpose.trim()) { showToast('Choose the purpose this gift was for', 'error'); return }
+    setManualBusy(true)
+    try {
+      await recordManualGiving({
+        amount_kes: amount,
+        purpose: manual.purpose.trim(),
+        method: manual.method,
+        phone: manual.phone.trim() || undefined,
+        receipt_number: manual.receipt_number.trim() || undefined,
+        note: manual.note.trim() || undefined,
+        member_username: manual.member_username.trim() || undefined,
+        received_at: manual.received_at || undefined,
+      })
+      showToast('Gift recorded in the ledger', 'success')
+      setManual({ amount_kes: '', purpose: '', method: 'paybill', phone: '', receipt_number: '', note: '', member_username: '', received_at: '' })
+      setManualOpen(false)
+      setMoneyReload(k => k + 1)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not record the gift', 'error')
+    } finally { setManualBusy(false) }
+  }
+
+  const startCorrection = async (t: any) => {
+    setCorrecting(t)
+    setCorrection({
+      amount_kes: String(t.amount_kes ?? ''),
+      purpose: String(t.purpose || ''),
+      status: String(t.status || ''),
+      receipt_number: String(t.receipt_number || ''),
+      reason: '',
+    })
+    setAudit(null)
+    try { setAudit((await fetchGivingAudit(t.id)).audit || []) } catch { setAudit([]) }
+  }
+
+  const submitCorrection = async () => {
+    if (!correcting) return
+    if (correction.reason.trim().length < 4) { showToast('Say why this record is being corrected — it is kept in the audit trail', 'error'); return }
+    const amount = Number(correction.amount_kes)
+    if (!Number.isInteger(amount) || amount < 1) { showToast('Amount must be whole shillings', 'error'); return }
+    setCorrectionBusy(true)
+    try {
+      await correctGivingTransaction(correcting.id, {
+        reason: correction.reason.trim(),
+        amount_kes: amount,
+        purpose: correction.purpose.trim(),
+        status: correction.status,
+        receipt_number: correction.receipt_number.trim() || null,
+      })
+      showToast('Correction saved — the original stays in the audit trail', 'success')
+      setCorrecting(null)
+      setMoneyReload(k => k + 1)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not correct the record', 'error')
+    } finally { setCorrectionBusy(false) }
+  }
+
+  const exportLedger = async () => {
+    try { await downloadGivingCsv(appliedFilter) } catch (e) { showToast(e instanceof Error ? e.message : 'Could not export the ledger', 'error') }
   }
 
   useEffect(() => {
@@ -285,9 +371,19 @@ export default function Give() {
     fetch(`${API}/api/giving/config`)
       .then(r => r.json()).then(d => { setMpesaEnabled(!!d.mpesa_enabled); setPaybill(d.paybill || '') }).catch(() => setMpesaEnabled(false))
     void loadMyGiving()
-    fetchProjects().then(d => setProjects(Array.isArray(d?.projects) ? d.projects : [])).catch(() => setProjects([]))
-    if (isAdmin) fetchGivingAdmin().then(setAdminData).catch(() => {})
-  }, [apiEnabled, isAdmin])
+    // An outage must never render as "no projects" or a zero ledger. Both
+    // loads keep a visible failure with a retry instead of an empty lie.
+    setProjectsError('')
+    fetchProjects()
+      .then(d => setProjects(Array.isArray(d?.projects) ? d.projects : []))
+      .catch(e => setProjectsError(describeError(e, 'Could not load giving projects')))
+    if (isAdmin) {
+      setAdminError('')
+      fetchGivingAdmin(appliedFilter)
+        .then(setAdminData)
+        .catch(e => setAdminError(describeError(e, 'Could not load the giving ledger')))
+    }
+  }, [apiEnabled, isAdmin, moneyReload, appliedFilter])
 
   // After an STK push, poll the transaction status so "pending" flips to
   // completed/failed on screen without the member reopening the page.
@@ -476,7 +572,7 @@ export default function Give() {
           <p className="text-sm text-ink-muted mt-1">{content.giving_subtitle || 'Secure M-Pesa giving for Harvest Family Church.'}</p>
         </div>
 
-        {projects.length > 0 && <section className="mb-7"><div className="mb-3"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold-strong">Projects</p><h2 className="text-lg font-extrabold">Give with purpose</h2><p className="text-xs text-ink-muted mt-1">Take part, track your progress, and help complete a shared goal.</p></div><div className="space-y-3">{projects.filter(p => ['active','upcoming'].includes(p.status)).map(projectCard)}</div></section>}
+        {(projects.length > 0 || projectsError) && <section className="mb-7"><div className="mb-3"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold-strong">Projects</p><h2 className="text-lg font-extrabold">Give with purpose</h2><p className="text-xs text-ink-muted mt-1">Take part, track your progress, and help complete a shared goal.</p></div>{projectsError && <ErrorMessage message={projectsError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} />}<div className="space-y-3">{projects.filter(p => ['active','upcoming'].includes(p.status)).map(projectCard)}</div></section>}
 
         {/* Purpose → amount → M-Pesa, one sheet. Purposes scroll; the amount is
             the biggest thing on screen because that is the decision. */}
@@ -522,7 +618,7 @@ export default function Give() {
             <p className="font-bold text-gold-strong">Give via M-Pesa Paybill (works right now)</p>
             <ol className="list-decimal ml-4 mt-2 space-y-1 text-gold-strong">
               <li>Open <b>M-Pesa</b> → <b>Lipa na M-Pesa</b> → <b>Pay Bill</b></li>
-              <li>Business Number: <b className="select-all">{paybill || content.paybill_number || PAYBILL_FALLBACK.number}</b> <button onClick={() => { navigator.clipboard?.writeText(paybill || content.paybill_number || PAYBILL_FALLBACK.number); showToast('Paybill number copied', 'success') }} className="ml-1 text-accent font-bold underline">copy</button></li>
+              <li>Business Number: {fallbackPaybill ? <><b className="select-all">{fallbackPaybill}</b> <button onClick={() => { navigator.clipboard?.writeText(fallbackPaybill); showToast('Paybill number copied', 'success') }} className="ml-1 text-accent font-bold underline">copy</button></> : <b>not published yet — ask the church office</b>}</li>
               <li>Account: <b>{purpose}</b> (or your name)</li>
               <li>Amount: <b>KES {Number(amount || 0).toLocaleString()}</b> → enter your PIN</li>
             </ol>
@@ -709,6 +805,115 @@ export default function Give() {
 
       {tab === 'admin' && isAdmin && <div className="space-y-4">
         <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-accent">Giving administration</p><h1 className="mt-1 text-2xl font-extrabold tracking-tight">Ledger &amp; methods</h1><p className="mt-1 text-2xs text-ink-muted">Payment instructions, projects and the money trail. Every change reports back.</p></div>
+
+        {/* ── Money received: manual records, corrections, export ── */}
+        <div className="rounded-card border border-line bg-surface-raised p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-extrabold">Money received</h2>
+              <p className="mt-1 text-xs text-ink-muted">Record a gift that arrived at the Paybill, Till, bank or in cash. A correction keeps the original entry, who changed it, when and why.</p>
+            </div>
+            <button type="button" onClick={() => setManualOpen(v => !v)} className="min-h-9 rounded-xl bg-accent-soft px-3 text-2xs font-extrabold text-accent-strong">{manualOpen ? 'Close' : 'Record a gift'}</button>
+          </div>
+
+          {manualOpen && <div className="mt-3 space-y-2 rounded-2xl border border-line bg-surface p-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="block text-xs font-bold">Amount received (KES)
+                <input inputMode="numeric" value={manual.amount_kes} onChange={e => setManual(m => ({ ...m, amount_kes: e.target.value }))} placeholder="e.g. 2000" className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Purpose
+                <input list="giving-purpose-options" value={manual.purpose} onChange={e => setManual(m => ({ ...m, purpose: e.target.value }))} placeholder="e.g. Tithe" className="input-premium mt-1" />
+                <datalist id="giving-purpose-options">{funds.map((f: any) => <option key={f.id} value={f.label} />)}</datalist>
+              </label>
+              <label className="block text-xs font-bold">How it arrived
+                <select value={manual.method} onChange={e => setManual(m => ({ ...m, method: e.target.value }))} className="input-premium mt-1">
+                  <option value="paybill">M-Pesa Paybill</option><option value="till">M-Pesa Till</option><option value="bank">Bank transfer</option><option value="cash">Cash</option><option value="mpesa">M-Pesa (send money)</option>
+                </select>
+              </label>
+              <label className="block text-xs font-bold">Date received (optional)
+                <input type="date" value={manual.received_at} max={new Date().toISOString().slice(0, 10)} onChange={e => setManual(m => ({ ...m, received_at: e.target.value }))} className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Member username (optional)
+                <input value={manual.member_username} onChange={e => setManual(m => ({ ...m, member_username: e.target.value }))} placeholder="leave blank for an unnamed giver" className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Receipt / confirmation code (optional)
+                <input value={manual.receipt_number} onChange={e => setManual(m => ({ ...m, receipt_number: e.target.value }))} maxLength={64} placeholder="e.g. SGH7X2K9LM" className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Phone used (optional)
+                <input inputMode="tel" value={manual.phone} onChange={e => setManual(m => ({ ...m, phone: e.target.value }))} placeholder="07… or 01…" className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Note (optional)
+                <input value={manual.note} onChange={e => setManual(m => ({ ...m, note: e.target.value }))} maxLength={500} placeholder="e.g. counted by the treasurer after service" className="input-premium mt-1" />
+              </label>
+            </div>
+            <button type="button" disabled={manualBusy} onClick={() => void submitManual()} className="btn-primary-lg w-full disabled:opacity-60">{manualBusy ? 'Recording…' : 'Record this gift'}</button>
+            <p className="text-[10px] text-ink-subtle">This writes a completed entry to the ledger. It does not send or request any M-Pesa payment.</p>
+          </div>}
+
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-ink-muted">Status
+              <select value={ledgerFilter.status} onChange={e => setLedgerFilter(f => ({ ...f, status: e.target.value }))} className="input-premium mt-1 text-xs">
+                <option value="">All</option><option value="completed">Completed</option><option value="pending">Pending</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-ink-muted">Search
+              <input value={ledgerFilter.q} onChange={e => setLedgerFilter(f => ({ ...f, q: e.target.value }))} placeholder="member, receipt, purpose" className="input-premium mt-1 text-xs" />
+            </label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-ink-muted">From
+              <input type="date" value={ledgerFilter.from} onChange={e => setLedgerFilter(f => ({ ...f, from: e.target.value }))} className="input-premium mt-1 text-xs" />
+            </label>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-ink-muted">To
+              <input type="date" value={ledgerFilter.to} onChange={e => setLedgerFilter(f => ({ ...f, to: e.target.value }))} className="input-premium mt-1 text-xs" />
+            </label>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" onClick={() => setAppliedFilter({ ...ledgerFilter })} className="min-h-9 rounded-xl bg-ink px-3 text-2xs font-extrabold text-white">Apply filters</button>
+            <button type="button" onClick={() => { const empty = { status: '', q: '', from: '', to: '' }; setLedgerFilter(empty); setAppliedFilter(empty) }} className="min-h-9 rounded-xl border border-line bg-surface px-3 text-2xs font-extrabold">Clear</button>
+            <button type="button" onClick={() => void exportLedger()} className="min-h-9 rounded-xl border border-line bg-surface px-3 text-2xs font-extrabold">Export CSV</button>
+          </div>
+
+          {adminError ? null : <div className="mt-3">
+            {adminData?.total !== undefined && <p className="mb-1 text-[10px] text-ink-subtle">Showing {adminData.transactions.length} of {adminData.total} ledger entries.</p>}
+            {(adminData?.transactions || []).length === 0 && <p className="text-xs text-ink-muted">No entries match these filters.</p>}
+            {(adminData?.transactions || []).map((t: any) => <div key={t.id} className="py-3 border-b last:border-0 border-line">
+              <div className="flex justify-between gap-3"><p className="font-semibold">KES {Number(t.amount_kes).toLocaleString()} · {t.purpose}</p><span className="text-xs font-bold capitalize">{t.status}</span></div>
+              <p className="text-xs text-ink-muted">{t.username || 'unnamed giver'} · {t.provider === 'manual' ? `recorded by ${t.recorded_by_username || 'admin'}` : 'M-Pesa STK'} · {t.receipt_number || 'No receipt'} · {timeAgo(t.created_at)}</p>
+              {t.corrected_at && <p className="mt-0.5 text-[10px] font-bold text-gold-strong">Corrected {timeAgo(t.corrected_at)}{t.corrected_by_username ? ` by ${t.corrected_by_username}` : ''} — the original entry and reason are in the audit trail</p>}
+              <button type="button" onClick={() => void startCorrection(t)} className="mt-1 rounded-lg border border-line bg-surface px-2 py-1 text-[10px] font-extrabold">Correct this record</button>
+            </div>)}
+          </div>}
+        </div>
+
+        {correcting && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setCorrecting(null)}>
+          <div ref={correctionSheetRef} tabIndex={-1} className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-surface p-5 outline-none" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Correct giving record">
+            <div className="flex items-center justify-between"><h2 className="font-extrabold">Correct a giving record</h2><button onClick={() => setCorrecting(null)} className="h-10 w-10 rounded-full border border-line bg-surface-raised" aria-label="Close">×</button></div>
+            <p className="mt-1 text-xs text-ink-muted">The ledger keeps the original values and this correction, with your name and reason.</p>
+            <div className="mt-3 space-y-2">
+              <label className="block text-xs font-bold">Amount (KES)
+                <input inputMode="numeric" value={correction.amount_kes} onChange={e => setCorrection(c => ({ ...c, amount_kes: e.target.value }))} className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Purpose
+                <input value={correction.purpose} onChange={e => setCorrection(c => ({ ...c, purpose: e.target.value }))} maxLength={120} className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Status
+                <select value={correction.status} onChange={e => setCorrection(c => ({ ...c, status: e.target.value }))} className="input-premium mt-1">
+                  <option value="pending">Pending</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label className="block text-xs font-bold">Receipt / confirmation code
+                <input value={correction.receipt_number} onChange={e => setCorrection(c => ({ ...c, receipt_number: e.target.value }))} maxLength={64} className="input-premium mt-1" />
+              </label>
+              <label className="block text-xs font-bold">Why is this being corrected? (required)
+                <textarea value={correction.reason} onChange={e => setCorrection(c => ({ ...c, reason: e.target.value }))} maxLength={500} rows={2} placeholder="e.g. receipt entered as 1,500 but the confirmation shows 15,000" className="input-premium mt-1" />
+              </label>
+            </div>
+            {audit && audit.length > 0 && <div className="mt-3 rounded-xl border border-line bg-surface-raised p-2">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-ink-muted">History</p>
+              {audit.map((a: any) => <p key={a.id} className="mt-1 text-[10px] text-ink-muted">{a.action === 'record' ? 'Recorded' : 'Corrected'} by {a.actor_username} · {timeAgo(a.created_at)}{a.reason ? ` · ${a.reason}` : ''}</p>)}
+            </div>}
+            <button type="button" disabled={correctionBusy} onClick={() => void submitCorrection()} className="btn-primary-lg mt-3 w-full disabled:opacity-60">{correctionBusy ? 'Saving…' : 'Save correction'}</button>
+          </div>
+        </div>}
         <div className="rounded-card border border-line bg-surface-raised p-4">
           <h2 className="text-sm font-extrabold">Purpose-specific payment methods</h2>
           <p className="text-xs text-ink-muted mt-1">Each giving purpose has its own editable payment instructions. These settings never change another purpose's configuration.</p>
@@ -749,11 +954,11 @@ export default function Give() {
             </div>
           })()}
         </div>
-        <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Manage projects</h2><p className="text-xs text-ink-muted mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projects.length === 0 && <p className="text-xs text-ink-muted mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-line"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-accent ml-1">{p.status}</span></p><p className="text-xs text-ink-muted mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-gold-soft border border-gold text-gold-strong text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-success-soft border border-success text-success text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
+        <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Manage projects</h2><p className="text-xs text-ink-muted mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projectsError && <div className="mt-2"><ErrorMessage message={projectsError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} /></div>}{!projectsError && projects.length === 0 && <p className="text-xs text-ink-muted mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-line"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-accent ml-1">{p.status}</span></p><p className="text-xs text-ink-muted mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-gold-soft border border-gold text-gold-strong text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-success-soft border border-success text-success text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
         <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Create project</h2><p className="text-xs text-ink-muted mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
         {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div ref={editProjectSheetRef} tabIndex={-1} className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5 outline-none" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Edit project"><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-10 h-10 rounded-full bg-surface-raised border border-line" aria-label="Close">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}
-        <div className="grid grid-cols-2 gap-3"><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Pending</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.pending_kes||0).toLocaleString()} <span className="text-[11px] font-bold text-ink-subtle">({adminData?.totals?.pending_count||0} awaiting M-Pesa)</span></p></div></div>
-        <div className="rounded-card border border-line bg-surface-raised p-4">{(adminData?.transactions||[]).map(t => <div key={t.id} className="py-3 border-b last:border-0 border-line"><div className="flex justify-between gap-3"><p className="font-semibold">KES {Number(t.amount_kes).toLocaleString()} · {t.purpose}</p><span className="text-xs font-bold capitalize">{t.status}</span></div><p className="text-xs text-ink-muted">{t.username || 'member'} · {t.receipt_number || 'No receipt yet'}</p></div>)}</div>
+        {adminError && <ErrorMessage message={adminError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} />}
+        {!adminError && <div className="grid grid-cols-2 gap-3"><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Pending</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.pending_kes||0).toLocaleString()} <span className="text-[11px] font-bold text-ink-subtle">({adminData?.totals?.pending_count||0} awaiting M-Pesa)</span></p></div></div>}
       </div>}
     </div>
   )

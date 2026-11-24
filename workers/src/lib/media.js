@@ -539,7 +539,7 @@ function parseRangeHeader(value, size) {
   return { offset, length: Math.min(length, size - offset) }
 }
 
-export async function handleMediaRead(request, env, ctx) {
+export async function handleMediaRead(request, env, _ctx) {
   const url = new URL(request.url)
   const key = decodeURIComponent(url.pathname.replace(/^\/api\/media\//, ''))
   if (!isReadableKey(key)) return errorResponse('invalid media key', 400)

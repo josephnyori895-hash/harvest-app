@@ -187,7 +187,7 @@ export default {
     }
   },
 
-  async scheduled(event, env, ctx) {
+  async scheduled(event, env, _ctx) {
     // */10 * * * * — story expiry, orphan cleanup, attempts GC.
     const result = await runScheduledCleanup(env)
     console.log('[cron]', JSON.stringify(result))

@@ -25,7 +25,8 @@ test('worship plays as a queue that advances on its own', () => {
   assert.match(player, /export async function previousTrack\(\)/)
   // 'ended' advances the queue instead of stopping dead.
   assert.match(player, /audio\.addEventListener\('ended'[\s\S]*?void nextTrack\(\)/)
-  assert.match(player, /repeatOne/)
+  // Auto-advance only applies to a real multi-track queue; a single track rests.
+  assert.match(player, /queue\.length > 1 && queueIndex >= 0/)
 })
 
 test('the app remembers where the member stopped', () => {
@@ -82,10 +83,12 @@ test('the sponsored project is a campaign card, not a banner', () => {
   assert.match(feed, /Learn more <Icon name="arrow-right"/)
   assert.match(feed, /aria-label="Sponsored"|>Sponsored</)
   assert.match(home, /<AdvertCard advert=\{p\} onOpen=\{\(\) => setTab\('give'\)\} onBrowseProjects=\{\(\) => setTab\('give'\)\} \/>/)
-  // The feed's "Church projects" shelf must delegate to the same campaign card
-  // instead of keeping its own light tile with a chip and a tiny bar.
-  assert.match(home, /advert=\{\{\s*\n\s*\.\.\.p,\s*\n\s*kind: 'advert',/)
-  assert.doesNotMatch(home, /Sponsored · Church project/, 'the bespoke project tile must be gone')
+  // Promoted projects share the feed's one campaign pipeline now, instead of a
+  // separate vertical "Church projects" shelf above the community feed.
+  assert.doesNotMatch(home, /Church projects/, 'the separate promoted-project shelf must be gone')
+  assert.doesNotMatch(home, /liveProjects/)
+  assert.match(feedRoute, /projectCampaigns/)
+  assert.match(feedRoute, /sponsor_kind: ad\.sponsor_kind \|\| 'advert'/, 'external ads and promoted projects share one placement system')
   assert.doesNotMatch(home, /Ends \$\{timeAgo\(project\.deadline\)\}/, 'deadlines are dates, not relative timestamps')
 })
 

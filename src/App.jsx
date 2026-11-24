@@ -16,7 +16,7 @@ import Groups from './components/Groups'
 import Departments from './components/Departments'
 import { RequireRole } from './components/Protected'
 import UserListModal from './components/UserListModal'
-import { showToast } from './components/Toast'
+import { showToast, ToastContainer } from './components/Toast'
 import UploadPill from './components/UploadPill'
 import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
@@ -24,7 +24,9 @@ import NotificationsScreen from './components/NotificationsScreen'
 import { Icon, Spinner } from './ui'
 import { VerifiedBadge } from './components/VerifiedBadge'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
+import { connectSocket, disconnectSocket, onSocket } from './lib/realtime'
 import { describeError } from './lib/actionFeedback'
+import { apiGet } from './lib/api'
 
 // Global fetch guard: any 401 from the API (expired 24h/7d JWT) raises ONE
 // session-expired event so the app can return to login with a clear message,
@@ -39,6 +41,7 @@ const Admin = lazy(() => import('./components/Admin'))
 
 import { initNotifications, fetchFamilyActivity } from './lib/notifications'
 import { registerPush, disablePushOnLogout } from './lib/push'
+import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } from './lib/backgroundUploads'
 // Push tap routing: a notification tap emits harvest:push-tap with a
 // normalized deep link; route it through the app's existing navigation
 // (DM → openDm, group/department → teamChat), everything else → tab switch.
@@ -59,8 +62,21 @@ function usePushTapRouting(openDm, setTab, setTeamChat) {
     return () => window.removeEventListener('harvest:push-tap', onTap)
   }, [openDm, setTab, setTeamChat])
 }
-import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } from './lib/backgroundUploads'
 
+// The OS does not draw an FCM notification while the app is in the foreground,
+// so a delivery during use used to be silent. Surface it as the in-app toast.
+function useForegroundPushToast() {
+  useEffect(() => {
+    const onPush = (e) => {
+      const n = (e && e.detail) || {}
+      const title = String(n.title || 'Harvest Family')
+      const body = String(n.body || '').trim()
+      showToast(body ? `${title} — ${body}` : title, 'info', 4000)
+    }
+    window.addEventListener('harvest:push-received', onPush)
+    return () => window.removeEventListener('harvest:push-received', onPush)
+  }, [])
+}
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 // Placeholder shown while a lazy tab's chunk arrives — the shell, header and
@@ -200,10 +216,20 @@ function InnerApp() {
   const notificationMutationQueueRef = useRef(Promise.resolve())
   const dmLayerRef = useRef(null)
   const notificationsDrawerRef = useRef(null)
+  // The server owns the true unread total. The inbox only holds one page, so
+  // counting the visible rows capped the badge at the page size and it could
+  // never show "47" once a member had more unread than a page.
+  const [serverUnread, setServerUnread] = useState(0)
+  // Family activity has no server row (it is derived from /api/activity), so
+  // those unread rows are counted locally and added to the server total.
+  const activityUnread = useMemo(
+    () => notifications.reduce((count, n) => count + (isLocalNotification(n.id) && !n.read_at ? 1 : 0), 0),
+    [notifications],
+  )
   // One derivation for the badge, the bell's label and the panel's mark-all
   // button — the count used to be recomputed three times a render, which is
   // how the label and the visible badge drift apart.
-  const unreadCount = useMemo(() => notifications.reduce((count, n) => count + (n.read_at ? 0 : 1), 0), [notifications])
+  const unreadCount = serverUnread + activityUnread
   const activityReadRef = useRef(null)
   const activityReadSet = () => (activityReadRef.current ||= loadActivityRead())
   // Re-apply locally recorded reads whenever activity rows are merged, so the
@@ -211,6 +237,28 @@ function InnerApp() {
   const withLocalRead = rows => {
     const read = activityReadSet()
     return rows.map(r => (isLocalNotification(r.id) && !r.read_at && read.has(String(r.id)) ? { ...r, read_at: 'local' } : r))
+  }
+  const applyServerUnread = d => {
+    const total = Number(d?.unread)
+    if (d && d.unread !== undefined && Number.isFinite(total)) { setServerUnread(Math.max(0, total)); return }
+    // Defensive for an older worker that does not send the total yet.
+    const rows = Array.isArray(d?.notifications) ? d.notifications : []
+    setServerUnread(rows.filter(n => !n.read_at && !isLocalNotification(n.id)).length)
+  }
+  // Sign-out (and an expired session) must not leave the previous member's
+  // inbox or badge on screen for whoever signs in next.
+  const resetNotificationState = () => {
+    setNotifications([])
+    setServerUnread(0)
+    setNotificationFilter('all')
+    setNotificationsError(null)
+    setNotificationActionError(null)
+    setNotificationPendingIds(new Set())
+    setNotificationMarkAllPending(false)
+    setNotificationsNextOffset(0)
+    setNotificationsHasMore(false)
+    try { localStorage.removeItem(ACTIVITY_READ_KEY) } catch { /* private mode */ }
+    activityReadRef.current = null
   }
   const [sharedContent, setSharedContent] = useState(() => {
     try {
@@ -297,6 +345,11 @@ function InnerApp() {
   const [teamChat, setTeamChat] = useState(null)
   const [dmTarget, setDmTarget] = useState(null)
   const [dmSheet, setDmSheet] = useState(false)
+  // Mini Chat: a compact panel that can be parked as a bubble while the member
+  // keeps using the rest of the app. It stays mounted while minimised so the
+  // open conversation and draft survive.
+  const [dmMinimized, setDmMinimized] = useState(false)
+  const [miniPeer, setMiniPeer] = useState(null)
   const [chatReturnTab, setChatReturnTab] = useState('home')
   // A single Chat surface owns all team conversations. Departments and Chats
   // only choose the same target; they never maintain separate chat state.
@@ -327,6 +380,7 @@ function InnerApp() {
     }
     const optimisticReadAt = new Date().toISOString()
     setNotifications(current => current.map(n => n.id === notificationId ? { ...n, read_at: optimisticReadAt } : n))
+    setServerUnread(count => Math.max(0, count - 1))
     setNotificationPendingIds(current => new Set(current).add(notificationId))
     setNotificationActionError(null)
     return enqueueNotificationMutation(async () => {
@@ -339,6 +393,7 @@ function InnerApp() {
         return true
       } catch {
         setNotifications(current => current.map(n => n.id === notificationId && n.read_at === optimisticReadAt ? previous : n))
+        setServerUnread(count => count + 1)
         setNotificationActionError('Couldn’t mark notification as read. Please try again.')
         return false
       } finally {
@@ -358,11 +413,11 @@ function InnerApp() {
     if (!onboarded) return
     let cancelled = false
     setNotificationsLoading(true)
-    fetch(`${API}/api/notifications?limit=40`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    apiGet('/api/notifications?limit=40')
       .then(d => {
         if (cancelled) return
         setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+        applyServerUnread(d)
         setNotificationsNextOffset(Number(d?.nextOffset) || 0)
         setNotificationsHasMore(Boolean(d?.hasMore))
         setNotificationsError(null)
@@ -388,10 +443,9 @@ function InnerApp() {
   const refreshNotifications = async (silent = false) => {
     if (!silent) setNotificationsRefreshing(true)
     try {
-      const r = await fetch(`${API}/api/notifications?limit=40`, { headers: authHeaders() })
-      if (!r.ok) throw new Error(String(r.status))
-      const d = await r.json()
+      const d = await apiGet('/api/notifications?limit=40')
       setNotifications(Array.isArray(d?.notifications) ? d.notifications : [])
+      applyServerUnread(d)
       setNotificationsNextOffset(Number(d?.nextOffset) || 0)
       setNotificationsHasMore(Boolean(d?.hasMore))
       // A transient failure used to leave "unavailable" on screen forever.
@@ -416,9 +470,7 @@ function InnerApp() {
     notificationsPagingRef.current = true
     setNotificationsLoadingMore(true)
     try {
-      const r = await fetch(`${API}/api/notifications?limit=40&offset=${notificationsNextOffset}`, { headers: authHeaders() })
-      if (!r.ok) throw new Error(String(r.status))
-      const d = await r.json()
+      const d = await apiGet(`/api/notifications?limit=40&offset=${notificationsNextOffset}`)
       const incoming = Array.isArray(d?.notifications) ? d.notifications : []
       setNotifications(prev => {
         // Family activity is merged into this list locally, so dedupe by id
@@ -461,12 +513,53 @@ function InnerApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarded])
 
+  // Keep one realtime connection alive for the whole signed-in session. Chat
+  // used to be the only component that connected, so the bell could not react
+  // to announcements or DMs while the member stayed on Home. connectSocket is
+  // a singleton, so opening Chat reuses this socket instead of adding another.
+  useEffect(() => {
+    if (!onboarded) return
+    connectSocket()
+    let timer = null
+    const refreshBadge = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        void enqueueNotificationMutation(() => refreshNotifications(true))
+      }, 250)
+    }
+    const offNew = onSocket('notification:new', refreshBadge)
+    const offMessage = onSocket('chat:message', refreshBadge)
+    const offConnect = onSocket('connect', refreshBadge)
+    return () => {
+      window.clearTimeout(timer)
+      offNew()
+      offMessage()
+      offConnect()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onboarded])
+
   useModalFocus(showNotifications, notificationsDrawerRef, () => setShowNotifications(false))
-  useModalFocus(dmSheet, dmLayerRef, () => setDmSheet(false), () => document.querySelector('[data-testid="chat-fab"]'))
+  useModalFocus(dmSheet && !dmMinimized, dmLayerRef, () => setDmSheet(false), () => document.querySelector('[data-testid="chat-fab"]'))
+
+  const openFullChatFromMini = () => {
+    if (miniPeer?.username) {
+      setDmTarget({
+        id: String(miniPeer.id || miniPeer.username),
+        username: String(miniPeer.username),
+        name: miniPeer.name || String(miniPeer.username),
+      })
+    }
+    setChatReturnTab(tab)
+    setDmSheet(false)
+    setDmMinimized(false)
+    setTab('chat')
+  }
 
   const markAllNotificationsRead = async () => {
     if (!notifications.some(n => !n.read_at) || notificationMarkAllPending) return true
     const previous = notifications
+    const previousUnread = serverUnread
     const optimisticReadAt = new Date().toISOString()
     // Record the derived rows locally first: read-all only touches rows the
     // server owns, so activity notifications would come back unread otherwise.
@@ -477,6 +570,7 @@ function InnerApp() {
     }
     if (addedLocal.length) saveActivityRead(readSet)
     setNotifications(current => current.map(n => n.read_at ? n : { ...n, read_at: optimisticReadAt }))
+    setServerUnread(0)
     setNotificationMarkAllPending(true)
     setNotificationActionError(null)
     return enqueueNotificationMutation(async () => {
@@ -497,6 +591,7 @@ function InnerApp() {
           if (n.read_at !== optimisticReadAt) return n
           return previous.find(p => p.id === n.id) || n
         }))
+        setServerUnread(previousUnread)
         setNotificationActionError('Couldn’t mark all notifications as read. Please try again.')
         return false
       } finally {
@@ -558,6 +653,7 @@ function InnerApp() {
 
   // Route notification taps (DM / group / department / tab deep links).
   usePushTapRouting(openDm, setTab, setTeamChat)
+  useForegroundPushToast()
 
   // Admins get a faster directory refresh: the map's live-location view is
   // only useful if presence and pins are current.
@@ -591,6 +687,10 @@ function InnerApp() {
     localStorage.removeItem('harvest_verified')
     localStorage.removeItem('harvest_msgs')
     localStorage.removeItem('harvest_pinned_chats')
+    // Close the realtime socket too: leaving it open kept the previous member's
+    // channel authenticated while the sign-in screen was showing.
+    disconnectSocket()
+    resetNotificationState()
     setOnboarded(false)
     setTab('home')
   }
@@ -602,6 +702,8 @@ function InnerApp() {
       localStorage.removeItem('harvest_username')
       localStorage.removeItem('harvest_role')
       localStorage.removeItem('harvest_verified')
+      disconnectSocket()
+      resetNotificationState()
       setOnboarded(false)
       setTab('home')
       showToast('Session expired — please sign in again', 'warning', 4000)
@@ -615,8 +717,7 @@ function InnerApp() {
     if (!onboarded) return
     const t = localStorage.getItem('harvest_token') || ''
     if (!t) { setOnboarded(false); return }
-    fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('session invalid')))
+    apiGet('/api/me')
       .then(d => {
         const u = d?.user
         if (!u) return
@@ -637,8 +738,7 @@ function InnerApp() {
     const syncIdentity = () => {
       const t = localStorage.getItem('harvest_token') || ''
       if (!t) return
-      fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${t}` } })
-        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      apiGet('/api/me')
         .then(d => {
           const u = d?.user
           if (!u || cancelled) return
@@ -853,50 +953,57 @@ function InnerApp() {
           </div>
           </>
         )}
-        {/* Instagram DM layer: a 1:1 conversation slides in over whatever
-            the member was doing — the feed stays mounted and visible around
-            the card. The chat tab remains for the full inbox. */}
+        {/* Mini Chat: a compact floating panel, not a screen swap. There is no
+            backdrop, so the feed underneath stays visible and scrollable. It
+            minimises to a bubble without unmounting, and can hand the same
+            conversation to the full-screen chat. */}
           {dmSheet && tab !== 'chat' && (
-            <>
-            <button
-              type="button"
-              onClick={() => setDmSheet(false)}
-              aria-label="Close conversation"
-              data-testid="dm-layer-backdrop"
-              className="absolute inset-0 z-20 cursor-default bg-ink/30 backdrop-blur-[2px]"
-            />
             <div
               ref={dmLayerRef}
               id="dm-layer"
               role="dialog"
-              aria-modal="true"
-              aria-label="Messages"
+              aria-modal="false"
+              aria-label="Mini chat"
               tabIndex={-1}
               data-testid="dm-layer"
-              className="drawer-anim absolute inset-x-3 top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top))+56px)] z-30 flex h-[min(56dvh,380px)] flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:right-3 sm:w-[380px] lg:top-[72px]"
+              className={`drawer-anim absolute bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-2 right-2 z-30 h-[min(46dvh,380px)] flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl sm:left-auto sm:right-3 sm:w-[380px] ${dmMinimized ? 'hidden' : 'flex'}`}
             >
               <Chat
                 compact
-                onBack={() => setDmSheet(false)}
+                onBack={() => { setDmSheet(false); setDmMinimized(false) }}
                 users={users}
                 teamChat={teamChat}
                 dmTarget={dmTarget}
                 onDmOpened={() => setDmTarget(null)}
+                onActiveChange={setMiniPeer}
+                onMinimize={() => setDmMinimized(true)}
+                onExpand={openFullChatFromMini}
                 onCloseTeam={() => setTeamChat(null)}
                 onOpenGroups={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('groups') }}
                 onOpenDepartments={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('departments') }}
                 onOpenUser={(u) => { setDmSheet(false); openProfile(u) }}
               />
             </div>
-            </>
           )}
+
+        {dmSheet && dmMinimized && tab !== 'chat' && (
+          <button
+            type="button"
+            onClick={() => setDmMinimized(false)}
+            data-testid="chat-mini-bubble"
+            aria-label="Reopen mini chat"
+            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] right-3 z-30 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-4 text-xs font-extrabold text-white shadow-raised transition active:scale-95"
+          >
+            <Icon name="chat" size={18} /> Chat
+          </button>
+        )}
         {/* Instagram's floating message button: a conversation opens over
             whatever the member is doing — reels keep playing, the feed stays
             scrolled where it was — instead of switching to the chat tab. */}
         {onboarded && tab !== 'chat' && !dmSheet && (
           <button
             type="button"
-            onClick={() => { setDmTarget(null); setChatReturnTab(tab); setDmSheet(true) }}
+            onClick={() => { setDmTarget(null); setMiniPeer(null); setDmMinimized(false); setChatReturnTab(tab); setDmSheet(true) }}
             aria-label="Open messages"
             data-testid="chat-fab"
             className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] right-3 z-20 grid h-12 w-12 place-items-center rounded-full bg-ink text-white shadow-raised transition active:scale-95"
@@ -917,6 +1024,9 @@ export default function App() {
   return (
     <AuthProvider>
       <InnerApp />
+      {/* One mount for the whole app, including onboarding: showToast() used to
+          publish to zero subscribers because nothing rendered this. */}
+      <ToastContainer />
     </AuthProvider>
   )
 }
@@ -1264,8 +1374,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
     let cancelled = false
     setSavedPostsLoading(true)
     setSavedPostsError('')
-    fetch(`${API}/api/posts/saved?limit=50`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(new Error(d?.error || 'Could not load saved posts'))))
+    apiGet('/api/posts/saved?limit=50')
       .then(d => { if (!cancelled) setSavedPosts(d.posts || []) })
       .catch(e => { if (!cancelled) setSavedPostsError(e?.message || 'Could not load saved posts') })
       .finally(() => { if (!cancelled) setSavedPostsLoading(false) })
@@ -1275,8 +1384,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
     let cancelled = false
     setSavedReelsLoading(true)
     setSavedReelsError('')
-    fetch(`${API}/api/reels/saved?limit=50`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(new Error(d?.error || 'Could not load saved videos'))))
+    apiGet('/api/reels/saved?limit=50')
       .then(d => { if (!cancelled) setSavedReels(d.reels || []) })
       .catch(e => { if (!cancelled) setSavedReelsError(e?.message || 'Could not load saved videos') })
       .finally(() => { if (!cancelled) setSavedReelsLoading(false) })
@@ -1284,10 +1392,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
   }, [])
 
   const loadMe = () => {
-    fetch(`${API}/api/me`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+    apiGet('/api/me')
       .then(d => setMe(d.user))
-      .catch(() => {})
+      .catch(() => { /* last known profile stays rendered */ })
   }
   useEffect(loadMe, [])
   // Re-fetch after profile edits (name/photo/group changed in EditProfile).
@@ -1298,10 +1405,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
   const [memberGroups, setMemberGroups] = useState([])
   const loadMemberGroups = () => {
-    fetch(`${API}/api/groups/mine`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('groups unavailable')))
+    apiGet('/api/groups/mine')
       .then(d => setMemberGroups(Array.isArray(d.groups) ? d.groups : []))
-      .catch(() => {})
+      .catch(() => { /* the group rail simply stays as it was */ })
   }
   useEffect(() => {
     loadMemberGroups()
@@ -1364,9 +1470,13 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       </div>
 
       {isAdmin && (
-        <div className="mt-4 border-t border-line pt-3 px-4">
-          <button onClick={() => onOpenAdmin?.()} className="inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-accent py-2.5 text-xs font-bold text-white"><Icon name="shield" size={14} /> Open moderation queue</button>
-          <p className="text-[11px] text-ink-muted text-center mt-2">Review posts, stories and reels submitted by members</p>
+        <div className="mt-4 border-t border-line px-4 pt-3">
+          {/* The only entry to the Admin Centre used to be a button labelled
+              “moderation queue” (plus a Giving-admin link deeper in Give), so an
+              administrator looking for members, sermons or the website had no
+              obvious way in. Name the destination for what it is. */}
+          <button onClick={() => onOpenAdmin?.()} className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent text-xs font-extrabold text-white shadow-card"><Icon name="shield" size={14} /> Admin Centre</button>
+          <p className="mt-2 text-center text-[11px] leading-4 text-ink-muted">Members, ministries, giving, sermons, website content and approvals</p>
         </div>
       )}
 
@@ -1473,10 +1583,18 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                   </div>
                   <p className="text-[11px] text-ink-muted line-clamp-2 mt-0.5">{sp.caption}</p>
                   <button type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      // Optimistic, but never silent: if the server refuses, put
+                      // the card back so Saved is not lying about what the
+                      // member still has.
                       setSavedPosts(list => list.filter(x => x.id !== sp.id))
-                      fetch(`${API}/api/posts/${encodeURIComponent(sp.id)}/save`, { method: 'DELETE', headers: authHeaders() })
-                        .catch(() => {})
+                      try {
+                        const r = await fetch(`${API}/api/posts/${encodeURIComponent(sp.id)}/save`, { method: 'DELETE', headers: authHeaders() })
+                        if (!r.ok) throw new Error(`Could not remove this saved post (${r.status})`)
+                      } catch (e) {
+                        setSavedPosts(list => list.some(x => x.id === sp.id) ? list : [sp, ...list])
+                        showToast(describeError(e, 'Could not remove this saved post'), 'error')
+                      }
                     }}
                     className="mt-1.5 text-[10px] font-extrabold text-gold-strong" aria-label={`Remove ${sp.caption ? 'saved post' : 'post'} from Saved`}>Remove</button>
                 </div>
@@ -1582,43 +1700,106 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
   )
 }
 
+// Five destinations is the most a 320 px phone can show without the first and
+// last labels sitting flush against the screen edge (the reported defect).
+// The remaining destinations stay one tap away in More instead of being cut or
+// squeezed into 40 px columns.
 const NAV_ITEMS = [
   { id: 'home', label: 'Home', icon: 'home' },
-  { id: 'search', label: 'Search', icon: 'search' },
   { id: 'reels', label: 'Reels', icon: 'reels' },
   { id: 'post', label: 'Create', icon: 'plus' },
-  { id: 'give', label: 'Give', icon: 'gift' },
   { id: 'chat', label: 'Chat', icon: 'chat' },
-  { id: 'map', label: 'Map', icon: 'map' },
   { id: 'profile', label: 'Profile', icon: 'user' },
 ]
+const MORE_ITEMS = [
+  { id: 'search', label: 'Search', icon: 'search', hint: 'Find members and conversations' },
+  { id: 'give', label: 'Give', icon: 'gift', hint: 'Instructions, projects and your history' },
+  { id: 'map', label: 'Map', icon: 'map', hint: 'Church location and directions' },
+]
 
-// Phones: fixed bottom bar (unchanged reachability, now with a real icon set
-// and 12px labels). Desktop: hidden — the sidebar in the shell takes over.
+// Phones: fixed bottom bar with edge breathing room. Desktop: hidden — the
+// sidebar in the shell takes over.
 function Nav({ tab, setTab }) {
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef(null)
+  useModalFocus(moreOpen, moreRef, () => setMoreOpen(false))
+  useEffect(() => { setMoreOpen(false) }, [tab])
+  const secondaryActive = MORE_ITEMS.some(item => item.id === tab)
   return (
-    <nav
-      aria-label="Primary"
-      className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around border-t border-line bg-surface/95 backdrop-blur lg:hidden"
-      style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgb(var(--accent) / 0.08)' }}
-    >
-      {NAV_ITEMS.map(item => {
-        const active = tab === item.id
-        return (
+    <>
+      <nav
+        aria-label="Primary"
+        className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex items-stretch gap-0.5 border-t border-line bg-surface/95 px-2 backdrop-blur lg:hidden"
+        style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgb(var(--accent) / 0.08)' }}
+      >
+        {NAV_ITEMS.map(item => {
+          const active = tab === item.id
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTab(item.id)}
+              aria-label={item.label}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs font-semibold transition-colors ${active ? 'text-accent' : 'text-ink-subtle'}`}
+            >
+              <Icon name={item.icon} size={22} strokeWidth={active ? 2.1 : 1.7} />
+              <span className="max-w-full truncate">{item.label}</span>
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(v => !v)}
+          aria-label="More destinations"
+          aria-expanded={moreOpen}
+          aria-controls="more-destinations"
+          className={`relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs font-semibold transition-colors ${secondaryActive || moreOpen ? 'text-accent' : 'text-ink-subtle'}`}
+        >
+          <Icon name="dots" size={22} strokeWidth={secondaryActive ? 2.1 : 1.7} />
+          <span className="max-w-full truncate">More</span>
+          {secondaryActive && <span aria-hidden="true" className="absolute right-2 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
+        </button>
+      </nav>
+      {moreOpen && (
+        <>
           <button
-            key={item.id}
             type="button"
-            onClick={() => setTab(item.id)}
-            aria-label={item.label}
-            aria-current={active ? 'page' : undefined}
-            className={`flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-2xs font-semibold transition-colors ${active ? 'text-accent' : 'text-ink-subtle'}`}
+            aria-label="Close more destinations"
+            onClick={() => setMoreOpen(false)}
+            className="absolute inset-0 z-40 cursor-default bg-ink/20 backdrop-blur-[1px] lg:hidden"
+          />
+          <div
+            id="more-destinations"
+            ref={moreRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="More destinations"
+            tabIndex={-1}
+            className="drawer-anim absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] z-50 overflow-hidden rounded-3xl border border-line bg-surface-raised p-2 shadow-2xl lg:hidden"
           >
-            <Icon name={item.icon} size={22} strokeWidth={active ? 2.1 : 1.7} />
-            <span>{item.label}</span>
-          </button>
-        )
-      })}
-    </nav>
+            {MORE_ITEMS.map(item => {
+              const active = tab === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => { setTab(item.id); setMoreOpen(false) }}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${active ? 'bg-accent-soft text-accent-strong' : 'text-ink hover:bg-surface-sunken'}`}
+                >
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${active ? 'bg-accent text-white' : 'bg-surface-sunken text-accent'}`}><Icon name={item.icon} size={19} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold">{item.label}</span>
+                    <span className="mt-0.5 block text-2xs text-ink-muted">{item.hint}</span>
+                  </span>
+                  <Icon name="chevron-right" size={16} className="shrink-0 text-ink-subtle" />
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </>
   )
 }
 
@@ -1630,7 +1811,7 @@ function Sidebar({ tab, setTab }) {
   return (
     <aside className="hidden shrink-0 border-r border-line bg-surface-raised lg:flex lg:w-[248px] lg:flex-col" aria-label="Primary">
       <nav className="flex flex-col gap-1 px-3 pt-5">
-        {NAV_ITEMS.map(item => {
+        {[...NAV_ITEMS, ...MORE_ITEMS].map(item => {
           const active = tab === item.id
           return (
             <button

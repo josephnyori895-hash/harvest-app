@@ -1,6 +1,6 @@
 // Auth middleware — port of server/src/middleware/auth.js.
 // JWT verify (HS256) + per-request user context + role guards + login rate limit.
-import { jwtVerify, pbkdf2Verify } from './crypto.js'
+import { jwtVerify } from './crypto.js'
 import { query, isoMinutesAgo } from './db.js'
 import { httpError } from './http.js'
 

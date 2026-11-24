@@ -35,12 +35,6 @@ export function lookCss(name: string | null, strength = 1): string {
   })
 }
 
-/** Adds the CSS styling that makes an <img> display `look` live. */
-export function applyLookCss(el: HTMLElement | null, look: string | null): void {
-  if (!el) return
-  el.style.filter = lookCss(look) === 'none' ? '' : lookCss(look)
-}
-
 /** Instagram's manual Edit tools share one shape across preview and export. */
 export type Adjustments = { brightness: number; contrast: number; saturate: number; warmth: number; fade: number }
 export const neutralAdjust: Adjustments = { brightness: 1, contrast: 1, saturate: 1, warmth: 0, fade: 0 }
@@ -63,47 +57,4 @@ export function composeLook(name: string | null, intensity = 1, adjust: Partial<
   if (a.saturate !== 1) parts.push(`saturate(${a.saturate.toFixed(3)})`)
   if (a.warmth > 0) parts.push(`sepia(${a.warmth.toFixed(3)})`)
   return parts.length ? parts.join(' ') : 'none'
-}
-
-type Dice = { brightness: number; contrast: number; saturate: number; hue: number }
-const LOOK_DICE: Record<string, Dice> = {
-  Clarendon: { brightness: 1.2, contrast: 1.0, saturate: 1.0, hue: 0 },
-  Juno: { brightness: 1.15, contrast: 1.0, saturate: 1.0, hue: 0 },
-  Aden: { brightness: 1.25, contrast: 1.0, saturate: 1.0, hue: 8 },
-  Lark: { brightness: 0.98, contrast: 1.0, saturate: 1.0, hue: -6 },
-  Moody: { brightness: 0.7, contrast: 1.0, saturate: 1.0, hue: 10 },
-  Valencia: { brightness: 1.3, contrast: 1.0, saturate: 1.0, hue: 0 },
-  Perpetua: { brightness: 1.18, contrast: 1.0, saturate: 1.08, hue: 0 },
-  Willow: { brightness: 0.9, contrast: 1.0, saturate: 1.0, hue: 0 },
-  Gingham: { brightness: 1.12, contrast: 1.0, saturate: 1.08, hue: 0 },
-}
-
-/**
- * Bakes `look` into image pixel data — the exact pixel walk the story burn and
- * the post editor export use, so the two surfaces cannot drift apart.
- * Mutates and returns the ImageData for chaining into ctx.putImageData.
- */
-export function bakeLook(data: ImageData, look: string): ImageData {
-  if (!look || look === 'Original') return data
-  const d = data.data
-  const dice = LOOK_DICE[look]
-  if (!dice) return data
-  const { brightness, saturate: s, hue } = dice
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i], g = d[i + 1], b = d[i + 2]
-    d[i] = Math.min(255, r * brightness)
-    d[i + 1] = Math.min(255, g * (brightness < 1 ? brightness * (s > 1 ? s - 1 + 0.9 : 1) : 0.96 + (s - 1) * 0.96 + 0.04))
-    d[i + 2] = Math.min(255, b * (brightness === 1 ? 1 : brightness * 1.1))
-    if (hue) {
-      const rad = (hue * Math.PI) / 180
-      const cos = Math.cos(rad), sin = Math.sin(rad)
-      d[i + 1] = Math.min(255, Math.max(0, (0.213 + cos * 0.787 - sin * 0.213) * d[i] + (0.715 - cos * 0.715 - sin * 0.715) * d[i + 1] + (0.072 - cos * 0.085 + sin * 0.285) * d[i + 2]))
-    } else if (s !== 1) {
-      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
-      d[i] = Math.min(255, Math.max(0, lum + (d[i] - lum) * s))
-      d[i + 1] = Math.min(255, Math.max(0, lum + (d[i + 1] - lum) * s))
-      d[i + 2] = Math.min(255, Math.max(0, lum + (d[i + 2] - lum) * s))
-    }
-  }
-  return data
 }

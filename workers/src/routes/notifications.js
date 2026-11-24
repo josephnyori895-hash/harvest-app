@@ -32,18 +32,6 @@ function validateRegistration(body) {
   return { platform, fcmToken, installationId, appVersion }
 }
 
-function deviceView(row) {
-  // Never include fcm_token in any response.
-  return {
-    platform: row.platform,
-    installation_id: row.installation_id,
-    app_version: row.app_version,
-    enabled: !!row.enabled,
-    last_seen_at: row.last_seen_at,
-    updated_at: row.updated_at,
-  }
-}
-
 export async function handleNotifications(request, env, ctx) {
   const path = new URL(request.url).pathname
   const NOTIFICATION_PATHS = new Set([
@@ -78,27 +66,41 @@ export async function handleNotifications(request, env, ctx) {
     const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60, 1), 200)
     const offsetRaw = Number(url.searchParams.get('offset') || 0)
     const offset = Math.max(Number.isFinite(offsetRaw) ? Math.floor(offsetRaw) : 0, 0)
-    const { rows } = await query(
-      env,
-      `SELECT id, category, type, title, body, preview, target, created_at, read_at
-       FROM notifications WHERE user_id=?
-       ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
-      [fresh.id, limit, offset],
-    )
-    const out = await Promise.all(rows.map(async r => {
-      let target = null
-      try { target = r.target ? JSON.parse(r.target) : null } catch { target = null }
-      // Resolve the acting member so the panel can show a real avatar.
-      let actor = null
-      if (target?.actor_user_id) {
-        const u = (await query(env, 'SELECT username, name, avatar_key FROM users WHERE id=?', [String(target.actor_user_id)])).rows[0]
-        if (u) {
-          const avatarUrl = u.avatar_key ? await mediaUrlOrNull(env, u.avatar_key, 900) : null
-          // username is required for tap routing (profile opens) — without it the
-          // panel could render the row but had nothing to navigate to.
-          actor = { name: u.name || u.username, username: u.username, avatar_url: avatarUrl || undefined }
-        }
-      }
+    // The page and the true unread total in one round trip: the badge used to
+    // be computed from the loaded page only, so it silently capped at 40.
+    const [{ rows }, unreadRow] = await Promise.all([
+      query(
+        env,
+        `SELECT id, category, type, title, body, preview, target, created_at, read_at
+         FROM notifications WHERE user_id=?
+         ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+        [fresh.id, limit, offset],
+      ),
+      query(env, 'SELECT COUNT(*) AS unread FROM notifications WHERE user_id=? AND read_at IS NULL', [fresh.id]),
+    ])
+    const parsed = rows.map(r => {
+      try { return r.target ? JSON.parse(r.target) : null } catch { return null }
+    })
+    // Resolve every distinct actor in one query instead of one per row (a
+    // 40-row page was 40 sequential D1 round trips).
+    const actorIds = [...new Set(parsed.map(t => t?.actor_user_id).filter(Boolean).map(String))]
+    const actors = new Map()
+    if (actorIds.length) {
+      const placeholders = actorIds.map(() => '?').join(',')
+      const { rows: users } = await query(
+        env,
+        `SELECT id, username, name, avatar_key FROM users WHERE id IN (${placeholders})`,
+        actorIds,
+      )
+      await Promise.all(users.map(async u => {
+        const avatarUrl = u.avatar_key ? await mediaUrlOrNull(env, u.avatar_key, 900) : null
+        // username is required for tap routing (profile opens) — without it the
+        // panel could render the row but had nothing to navigate to.
+        actors.set(String(u.id), { name: u.name || u.username, username: u.username, avatar_url: avatarUrl || undefined })
+      }))
+    }
+    const out = rows.map((r, i) => {
+      const target = parsed[i]
       return {
         id: r.id,
         category: r.category,
@@ -107,12 +109,17 @@ export async function handleNotifications(request, env, ctx) {
         body: r.body,
         preview: r.preview || undefined,
         target: { ...(target || {}), type: target?.type || r.type, id: target?.id },
-        actor: actor || (r.title ? { name: r.title } : { name: 'Harvest Family' }),
+        actor: actors.get(String(target?.actor_user_id)) || (r.title ? { name: r.title } : { name: 'Harvest Family' }),
         created_at: r.created_at,
         read_at: r.read_at || null,
       }
-    }))
-    return jsonResponse({ notifications: out, nextOffset: offset + out.length, hasMore: out.length === limit })
+    })
+    return jsonResponse({
+      notifications: out,
+      unread: Number(unreadRow.rows[0]?.unread) || 0,
+      nextOffset: offset + out.length,
+      hasMore: out.length === limit,
+    })
   }
 
   // ── POST /api/notifications/devices — register or refresh ──

@@ -6,6 +6,9 @@ import StoryViewer from './Stories'
 import ErrorMessage from './ErrorMessage'
 import { VerifiedBadge } from './VerifiedBadge'
 import { Icon } from '../ui'
+import { showToast } from './Toast'
+import { describeError } from '../lib/actionFeedback'
+import { apiGet } from '../lib/api'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -25,6 +28,8 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [feedError, setFeedError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   const [storyIdx, setStoryIdx] = useState<number | null>(null)
   const [postIdx, setPostIdx] = useState<number | null>(null)
@@ -48,39 +53,42 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   // (name/phone/avatar edits show up immediately after saving).
   useEffect(() => {
     if (!isSelf) return
-    fetch(`${API}/api/me`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('me unavailable'))))
+    apiGet<{ user: any }>('/api/me')
       .then(d => { if (d.user) setProfile((p: any) => ({ ...p, ...d.user })) })
-      .catch(() => {})
+      .catch(() => { /* the directory snapshot still renders */ })
   }, [isSelf])
 
   useEffect(() => {
     if (!safeUser.username) return
     let cancelled = false
     setLoaded(false)
+    setFeedError('')
     // Profile posts + stories come from the ranked feed filtered by username.
-    fetch(`${API}/api/feed?limit=50`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('feed unavailable'))))
+    // A failed feed must not render as "No posts yet" — that told the member
+    // this person has never posted when the request never arrived.
+    apiGet<{ posts: any[] }>('/api/feed?limit=50')
       .then(d => {
         if (cancelled) return
         setPosts((d.posts || []).filter((p: any) => p.username === safeUser.username))
         setLoaded(true)
       })
-      .catch(() => { if (!cancelled) setLoaded(true) })
-    fetch(`${API}/api/stories`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('no stories'))))
+      .catch(() => {
+        if (cancelled) return
+        setFeedError('We couldn’t load this profile’s posts. Check your connection and try again.')
+        setLoaded(true)
+      })
+    apiGet<{ stories: any[] }>('/api/stories')
       .then(d => {
         if (cancelled) return
         setStories((d.stories || []).filter((s: any) => s.username === safeUser.username))
       })
       .catch(() => {})
     // Follow state from the server.
-    fetch(`${API}/api/users/${encodeURIComponent(safeUser.username)}/mutual`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('no follow state'))))
+    apiGet<any>(`/api/users/${encodeURIComponent(safeUser.username)}/mutual`)
       .then(d => { if (!cancelled) setFollowState({ following: !!d.following, follows_you: !!d.follows_you, mutual: !!d.mutual }) })
-      .catch(() => {})
+      .catch(() => { /* the Follow button keeps its last known state */ })
     return () => { cancelled = true }
-  }, [safeUser.username])
+  }, [safeUser.username, reloadKey])
 
   const allProfileStories = useMemo(() => stories.map(s => ({ name: s.name || s.username, username: s.username, id: s.id, img: s.thumb_url, video: String(s.media_type) === 'video' ? (s.video_url || s.original_url || undefined) : undefined, caption: '' })), [stories])
 
@@ -100,7 +108,10 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Action failed')
       setFollowState(s => ({ ...s, following: !!d.following, mutual: !!d.mutual }))
-    } catch { /* keep previous state on failure */ } finally { setBusy(false) }
+    } catch (e) {
+      // A tap that changed nothing must say why.
+      showToast(describeError(e, 'Could not update follow — try again'), 'error')
+    } finally { setBusy(false) }
   }
 
   const adminPatch = async (body: any) => {
@@ -212,7 +223,13 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
       )}
       <div className="mt-6 px-4">
         <h3 className="mb-3 text-sm font-extrabold text-ink">Posts</h3>
-        {posts.length === 0 ? <div className="py-12 text-center"><Icon name="camera" size={30} className="mx-auto mb-2 text-ink-subtle" /><p className="font-medium text-ink-muted">{loaded ? 'No posts yet' : 'Loading…'}</p></div> : <div className="grid grid-cols-3 gap-1 bg-neutral-200 rounded-xl overflow-hidden">{posts.map((p: any, i: number) => <button key={p.id || i} onClick={() => setPostIdx(i)} className="aspect-square overflow-hidden hover:opacity-80 transition-opacity group relative">{p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : p.hls_url ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : <div className="flex h-full w-full items-center justify-center bg-surface-sunken"><Icon name="sparkle" size={22} className="text-ink-subtle" /></div>}{p.hls_url && <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}</button>)}</div>}
+        {feedError ? (
+          <ErrorMessage
+            message={feedError}
+            kind="network"
+            action={<button type="button" onClick={() => setReloadKey(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>}
+          />
+        ) : posts.length === 0 ? <div className="py-12 text-center"><Icon name="camera" size={30} className="mx-auto mb-2 text-ink-subtle" /><p className="font-medium text-ink-muted">{loaded ? 'No posts yet' : 'Loading…'}</p></div> : <div className="grid grid-cols-3 gap-1 bg-neutral-200 rounded-xl overflow-hidden">{posts.map((p: any, i: number) => <button key={p.id || i} onClick={() => setPostIdx(i)} className="aspect-square overflow-hidden hover:opacity-80 transition-opacity group relative">{p.thumb_url ? <img src={p.thumb_url} alt="" className="w-full h-full object-cover" /> : p.hls_url ? <video src={`${p.hls_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : <div className="flex h-full w-full items-center justify-center bg-surface-sunken"><Icon name="sparkle" size={22} className="text-ink-subtle" /></div>}{p.hls_url && <span className="absolute top-1.5 right-1.5 text-white drop-shadow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="1"><rect x="2" y="2" width="20" height="20" rx="5" fill="none" strokeWidth="2" /><path d="M10 8l6 4-6 4z" /></svg></span>}</button>)}</div>}
       </div>
       {postIdx !== null && posts[postIdx] && (
         <div className="fixed inset-0 bg-ink/90 z-50 flex flex-col" onClick={() => setPostIdx(null)}>

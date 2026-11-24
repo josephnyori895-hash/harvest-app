@@ -1,7 +1,7 @@
 // Auth routes — port of the register/login/health part of server/src/app.js.
 import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
-import { jsonResponse, errorResponse, readJson, httpError } from '../lib/http.js'
+import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute, registerRateLimit, recordRegister } from '../lib/auth.js'
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
@@ -14,7 +14,7 @@ function normalizePhone(raw) {
   return m ? `+254${m[1]}` : null
 }
 
-export async function handleAuth(request, env, ctx) {
+export async function handleAuth(request, env, _ctx) {
   requireJwtSecretForRoute(env)
   const path = new URL(request.url).pathname
   const method = request.method

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
+import { apiGet } from '../lib/api'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -45,10 +46,9 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
 
   const load = useCallback(() => {
     setLoading(true)
-    fetch(`${API}/api/departments`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('Could not load departments'))))
+    apiGet<{ departments: any[] }>('/api/departments')
       .then(d => { setDepartments(Array.isArray(d.departments) ? d.departments : []); setError('') })
-      .catch(e => setError(e.message))
+      .catch(e => setError(e?.message || 'Could not load departments'))
       .finally(() => setLoading(false))
   }, [])
 

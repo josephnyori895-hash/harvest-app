@@ -3,6 +3,7 @@ import { query } from '../lib/db.js'
 import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { mediaUrlOrNull, purgeStaleStagedChunks } from '../lib/media.js'
+import { recordNotificationsSafe } from '../lib/notif.js'
 
 const STALE_PENDING_MS = 24 * 60 * 60 * 1000
 const REJECTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
@@ -56,10 +57,19 @@ export async function runScheduledCleanup(env) {
   const deliveriesGc = await query(env, `DELETE FROM notification_deliveries WHERE created_at < ?`, [new Date(Date.now() - 14 * 24 * 3600_000).toISOString()]).catch(() => ({ meta: {} }))
   await query(env, `DELETE FROM notification_sent_keys WHERE created_at < ?`, [new Date(Date.now() - 7 * 24 * 3600_000).toISOString()]).catch(() => {})
   await query(env, `DELETE FROM notification_devices WHERE enabled = 0 AND updated_at < ?`, [new Date(Date.now() - 90 * 24 * 3600_000).toISOString()]).catch(() => {})
+  // In-app inbox: the bell is a feed, not an archive. Without this the table
+  // grew for the life of every account. Read rows go after 90 days, anything
+  // after 180; the chat itself keeps the conversation history.
+  const inboxGc = await query(
+    env,
+    `DELETE FROM notifications
+      WHERE (read_at IS NOT NULL AND created_at < ?) OR created_at < ?`,
+    [new Date(Date.now() - 90 * 24 * 3600_000).toISOString(), new Date(Date.now() - 180 * 24 * 3600_000).toISOString()],
+  ).catch(() => ({ meta: {} }))
   // Chunked-upload parts abandoned by a killed app: single-use, so a day of
   // silence means nobody is coming back for them.
   const staged_purged = await purgeStaleStagedChunks(env).catch(() => 0)
-  return { cleanup, stories_purged: expired.rows.length, staged_purged, notification_deliveries_purged: deliveriesGc?.meta?.changes ?? 0 }
+  return { cleanup, stories_purged: expired.rows.length, staged_purged, notification_deliveries_purged: deliveriesGc?.meta?.changes ?? 0, notifications_purged: inboxGc?.meta?.changes ?? 0 }
 }
 
 export async function handlePending(request, env, ctx) {
@@ -82,7 +92,7 @@ export async function handlePending(request, env, ctx) {
 
   // GET /api/pending?status=
   if (path === '/api/pending' && method === 'GET') {
-    const fresh = await requireAdmin(env, user)
+    await requireAdmin(env, user)
     const status = ['pending', 'rejected', 'transcoding'].includes(searchParams(url).status) ? searchParams(url).status : 'pending'
     const { rows } = await query(
       env,
@@ -133,6 +143,17 @@ export async function handlePending(request, env, ctx) {
       `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,'approve',?,?,?,?)`,
       [fresh.id, item.type, item.id, JSON.stringify({ caption: item.caption }), now],
     ).catch(() => {})
+    // Moderation used to be invisible to the member who waited for it: their
+    // submission could go live (or be refused) with no word in the inbox.
+    void recordNotificationsSafe(env, [{
+      userId: item.user_id,
+      type: 'moderation',
+      category: 'all',
+      title: 'Your upload is live',
+      body: `Your ${item.type} was approved and is now published.`,
+      preview: item.caption ? String(item.caption).slice(0, 160) : 'Approved',
+      target: { type: item.type, id: item.id },
+    }])
     return jsonResponse({ ok: true, id, status: 'approved' })
   }
 
@@ -153,6 +174,15 @@ export async function handlePending(request, env, ctx) {
       `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at) VALUES (?,'reject','pending',?,?,?,?)`,
       [fresh.id, id, JSON.stringify({ reason: reason || null }), new Date().toISOString()],
     ).catch(() => {})
+    void recordNotificationsSafe(env, [{
+      userId: rows[0].user_id,
+      type: 'moderation',
+      category: 'all',
+      title: 'Your upload was not approved',
+      body: reason ? `Reason: ${reason}` : 'An admin reviewed it and it was not approved. Ask an admin for details.',
+      preview: rows[0].caption ? String(rows[0].caption).slice(0, 160) : 'Not approved',
+      target: { type: rows[0].type, id: rows[0].id },
+    }])
     return jsonResponse({ ok: true, id, status: 'rejected' })
   }
 

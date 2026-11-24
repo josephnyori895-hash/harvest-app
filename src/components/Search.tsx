@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { VerifiedBadge } from './VerifiedBadge'
 import { Icon, type IconName } from '../ui'
 import { useOverflowX } from '../lib/useOverflowX'
+import { apiGet } from '../lib/api'
 
 // PreviewTile — IG-style browse tile: a muted looping preview of the actual
 // reel. One video element per tile, mounted once (remounting stalls and
@@ -47,13 +48,6 @@ function HoverPreviewTile({ videoSrc, fallback, ariaLabel, onClick, overlay }: {
       {overlay}
     </button>
   )
-}
-
-const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-
-function authHeaders() {
-  const t = localStorage.getItem('harvest_token') || ''
-  return t ? { Authorization: `Bearer ${t}` } : {}
 }
 
 type Filter = 'all' | 'members' | 'groups' | 'departments' | 'reels' | 'sermons' | 'places'
@@ -173,15 +167,14 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
       : [filter]
     const missing = want.filter(k => need[k as keyof typeof need] === null || need[k as keyof typeof need] === 'error')
     if (!missing.length) return
-    const get = (key: string, url: string, pick: (d: any) => any, set: (v: any) => void) =>
-      fetch(url, { headers: authHeaders() })
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+    const get = (url: string, pick: (d: any) => any, set: (v: any) => void) =>
+      apiGet(url)
         .then(d => { if (!cancelled) set(pick(d)) })
         .catch(() => { if (!cancelled) set('error') })
-    if (missing.includes('groups')) get('groups', `${API}/api/groups`, d => Array.isArray(d.groups) ? d.groups : [], setGroups)
-    if (missing.includes('departments')) get('departments', `${API}/api/departments`, d => Array.isArray(d.departments) ? d.departments : [], setDepartments)
-    if (missing.includes('reels')) get('reels', `${API}/api/reels?limit=50`, d => Array.isArray(d.reels) ? d.reels : [], setReels)
-    if (missing.includes('sermons')) get('sermons', `${API}/api/sermons?limit=50`, d => Array.isArray(d.sermons) ? d.sermons : [], setSermons)
+    if (missing.includes('groups')) get('/api/groups', d => Array.isArray(d.groups) ? d.groups : [], setGroups)
+    if (missing.includes('departments')) get('/api/departments', d => Array.isArray(d.departments) ? d.departments : [], setDepartments)
+    if (missing.includes('reels')) get('/api/reels?limit=50', d => Array.isArray(d.reels) ? d.reels : [], setReels)
+    if (missing.includes('sermons')) get('/api/sermons?limit=50', d => Array.isArray(d.sermons) ? d.sermons : [], setSermons)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showGrid, filter, query, bump])
@@ -190,10 +183,9 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   useEffect(() => {
     if (!showGrid) return
     let cancelled = false
-    fetch(`${API}/api/feed?limit=9`, { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('no feed'))))
+    apiGet<{ posts: any[] }>('/api/feed?limit=9')
       .then(d => { if (!cancelled) setRecentFeed(Array.isArray(d.posts) ? d.posts : []) })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setRecentFeed([]) })
     return () => { cancelled = true }
   }, [showGrid])
 

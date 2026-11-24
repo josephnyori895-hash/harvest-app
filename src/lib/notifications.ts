@@ -1,6 +1,7 @@
 // Local notifications: permission + delivery for chat DMs and admin announcements.
 // Uses Capacitor LocalNotifications on Android/iOS; no-ops gracefully on web.
 import { Capacitor } from '@capacitor/core'
+import { apiGet } from './api'
 
 type LN = typeof import('@capacitor/local-notifications').LocalNotifications
 
@@ -78,11 +79,8 @@ export async function initNotifications(): Promise<void> {
  * notification-shaped rows so the single inbox can carry both.
  */
 export async function fetchFamilyActivity(): Promise<any[]> {
-  const token = localStorage.getItem('harvest_token') || ''
-  const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-  const r = await fetch(`${API}/api/activity`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!r.ok) throw new Error('Could not load family activity')
-  const d = await r.json()
+  // apiGet adds the bearer token, a timeout and one retry on a transient blip.
+  const d = await apiGet<any>('/api/activity')
   const rows: any[] = []
   for (const m of d?.new_members || []) {
     rows.push({
