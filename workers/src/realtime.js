@@ -33,11 +33,22 @@ export class Realtime {
       } catch {
         return new Response('invalid token', { status: 401 })
       }
-      // Validate against DB: active member/admin only.
-      const { rows } = await query(this.env, 'SELECT id, username, role, active FROM users WHERE id=?', [user.id])
+      // Validate against DB: active member/admin only, and an admin token must
+      // still match the device epoch it was issued for. REST already enforces
+      // this; without the same check here a replaced admin browser could keep
+      // using chat and call signalling over its old WebSocket token.
+      const { rows } = await query(this.env, 'SELECT id, username, role, active, admin_web_epoch, admin_mobile_epoch FROM users WHERE id=?', [user.id])
       const dbUser = rows[0]
       if (!dbUser || !dbUser.active || !['admin', 'member'].includes(dbUser.role)) {
         return new Response('account inactive or unauthorized', { status: 403 })
+      }
+      if (dbUser.role === 'admin') {
+        const kind = user.admin_kind
+        const epoch = Number(user.admin_epoch)
+        const current = Number(kind === 'mobile' ? dbUser.admin_mobile_epoch : dbUser.admin_web_epoch) || 0
+        if (!kind || !['web', 'mobile'].includes(kind) || !Number.isFinite(epoch) || epoch !== current) {
+          return new Response('admin session expired — sign in again', { status: 403 })
+        }
       }
       user = { ...user, username: dbUser.username, role: dbUser.role }
 
@@ -45,7 +56,7 @@ export class Realtime {
       const username = user.username
       if (!this.sockets.has(username)) this.sockets.set(username, new Set())
       this.sockets.get(username).add(upgrade[1])
-      const sockMeta = { username, userId: user.id, windowStartedAt: Date.now(), eventCount: 0 }
+      const sockMeta = { username, userId: user.id, adminKind: user.admin_kind || null, adminEpoch: user.admin_epoch ?? null, windowStartedAt: Date.now(), eventCount: 0 }
       upgrade[1].meta = sockMeta
 
       // presence broadcast
@@ -123,7 +134,7 @@ export class Realtime {
       const ids = m.rows.map(r => r.user_id)
       if (ids.length) {
         const ph = ids.map(() => '?').join(',')
-        const us = await query(this.env, `SELECT username FROM users WHERE id IN (${ph})`, ids)
+        const us = await query(this.env, `SELECT username FROM users WHERE id IN (${ph}) AND COALESCE(active,1)=1`, ids)
         for (const u of us.rows) this.sendToUser(u.username, frame)
       }
       return
@@ -138,9 +149,16 @@ export class Realtime {
       if (fromWs) this.safeSend(fromWs, { event: '__ack', ackId, payload })
     }
     const fresh = async () => {
-      const { rows } = await query(this.env, 'SELECT id, username, role, active FROM users WHERE id=?', [user.id])
+      const { rows } = await query(this.env, 'SELECT id, username, role, active, admin_web_epoch, admin_mobile_epoch FROM users WHERE id=?', [user.id])
       const u = rows[0]
       if (!u || !u.active || !['admin', 'member'].includes(u.role)) return null
+      if (u.role === 'admin' && user.admin_kind) {
+        const current = Number(user.admin_kind === 'mobile' ? u.admin_mobile_epoch : u.admin_web_epoch) || 0
+        if (Number(user.admin_epoch) !== current) {
+          try { fromWs?.close(1008, 'admin session expired') } catch {}
+          return null
+        }
+      }
       return u
     }
 
@@ -198,7 +216,7 @@ export class Realtime {
           const msg = { id, kind: 'group', conversation_key: conv, from: me.username, departmentSlug: slug, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
           await this.fanoutConversation(conv, { event: 'chat:message', data: msg })
           try {
-            const deptRecipients = (await query(this.env, 'SELECT user_id FROM department_members WHERE department_id=(SELECT id FROM departments WHERE slug=?)', [slug])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
+            const deptRecipients = (await query(this.env, 'SELECT dm.user_id FROM department_members dm JOIN users u ON u.id=dm.user_id JOIN departments d ON d.id=dm.department_id WHERE d.slug=? AND COALESCE(u.active,1)=1', [slug])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
             if (deptRecipients.length) {
               await sendFanOut(this.env, {
                 recipients: deptRecipients,
@@ -250,7 +268,7 @@ export class Realtime {
           const msg = { id, kind: 'group', conversation_key: conv, from: me.username, groupSlug: slug, text, at: nowIso.slice(11, 16), status: 'sent', created_at: nowIso }
           await this.fanoutConversation(conv, { event: 'chat:message', data: msg })
           try {
-            const groupRecipients = (await query(this.env, 'SELECT user_id FROM group_members WHERE group_id=?', [g.rows[0].id])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
+            const groupRecipients = (await query(this.env, 'SELECT gm.user_id FROM group_members gm JOIN users u ON u.id=gm.user_id WHERE gm.group_id=? AND COALESCE(u.active,1)=1', [g.rows[0].id])).rows.map(r => r.user_id).filter(pid => pid && pid !== me.id)
             if (groupRecipients.length) {
               await sendFanOut(this.env, {
                 recipients: groupRecipients,
@@ -467,13 +485,22 @@ export class Realtime {
       return
     }
     try {
-      await this.handleEvent({ id: meta.userId, username: meta.username }, frame.event, frame.data, frame.ackId, ws)
+      await this.handleEvent({ id: meta.userId, username: meta.username, admin_kind: meta.adminKind, admin_epoch: meta.adminEpoch }, frame.event, frame.data, frame.ackId, ws)
     } catch {}
   }
 
   async webSocketClose(ws) {
     const meta = ws.meta
     if (!meta) return
+    // A disconnect must not leave a 3-second typing timer broadcasting as a
+    // ghost. Clear every timer belonging to this user.
+    const suffix = `:${meta.username}`
+    for (const [k, timer] of this.typingTimers) {
+      if (k.endsWith(suffix)) {
+        clearTimeout(timer)
+        this.typingTimers.delete(k)
+      }
+    }
     const set = this.sockets.get(meta.username)
     if (set) {
       set.delete(ws)
@@ -483,5 +510,9 @@ export class Realtime {
         query(this.env, 'UPDATE users SET last_seen=? WHERE id=?', [new Date().toISOString(), meta.userId]).catch(() => {})
       }
     }
+  }
+
+  async webSocketError(ws) {
+    await this.webSocketClose(ws)
   }
 }

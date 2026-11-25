@@ -1,7 +1,7 @@
 // Worker entrypoint — plain fetch router.
 // Order: CORS/preflight → authenticate → route handlers → error envelope.
 import { corsFor, jsonResponse, errorResponse, ApiError } from './lib/http.js'
-import { authenticate } from './lib/auth.js'
+import { authenticate, adminOperationRateLimit } from './lib/auth.js'
 import { handleAuth } from './routes/auth.js'
 import { handleUsers } from './routes/users.js'
 import { handleFeed } from './routes/feed.js'
@@ -168,6 +168,20 @@ export default {
     const shareRes = await handleShare(request, env, null, {})
     if (shareRes) return shareRes
 
+    // Sensitive administrative writes get a per-admin/per-network ceiling even
+    // with a valid token. Media multipart and notification-token routes are
+    // excluded: chunked uploads legitimately exceed this rate.
+    const ADMIN_WRITE_PATHS = [
+      /^\/api\/admin\//,
+      /^\/api\/giving\/(admin|transactions)/,
+      /^\/api\/pending\//,
+      /^\/api\/content(\/|$)/,
+      /^\/api\/sermons(\/|$)/,
+      /^\/api\/departments(\/|$)/,
+      /^\/api\/projects\/admin(\/|$)/,
+      /^\/api\/groups(\/|$)/,
+    ]
+
     try {
       const hadBearer = (request.headers.get('authorization') || '').startsWith('Bearer ')
       const user = await authenticate(env, request)
@@ -178,6 +192,14 @@ export default {
       // waitUntil passes background work (FCM fan-out) to the runtime without
       // blocking the response.
       const ctx2 = { user, waitUntil: (p) => { try { ctx.waitUntil(p) } catch { /* already returned */ } } }
+
+      if (
+        user?.role === 'admin'
+        && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
+        && ADMIN_WRITE_PATHS.some(re => re.test(url.pathname))
+      ) {
+        await adminOperationRateLimit(env, request, user)
+      }
 
       const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handlePublishing, handleSocial, handleAdminAudit, handleNotifications]
       for (const handler of handlers) {

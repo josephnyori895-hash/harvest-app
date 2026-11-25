@@ -235,7 +235,7 @@ export async function handleAuth(request, env, _ctx) {
       if (device.error) return errorResponse('admin sign-in needs a device identifier — reopen the app and try again', 400)
       const state = await checkAdminDevice(env, user, device)
       if (!state.ok && state.needsCode) {
-        const challenge = await createBrowserChallenge(env, user, device)
+        const challenge = await createBrowserChallenge(env, user, device, ip)
         if (!challenge.ok) return errorResponse(challenge.error, challenge.status || 503)
         await recordLoginAttempt(env, ip, uname || user.username, true)
         await clearLoginRateLimit(env, identity)

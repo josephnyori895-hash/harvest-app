@@ -273,13 +273,19 @@ export async function handleGiving(request, env, ctx) {
         ORDER BY g.created_at DESC LIMIT ? OFFSET ?`,
       [...filters.params, limit, offset],
     )
+    // Totals must describe the same filtered ledger the treasurer is looking
+    // at. Previously they summed the whole table, so a date/status filter
+    // showed filtered rows above unfiltered money.
     const totals = await query(
       env,
-      `SELECT COALESCE(SUM(CASE WHEN status='completed' THEN amount_kes ELSE 0 END), 0) AS completed_kes,
-              SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
-              SUM(CASE WHEN status='pending' THEN amount_kes ELSE 0 END) AS pending_kes,
+      `SELECT COALESCE(SUM(CASE WHEN g.status='completed' THEN g.amount_kes ELSE 0 END), 0) AS completed_kes,
+              SUM(CASE WHEN g.status='pending' THEN 1 ELSE 0 END) AS pending_count,
+              SUM(CASE WHEN g.status='pending' THEN g.amount_kes ELSE 0 END) AS pending_kes,
               COUNT(*) AS total_count
-         FROM giving_transactions`,
+         FROM giving_transactions g
+         LEFT JOIN users u ON u.id=g.user_id
+         ${filters.clause}`,
+      filters.params,
     )
     return jsonResponse({
       transactions: rows,
@@ -464,7 +470,7 @@ export async function handleGiving(request, env, ctx) {
       const result = body?.Body?.stkCallback
       const checkoutId = String(result?.CheckoutRequestID || '')
       if (!checkoutId) return jsonResponse({ ResultCode: 0, ResultDesc: 'Accepted' })
-      const found = await query(env, `SELECT id, status, phone, amount_kes FROM giving_transactions WHERE checkout_request_id=?`, [checkoutId])
+      const found = await query(env, `SELECT id, status, phone, amount_kes, project_id, user_id FROM giving_transactions WHERE checkout_request_id=?`, [checkoutId])
       const tx = found.rows[0]
       if (!tx || tx.status === 'completed') return jsonResponse({ ResultCode: 0, ResultDesc: 'Accepted' })
 
@@ -478,27 +484,56 @@ export async function handleGiving(request, env, ctx) {
           return jsonResponse({ ResultCode: 0, ResultDesc: 'Accepted' })
         }
         const receipt = String(metadata.MpesaReceiptNumber || '').slice(0, 64)
-        await query(
-          env,
-          `UPDATE giving_transactions SET status='completed', receipt_number=?, provider_result_code=?, provider_result_description=?, metadata=?, completed_at=? WHERE id=? AND status='pending'`,
-          [receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata), new Date().toISOString(), tx.id],
-        )
+        const completedAt = new Date().toISOString()
+        const statements = [
+          stmt(
+            env,
+            `UPDATE giving_transactions SET status='completed', receipt_number=?, provider_result_code=?, provider_result_description=?, metadata=?, completed_at=? WHERE id=? AND status='pending'`,
+            [receipt || null, code, String(result.ResultDesc || ''), JSON.stringify(metadata), completedAt, tx.id],
+          ),
+        ]
         // Contribute ONLY on a real pending→completed transition. A replayed
         // success payload after the transaction was marked failed must not
         // create an orphan contribution; the UNIQUE(giving_transaction_id)
         // constraint plus INSERT OR IGNORE additionally caps contributions at
         // exactly one per transaction under concurrent duplicate callbacks.
-        const completed = await query(env, 'SELECT project_id, user_id, amount_kes, status FROM giving_transactions WHERE id=?', [tx.id])
-        const projectId = completed.rows[0]?.project_id
-        if (projectId && completed.rows[0]?.status === 'completed') {
-          await query(env, `INSERT OR IGNORE INTO project_contributions(id,project_id,user_id,giving_transaction_id,amount_kes) VALUES(?,?,?,?,?)`, [uuid(), projectId, completed.rows[0].user_id, tx.id, Number(completed.rows[0].amount_kes)])
+        if (tx.project_id) {
+          statements.push(stmt(
+            env,
+            `INSERT OR IGNORE INTO project_contributions(id,project_id,user_id,giving_transaction_id,amount_kes)
+             SELECT ?,?,?,?,? WHERE EXISTS (
+               SELECT 1 FROM giving_transactions WHERE id=? AND status='completed' AND completed_at=?
+             )`,
+            [uuid(), tx.project_id, tx.user_id, tx.id, Number(tx.amount_kes), tx.id, completedAt],
+          ))
         }
-      } else {
-        await query(
+        // The provider completion is part of the money trail too. Keep the
+        // update, contribution and audit row in one D1 batch so a partial
+        // failure cannot leave money without an audit record.
+        statements.push(stmt(
           env,
-          `UPDATE giving_transactions SET status='failed', provider_result_code=?, provider_result_description=? WHERE id=? AND status='pending'`,
-          [code, String(result.ResultDesc || 'M-Pesa payment failed'), tx.id],
-        )
+          `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at)
+           SELECT NULL, 'provider', 'giving.completed', 'giving_transaction', ?, ?, ?
+            WHERE EXISTS (SELECT 1 FROM giving_transactions WHERE id=? AND status='completed' AND completed_at=?)`,
+          [tx.id, JSON.stringify({ amount_kes: Number(tx.amount_kes), receipt, result_code: code }), completedAt, tx.id, completedAt],
+        ))
+        await batch(env, statements)
+      } else {
+        const failedAt = new Date().toISOString()
+        await batch(env, [
+          stmt(
+            env,
+            `UPDATE giving_transactions SET status='failed', provider_result_code=?, provider_result_description=? WHERE id=? AND status='pending'`,
+            [code, String(result.ResultDesc || 'M-Pesa payment failed'), tx.id],
+          ),
+          stmt(
+            env,
+            `INSERT INTO audit_log (actor_id, actor_role, action, target_type, target_id, meta, created_at)
+             SELECT NULL, 'provider', 'giving.failed', 'giving_transaction', ?, ?, ?
+              WHERE EXISTS (SELECT 1 FROM giving_transactions WHERE id=? AND status='failed' AND provider_result_code=?)`,
+            [tx.id, JSON.stringify({ amount_kes: Number(tx.amount_kes), result_code: code }), failedAt, tx.id, code],
+          ),
+        ])
       }
       return jsonResponse({ ResultCode: 0, ResultDesc: 'Accepted' })
     } catch {

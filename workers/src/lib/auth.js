@@ -123,7 +123,45 @@ export async function loginRateLimit(env, request, username) {
   if (Number(rows[0]?.count || 0) >= 5) {
     throw httpError(429, 'too many login attempts — try in 15 min')
   }
+  // Per-username limits alone let an attacker spray a new username on every
+  // try. Cap total failures from one network too (30/15min), excluding the
+  // registration/admin-operation sentinel rows which are not login attempts.
+  const { rows: ipRows } = await query(
+    env,
+    `SELECT COUNT(*) AS count FROM login_attempts
+      WHERE ip = ? AND success = 0 AND created_at > ?
+        AND username NOT LIKE 'reg:%' AND username NOT LIKE 'adminop:%'
+        AND username NOT LIKE 'admchallenge:%'`,
+    [ip, isoMinutesAgo(15)],
+  )
+  if (Number(ipRows[0]?.count || 0) >= 30) {
+    throw httpError(429, 'too many login attempts from this network — try in 15 min')
+  }
   return { ip, username: uname }
+}
+
+// ── Sensitive admin mutation limit: 60 writes/minute per admin + network ──
+// Login is already rate limited, but a stolen admin token should still have a
+// ceiling on destructive writes. The marker lives in login_attempts so it
+// needs no new table; the limits exclude it from login failure counts.
+
+export async function adminOperationRateLimit(env, request, user) {
+  if (!user || user.role !== 'admin') return
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown'
+  const marker = `adminop:${user.id}`
+  const { rows } = await query(
+    env,
+    'SELECT COUNT(*) AS count FROM login_attempts WHERE ip = ? AND username = ? AND created_at > ?',
+    [ip, marker, isoMinutesAgo(1)],
+  )
+  if (Number(rows[0]?.count || 0) >= 60) {
+    throw httpError(429, 'too many administrative changes — wait a minute and try again')
+  }
+  await query(
+    env,
+    'INSERT INTO login_attempts (ip, username, success, created_at) VALUES (?, ?, 0, ?)',
+    [ip, marker, new Date().toISOString()],
+  ).catch(() => {})
 }
 
 export async function clearLoginRateLimit(env, identity) {

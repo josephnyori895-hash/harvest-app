@@ -894,6 +894,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                               ['post_media', 'Post media'],
                               ['create_groups', 'Create groups'],
                               ['manage_groups', 'Manage groups'],
+                              ['create_departments', 'Create departments'],
                               ['manage_communities', 'Manage communities'],
                               ['delete_media', 'Delete media'],
                               ['moderate_chat', 'Moderate chats'],

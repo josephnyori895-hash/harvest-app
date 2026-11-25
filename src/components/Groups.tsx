@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 import { apiGet } from '../lib/api'
+import { useGrants } from '../lib/useGrants'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -14,11 +15,14 @@ function authHeaders() {
   return t ? { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
 }
 
-// Small Groups — created by the system admin, who appoints a group admin and
-// chooses to stay (as admin or member) or not join at all. Group admins manage
-// their members: approve requests, promote/demote, remove.
+// Small Groups — created by the system admin (or a leader granted
+// "create_groups"), who appoints a group admin and chooses to stay (as admin
+// or member) or not join at all. Group admins manage their members: approve
+// requests, promote/demote, remove.
 export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug: string, name: string) => void; onOpenUser?: (u: any) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
+  const grants = useGrants()
+  const canCreate = isAdmin || grants.includes('create_groups')
   const [groups, setGroups] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -498,7 +502,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             <h1 className="text-2xl font-extrabold">Groups</h1>
             <p className="text-xs text-purple-100 mt-1">Fellowship in small groups across Nyeri.</p>
           </div>
-          {isAdmin && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-accent-strong text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
+          {canCreate && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-accent-strong text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
         </div>
         {(() => { const joined = groups.filter((g: any) => g.joined).length; return groups.length > 0 ? (
           <div className="mt-4 flex gap-2">
@@ -511,7 +515,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       <div className="p-4 space-y-4">
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
-        {isAdmin && showCreate && (
+        {canCreate && showCreate && (
           <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-2 shadow-sm">
             <p className="text-[10px] font-extrabold text-accent tracking-widest">NEW GROUP</p>
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
@@ -536,7 +540,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
           <div className="rounded-3xl border border-line bg-white px-5 py-10 text-center">
             <div className="mx-auto w-14 h-14 rounded-2xl bg-surface-sunken flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
             <h2 className="mt-4 text-sm font-extrabold text-ink">No groups yet</h2>
-            <p className="mt-2 text-xs leading-5 text-ink-subtle">Groups you can join will appear here. {isAdmin ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
+            <p className="mt-2 text-xs leading-5 text-ink-subtle">Groups you can join will appear here. {canCreate ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>
         ) : (
           <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-accent" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">No matching groups.</div>}</div>

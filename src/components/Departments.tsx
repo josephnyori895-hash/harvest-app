@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
 import { apiGet } from '../lib/api'
+import { useGrants } from '../lib/useGrants'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -26,9 +27,12 @@ function authHeaders() {
 }
 
 // Departments (ministry teams): praise & worship, ushering, media, etc.
-// Members join/leave themselves; admins create departments and manage members.
+// Members join/leave themselves; admins (or leaders granted
+// "create_departments") create departments and manage members.
 export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDeptChat?: (slug: string, name: string) => void; onOpenUser?: (u: any) => void }) {
   const { isAdmin, username: viewerName } = useAuth()
+  const grants = useGrants()
+  const canCreate = isAdmin || grants.includes('create_departments')
   const [departments, setDepartments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -380,9 +384,9 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
       <div className="p-4 space-y-6">
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
-        {isAdmin && (
+        {canCreate && (
           <div className="p-3 rounded-xl bg-white border border-line">
-            <p className="text-[10px] font-bold text-gold-strong mb-2">ADMIN — NEW DEPARTMENT</p>
+            <p className="text-[10px] font-bold text-gold-strong mb-2">NEW DEPARTMENT</p>
             <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Department name (e.g. Transport)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm text-ink outline-none mb-2 placeholder:text-ink-subtle" />
             <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Short description (optional)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-subtle mb-2" />
             <button disabled={busy === 'create' || !newName.trim()} onClick={() => void createDepartment()} className="w-full py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Create department</button>
@@ -407,7 +411,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             <div className="rounded-3xl border border-line bg-surface-sunken px-5 py-10 text-center">
               <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft" aria-hidden="true"><Icon name="building" size={24} className="text-accent-strong" /></div>
               <h2 className="mt-4 text-sm font-extrabold text-ink">{departments.length === 0 ? 'No departments yet' : 'You’re already in every department'}</h2>
-              <p className="mt-2 text-xs leading-5 text-ink-muted">{departments.length === 0 ? (isAdmin ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
+              <p className="mt-2 text-xs leading-5 text-ink-muted">{departments.length === 0 ? (canCreate ? 'Create the first department above.' : 'Departments will appear here when they are available.') : 'There are no other departments available to join right now.'}</p>
             </div>
           ) : (
             <div className="space-y-2">

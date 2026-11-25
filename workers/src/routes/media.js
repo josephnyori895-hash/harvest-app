@@ -257,11 +257,18 @@ export async function handleMedia(request, env, ctx) {
 
   // POST /api/media/multipart/abort — give up and release the parts.
   if (path === '/api/media/multipart/abort' && method === 'POST') {
-    await requireMember(env, user)
+    const fresh = await requireMember(env, user)
     const body = await readJson(request)
     const key = String(body.key || '')
     const uploadId = String(body.uploadId || '')
+    const token = String(body.token || '')
     if (!KEY_RE.test(key) || !uploadId) return errorResponse('key and uploadId required', 400)
+    // Aborting needs the same ownership proof as part/status/complete. Without
+    // it any signed-in member could kill another member's upload with only a
+    // leaked key and uploadId.
+    if (!timingSafeEqualStr(await multipartToken(fresh, uploadId, key), token)) {
+      return errorResponse('upload token does not match this account', 403)
+    }
     if (isStagedUpload(uploadId)) await abortStagedChunks(env, uploadId)
     else await abortMultipartUpload(env, { key, uploadId })
     return jsonResponse({ ok: true })

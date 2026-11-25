@@ -4,7 +4,7 @@
 // browser becomes trusted only after a 6-digit code is pushed to the phone.
 // Tokens carry the epoch for their device kind; approving a new browser bumps
 // admin_web_epoch, so the old browser's token is rejected on its next request.
-import { query, uuid, nowIso } from './db.js'
+import { query, uuid, nowIso, isoMinutesAgo } from './db.js'
 import { pbkdf2Hash, pbkdf2Verify } from './crypto.js'
 import { sendToDevice } from './fcm.js'
 
@@ -83,11 +83,28 @@ export async function checkAdminDevice(env, user, device) {
 // Creates a browser challenge and pushes the code to the admin phone. There is
 // deliberately no way to read the code back from the API. In local development
 // ADMIN_OTP_DEV=1 returns the code so the flow can be tested without Firebase.
-export async function createBrowserChallenge(env, user, device) {
+export async function createBrowserChallenge(env, user, device, ip = '') {
   const phone = await getDevice(env, user.id, 'mobile')
   if (!phone) {
     return { ok: false, status: 409, error: 'sign in on the admin phone once, with notifications allowed, then approve this browser' }
   }
+
+  // A valid admin password should not turn into an unbounded stream of push
+  // codes on the admin phone. Cap challenge creation per admin account.
+  const marker = `admchallenge:${user.id}`
+  const { rows: challengeRows } = await query(
+    env,
+    'SELECT COUNT(*) AS count FROM login_attempts WHERE username = ? AND created_at > ?',
+    [marker, isoMinutesAgo(15)],
+  )
+  if (Number(challengeRows[0]?.count || 0) >= 5) {
+    return { ok: false, status: 429, error: 'too many admin sign-in codes — wait 15 minutes and try again' }
+  }
+  await query(
+    env,
+    'INSERT INTO login_attempts (ip, username, success, created_at) VALUES (?, ?, 0, ?)',
+    [String(ip || 'unknown'), marker, nowIso()],
+  ).catch(() => {})
 
   const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0')
   const id = uuid()
@@ -99,7 +116,7 @@ export async function createBrowserChallenge(env, user, device) {
     `INSERT INTO admin_login_challenges
        (id, user_id, device_id, device_kind, label, code_hash, ip, attempts, used, expires_at, created_at)
      VALUES (?,?,?,?,?,?,?,0,0,?,?)`,
-    [id, user.id, device.deviceId, device.kind, device.label, codeHash, '', expiresAt, now],
+    [id, user.id, device.deviceId, device.kind, device.label, codeHash, String(ip || '').slice(0, 64), expiresAt, now],
   )
 
   if (String(env.ADMIN_OTP_DEV || '') === '1') {

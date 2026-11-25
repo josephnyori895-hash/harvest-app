@@ -21,12 +21,30 @@ test('STK push refuses gifts to disabled or manual-only purposes', () => {
 test('callback credits a contribution ONLY on a verified pending->completed transition', () => {
   assert.match(giving, /UPDATE giving_transactions SET status='completed', receipt_number=\?, provider_result_code=\?, provider_result_description=\?, metadata=\?, completed_at=\? WHERE id=\? AND status='pending'/)
   assert.match(giving, /INSERT OR IGNORE INTO project_contributions/)
+  assert.match(giving, /status='completed' AND completed_at=\?/, 'contribution is gated on the transition that just committed')
+})
+
+test('provider callback, contribution and audit row commit atomically', () => {
+  const callbackStart = giving.indexOf("path === '/api/giving/mpesa/callback'")
+  const callbackEnd = giving.indexOf("return null", callbackStart)
+  const callback = giving.slice(callbackStart, callbackEnd)
+  assert.match(callback, /await batch\(env, statements\)/, 'callback writes one D1 batch')
+  assert.match(callback, /'giving\.completed'/, 'provider completion lands in audit_log')
+  assert.match(callback, /'giving\.failed'/, 'provider failure lands in audit_log')
 })
 
 test('admin totals expose completed_kes, pending_kes and pending_count', () => {
-  assert.match(giving, /SUM\(CASE WHEN status='pending' THEN amount_kes ELSE 0 END\) AS pending_kes/)
+  assert.match(giving, /SUM\(CASE WHEN g\.status='pending' THEN g\.amount_kes ELSE 0 END\) AS pending_kes/)
   assert.match(giving, /pending_kes: Number\(totals\.rows\[0\]\?\.pending_kes \|\| 0\)/)
   assert.match(api, /pending_kes:number/)
+})
+
+test('admin ledger totals respect the same filters as the rows', () => {
+  const totalsAt = giving.indexOf('AS completed_kes')
+  const totalsBlock = giving.slice(totalsAt, totalsAt + 900)
+  assert.match(totalsBlock, /FROM giving_transactions g/)
+  assert.match(totalsBlock, /\$\{filters\.clause\}/, 'totals reuse the ledger WHERE clause')
+  assert.match(totalsBlock, /filters\.params/)
 })
 
 test('Give screen shows a whole-KES pending amount in the ledger (not just a count)', () => {

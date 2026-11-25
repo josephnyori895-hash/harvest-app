@@ -44,7 +44,7 @@ async function getConversation(env, me, peer, group, department) {
 
   const other = cleanUsername(peer)
   if (!other || other === me.username) return { error: 'invalid peer', code: 400 }
-  const target = await query(env, 'SELECT id, username FROM users WHERE username=?', [other])
+  const target = await query(env, 'SELECT id, username FROM users WHERE username=? AND COALESCE(active,1)=1', [other])
   if (!target.rows[0]) return { error: 'user not found', code: 404 }
   return {
     kind: 'dm',
@@ -157,8 +157,8 @@ export async function handleChat(request, env, ctx) {
     try {
       let recipients = []
       if (conv.kind === 'dm' && conv.recipientId) recipients = [conv.recipientId]
-      else if (conv.groupId) recipients = (await query(env, 'SELECT user_id FROM group_members WHERE group_id=?', [conv.groupId])).rows.map(r => r.user_id)
-      else if (conv.groupSlug) recipients = (await query(env, 'SELECT user_id FROM department_members WHERE department_id=(SELECT id FROM departments WHERE slug=?)', [conv.groupSlug])).rows.map(r => r.user_id)
+      else if (conv.groupId) recipients = (await query(env, 'SELECT gm.user_id FROM group_members gm JOIN users u ON u.id=gm.user_id WHERE gm.group_id=? AND COALESCE(u.active,1)=1', [conv.groupId])).rows.map(r => r.user_id)
+      else if (conv.groupSlug) recipients = (await query(env, 'SELECT dm.user_id FROM department_members dm JOIN users u ON u.id=dm.user_id JOIN departments d ON d.id=dm.department_id WHERE d.slug=? AND COALESCE(u.active,1)=1', [conv.groupSlug])).rows.map(r => r.user_id)
       recipients = recipients.filter(pid => pid && pid !== fresh.id)
       if (recipients.length) {
         const preview = (text || (mediaType === 'image' ? '📷 Photo' : '📎 Media')).slice(0, 200)

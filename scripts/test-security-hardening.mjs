@@ -16,6 +16,10 @@ const departments = await readFile(new URL('../workers/src/routes/departments.js
 const adminDevices = await readFile(new URL('../workers/src/lib/adminDevices.js', import.meta.url), 'utf8')
 const adminMigration = await readFile(new URL('../workers/migrations/0035_admin_device_auth.sql', import.meta.url), 'utf8')
 const usersRoute = await readFile(new URL('../workers/src/routes/users.js', import.meta.url), 'utf8')
+const mediaRoute = await readFile(new URL('../workers/src/routes/media.js', import.meta.url), 'utf8')
+const realtime = await readFile(new URL('../workers/src/realtime.js', import.meta.url), 'utf8')
+const groups = await readFile(new URL('../workers/src/routes/groups.js', import.meta.url), 'utf8')
+const capabilities = await readFile(new URL('../workers/src/lib/capabilities.js', import.meta.url), 'utf8')
 
 // No insecure JWT fallback anywhere in the worker.
 for (const [name, src] of Object.entries({ http, auth, routesAuth, index })) {
@@ -61,6 +65,16 @@ assert.doesNotMatch(chat, /conversation_key\.startsWith\('group:'\).*\n.*convers
 assert.match(departments, /leaders cannot demote themselves/)
 assert.match(departments, /only the system admin can remove a department leader/)
 assert.match(departments, /cannot remove the only department leader/)
+
+// Creation is admin-only unless the admin delegates it per account. Editing an
+// existing group/department stays available to its group admin/leader and to
+// the system admin (who must be able to correct any team).
+assert.match(capabilities, /'create_groups'[\s\S]{0,120}'create_departments'/)
+assert.match(departments, /hasCap\(fresh, 'create_departments'\)/, 'department creation must honour the delegated grant')
+assert.match(departments, /department creation is granted by the admin/)
+assert.match(departments, /if \(fresh\.role !== 'admin' && actor\.rows\[0\]\?\.role !== 'leader'\) return errorResponse\('department leader required', 403\)[\s\S]{0,900}?UPDATE departments SET name=\?/, 'system admin and department leader can edit a department')
+assert.match(groups, /hasCap\(fresh, 'create_groups'\)/, 'group creation must honour the delegated grant')
+assert.match(groups, /const isAdmin = fresh\.role === 'admin' \|\| actorRole === 'admin' \|\| hasCap\(fresh, 'manage_groups'\)/, 'system admin can edit any group')
 assert.match(securityMigration, /password_hash = NULL/)
 assert.match(securityMigration, /pin_hash = NULL/)
 
@@ -80,6 +94,35 @@ assert.match(auth, /admin session was replaced by a newer sign-in/)
 assert.match(routesAuth, /verification_required: true/)
 assert.match(routesAuth, /only HFC Nyeri can sign in as admin/)
 assert.match(usersRoute, /only \$\{primaryAdminUsername\(env\)\} can hold the administrator role/)
+
+// Sensitive admin mutations and browser challenges are rate limited.
+assert.match(auth, /adminOperationRateLimit/)
+assert.match(auth, /adminop:\$\{user\.id\}/)
+assert.match(auth, /too many administrative changes/)
+assert.match(index, /adminOperationRateLimit\(env, request, user\)/)
+assert.match(adminDevices, /admchallenge:\$\{user\.id\}/)
+assert.match(adminDevices, /too many admin sign-in codes/)
+assert.match(adminDevices, /String\(ip \|\| ''\)\.slice\(0, 64\)/, 'challenge rows record the requesting IP')
+assert.match(routesAuth, /createBrowserChallenge\(env, user, device, ip\)/)
+assert.match(auth, /username NOT LIKE 'adminop:%'/, 'admin-operation sentinels do not count as login failures')
+
+// The primary admin can never be dropped to a 4–6 digit PIN.
+assert.match(usersRoute, /isPrimaryAdmin\(env, before\.username\)[\s\S]{0,80}password, not a PIN/)
+assert.match(usersRoute, /isPrimaryAdmin\(env, target\.rows\[0\]\.username\)[\s\S]{0,80}password, not a PIN/)
+
+// Multipart abort requires the same per-account upload token as every other
+// multipart call; leaked key/uploadId alone must not cancel an upload.
+assert.match(mediaRoute, /multipart\/abort[\s\S]{0,700}timingSafeEqualStr\(await multipartToken\(fresh, uploadId, key\), token\)/)
+
+// WebSocket sessions honour admin device epochs and clean up typing timers.
+assert.match(realtime, /admin_web_epoch, admin_mobile_epoch/)
+assert.match(realtime, /admin session expired — sign in again/)
+assert.match(realtime, /k\.endsWith\(suffix\)/, 'typing timers are cleared on close')
+assert.match(realtime, /async webSocketError\(ws\)/)
+
+// Chat/notification fan-out skips deactivated accounts.
+assert.match(chat, /JOIN users u ON u\.id=gm\.user_id[\s\S]{0,80}COALESCE\(u\.active,1\)=1/)
+assert.match(chat, /COALESCE\(u\.active,1\)=1/)
 
 // No live credential is committed in any script: logins take E2E_USERNAME /
 // E2E_PIN from the environment (recursive scan of scripts/ AND workers/scripts/).

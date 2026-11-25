@@ -3,6 +3,7 @@
 // Admins create departments and assign/remove members + department leaders.
 import { query, uuid } from '../lib/db.js'
 import { requireMember, requireAdmin } from '../lib/auth.js'
+import { hasCap } from '../lib/capabilities.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 
 async function getDepartment(env, slug) {
@@ -45,9 +46,10 @@ export async function handleDepartments(request, env, ctx) {
     return jsonResponse({ departments: out })
   }
 
-  // POST /api/departments (admin) — create a new department.
+  // POST /api/departments — system admin, or a leader granted "create_departments".
   if (path === '/api/departments' && method === 'POST') {
-    const fresh = await requireAdmin(env, user)
+    const fresh = await requireMember(env, user)
+    if (fresh.role !== 'admin' && !hasCap(fresh, 'create_departments')) return errorResponse('department creation is granted by the admin', 403)
     const body = await readJson(request)
     const name = String(body.name || '').trim().slice(0, 80)
     const description = String(body.description || '').trim().slice(0, 300) || null
