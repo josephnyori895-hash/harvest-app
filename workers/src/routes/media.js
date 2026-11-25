@@ -11,6 +11,7 @@ import {
 } from '../lib/media.js'
 import { hmacSign, timingSafeEqualStr } from '../lib/crypto.js'
 import { hasCap } from '../lib/capabilities.js'
+import { createSermonPublication } from './publishing.js'
 const CAP_DELETE = 'delete_media'
 
 const KEY_RE = /^originals\/(avatar|post|story|reel|track|chat|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
@@ -318,7 +319,7 @@ export async function handleMedia(request, env, ctx) {
     const ct = request.headers.get('content-type') || ''
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
     const body = await readJson(request)
-    const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw } = body
+    const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw, duration_secs: durationSecs } = body
     // Optional client-picked video poster (reels): a JPEG the client captured
     // from the chosen frame, uploaded to originals/post/… before confirm.
 
@@ -357,6 +358,13 @@ export async function handleMedia(request, env, ctx) {
       if (existing.at) out.at = existing.at
       return jsonResponse(out, status === 'pending' ? 202 : 200)
     }
+    // A sermon scheduled from the upload sheet intentionally has no `sermons`
+    // row yet, so the normal idempotency lookup above cannot see it. The media
+    // key is the stable logical-upload key; return the same publication on retry.
+    if ((type === 'sermon_audio' || type === 'sermon_video')) {
+      const scheduled = await query(env, 'SELECT id, scheduled_at FROM content_publications WHERE source_key=? LIMIT 1', [key])
+      if (scheduled.rows[0]) return jsonResponse({ id: scheduled.rows[0].id, status: 'scheduled', key, scheduled_at: scheduled.rows[0].scheduled_at }, 200)
+    }
 
     // A cover/poster is a separate R2 object attached to a media row. Validate
     // its shape, existence and ownership before direct publication,
@@ -387,9 +395,27 @@ export async function handleMedia(request, env, ctx) {
       const storedCt = String(contentTypeForKey(key, obj.httpMetadata?.contentType)).split(';')[0].trim().toLowerCase()
       const kind = type === 'sermon_video' ? 'video' : 'audio'
       if (!ALLOW_CT[type].map(t => String(t).toLowerCase()).includes(storedCt)) return errorResponse(kind === 'audio' ? 'sermon audio format not supported' : 'sermon video format not supported', 400)
+      const sermonTitle = String(title || caption || 'Untitled Sermon').trim().slice(0, 200)
+      const sermonSpeaker = String(speaker || '').trim().slice(0, 200) || null
+      const sermonScripture = String(scripture || '').trim().slice(0, 200) || null
+      const sermonDescription = String(description || caption || '').trim().slice(0, 1000) || null
+      const scheduledAt = body.scheduled_at && !Number.isNaN(Date.parse(body.scheduled_at)) ? new Date(body.scheduled_at).toISOString() : null
+      const expiresAt = body.expires_at && !Number.isNaN(Date.parse(body.expires_at)) ? new Date(body.expires_at).toISOString() : null
+      // The file is already safely in storage. A future time creates only the
+      // calendar record; the canonical sermon row is inserted by the scheduler.
+      if (scheduledAt && Date.parse(scheduledAt) > Date.now() + 30_000) {
+        if (expiresAt && Date.parse(expiresAt) <= Date.parse(scheduledAt)) return errorResponse('Sermon expiry must be after its publish time.', 400)
+        const publication = await createSermonPublication(env, fresh, {
+          title: sermonTitle, speaker: sermonSpeaker, scripture: sermonScripture, description: sermonDescription,
+          kind, media_key: key, cover_key: null, duration_secs: Number(durationSecs) || null, bytes: Number(obj.size) || null,
+        }, { publishAt: scheduledAt, expiresAt, sourceKey: key })
+        if (!publication) return errorResponse('Could not schedule the sermon.', 500)
+        await audit(env, fresh, 'sermon_scheduled', 'publication', publication.id, { key, kind, scheduled_at: scheduledAt })
+        return jsonResponse({ id: publication.id, status: 'scheduled', kind, key, scheduled_at: scheduledAt }, 202)
+      }
       const id = uuid()
-      await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [id, userId, String(title || caption || 'Untitled Sermon').trim().slice(0, 200), String(speaker || '').trim().slice(0, 200) || null, String(scripture || '').trim().slice(0, 200) || null, String(description || caption || '').trim().slice(0, 1000) || null, kind, key, Number(obj.size) || null])
+      await query(env, `INSERT INTO sermons (id, user_id, title, speaker, scripture, description, kind, media_key, bytes, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [id, userId, sermonTitle, sermonSpeaker, sermonScripture, sermonDescription, kind, key, Number(obj.size) || null, expiresAt])
       await audit(env, fresh, 'sermon_published', 'sermon', id, { key, kind })
       return jsonResponse({ id, status: 'published', kind, key }, 201)
     }

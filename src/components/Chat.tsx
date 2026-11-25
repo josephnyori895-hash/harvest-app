@@ -863,14 +863,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   // master/detail left pane (no duplicated return branch).
   const inboxPane = (
     <>
-      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">
+      <header className={`sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl ${compact ? 'px-3 py-2.5' : 'pl-4 pr-14 pb-3 pt-4'}`}>
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={onBack} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
+              <button type="button" onClick={onBack} className={`shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink ${compact ? 'grid h-8 w-8 place-items-center' : 'touch-target lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={18} /></button>
               <div className="min-w-0">
                 {!compact && <p className="text-2xs font-extrabold uppercase tracking-[0.18em] text-accent">Harvest Family</p>}
-                <h1 className="truncate text-xl font-extrabold text-ink">{chatView === 'community' ? 'Community' : 'Chats'}</h1>
+                <h1 className={`truncate font-extrabold text-ink ${compact ? 'text-base' : 'text-xl'}`}>{chatView === 'community' ? 'Community' : 'Chats'}</h1>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1">
@@ -880,12 +880,12 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               {compact && onExpand && (
                 <button type="button" onClick={onExpand} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Open full-screen chat" title="Open full-screen chat"><Icon name="arrow-right" size={18} /></button>
               )}
-              <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="touch-target shrink-0 rounded-full border border-line bg-surface-raised text-ink transition hover:bg-surface-sunken" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>
+              {!compact && <button type="button" onClick={() => setTab(tab === 'people' ? 'inbox' : 'people')} className="touch-target shrink-0 rounded-full border border-line bg-surface-raised text-ink transition hover:bg-surface-sunken" aria-label={tab === 'people' ? 'Back to chats' : 'Find people'}>
                 <Icon name={tab === 'people' ? 'arrow-left' : 'plus'} size={20} />
-              </button>
+              </button>}
             </div>
           </div>
-          {tab === 'inbox' && (
+          {tab === 'inbox' && !compact && (
             <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
               <button type="button" onClick={() => setChatView('chats')} className={`shrink-0 rounded-full px-4 py-2 text-2xs font-extrabold transition ${chatView === 'chats' ? 'bg-accent text-white shadow-card' : 'border border-line bg-surface-raised text-ink-muted hover:bg-surface-sunken'}`}>Chats{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => onOpenGroups?.()} className="shrink-0 rounded-full border border-line bg-surface-raised px-4 py-2 text-2xs font-extrabold text-ink-muted transition hover:bg-surface-sunken">Groups</button>
@@ -926,8 +926,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             </div>
           </section>
           )}
-          {/* Search + tab pill row */}
-          <section className="border-b border-line px-4 py-3">
+          {/* Search + tab pill row — full Chats only. The mini card is for
+              replying to one conversation, not for browsing the inbox. */}
+          {!compact && <section className="border-b border-line px-4 py-3">
             <div className="flex items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2.5">
               <Icon name="search" size={17} className="text-ink-subtle" />
               <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Search" className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle" />
@@ -937,8 +938,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <button type="button" onClick={() => setTab('people')} className="rounded-full border border-line bg-surface-raised px-4 py-1.5 text-2xs font-bold text-ink-muted transition hover:bg-surface-sunken">People</button>
               <span className="ml-auto self-center text-2xs text-ink-subtle">{visibleInbox.length} chat{visibleInbox.length === 1 ? '' : 's'}</span>
             </div>
-          </section>
-          <section className="px-3 pb-7">
+          </section>}
+          <section className={`px-3 ${compact ? 'pb-3' : 'pb-7'}`}>
             {inboxLoading ? (
               <div role="status" aria-live="polite" className="mx-1 mt-4">
                 {[0, 1, 2, 3, 4, 5].map(i => (
@@ -961,7 +962,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 />
               </div>
             ) : inbox.length === 0 ? (
-              <div className="mx-3 mt-6 rounded-3xl border border-line bg-surface-raised px-5 py-10 text-center">
+              <div className={`mx-3 mt-4 rounded-3xl border border-line bg-surface-raised px-5 text-center ${compact ? 'py-6' : 'py-10'}`}>
                 <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent" aria-hidden="true"><Icon name="chat" size={26} /></div>
                 <h2 className="mt-4 text-sm font-extrabold text-ink">Your conversations</h2>
                 <p className="mt-2 text-2xs leading-5 text-ink-muted">Private chats with your Harvest church family will appear here.</p>
@@ -974,14 +975,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               const unread = Number(c.unread) || 0
               const preview = c.last_text || 'Say hello'
               return (
-                <div key={c.conversation_key} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 transition ${unread > 0 ? 'bg-accent-wash' : 'hover:bg-surface-sunken'}`}>
+                <div key={c.conversation_key} className={`mb-1 flex w-full items-center rounded-2xl transition ${compact ? 'gap-2.5 px-2 py-2.5' : 'gap-3 px-3 py-3.5'} ${unread > 0 ? 'bg-accent-wash' : 'hover:bg-surface-sunken'}`}>
                   <button
                     type="button"
                     onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified })}
                     className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                     aria-label={`View ${c.peer_name || c.peer}'s profile`}
                   >
-                    <div className={`flex h-14 w-14 items-center justify-center rounded-full font-extrabold ${unread > 0 ? 'bg-gradient-to-br from-gold to-accent p-[2px] text-white' : 'bg-accent-soft text-accent-strong'}`}>
+                    <div className={`flex items-center justify-center rounded-full font-extrabold ${compact ? 'h-11 w-11' : 'h-14 w-14'} ${unread > 0 ? 'bg-gradient-to-br from-gold to-accent p-[2px] text-white' : 'bg-accent-soft text-accent-strong'}`}>
                       <div className={`flex h-full w-full items-center justify-center rounded-full ${unread > 0 ? 'bg-surface-raised text-ink' : ''}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
                     </div>
                     {online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}

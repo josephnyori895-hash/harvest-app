@@ -6,6 +6,7 @@ import SocialEditor from './SocialEditor'
 import ErrorMessage from './ErrorMessage'
 import { Icon, Spinner } from '../ui'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
+import { useAndroidBack } from '../lib/useAndroidBack'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
@@ -42,6 +43,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   }, [idx, s?.music?.id, s?.music?.url, isVideo, isPaused])
   useEffect(() => () => stopInlineMediaAudio(), [])
   const [keyboardInset, setKeyboardInset] = useState(0)
+  useAndroidBack(true, () => setIdx(null))
   const historyPushedRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -252,7 +254,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   return (
     <>
       {viewerError && <div className="absolute top-3 left-3 right-3 z-[90]"><ErrorMessage message={viewerError} action={<button type="button" onClick={() => setViewerError('')} className="text-xs">Dismiss</button>} /></div>}
-      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingBottom: keyboardInset ? `${keyboardInset}px` : 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={handleTap}>
+      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))', paddingBottom: keyboardInset ? `${keyboardInset}px` : 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={handleTap}>
         <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-white/25 rounded overflow-hidden relative"><div className="h-full bg-white/90" style={{ width: i === idx ? `${progress}%` : '100%' }} /></div>)}</div>
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}>

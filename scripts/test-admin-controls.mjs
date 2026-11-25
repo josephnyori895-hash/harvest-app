@@ -29,10 +29,21 @@ test('one busy flag blocks double-submits and disables the row while saving', ()
   assert.match(admin, /busy === u\.username \? 'Saving…'/, 'the saving state must be visible')
 })
 
-test('the admin cannot demote or deactivate their own account from the row', () => {
-  assert.match(admin, /disabled=\{busy === u\.username \|\| u\.username === localStorage\.getItem\('harvest_username'\)\}/, 'the role select must stay locked on your own row')
+test('admin access is fixed to the owner account, not a dropdown mistake', () => {
+  assert.doesNotMatch(admin, /<option value="admin">Admin role/, 'a second admin cannot be created from members')
+  assert.doesNotMatch(admin, /<option value="admin">Admin<\/option>/, 'a second admin cannot be created from the form')
+  assert.match(admin, /u\.role === 'admin' \? 'Account owner' : 'Member'/, 'the row labels access clearly instead of offering a broken promotion')
+  assert.match(admin, /New accounts join as members/, 'the create form explains the single-admin rule')
   assert.match(users, /before\.username === fresh\.username && role !== undefined && role !== 'admin'/, 'the server must refuse self-demotion')
   assert.match(users, /before\.username === fresh\.username && body\.active === false/, 'the server must refuse self-deactivation')
+})
+
+test('PIN resets and deletion happen inline, with no browser prompt/confirm', () => {
+  assert.doesNotMatch(admin, /window\.prompt/, 'PIN reset must be a real field, not a developer prompt')
+  assert.match(admin, /const \[pinResets, setPinResets\]/, 'PIN drafts live with the member row')
+  assert.match(admin, /aria-label=\{`New PIN for \$\{u\.username\}`\}/, 'the inline PIN field is labelled')
+  assert.match(admin, /const \[deleteConfirm, setDeleteConfirm\]/, 'delete is a two-step inline action')
+  assert.match(admin, /Permanently delete @\{u\.username\}\?/, 'the confirmation names the member and consequence')
 })
 
 test('the last administrator cannot be removed', () => {

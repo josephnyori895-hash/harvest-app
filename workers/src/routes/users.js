@@ -7,6 +7,7 @@ import { ALL_CAPS, parseGrants } from '../lib/capabilities.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 import { recordNotificationsSafe } from '../lib/notif.js'
 import { sendFanOut } from '../lib/fcm.js'
+import { isPrimaryAdmin, primaryAdminUsername } from '../lib/adminDevices.js'
 
 const ROLES = new Set(['member', 'admin'])
 const PROFILE_FIELDS = new Set(['name', 'phone', 'location', 'constituency', 'faith'])
@@ -132,6 +133,7 @@ export async function handleUsers(request, env, ctx, params) {
     if (!uname || uname.length < 2) return errorResponse('valid username required', 400)
     if (!/^\d{4,6}$/.test(p)) return errorResponse('PIN must be 4-6 digits', 400)
     if (!ROLES.has(role)) return errorResponse('role must be member or admin', 400)
+    if (role === 'admin') return errorResponse(`only ${primaryAdminUsername(env)} can hold the administrator role`, 409)
     if (!await groupExists(env, groupName)) return errorResponse('invalid group', 400)
     if (typeof verified !== 'boolean') return errorResponse('verified must be boolean', 400)
     const exists = await query(env, 'SELECT 1 FROM users WHERE username=?', [uname])
@@ -214,6 +216,9 @@ export async function handleUsers(request, env, ctx, params) {
     const profile = {}
     for (const field of PROFILE_FIELDS) if (Object.prototype.hasOwnProperty.call(body, field)) profile[field] = cleanString(body[field], field === 'name' ? 120 : 160)
     const nextRole = role === undefined ? before.role : role
+    if (nextRole === 'admin' && !isPrimaryAdmin(env, before.username)) {
+      return errorResponse(`only ${primaryAdminUsername(env)} can hold the administrator role`, 409)
+    }
     const nextVerified = verified === undefined ? before.verified : verified
     const nextGroup = groupName === undefined ? before.group_name : groupName
     const nextActive = body.active === undefined ? !!before.active : body.active

@@ -377,7 +377,7 @@ export default function Music() {
 
   const playingNow = Boolean(activeTrack)
   return (
-    <div className="min-h-[calc(100dvh-72px)] bg-surface pb-28 text-ink">
+    <div className="min-h-full bg-surface pb-28 text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">

@@ -43,6 +43,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const [editing, setEditing] = useState(false)
   const [unreadByDepartment, setUnreadByDepartment] = useState<Record<string, number>>({})
   const [departmentQuery, setDepartmentQuery] = useState('')
+  const [updates, setUpdates] = useState<any[]>([])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -102,11 +103,16 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const openDetail = async (slug: string) => {
     setOpenSlug(slug)
     setDetail(null)
+    setUpdates([])
     try {
-      const r = await fetch(`${API}/api/departments/${encodeURIComponent(slug)}`, { headers: authHeaders() })
+      const [r, u] = await Promise.all([
+        fetch(`${API}/api/departments/${encodeURIComponent(slug)}`, { headers: authHeaders() }),
+        fetch(`${API}/api/departments/${encodeURIComponent(slug)}/updates`, { headers: authHeaders() }),
+      ])
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error || 'Could not load department')
       setDetail(d)
+      if (u.ok) { const ud = await u.json().catch(() => ({})); setUpdates(Array.isArray(ud.updates) ? ud.updates : []) }
       // Keep the team rail in sync after opening detail.
       setTimeout(() => { void load() }, 0)
     } catch {
@@ -269,7 +275,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     const isDepartmentLeader = detail?.members?.some(m => m.username === viewerName && m.role === 'leader')
     const canManage = isAdmin || isDepartmentLeader
     return (
-      <div className="department-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
+      <div className="department-detail-screen flex h-full min-h-0 max-h-full min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
         <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null) }} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted" aria-label="Back"><Icon name="arrow-left" size={19} /></button>
           <h1 className="font-bold text-sm truncate flex-1">{detail?.department?.name || '…'}</h1>
@@ -291,6 +297,18 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             ) : (
               <>
                 {detail.department.description && <p className="pb-1 text-xs text-ink-muted">{detail.department.description}</p>}
+                {updates.length > 0 && (
+                  <div className="mb-2 space-y-2">
+                    <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Ministry updates</p>
+                    {updates.map((u: any) => (
+                      <article key={u.id} className="rounded-xl border border-line bg-surface-raised p-3">
+                        <p className="text-sm font-extrabold text-ink">{u.title}</p>
+                        <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">{u.body}</p>
+                        <p className="mt-1 text-[10px] text-ink-subtle">{new Intl.DateTimeFormat('en-KE', { timeZone: 'Africa/Nairobi', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(u.created_at))} · Nairobi</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
                 {(detail.department.joined || isAdmin) && onOpenDeptChat && (
                   <button onClick={() => onOpenDeptChat(detail.department.slug, detail.department.name)} className="relative mb-2 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-accent py-3 text-xs font-bold text-white active:opacity-70">
                     <Icon name="chat" size={15} /> Open team chat

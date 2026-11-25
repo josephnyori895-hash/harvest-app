@@ -24,6 +24,15 @@ export async function authenticate(env, request) {
     const payload = await jwtVerify(token, secret)
     if (!payload?.id || !payload?.username || !payload?.role) throw new Error('bad payload shape')
     if (!['admin', 'member', 'guest'].includes(payload.role)) throw new Error('bad role')
+    // Admin tokens are device-bound. Check the epoch here, before any route can
+    // treat an old browser token as a live guest session.
+    if (payload.role === 'admin') {
+      const kind = payload.admin_kind
+      if (!['mobile', 'web'].includes(kind)) return null
+      const column = kind === 'mobile' ? 'admin_mobile_epoch' : 'admin_web_epoch'
+      const { rows } = await query(env, `SELECT ${column} AS epoch FROM users WHERE id=?`, [payload.id])
+      if (!rows[0] || Number(rows[0].epoch) !== Number(payload.admin_epoch)) return null
+    }
     return payload
   } catch {
     return null
@@ -38,11 +47,21 @@ export async function requireRole(env, user, ...allowed) {
   if (!user) throw httpError(401, 'auth required — POST /api/auth/login {password, username} to get JWT')
   if (user.id === GUEST_ID || user.role === 'guest') throw httpError(403, 'account authentication required')
 
-  const { rows } = await query(env, 'SELECT id, username, name, role, verified, active, grants FROM users WHERE id = ?', [user.id])
+  const { rows } = await query(env, 'SELECT id, username, name, role, verified, active, grants, admin_web_epoch, admin_mobile_epoch FROM users WHERE id = ?', [user.id])
   const current = rows[0]
   if (!current) throw httpError(401, 'account no longer exists')
   if (!current.active) throw httpError(403, 'account is deactivated')
   if (!['admin', 'member'].includes(current.role)) throw httpError(403, 'account role is invalid')
+
+  // An admin token is bound to one device kind and an epoch. Approving a new
+  // browser bumps the web epoch, so the old browser's 7-day token dies at its
+  // next request instead of remaining a second web session.
+  if (current.role === 'admin') {
+    const kind = user.admin_kind
+    if (!['mobile', 'web'].includes(kind)) throw httpError(401, 'admin session is missing its device binding — sign in again')
+    const column = kind === 'mobile' ? 'admin_mobile_epoch' : 'admin_web_epoch'
+    if (Number(current[column]) !== Number(user.admin_epoch)) throw httpError(401, 'this admin session was replaced by a newer sign-in')
+  }
 
   const fresh = { ...user, id: current.id, username: current.username, name: current.name, role: current.role, verified: !!current.verified, grants: current.grants || '' }
   const role = current.role

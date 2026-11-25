@@ -3,9 +3,30 @@ import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute, registerRateLimit, recordRegister } from '../lib/auth.js'
+import { checkAdminDevice, createBrowserChallenge, verifyBrowserChallenge, normalizeAdminDevice, isPrimaryAdmin } from '../lib/adminDevices.js'
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
-const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
+const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvest_nyeri', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
+
+function adminSessionResponse(user, claims, env) {
+  return jwtSign({
+    id: user.id,
+    username: user.username,
+    role: 'admin',
+    group_name: user.group_name,
+    constituency: user.constituency,
+    faith: user.faith,
+    verified: !!user.verified,
+    ...claims,
+  }, env.JWT_SECRET, '7d').then(token => ({
+    token,
+    role: 'admin',
+    username: user.username,
+    verified: !!user.verified,
+    expiresIn: '7d',
+    admin_device: claims.admin_kind,
+  }))
+}
 
 // Kenyan mobile normalization: 07xx/01xx/+2547xx/+2541xx -> +2547xxxxxxxx
 function normalizePhone(raw) {
@@ -124,12 +145,39 @@ export async function handleAuth(request, env, _ctx) {
     }
   }
 
+  // POST /api/auth/admin/verify — finish a new-browser admin sign-in with the
+  // 6-digit code pushed to the bound phone. No JWT yet: the challenge is the
+  // only thing this route trusts until the code verifies.
+  if (path === '/api/auth/admin/verify' && method === 'POST') {
+    const body = await readJson(request)
+    const challengeId = String(body?.challenge_id || '').trim()
+    if (!challengeId) return errorResponse('challenge_id is required', 400)
+    const { rows } = await query(
+      env,
+      'SELECT user_id FROM admin_login_challenges WHERE id=? LIMIT 1',
+      [challengeId],
+    )
+    if (!rows[0]) return errorResponse('this code is no longer valid — sign in again to get a new one', 400)
+    const found = await query(
+      env,
+      'SELECT id, username, role, group_name, constituency, faith, verified, active FROM users WHERE id=?',
+      [rows[0].user_id],
+    )
+    const user = found.rows[0]
+    if (!user || !user.active || user.role !== 'admin') return errorResponse('admin account is not active', 403)
+    if (!isPrimaryAdmin(env, user.username)) return errorResponse('this admin account is retired — only HFC Nyeri can sign in as admin', 403)
+    const result = await verifyBrowserChallenge(env, user, body)
+    if (!result.ok) return errorResponse(result.error, result.status || 400)
+    return jsonResponse(await adminSessionResponse(user, { admin_kind: result.kind, admin_epoch: result.epoch }, env))
+  }
+
   // POST /api/auth/login
   if (path === '/api/auth/login' && method === 'POST') {
     const body = await readJson(request)
     const identity = await loginRateLimit(env, request, body.username)
     const ip = identity.ip
     const { pin, password, username } = body
+    const device = normalizeAdminDevice(body.device_kind, body.device_id, body.device_label)
     const p = String(password ?? pin ?? '').trim()
     const identifier = String(username || '').trim().toLowerCase()
     const uname = identifier.replace(/[^a-z0-9._-]/g, '').slice(0, 32)
@@ -166,15 +214,43 @@ export async function handleAuth(request, env, _ctx) {
     if (!ok && memberPinOk && user.pin_hash) ok = await pbkdf2Verify(p, user.pin_hash)
 
     if (role === 'admin' && !ok) {
-      // Admin accounts are bound to their own credential once provisioned. ADMIN_PIN_HASHES
-      // is a bootstrap credential only: it can claim an account that has no pin_hash yet.
-      if (adminCredential && !user.pin_hash) {
+      // ADMIN_PIN_HASHES is a first-provisioning bootstrap only. It must never
+      // reopen an account that already has a password or PIN: otherwise a weak
+      // 4–6 digit server secret remains a backdoor into the live admin account.
+      if (adminCredential && !user.password_hash && !user.pin_hash) {
         const hash = await pbkdf2Hash(p, 100000)
-        await query(env, 'UPDATE users SET pin_hash=? WHERE id=? AND pin_hash IS NULL', [hash, user.id])
+        await query(env, 'UPDATE users SET pin_hash=? WHERE id=? AND pin_hash IS NULL AND password_hash IS NULL', [hash, user.id])
         ok = true
       }
     }
     if (!ok) return denied(401, 'invalid username/phone or password')
+
+    // ── Single administrator + device policy ──
+    // Only HFC Nyeri (harvest_nyeri) may hold the admin role. Every admin login
+    // is tied to one phone and one browser; a new browser needs a code pushed
+    // to the bound phone before it receives a token.
+    let adminClaims = null
+    if (role === 'admin') {
+      if (!isPrimaryAdmin(env, user.username)) return denied(403, 'this admin account is retired — only HFC Nyeri can sign in as admin')
+      if (device.error) return errorResponse('admin sign-in needs a device identifier — reopen the app and try again', 400)
+      const state = await checkAdminDevice(env, user, device)
+      if (!state.ok && state.needsCode) {
+        const challenge = await createBrowserChallenge(env, user, device)
+        if (!challenge.ok) return errorResponse(challenge.error, challenge.status || 503)
+        await recordLoginAttempt(env, ip, uname || user.username, true)
+        await clearLoginRateLimit(env, identity)
+        return jsonResponse({
+          verification_required: true,
+          challenge_id: challenge.challengeId,
+          expires_at: challenge.expiresAt,
+          delivery: challenge.delivery,
+          message: 'Enter the 6-digit code sent to the admin phone.',
+          ...(challenge.devCode ? { dev_code: challenge.devCode } : {}),
+        }, 202)
+      }
+      if (!state.ok) return denied(state.status || 403, state.error)
+      adminClaims = { admin_kind: state.kind, admin_epoch: state.epoch }
+    }
 
     await recordLoginAttempt(env, ip, uname || user.username, true)
     await clearLoginRateLimit(env, identity)
@@ -188,11 +264,12 @@ export async function handleAuth(request, env, _ctx) {
         constituency: user.constituency,
         faith: user.faith,
         verified: !!user.verified,
+        ...(adminClaims || {}),
       },
       env.JWT_SECRET,
       expiresIn,
     )
-    return jsonResponse({ token, role, username: user.username, verified: !!user.verified, expiresIn })
+    return jsonResponse({ token, role, username: user.username, verified: !!user.verified, expiresIn, ...(adminClaims ? { admin_device: adminClaims.admin_kind } : {}) })
   }
 
   return null

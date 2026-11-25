@@ -4,6 +4,7 @@ import ErrorMessage from './ErrorMessage'
 import { timeAgo } from '../lib/time'
 import { Icon } from '../ui'
 import { useModalFocus } from '../lib/useModalFocus'
+import { useAndroidBack } from '../lib/useAndroidBack'
 import { VerifiedBadge } from './VerifiedBadge'
 import { initials } from '../lib/initials'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -22,6 +23,7 @@ export default function Comments({
   isAdmin,
   onCountChange,
   onClose,
+  inline = false,
 }: {
   scope: 'post' | 'reel' | 'sermon'
   postId: string | number
@@ -29,6 +31,10 @@ export default function Comments({
   isAdmin: boolean
   onCountChange?: (delta: number) => void
   onClose: () => void
+  // Feed comments expand under the post — Instagram-style, not a pop-up.
+  // Reels and sermons still use the floating sheet because they are full-bleed
+  // players with no feed column to expand into.
+  inline?: boolean
 }) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loadError, setLoadError] = useState('')
@@ -193,18 +199,34 @@ export default function Comments({
 
   const total = comments.length
 
-  // The sheet is a dialog: focus moves in, Tab is trapped, Escape closes, focus
-  // returns to the comment button, and the feed behind stops scrolling.
+  // The floating sheet is a dialog: focus moves in, Tab is trapped, Escape
+  // closes, focus returns to the comment button, and the feed behind stops
+  // scrolling. Inline comments are part of the feed and must not trap focus.
   const sheetRef = useRef<HTMLDivElement>(null)
-  useModalFocus(true, sheetRef, onClose)
+  useModalFocus(!inline, sheetRef, onClose)
+  useAndroidBack(!inline, onClose)
 
-  return (      <div ref={sheetRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]" onClick={onClose} role="dialog" aria-modal="true" aria-label="Comments">
+  return (
+    <div
+      ref={sheetRef}
+      tabIndex={inline ? undefined : -1}
+      className={inline
+        ? 'comments-inline w-full min-h-0 overflow-hidden rounded-2xl border border-line bg-surface-raised'
+        : 'fixed inset-0 z-50 flex items-end justify-center bg-ink/50 outline-none backdrop-blur-[2px]'}
+      onClick={inline ? undefined : onClose}
+      role={inline ? 'region' : 'dialog'}
+      aria-modal={inline ? undefined : true}
+      aria-label="Comments"
+      style={inline ? undefined : { bottom: 'var(--keyboard-adjust, 0px)' }}
+    >
       <div
-        className="comments-sheet flex max-h-[min(82dvh,720px)] w-full min-h-0 flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-raised sm:max-w-lg sm:rounded-3xl"
+        className={inline
+          ? 'flex max-h-[min(55dvh,440px)] w-full min-h-0 flex-col overflow-hidden'
+          : 'comments-sheet flex max-h-[min(82dvh,720px)] w-full min-h-0 flex-col overflow-hidden rounded-t-3xl border border-line bg-surface-raised sm:max-w-lg sm:rounded-3xl'}
         onClick={e => e.stopPropagation()}
       >
         <div className="relative shrink-0 border-b border-line px-3 pb-2 pt-2">
-          <span className="mx-auto mb-1.5 block h-1 w-10 rounded-full bg-line sm:hidden" />
+          {!inline && <span className="mx-auto mb-1.5 block h-1 w-10 rounded-full bg-line sm:hidden" />}
           <div className="flex items-center gap-2">
             <p className="flex-1 text-center text-sm font-extrabold text-ink">
               Comments{total > 0 && <span className="ml-1.5 text-2xs font-bold text-ink-subtle">{total}</span>}
@@ -264,7 +286,7 @@ export default function Comments({
 
         <div
           className="flex shrink-0 items-center gap-2 border-t border-line bg-surface-raised px-3 pt-2"
-          style={{ paddingBottom: 'calc(0.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))' }}
+          style={{ paddingBottom: inline ? '0.5rem' : 'calc(0.5rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))' }}
         >
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
             {initials(me)}

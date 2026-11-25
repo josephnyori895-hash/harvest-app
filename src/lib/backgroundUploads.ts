@@ -33,6 +33,9 @@ export type UploadTask = {
   cover_key?: string
   /** Photo stories: per-author duration in seconds (viewer auto-advance). */
   duration_secs?: number
+  /** Sermons: future publish time and optional expiry (ISO strings). */
+  scheduled_at?: string
+  expires_at?: string
 }
 
 export type BgUpload = {
@@ -540,6 +543,8 @@ async function performUpload(task: UploadTask, onPct: (p: number) => void) {
       // a pre-uploaded poster key. Prefer the newly uploaded cover when present.
       cover_key: coverKey ?? task.cover_key,
       duration_secs: task.duration_secs,
+      scheduled_at: task.scheduled_at,
+      expires_at: task.expires_at,
     })
   }
   onPct(100)

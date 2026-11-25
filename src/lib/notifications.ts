@@ -5,11 +5,17 @@ import { apiGet } from './api'
 
 type LN = typeof import('@capacitor/local-notifications').LocalNotifications
 
-async function plugin(): Promise<LN | null> {
+// Never resolve an async function with the Capacitor plugin proxy itself.
+// The proxy answers every property access — including `then` — so a promise
+// resolving to it is treated as a thenable and calls the missing native method
+// `LocalNotifications.then()`. Wrapping it keeps Promise resolution ordinary.
+type LoadedPlugin = { ln: LN }
+
+async function loadPlugin(): Promise<LoadedPlugin | null> {
   if (!Capacitor.isNativePlatform?.()) return null
   try {
     const mod = await import('@capacitor/local-notifications')
-    return mod.LocalNotifications
+    return { ln: mod.LocalNotifications }
   } catch {
     return null
   }
@@ -19,8 +25,9 @@ export const NOTIF_CHANNEL = 'messages'
 
 /** Ask the user to grant notification permission (Android 13+ / iOS). Safe to call repeatedly. */
 export async function requestNotificationPermission(): Promise<boolean> {
-  const ln = await plugin()
-  if (!ln) return false
+  const loaded = await loadPlugin()
+  if (!loaded) return false
+  const ln = loaded.ln
   try {
     const current = await ln.checkPermissions()
     if (current.display === 'granted') return true
@@ -34,8 +41,9 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 /** Create the messages channel (Android 8+). Idempotent. */
 export async function ensureNotificationChannel(): Promise<void> {
-  const ln = await plugin()
-  if (!ln) return
+  const loaded = await loadPlugin()
+  if (!loaded) return
+  const ln = loaded.ln
   try {
     await ln.createChannel({
       id: NOTIF_CHANNEL,
@@ -50,8 +58,9 @@ export async function ensureNotificationChannel(): Promise<void> {
 
 /** Fire a local notification. Silently ignored without permission/native. */
 export async function showMessageNotification(from: string, text: string, id: number): Promise<void> {
-  const ln = await plugin()
-  if (!ln) return
+  const loaded = await loadPlugin()
+  if (!loaded) return
+  const ln = loaded.ln
   try {
     const current = await ln.checkPermissions()
     if (current.display !== 'granted') return
@@ -124,8 +133,9 @@ export async function fetchFamilyActivity(): Promise<any[]> {
 
 /** Schedule local project reminders when a member still has a commitment outstanding. */
 export async function scheduleProjectReminders(project: { id: string; name: string; deadline?: string | null }, remainingKes: number): Promise<void> {
-  const ln = await plugin()
-  if (!ln || !project.deadline || remainingKes <= 0) return
+  const loaded = await loadPlugin()
+  if (!loaded || !project.deadline || remainingKes <= 0) return
+  const ln = loaded.ln
   try {
     const current = await ln.checkPermissions()
     if (current.display !== 'granted') return

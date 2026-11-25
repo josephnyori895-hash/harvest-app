@@ -146,10 +146,11 @@ test('no legacy emoji or dark card survives the swept screens', async () => {
   }
 })
 
-test('a floating message button opens DMs in place, without switching tabs', () => {
+test('the floating message bubble is unread-only and replies in the compact card', () => {
   assert.match(app, /data-testid="chat-fab"/, 'the floating chat button is missing')
-  assert.match(app, /aria-label="Open messages"/, 'the floating chat button must be labelled')
-  assert.match(app, /tab !== 'chat' && !dmSheet/, 'the button must hide while a conversation is open')
-  assert.match(app, /setDmSheet\(true\)/, 'the button must open the in-place DM layer')
-  assert.match(app, /data-testid="dm-layer"/, 'the DM layer must overlay the current tab')
+  assert.match(app, /chatUnread\.count > 0/, 'the bubble must only exist while messages are unread')
+  assert.match(app, /const openChatBubble = \(\) => \{[\s\S]{0,500}setDmSheet\(true\)/, 'the bubble must open the compact reply card')
+  assert.match(app, /onClick=\{openChatBubble\}/, 'the bubble must not navigate to the Chat tab')
+  assert.match(app, /New messages, \$\{chatUnread\.count\} unread/, 'the bubble must announce its unread count')
+  assert.match(app, /data-testid="dm-layer"/, 'the compact in-place reply card is missing')
 })

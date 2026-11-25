@@ -12,10 +12,10 @@ const feedPlayback = await readFile(new URL('../src/lib/feedPlayback.ts', import
 // Attached-media music (feed chip + stories) must live on the shared inline
 // channel — the Worship Room global player stays separate for real worship.
 test('feed music chip uses the shared inline-audio channel', () => {
-  assert.match(feed, /toggleInlineMediaTrack/)
-  assert.match(feed, /stopInlineMediaAudio/)
+  assert.match(feed, /startManualFeedPlayback/)
+  assert.match(feed, /startFeedPlayback/)
   // Live state comes from the channel subscription, not a one-off execution —
-  // so autoplay and a manual tap look identical in the UI.
+  // so a resumed post and a manual tap look identical in the UI.
   assert.match(feed, /subscribeInlineMediaAudio/)
   assert.doesNotMatch(feed, /playTrack|pausePlayer|isPlayingId/)
 })

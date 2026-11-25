@@ -39,9 +39,27 @@ test('the release endpoint reports 1000 + run, matching the stamped versionCode'
 
 test('the prompt offers update and a 24h deferral', () => {
   assert.match(app, /Update available/)
-  assert.match(app, /dismissUpdate\(update\.versionCode\)/)
+  assert.match(app, /dismissUpdate\(update\?\.versionCode \|\| 0\)/)
   assert.match(app, /openApkDownload\(update\.apkUrl\)/)
   assert.match(update, /const DISMISS_HOURS = 24/)
+})
+
+test('the update prompt is a centred dialog, never an edge-to-edge banner', () => {
+  assert.match(app, /data-testid="update-prompt"/)
+  assert.match(app, /fixed inset-0 z-\[100\] grid place-items-center/)
+  assert.match(app, /max-w-\[380px\]/)
+  assert.doesNotMatch(app, /fixed top-\[calc\(var\(--safe-area-inset-top/, 'the old top banner touched the phone edges')
+})
+
+test('the update check keeps running on the welcome screen and on return', () => {
+  assert.match(app, /const onVisible = \(\) => \{ if \(document\.visibilityState === 'visible'\) void check\(\) \}/)
+  assert.match(app, /window\.setInterval\(\(\) => \{\s*if \(document\.visibilityState === 'visible'\) void check\(\)\s*\}, 10 \* 60_000\)/)
+  assert.match(app, /<UpdateGate>\s*<Onboarding/, 'signed-out users are still covered')
+})
+
+test('the signed-in column stays centred instead of stretching on a wide screen', () => {
+  assert.match(app, /w-full min-w-0 max-w-\[560px\] flex-col/)
+  assert.doesNotMatch(app, /lg:max-w-\[560px\]/, 'the column no longer grows to the viewport before the desktop breakpoint')
 })
 
 test('the check runs on open, not only after sign-in', () => {

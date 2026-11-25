@@ -47,6 +47,9 @@ public class MainActivity extends BridgeActivity {
             int bottomDp = Math.round(bars.bottom / density);
             int leftDp = Math.round(bars.left / density);
             int rightDp = Math.round(bars.right / density);
+            // While the IME is up it owns the bottom edge; keeping the
+            // navigation-bar inset would leave a dead gap below the composer.
+            int composerBottomDp = keyboardVisible ? 0 : bottomDp;
 
             WebView webView = (WebView) findViewById(getBridge().getWebView().getId());
             if (webView != null) {
@@ -59,7 +62,7 @@ public class MainActivity extends BridgeActivity {
                         "document.documentElement.style.setProperty('--keyboard-inset-bottom','%dpx');" +
                         "document.documentElement.dispatchEvent(new CustomEvent('safe-area-change'));" +
                         "}catch(e){}",
-                        topDp, bottomDp, leftDp, rightDp, keyboardVisible ? Math.round(ime.bottom / density) : 0
+                        topDp, composerBottomDp, leftDp, rightDp, keyboardVisible ? Math.round(ime.bottom / density) : 0
                 );
                 webView.evaluateJavascript(js, null);
             }

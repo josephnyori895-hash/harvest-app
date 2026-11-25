@@ -9,6 +9,7 @@ const socialRoute = await readFile(new URL('../workers/src/routes/social.js', im
 const notificationsRoute = await readFile(new URL('../workers/src/routes/notifications.js', import.meta.url), 'utf8')
 const notif = await readFile(new URL('../src/components/NotificationsScreen.jsx', import.meta.url), 'utf8')
 const lib = await readFile(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8')
+const pushLib = await readFile(new URL('../src/lib/push.ts', import.meta.url), 'utf8')
 const hook = await readFile(new URL('../src/lib/useModalFocus.ts', import.meta.url), 'utf8')
 const commentsSheet = await readFile(new URL('../src/components/Comments.tsx', import.meta.url), 'utf8')
 const homeFeed = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
@@ -99,7 +100,7 @@ test('the bell anchors to the app column and controls the drawer it opens', () =
   assert.match(app, /aria-expanded=\{showNotifications\}/)
   assert.match(app, /aria-controls="notifications-drawer"/)
   assert.doesNotMatch(app, /className="fixed right-3 z-30 flex h-10 w-10/, 'a viewport-fixed bell floats away from the centred column on desktop')
-  assert.match(app, /className="absolute right-3 z-30 flex h-11 w-11/)
+  assert.match(app, /absolute right-3 z-30 flex h-11 w-11/)
 })
 
 test('the badge is decorative — the count is announced once, by the button', () => {
@@ -120,7 +121,7 @@ test('the inbox behaves like a dialog: modal, focus in, Escape out', () => {
 test('the inbox and the DM card stay floating cards, never fullscreen', () => {
   assert.match(app, /id="notifications-drawer"[\s\S]*?sm:h-\[min\(70dvh,560px\)\]/)
   assert.doesNotMatch(app, /id="notifications-drawer"[\s\S]{0,600}bottom-\[calc\(env\(safe-area-inset-bottom\)\+72px\)\]/)
-  assert.match(app, /id="dm-layer"[\s\S]*?h-\[min\(46dvh,380px\)\]/, 'Mini Chat stays a compact card, not most of the screen')
+  assert.match(app, /id="dm-layer"[\s\S]*?h-\[min\(50dvh,420px\)\] min-h-\[320px\]/, 'Mini Chat shows at least three messages without becoming a full screen')
   // The chat panel is cropped for the card, otherwise its header stack leaves
   // no room for a single conversation row.
   assert.match(app, /id="dm-layer"[\s\S]*?<Chat\s+compact/)
@@ -149,8 +150,9 @@ test('an open card freezes the feed behind it, then unfreezes on close', () => {
 
 test('the comment sheet and the post options sheet use the shared dialog hook', () => {
   assert.match(commentsSheet, /import \{ useModalFocus \} from '\.\.\/lib\/useModalFocus'/)
-  assert.match(commentsSheet, /useModalFocus\(true, sheetRef, onClose\)/)
-  assert.match(commentsSheet, /ref=\{sheetRef\} tabIndex=\{-1\}/)
+  assert.match(commentsSheet, /useModalFocus\(!inline, sheetRef, onClose\)/)
+  assert.match(commentsSheet, /ref=\{sheetRef\}/)
+  assert.match(commentsSheet, /tabIndex=\{inline \? undefined : -1\}/)
   assert.match(homeFeed, /import \{ useModalFocus \} from '\.\.\/lib\/useModalFocus'/)
   assert.match(homeFeed, /useModalFocus\(!!menuPost, postMenuRef, \(\) => setMenuPost\(null\)\)/)
   assert.match(homeFeed, /ref=\{postMenuRef\} tabIndex=\{-1\}/)
@@ -206,6 +208,16 @@ test('moderation outcomes are reported to the member whose upload was reviewed',
   assert.match(pendingRoute, /Reason: \$\{reason\}/)
   assert.match(pendingRoute, /userId: item\.user_id/)
   assert.match(pendingRoute, /userId: rows\[0\]\.user_id/)
+})
+
+test('Capacitor plugin proxies are never resolved directly from an async function', () => {
+  // The Android bridge answers every property with a native method, including
+  // `then`. An async function resolving to the proxy is therefore treated as a
+  // thenable and rejects with "LocalNotifications.then() is not implemented".
+  assert.doesNotMatch(lib, /return mod\.LocalNotifications/)
+  assert.match(lib, /return \{ ln: mod\.LocalNotifications \}/)
+  assert.doesNotMatch(pushLib, /return plugin as MessagingPlugin/)
+  assert.match(pushLib, /return \{ messaging: plugin as MessagingPlugin \}/)
 })
 
 test('the badge reflects the server unread total, not the loaded page size', () => {

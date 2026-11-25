@@ -1,6 +1,6 @@
 import FeedCard from './FeedCard'
 import { AdvertCard } from './FeedCard'
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { Fragment, useState, useMemo, useEffect, useRef } from 'react'
 import { getLikesTable, toggleLikeKey } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
 import StoryViewer from './Stories'
@@ -15,6 +15,7 @@ import { Icon, Spinner, type IconName } from '../ui'
 import { useModalFocus } from '../lib/useModalFocus'
 import { useOverflowX } from '../lib/useOverflowX'
 import { initials } from '../lib/initials'
+import { formatNairobi } from '../lib/nairobiTime'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
@@ -192,8 +193,25 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const api = useApi()
   const [livePosts, setLivePosts] = useState<any[]>([])
   const [liveStories, setLiveStories] = useState<any[]>([])
+  const [churchEvents, setChurchEvents] = useState<any[]>([])
   const [feedTick, setFeedTick] = useState(0)
   const [feedLoaded, setFeedLoaded] = useState(false)
+  // Upcoming events published from the admin calendar. Kept separate from the
+  // feed request so a feed outage never hides the church diary.
+  useEffect(() => {
+    let live = true
+    const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    const t = localStorage.getItem('harvest_token') || ''
+    fetch(`${API}/api/events`, { headers: t ? { Authorization: `Bearer ${t}` } : undefined })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (live && Array.isArray(d?.events)) setChurchEvents(d.events.slice(0, 3)) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [])
+
+  // Bumped only after the explicit Home refresh has applied its fresh head.
+  // Scrolling on feedLoaded alone raced the request and parked on the old top.
+  const [focusArrivedTick, setFocusArrivedTick] = useState(0)
   const [feedLoadFailed, setFeedLoadFailed] = useState(false)
   // A failed request is not always the server's fault: offline and a 500 read
   // differently to the member, so the error card's kind depends on this.
@@ -258,7 +276,12 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         lastFeedFetchRef.current = Date.now()
         console.warn('[feed] load failed', e?.message || e)
       })
-      .finally(() => { if (!cancelled) setRefreshing(false) })
+      .finally(() => {
+        if (cancelled) return
+        setRefreshing(false)
+        // Tell the explicit-Home scroll that the fresh head is on screen now.
+        if (homeFocusPendingRef.current) setFocusArrivedTick(x => x + 1)
+      })
     return () => { cancelled = true }
   }, [api, feedTick])
 
@@ -368,6 +391,24 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   // (the latest post, reel or campaign card), not on whatever scroll position
   // was left behind. The old version only scrolled, so “Refreshing” could finish
   // without the new post ever appearing.
+  // One definition for "land on the latest update". The feed is ranked
+  // (engagement/affinity/pinned), so the first card is not necessarily the
+  // newest; pick the rendered card with the latest created_at. Home itself is
+  // taller than its content, so the real scroller is the app column.
+  const scrollHomeToNewest = (behavior: ScrollBehavior = 'auto') => {
+    const home = containerRef.current
+    if (!home) return
+    const c = (home.closest('.app-content') as HTMLElement | null) || home
+    const cards = Array.from(home.querySelectorAll<HTMLElement>('[data-post-id]'))
+    const target = cards.reduce<{ el: HTMLElement | null; at: number }>((best, el) => {
+      const at = Date.parse(el.dataset.createdAt || '') || 0
+      return at > best.at ? { el, at } : best
+    }, { el: null, at: -1 }).el || home.querySelector('#home-community')
+    if (!target) { c.scrollTo({ top: 0, behavior }); return }
+    const top = target.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 8
+    c.scrollTo({ top: Math.max(top, 0), behavior })
+  }
+
   useEffect(() => {
     if (!focusLatestKey) return
     homeFocusPendingRef.current = true
@@ -377,24 +418,34 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     setApprovedTick(x => x + 1)
     setLikesTick(x => x + 1)
     setFeedTick(x => x + 1)
-  }, [focusLatestKey])
+    // Move to the newest card already on screen at once; the fresh head then
+    // re-lands on the newest card after the request completes. Waiting for the
+    // network left the member at the old scroll position while "Refreshing" ran.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => scrollHomeToNewest()))
+    // Offline/local mode has no request to wait for.
+    if (!api) setFocusArrivedTick(x => x + 1)
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLatestKey, api])
 
   useEffect(() => {
     if (!homeFocusPendingRef.current || !feedLoaded) return
     homeFocusPendingRef.current = false
     let inner = 0
     const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => {
-        const c = containerRef.current
-        if (!c) return
-        const target = c.querySelector('[data-post-id]') || c.querySelector('#home-community')
-        if (!target) { c.scrollTo({ top: 0, behavior: 'smooth' }); return }
-        const top = target.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 8
-        c.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' })
-      })
+      inner = requestAnimationFrame(() => scrollHomeToNewest())
     })
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
-  }, [livePosts, feedLoaded, focusLatestKey])
+    // Media above the target can finish loading after the first scroll; two
+    // quiet corrections keep the newest card at the top instead of 180 px low.
+    const settle1 = window.setTimeout(() => scrollHomeToNewest(), 350)
+    const settle2 = window.setTimeout(() => scrollHomeToNewest(), 1000)
+    const settle3 = window.setTimeout(() => scrollHomeToNewest(), 2200)
+    return () => {
+      cancelAnimationFrame(outer); cancelAnimationFrame(inner)
+      window.clearTimeout(settle1); window.clearTimeout(settle2); window.clearTimeout(settle3)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedLoaded, focusArrivedTick])
 
   // Map API rows onto the card shape this screen already renders.
   const liveMoments = useMemo(() => liveStories.map((s: any) => ({
@@ -439,6 +490,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     verified: Boolean(p.verified),
     loc: [p.group_name, p.constituency].filter(Boolean).join(' · ') || 'Harvest Family Church',
     time: timeAgo(p.created_at, clockNow),
+    created_at: p.created_at || '',
     likes: Number(p.likes) || 0,
     comments: Number(p.comments) || 0,
     // Reels: the video itself is the preview (posters are optional). Only real
@@ -710,17 +762,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         primary={<button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-extrabold text-white">Ask for prayer in Chats</button>}
       />
     )}
-    {commentTarget && (
-      <Comments
-        scope={commentTarget.scope}
-        postId={commentTarget.id}
-        me={currentUser}
-        isAdmin={isAdmin}
-        onCountChange={d => bumpCommentCount(commentTarget.key, d)}
-        onClose={() => setCommentTarget(null)}
-      />
-    )}
-
     <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
       {/* pr-14 reserves the footprint of the shell's floating notification bell,
           so the header's own actions never sit underneath it. */}
@@ -735,9 +776,11 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           </span>
         </button>
         <div className="flex items-center gap-2">
-          {/* Below sm the label is dropped: the logo, wordmark and this chip on
-              one 390px row left no room for the kicker, which wrapped. */}
-          <button onClick={() => setTab('music')} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken" aria-label="Songs & worship" title="Songs & worship"><Icon name="music" size={16} /><span className="hidden sm:inline">Songs &amp; worship</span></button>
+          {/* Match the bell's footprint: a lone wide pill beside a circular bell
+              read like an orphaned control on desktop. The music icon is still
+              discoverable by touch and screen reader, without stealing header
+              width from the brand. */}
+          <button onClick={() => setTab('music')} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line bg-surface-raised text-accent-strong transition hover:bg-surface-sunken" aria-label="Songs & worship" title="Songs & worship"><Icon name="music" size={18} /></button>
         </div>
       </div>
     </header>
@@ -777,6 +820,32 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           <button onClick={openPastorChat} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-2xs font-extrabold text-accent-strong shadow-card"><Icon name="heart" size={15} /> Ask for prayer</button>
         </div>
       </section>
+
+      {churchEvents.length > 0 && (
+        <section className="mt-5" aria-label="Upcoming church events">
+          <div className="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-heading font-extrabold text-ink">Coming up</h2>
+              <p className="mt-0.5 text-2xs text-ink-muted">Times shown in Nairobi.</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {churchEvents.map((e: any) => (
+              <article key={e.id} className="flex gap-3 rounded-2xl border border-line bg-surface-raised p-3">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gold-soft text-center text-gold-strong">
+                  <span className="text-lg font-extrabold leading-none">{new Intl.DateTimeFormat('en-KE', { timeZone: 'Africa/Nairobi', day: 'numeric' }).format(new Date(e.starts_at))}</span>
+                  <span className="text-[9px] font-extrabold uppercase">{new Intl.DateTimeFormat('en-KE', { timeZone: 'Africa/Nairobi', month: 'short' }).format(new Date(e.starts_at))}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-ink">{e.title}</p>
+                  <p className="text-2xs font-bold text-accent-strong">{formatNairobi(e.starts_at)}</p>
+                  {e.location && <p className="truncate text-2xs text-ink-muted">{e.location}</p>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mt-7">
         <div className="mb-3">
@@ -833,21 +902,35 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           </div>
         ))}{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
         if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpen={() => setTab('give')} onBrowseProjects={() => setTab('give')} /></div>
-        const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); return (
+        const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); const commenting = commentTarget?.key === key; return (
+        <Fragment key={key}>
         <FeedCard
-          key={key}
           p={{ ...p, key: String(key) }}
           liked={liked}
           displayLikes={displayLikes}
           menuOpen={menuPost?.key === key}
           onToggleMenu={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.sourceKind, id: String(p.id), user: p.user, caption: p.caption, mine: p.username === currentUser })}
           onLike={() => toggleLike(key)}
-          onComment={() => setCommentTarget({ scope: p.sourceKind, id: String(p.id), key })}
+          onComment={() => setCommentTarget(commenting ? null : { scope: p.sourceKind, id: String(p.id), key })}
           onShare={() => sharePostToWhatsApp({ author: p.user, caption: p.caption, id: String(p.id), kind: p.sourceKind })}
           saved={api ? Boolean(p.saved) : false}
           onSave={api ? () => toggleSave(key) : undefined}
           onOpenUser={onOpenUser}
         />
+        {commenting && commentTarget && (
+          <div className="bg-surface px-4 pb-5 pt-1">
+            <Comments
+              inline
+              scope={commentTarget.scope}
+              postId={commentTarget.id}
+              me={currentUser}
+              isAdmin={isAdmin}
+              onCountChange={d => bumpCommentCount(commentTarget.key, d)}
+              onClose={() => setCommentTarget(null)}
+            />
+          </div>
+        )}
+        </Fragment>
       ) })}</div>
         {api && feedLoaded && !feedLoadFailed && allUpdates.length === 0 && (
           <div className="px-3 py-10 text-center">

@@ -121,6 +121,12 @@ const ensureAudio = (): HTMLAudioElement => {
   if (audio) return audio
   audio = new Audio()
   audio.preload = 'metadata'
+  audio.setAttribute('playsinline', '')
+  audio.addEventListener('error', () => {
+    // A corrupt/expired URL should say so instead of showing a play button that
+    // silently does nothing on a phone.
+    patch({ playing: false, error: 'This audio could not be played — check your connection and try again' })
+  })
   audio.addEventListener('ended', () => {
     // Worship never dead-ends: advance the queue, otherwise rest at the end.
     if (queue.length > 1 && queueIndex >= 0 && queueIndex < queue.length - 1) {

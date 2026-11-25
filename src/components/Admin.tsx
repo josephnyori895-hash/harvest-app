@@ -10,6 +10,7 @@ import { showToast } from './Toast'
 import { runAction } from '../lib/actionFeedback'
 import { apiGet, presign, uploadToMinio } from '../lib/api'
 import GivingFundsEditor from './GivingFundsEditor'
+import PublishingCalendar from './PublishingCalendar'
 import { VerifiedBadge } from './VerifiedBadge'
 import { parseFunds, parseQuick } from '../lib/givingDefaults'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -28,7 +29,7 @@ const ADVERT_EXAMPLE = JSON.stringify([{
   advertise_until: '2026-12-24T23:59:59Z',
 }], null, 2)
 
-type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content' | 'ministries'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content' | 'ministries' | 'publishing'
 
 type Props = {
   onBack: () => void
@@ -78,9 +79,13 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const [departments, setDepartments] = useState<any[]>([])
   const [newMinistry, setNewMinistry] = useState('')
   const [ministryNames, setMinistryNames] = useState<Record<string, string>>({})
-  const [newUser, setNewUser] = useState({ username: '', name: '', pin: '', role: 'member', group_name: GROUPS[0] })
+  const [newUser, setNewUser] = useState({ username: '', name: '', pin: '', group_name: GROUPS[0] })
   const [showCreate, setShowCreate] = useState(false)
   const [restoreName, setRestoreName] = useState('')
+  // PIN resets and permanent deletion are done inline, not through browser
+  // prompt/confirm dialogs that look like a developer tool on a phone.
+  const [pinResets, setPinResets] = useState<Record<string, string>>({})
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   // ── Chat moderation state ──
   const [chatConversations, setChatConversations] = useState<any[]>([])
@@ -408,11 +413,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     try {
       const response = await fetch(`${API}/api/admin/users`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ username: uname, name: newUser.name.trim(), pin: newUser.pin.trim(), role: newUser.role, group_name: newUser.group_name }),
+        body: JSON.stringify({ username: uname, name: newUser.name.trim(), pin: newUser.pin.trim(), role: 'member', group_name: newUser.group_name }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || 'Unable to create account')
-      setNewUser({ username: '', name: '', pin: '', role: 'member', group_name: GROUPS[0] })
+      setNewUser({ username: '', name: '', pin: '', group_name: GROUPS[0] })
       setShowCreate(false)
       flash(`Account ${uname} created — share the PIN privately`)
       await loadAccounts()
@@ -476,7 +481,6 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
   const removeUser = async (username: string) => {
     if (busy) return
-    if (!window.confirm(`Permanently delete ${username}? This cannot be undone.`)) return
     setBusy(username); setError('')
     try {
       const response = await fetch(`${API}/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token()}` } })
@@ -650,7 +654,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           {([
             ['Today', [['dashboard', 'Overview']]],
             ['People', [['moderation', 'Approvals'], ['accounts', 'Members'], ['ministries', 'Ministries']]],
-            ['Content', [['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
+            ['Content', [['publishing', 'Calendar'], ['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
             ['Community', [['chat', 'Chats'], ['announce', 'Announce']]],
             ['System', [['audit', 'Audit']]],
           ] as [string, [Tab, string][]][]).map(([group, entries]) => (
@@ -810,12 +814,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                   <input value={newUser.username} onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} placeholder="username" aria-label="New member username" className="input-base min-w-0 flex-1" />
                   <input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} placeholder="Full name" aria-label="New member full name" className="input-base min-w-0 flex-1" />
                 </div>
-                <div className="flex gap-2">
-                  <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" aria-label="New member PIN" className="input-base min-w-0 flex-1" />
-                  <select value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))} aria-label="New member role" className="input-base w-28">
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                <div>
+                  <input value={newUser.pin} onChange={e => setNewUser(u => ({ ...u, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="PIN (4–6 digits)" inputMode="numeric" aria-label="New member PIN" className="input-base" />
+                  <p className="mt-1 text-[10px] text-ink-muted">New accounts join as members. Give ministry powers after they sign in — there is only one admin account.</p>
                 </div>
                 <select value={newUser.group_name} onChange={e => setNewUser(u => ({ ...u, group_name: e.target.value }))} aria-label="New member congregation" className="input-base">
                   {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
@@ -880,10 +881,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         <select value={u.group_name || GROUPS[0]} onChange={e => void patchUser(u.username, { group_name: e.target.value })} disabled={busy === u.username} aria-label={`${u.username} congregation`} className="input-base min-w-0 flex-1">
                           {GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
-                        <select value={u.role || 'member'} onChange={e => void patchUser(u.username, { role: e.target.value })} disabled={busy === u.username || u.username === localStorage.getItem('harvest_username')} aria-label={`${u.username} role`} className="input-base w-32">
-                          <option value="member">Member role</option>
-                          <option value="admin">Admin role</option>
-                        </select>
+                        <div className="flex min-h-11 w-32 items-center justify-center rounded-xl border border-line bg-surface-sunken px-2 text-center text-[11px] font-extrabold text-ink-muted">
+                          {u.role === 'admin' ? 'Account owner' : 'Member'}
+                        </div>
                       </div>
 
                       {u.role !== 'admin' && (
@@ -925,10 +925,41 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                         >
                           {busy === u.username ? 'Saving…' : u.verified ? 'Remove verification' : 'Verify member'}
                         </button>
-                        <button disabled={busy === u.username} onClick={() => { const p = window.prompt(`New PIN for ${u.username} (4–6 digits)`); if (p) void patchUser(u.username, { pin_reset: p }) }} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">Reset PIN</button>
                         <button disabled={busy === u.username} onClick={() => void patchUser(u.username, { active: u.active === false })} className="min-h-10 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink-muted disabled:opacity-50">{u.active === false ? 'Reactivate account' : 'Deactivate account'}</button>
-                        <button disabled={busy === u.username} onClick={() => void removeUser(u.username)} className="min-h-10 rounded-xl border border-danger/30 bg-danger-soft text-xs font-extrabold text-danger disabled:opacity-50">Delete permanently</button>
+                        {deleteConfirm === u.username ? (
+                          <div className="flex min-h-10 items-center justify-center rounded-xl border border-danger/40 bg-danger-soft px-2 text-center text-[10px] font-extrabold text-danger">Confirm below</div>
+                        ) : (
+                          <button disabled={busy === u.username} onClick={() => setDeleteConfirm(u.username)} className="min-h-10 rounded-xl border border-danger/30 bg-danger-soft text-xs font-extrabold text-danger disabled:opacity-50">Delete permanently</button>
+                        )}
                       </div>
+
+                      <div className="rounded-xl border border-line bg-surface-sunken p-2.5">
+                        <p className="label-caps mb-1.5">Reset sign-in PIN</p>
+                        <div className="flex gap-2">
+                          <input
+                            value={pinResets[u.username] || ''}
+                            onChange={e => setPinResets(p => ({ ...p, [u.username]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                            placeholder="New 4–6 digit PIN"
+                            inputMode="numeric"
+                            aria-label={`New PIN for ${u.username}`}
+                            className="input-base min-w-0 flex-1"
+                          />
+                          <button
+                            disabled={busy === u.username || !/^\d{4,6}$/.test(pinResets[u.username] || '')}
+                            onClick={() => { const pin = pinResets[u.username]; void patchUser(u.username, { pin_reset: pin }); setPinResets(p => ({ ...p, [u.username]: '' })) }}
+                            className="min-h-11 shrink-0 rounded-xl bg-accent px-3 text-xs font-extrabold text-white disabled:opacity-40"
+                          >Set PIN</button>
+                        </div>
+                        <p className="mt-1.5 text-[10px] leading-4 text-ink-muted">Use this when a member forgets their PIN. Share the new PIN privately; they can sign in with it immediately.</p>
+                      </div>
+
+                      {deleteConfirm === u.username && (
+                        <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-soft p-2.5">
+                          <p className="min-w-0 flex-1 text-[11px] font-semibold leading-4 text-danger">Permanently delete @{u.username}? This removes the account and cannot be undone.</p>
+                          <button onClick={() => setDeleteConfirm(null)} className="min-h-9 shrink-0 rounded-lg border border-line bg-surface-raised px-3 text-[11px] font-extrabold text-ink">Cancel</button>
+                          <button disabled={busy === u.username} onClick={() => { setDeleteConfirm(null); void removeUser(u.username) }} className="min-h-9 shrink-0 rounded-lg bg-danger px-3 text-[11px] font-extrabold text-white disabled:opacity-50">Delete</button>
+                        </div>
+                      )}
                       <p className="text-[10px] text-ink-muted">Every change is written to the audit log. Verification unlocks posts, reels, music and sermon uploads.</p>
                     </div>
                   </div>
@@ -1045,6 +1076,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             ))}
           </div>
         )}
+
+        {/* ── Publishing calendar ── */}
+        {tab === 'publishing' && <PublishingCalendar />}
 
         {/* ── Announce ── */}
         {tab === 'announce' && (

@@ -309,7 +309,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     const canManage = isAdmin || isGroupAdmin
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
-      <div className="group-detail-screen flex min-h-[70dvh] max-h-[100dvh] min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
+      <div className="group-detail-screen flex h-full min-h-0 max-h-full min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
         <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface/95 backdrop-blur z-10">
           <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-accent-strong" aria-label="Back">‹</button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>

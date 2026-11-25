@@ -282,7 +282,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const heading = type === 'story' ? 'New story' : type === 'video' ? 'New reel' : type === 'post' ? 'New post' : labels[type]
 
   return (
-    <main className="flex min-h-[calc(100dvh-72px)] flex-col bg-surface text-ink">
+    <main className="flex min-h-full flex-col bg-surface text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur-xl">
         <div className="flex h-14 items-center gap-2 px-3">
           <button

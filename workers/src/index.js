@@ -18,6 +18,7 @@ import { handleSocial } from './routes/social.js'
 import { handleAdminAudit } from './routes/adminAudit.js'
 import { handleShare } from './routes/share.js'
 import { handleNotifications } from './routes/notifications.js'
+import { handlePublishing, runPublishingSweep } from './routes/publishing.js'
 import { Realtime } from './realtime.js'
 
 export { Realtime }
@@ -168,12 +169,17 @@ export default {
     if (shareRes) return shareRes
 
     try {
+      const hadBearer = (request.headers.get('authorization') || '').startsWith('Bearer ')
       const user = await authenticate(env, request)
+      // A supplied token that no longer verifies is an expired or replaced
+      // session, never a guest. Returning 401 lets the client session guard
+      // clear local state (an old admin browser must not keep rendering admin).
+      if (hadBearer && !user) return withCors(errorResponse('session expired — sign in again', 401), env, request)
       // waitUntil passes background work (FCM fan-out) to the runtime without
       // blocking the response.
       const ctx2 = { user, waitUntil: (p) => { try { ctx.waitUntil(p) } catch { /* already returned */ } } }
 
-      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handleSocial, handleAdminAudit, handleNotifications]
+      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handlePublishing, handleSocial, handleAdminAudit, handleNotifications]
       for (const handler of handlers) {
         const res = await handler(request, env, ctx2, extractParams(url))
         if (res) return withCors(res, env, request)
@@ -188,9 +194,11 @@ export default {
   },
 
   async scheduled(event, env, _ctx) {
-    // */10 * * * * — story expiry, orphan cleanup, attempts GC.
+    // */10 * * * * — story expiry, orphan cleanup, attempts GC, and any
+    // publication schedules missed while the worker was not running.
     const result = await runScheduledCleanup(env)
-    console.log('[cron]', JSON.stringify(result))
+    const publishing = await runPublishingSweep(env).catch(e => ({ error: e?.message || String(e) }))
+    console.log('[cron]', JSON.stringify({ ...result, publishing }))
   },
 }
 

@@ -32,7 +32,13 @@ function getInstallationId(): string {
   } catch { return 'unknown-installation' }
 }
 
-async function loadMessaging(): Promise<MessagingPlugin | null> {
+// Keep the Capacitor proxy inside an object: resolving a promise directly
+// with the proxy makes JavaScript read its `then` property, which the native
+// bridge treats as a missing method ("FirebaseMessaging.then() is not
+// implemented"). A wrapper makes promise resolution ordinary.
+type LoadedMessaging = { messaging: MessagingPlugin }
+
+async function loadMessaging(): Promise<LoadedMessaging | null> {
   if (!isNative()) return null
   try {
     const mod: any = await import('@capacitor-firebase/messaging')
@@ -40,7 +46,7 @@ async function loadMessaging(): Promise<MessagingPlugin | null> {
     // Graceful degradation when google-services.json is absent at build time:
     // the Capacitor plugin throws on method calls, so gate on a cheap probe.
     try { await plugin.removeAllListeners() } catch { return null }
-    return plugin as MessagingPlugin
+    return { messaging: plugin as MessagingPlugin }
   } catch { return null }
 }
 
@@ -79,8 +85,9 @@ export async function registerPush(): Promise<void> {
     const username = localStorage.getItem('harvest_username') || ''
     const token = localStorage.getItem('harvest_token') || ''
     if (!isNative() || !username || !token) return
-    const messaging = await loadMessaging()
-    if (!messaging) return
+    const loaded = await loadMessaging()
+    if (!loaded) return
+    const messaging = loaded.messaging
 
     const fcmToken = await acquireToken(messaging)
     if (!fcmToken) return

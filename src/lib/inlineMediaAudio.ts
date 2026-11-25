@@ -19,11 +19,15 @@ export function subscribeInlineMediaAudio(listener: (id: string | null) => void)
 
 export function stopInlineMediaAudio() {
   const previous = inlineAudio
+  const previousId = activeId
   inlineAudio = null
   activeId = null
   const previousChange = onChange
   onChange = null
   if (previous) {
+    // Save the exact pause point before tearing the element down, so scrolling
+    // back resumes where the member stopped rather than at the start.
+    if (previousId) resumeAt.set(previousId, previous.currentTime || 0)
     previous.pause()
     previous.onended = null
     previous.onerror = null

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react'
 import { useModalFocus } from './lib/useModalFocus'
+import { useAndroidBack } from './lib/useAndroidBack'
 import { AuthProvider, useAuth } from './state/auth'
 import { useCongregations } from './lib/useCongregations'
 import Home from './components/Home'
@@ -23,7 +24,9 @@ import ErrorMessage from './components/ErrorMessage'
 import NotificationsScreen from './components/NotificationsScreen'
 import { Icon, Spinner } from './ui'
 import { VerifiedBadge } from './components/VerifiedBadge'
+import YouthChurchAnimation from './components/YouthChurchAnimation'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
+import { adminDeviceIdentity } from './lib/adminDevice'
 import { connectSocket, disconnectSocket, onSocket } from './lib/realtime'
 import { describeError } from './lib/actionFeedback'
 import { apiGet } from './lib/api'
@@ -152,39 +155,90 @@ function useDirectory(enabled, refreshMs = 30000) {
 function UpdateGate({ children }) {
   const [update, setUpdate] = useState(null)
   const [hidden, setHidden] = useState(true)
+  const updatePanelRef = useRef(null)
   useEffect(() => {
     let live = true
-    import('./lib/appUpdate').then(({ checkForUpdate, isDismissed }) =>
-      checkForUpdate().then(info => {
+    let busy = false
+    // The check belongs to the app logo, not to the session. It runs on a cold
+    // open, whenever the app returns to the foreground, and every ten minutes,
+    // so a release published while someone is sitting on the welcome screen is
+    // still offered to them. No token is required: /api/app-version is public.
+    const check = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const { checkForUpdate, isDismissed } = await import('./lib/appUpdate')
+        const info = await checkForUpdate()
         if (!live) return
         if (info.available && !isDismissed(info.versionCode)) {
           setUpdate(info)
           setHidden(false)
         }
-      })
-    ).catch(() => {})
-    return () => { live = false }
+      } catch { /* offline is not an update failure the user can act on */ }
+      finally { busy = false }
+    }
+    void check()
+    const onVisible = () => { if (document.visibilityState === 'visible') void check() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void check()
+    }, 10 * 60_000)
+    return () => {
+      live = false
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [])
+
+  const later = () => {
+    import('./lib/appUpdate').then(({ dismissUpdate }) => {
+      dismissUpdate(update?.versionCode || 0)
+      setHidden(true)
+    })
+  }
+  useModalFocus(Boolean(update && !hidden), updatePanelRef, later)
+
   return (
     <>
+      {children}
       {update && !hidden && (
-        <div role="alert" className="fixed top-[calc(var(--safe-area-inset-top,env(safe-area-inset-top))+8px)] left-3 right-3 z-[60] p-3.5 rounded-2xl bg-ink text-white shadow-2xl border border-accent/40 flex items-center gap-3">
-          <Icon name="sparkle" size={22} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-extrabold">Update available{update.versionName ? ` · v${update.versionName}` : ''}</p>
-            <p className="text-[11px] text-stone-300 mt-0.5">This build of the church app is out of date. Tap update to get the latest version.</p>
+        <div
+          data-testid="update-prompt"
+          className="fixed inset-0 z-[100] grid place-items-center bg-ink/65 px-5 py-8 backdrop-blur-sm"
+        >
+          <div
+            ref={updatePanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="update-prompt-title"
+            aria-describedby="update-prompt-copy"
+            tabIndex={-1}
+            className="w-full max-w-[380px] overflow-hidden rounded-[28px] border border-white/10 bg-[#1d1629] p-6 text-center text-white shadow-2xl outline-none"
+            style={{ maxHeight: 'calc(100dvh - 4rem)', overflowY: 'auto' }}
+          >
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-accent/20 text-gold">
+              <Icon name="sparkle" size={26} />
+            </div>
+            <p className="mt-4 text-[10px] font-extrabold uppercase tracking-[0.2em] text-gold">Harvest Family Church</p>
+            <h2 id="update-prompt-title" className="mt-1.5 text-[22px] font-extrabold leading-tight">Update available</h2>
+            <p id="update-prompt-copy" className="mx-auto mt-2 max-w-[300px] text-[13px] leading-6 text-white/60">
+              A newer version of the church app is ready{update.versionName ? ` (v${update.versionName})` : ''}. Update now to keep everything working smoothly.
+            </p>
+            <button
+              type="button"
+              onClick={() => { import('./lib/appUpdate').then(({ openApkDownload }) => openApkDownload(update.apkUrl)) }}
+              className="mt-5 flex min-h-[52px] w-full items-center justify-center rounded-full bg-accent text-[14px] font-extrabold text-white shadow-lg transition active:scale-[0.99] active:bg-accent-strong"
+            >Update now</button>
+            <button
+              type="button"
+              onClick={later}
+              className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/60 underline-offset-4 active:text-white"
+            >Remind me later</button>
           </div>
-          <button
-            onClick={() => { import('./lib/appUpdate').then(({ openApkDownload }) => openApkDownload(update.apkUrl)) }}
-            className="shrink-0 px-4 py-2.5 rounded-full bg-accent text-white text-xs font-extrabold active:bg-accent-strong"
-          >Update</button>
-          <button
-            onClick={() => { import('./lib/appUpdate').then(({ dismissUpdate }) => { dismissUpdate(update.versionCode); setHidden(true) }) }}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-white" aria-label="Remind me later"
-          ><Icon name="close" size={16} /></button>
         </div>
       )}
-      {children}
     </>
   )
 }
@@ -313,6 +367,10 @@ function InnerApp() {
   // (leaving Home and coming back keeps your place in the feed).
   const scrollMemoryRef = useRef({})
   useEffect(() => {
+    // Home owns its own landing position: every Home tap refreshes the head and
+    // scrolls to the newest card. Restoring the old feed scroll here raced that
+    // and could park the member halfway down the old page after the refresh.
+    if (tab === 'home') return
     const target = scrollMemoryRef.current[tab] || 0
     requestAnimationFrame(() => {
       requestAnimationFrame(() => { const el = document.querySelector('.app-content'); if (el) el.scrollTop = target })
@@ -351,6 +409,9 @@ function InnerApp() {
   const [dmMinimized, setDmMinimized] = useState(false)
   const [miniPeer, setMiniPeer] = useState(null)
   const [chatReturnTab, setChatReturnTab] = useState('home')
+  // The floating chat bubble is an unread affordance, not a permanent shortcut.
+  // It only exists while the server says there is something new to answer.
+  const [chatUnread, setChatUnread] = useState({ count: 0, latest: null })
   // A single Chat surface owns all team conversations. Departments and Chats
   // only choose the same target; they never maintain separate chat state.
   const openTeamChat = (kind, slug, name) => {
@@ -539,6 +600,70 @@ function InnerApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarded])
 
+  // Unread inbox for the floating reply bubble. Polling is intentionally light:
+  // realtime events trigger an immediate refresh, and the 30 s poll catches the
+  // case where the socket was asleep. The bubble never opens the full Chat tab.
+  useEffect(() => {
+    if (!onboarded) { setChatUnread({ count: 0, latest: null }); return }
+    let cancelled = false
+    const load = async () => {
+      try {
+        const d = await apiGet('/api/chat/conversations')
+        if (cancelled) return
+        const rows = [
+          ...(Array.isArray(d?.conversations) ? d.conversations : []).map(c => ({
+            kind: 'dm',
+            id: String(c.peer || ''),
+            username: String(c.peer || ''),
+            name: c.peer_name || c.peer || 'Message',
+            avatar_url: c.avatar_url || null,
+            unread: Number(c.unread) || 0,
+            last_at: c.last_at || null,
+          })),
+          ...(Array.isArray(d?.team_conversations) ? d.team_conversations : []).map(c => ({
+            kind: c.kind === 'group' ? 'group' : 'department',
+            slug: String(c.slug || ''),
+            name: c.name || c.slug || 'Chat',
+            unread: Number(c.unread) || 0,
+            last_at: c.last_at || null,
+          })),
+        ].filter(c => c.unread > 0 && (c.kind !== 'dm' || c.username))
+        rows.sort((a, b) => (Date.parse(b.last_at || 0) || 0) - (Date.parse(a.last_at || 0) || 0))
+        setChatUnread({ count: rows.reduce((sum, c) => sum + c.unread, 0), latest: rows[0] || null })
+      } catch { /* keep the last known unread bubble */ }
+    }
+    void load()
+    const id = window.setInterval(load, 30_000)
+    const onVisible = () => { if (document.visibilityState === 'visible') void load() }
+    const offMessage = onSocket('chat:message', () => { void load() })
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      offMessage()
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [onboarded, dmSheet, tab])
+
+  // Open the latest unread conversation in the existing compact Chat card. The
+  // feed stays mounted underneath; sending a reply never changes the tab.
+  const openChatBubble = () => {
+    const latest = chatUnread.latest
+    if (!latest) return
+    setChatReturnTab(tab)
+    setDmMinimized(false)
+    setDmTarget(null)
+    setTeamChat(null)
+    if (latest.kind === 'dm') {
+      setDmTarget({ id: latest.id, username: latest.username, name: latest.name })
+    } else {
+      setTeamChat({ kind: latest.kind, slug: latest.slug, name: latest.name })
+    }
+    setDmSheet(true)
+  }
+
   useModalFocus(showNotifications, notificationsDrawerRef, () => setShowNotifications(false))
   useModalFocus(dmSheet && !dmMinimized, dmLayerRef, () => setDmSheet(false), () => document.querySelector('[data-testid="chat-fab"]'))
 
@@ -649,6 +774,19 @@ function InnerApp() {
     if (tab === 'chat') { setChatReturnTab('chat'); return }
     setChatReturnTab(tab)
     setDmSheet(true)
+  }
+
+  // Prayer is a destination, not a quick reply. Instagram keeps transient DMs in
+  // the floating card, but "Ask for prayer" should land in the full Chat screen
+  // with the pastor selected — the member can read history and compose there.
+  const openFullDm = (user) => {
+    if (!user?.id || !user?.username) return
+    setChatReturnTab(tab)
+    setTeamChat(null)
+    setDmSheet(false)
+    setDmMinimized(false)
+    setDmTarget({ id: String(user.id), username: String(user.username), name: user.name || user.username })
+    setTab('chat')
   }
 
   // Route notification taps (DM / group / department / tab deep links).
@@ -823,11 +961,11 @@ function InnerApp() {
 
   return (
     <UpdateGate>
-    <div className="app-shell flex min-h-[100dvh] bg-surface">
+    <div className="app-shell flex bg-surface" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
       <Sidebar tab={tab} setTab={handleTab} />
       {/* Fluid on phones; on desktop the content column sits beside the rail
           instead of stretching a phone layout across the whole window. */}
-      <div className="app-shell relative mx-auto flex h-[100dvh] max-h-[100dvh] w-full min-w-0 flex-col bg-surface lg:max-w-[560px] xl:max-w-[620px]" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
+      <div className="app-shell relative mx-auto flex w-full min-w-0 max-w-[560px] flex-col bg-surface xl:max-w-[620px]" style={{ height: 'var(--app-viewport-height, 100dvh)', maxHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
         {/* absolute, not fixed: the content column is centred beside the desktop
             rail, so a viewport-anchored bell floated in the empty page margin —
             far from the drawer it opens. */}
@@ -837,7 +975,7 @@ function InnerApp() {
           aria-expanded={showNotifications}
           aria-controls="notifications-drawer"
           aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-          className="absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface text-ink shadow-card focus:outline-none focus-visible:ring-2"
+          className={`absolute right-3 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface text-ink shadow-card focus:outline-none focus-visible:ring-2 ${tab === 'post' ? 'hidden' : ''}`}
           style={{ top: 'calc(var(--safe-area-inset-top, env(safe-area-inset-top)) + 8px)' }}
         >
           <Icon name="bell" size={20} />
@@ -853,7 +991,7 @@ function InnerApp() {
               scroll position and loaded feed state survive the round-trip —
               the IG feel. Other tabs still mount on demand. */}
           <div className={tab === 'home' ? 'contents' : 'hidden'}>
-            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} focusLatestKey={homeFocusKey} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openDm} />
+            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} focusLatestKey={homeFocusKey} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openFullDm} />
           </div>
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
@@ -966,7 +1104,7 @@ function InnerApp() {
               aria-label="Mini chat"
               tabIndex={-1}
               data-testid="dm-layer"
-              className={`drawer-anim absolute bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-2 right-2 z-30 h-[min(46dvh,380px)] flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl sm:left-auto sm:right-3 sm:w-[380px] ${dmMinimized ? 'hidden' : 'flex'}`}
+              className={`drawer-anim absolute bottom-[calc(env(safe-area-inset-bottom,0px)+68px)] left-3 right-3 z-30 h-[min(50dvh,420px)] min-h-[320px] flex-col overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl sm:left-auto sm:right-3 sm:w-[360px] ${dmMinimized ? 'hidden' : 'flex'}`}
             >
               <Chat
                 compact
@@ -991,24 +1129,33 @@ function InnerApp() {
             type="button"
             onClick={() => setDmMinimized(false)}
             data-testid="chat-mini-bubble"
-            aria-label="Reopen mini chat"
-            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] right-3 z-30 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-4 text-xs font-extrabold text-white shadow-raised transition active:scale-95"
+            aria-label={miniPeer ? `Reopen chat with ${miniPeer.name || miniPeer.username}` : 'Reopen mini chat'}
+            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] right-3 z-30 grid h-12 w-12 place-items-center overflow-hidden rounded-full border-2 border-surface bg-ink text-sm font-extrabold text-white shadow-raised transition active:scale-95"
           >
-            <Icon name="chat" size={18} /> Chat
+            {miniPeer?.avatar_url
+              ? <img src={miniPeer.avatar_url} alt="" className="h-full w-full object-cover" />
+              : miniPeer
+                ? String(miniPeer.name || miniPeer.username || '?')[0].toUpperCase()
+                : <Icon name="chat" size={20} />}
           </button>
         )}
-        {/* Instagram's floating message button: a conversation opens over
-            whatever the member is doing — reels keep playing, the feed stays
-            scrolled where it was — instead of switching to the chat tab. */}
-        {onboarded && tab !== 'chat' && !dmSheet && (
+        {/* Unread-only chat bubble. Tapping it opens the newest unread thread in
+            the compact card above, so the member can reply without leaving the
+            feed. No unread messages means no bubble at all. */}
+        {onboarded && chatUnread.count > 0 && chatUnread.latest && tab !== 'chat' && tab !== 'reels' && tab !== 'post' && !dmSheet && (
           <button
             type="button"
-            onClick={() => { setDmTarget(null); setMiniPeer(null); setDmMinimized(false); setChatReturnTab(tab); setDmSheet(true) }}
-            aria-label="Open messages"
+            onClick={openChatBubble}
+            aria-label={`New messages, ${chatUnread.count} unread — reply to ${chatUnread.latest.name || 'the latest chat'}`}
             data-testid="chat-fab"
-            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] right-3 z-20 grid h-12 w-12 place-items-center rounded-full bg-ink text-white shadow-raised transition active:scale-95"
+            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+76px)] right-3 z-20 grid h-10 w-10 place-items-center overflow-visible rounded-full border-2 border-surface bg-ink text-white shadow-raised transition active:scale-95"
           >
-            <Icon name="chat" size={22} />
+            {chatUnread.latest.kind === 'dm' && chatUnread.latest.avatar_url
+              ? <img src={chatUnread.latest.avatar_url} alt="" className="h-full w-full rounded-full object-cover" />
+              : <Icon name="chat" size={18} />}
+            <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-danger px-1 text-[9px] font-extrabold leading-none text-white">
+              {chatUnread.count > 9 ? '9+' : chatUnread.count}
+            </span>
           </button>
         )}
         <UploadPill />
@@ -1057,18 +1204,34 @@ function validateRegister(f) {
   return errors
 }
 
+function AuthFieldError({ id, children }) {
+  return (
+    <p id={id} role="alert" className="auth-field-error mt-1.5 flex items-start gap-1.5 text-[12px] font-semibold leading-4 text-danger">
+      <Icon name="alert" size={13} className="mt-px shrink-0" />
+      <span>{children}</span>
+    </p>
+  )
+}
+
 function Onboarding({ onAuthSuccess }) {
   // A member who already signed in on this phone is returning, so the first
   // thing they should see is the sign-in form — including after the session
   // expires (the toast tells them to sign in again). A fresh install has no
   // stored username and starts on registration.
-  const [mode, setMode] = useState(() => {
-    try { return localStorage.getItem('harvest_username') ? 'login' : 'register' } catch { return 'register' }
-  })
-  const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations()
+  const [mode, setMode] = useState('landing')
+  // Anonymous visitors can see the landing, but every feature card and
+  // congregation chip must lead somewhere. Instead of dropping them on a form
+  // with no context, open a small choice sheet that explains what they get and
+  // offers both paths: create an account or sign in.
+  const [landingPrompt, setLandingPrompt] = useState(null)
+  const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations(true, true)
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', confirm: '', group_name: '' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
+  // Set only after the server accepted the admin password and pushed a code to
+  // the bound phone. Until the code verifies, no JWT is issued.
+  const [adminChallenge, setAdminChallenge] = useState(null)
+  const [adminCode, setAdminCode] = useState('')
   const [showRegPass, setShowRegPass] = useState(false)
   const [showLoginPass, setShowLoginPass] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1105,26 +1268,46 @@ function Onboarding({ onAuthSuccess }) {
     }
   }
 
-  // Switching between sign-in and sign-up must not carry the other form's
-  // rejection across (a signup error under "Welcome back" is nonsense).
-  const switchMode = () => {
-    setMode(m => (m === 'register' ? 'login' : 'register'))
+  // Switching between landing, sign-in and sign-up must not carry the other
+  // form's rejection across (a signup error under "Welcome back" is nonsense).
+  const enter = (next) => {
+    setLandingPrompt(null)
+    setMode(next)
+    setAdminChallenge(null); setAdminCode('')
     setError(''); setErrorKind(''); setFieldErrors({})
+    // The landing is tall and auth is a separate screen; without this, tapping
+    // "Join" near the bottom opens the form halfway down the page with the
+    // title and back control already scrolled away.
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0 })
+      document.scrollingElement?.scrollTo({ top: 0, left: 0 })
+    })
+  }
+
+  // Server validation text is for us to classify, not for the member to read.
+  // Keep the actionable meaning (taken name, bad phone) in plain language and
+  // fall back to one calm sentence for anything we do not recognise.
+  const registerMessage = (raw) => {
+    const msg = String(raw || '')
+    if (/reserved/i.test(msg)) return 'That username is reserved. Choose a different one.'
+    if (/username.*(taken|exists|already)|already.*username/i.test(msg)) return 'That username is already taken. Choose another one.'
+    if (/phone.*(taken|exists|already)|already.*phone/i.test(msg)) return 'That phone number is already registered. Try signing in instead.'
+    if (/phone|number/i.test(msg)) return 'Enter a valid Safaricom or Airtel number, e.g. 0712 345 678.'
+    if (/password/i.test(msg)) return 'Use at least 8 characters for your password.'
+    if (/group/i.test(msg)) return 'Choose a valid Harvest Group.'
+    if (/name/i.test(msg)) return 'Enter your full name as the church knows you.'
+    return 'We couldn’t create your account. Check the details and try again.'
   }
 
   // Fetch failure -> member-useful message: never conflate "wrong password"
-  // with "the internet is down". Signup keeps the server's actionable message
-  // (short password, taken username, bad phone); sign-in stays generic so a
-  // wrong password never leaks which half was wrong.
-  const authError = (e, fallback, { keepServerMessage = false } = {}) => {
+  // with "the internet is down". Sign-in stays generic so a wrong password
+  // never leaks which half was wrong, and unexpected server text never reaches
+  // a normal member.
+  const authError = (e, fallback) => {
     if (e instanceof TypeError || /fetch|network|Failed to fetch/i.test(String(e?.message))) {
-      return { kind: 'network', message: "No connection — check your internet, then try again. Your details haven't been shared with anyone." }
+      return { kind: 'network', message: 'Check your internet and try again. Nothing you typed has been lost.' }
     }
-    const msg = String(e?.message || '')
-    if (!keepServerMessage && (/401|403/.test(msg) || /password|pin|credentials|incorrect|invalid/i.test(msg))) {
-      return { kind: 'credentials', message: fallback }
-    }
-    return { kind: 'server', message: msg || fallback }
+    return { kind: 'credentials', message: fallback }
   }
 
   const submitRegister = async () => {
@@ -1159,20 +1342,21 @@ function Onboarding({ onAuthSuccess }) {
       onAuthSuccess?.(data)
       showToast(`Karibu! You're in ${data.group_name || form.group_name}.`, 'success', 4000)
     } catch (e) {
-      const kind = authError(e, 'We couldn’t create your account. Check the details and try again.', { keepServerMessage: true })
-      // A server rejection belongs to a field when we can tell which one:
-      // showing it under that input beats a banner that repeats the rule.
-      const msg = String(kind.message || '')
+      const kind = authError(e, 'We couldn’t create your account. Check the details and try again.')
+      if (kind.kind === 'network') { showAuthError(kind.kind, kind.message); return }
+      // Classify on the server's wording, but only ever display our own copy.
+      const msg = String(e?.message || '')
       const field = /username/i.test(msg) ? 'username'
         : /full name|name/i.test(msg) ? 'name'
           : /number|phone/i.test(msg) ? 'phone'
             : /password/i.test(msg) ? 'password'
               : /group/i.test(msg) ? 'group_name' : ''
+      const friendly = registerMessage(msg)
       if (field) {
-        setFieldErrors({ [field]: msg })
+        setFieldErrors({ [field]: friendly })
         requestAnimationFrame(() => document.getElementById(REG_FIELD_IDS[field])?.focus())
       } else {
-        showAuthError(kind.kind, kind.message)
+        showAuthError('server', friendly)
       }
     } finally { setBusy(false) }
   }
@@ -1181,13 +1365,54 @@ function Onboarding({ onAuthSuccess }) {
     if (busy) return
     setBusy(true); setError(''); setErrorKind('')
     try {
-      const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginId, password: loginPass }) })
+      const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginId, password: loginPass, ...adminDeviceIdentity() }) })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.token) throw new Error(data.error || 'Sign in failed')
+      if (data.verification_required) {
+        setAdminChallenge(data)
+        setAdminCode('')
+        setError(''); setErrorKind('')
+        requestAnimationFrame(() => document.getElementById('admin-code')?.focus())
+        return
+      }
+      if (!response.ok || !data.token) {
+        throw Object.assign(new Error(data.error || 'Sign in failed'), { status: response.status })
+      }
       onAuthSuccess?.(data)
     } catch (e) {
-      const kind = authError(e, 'We couldn’t sign you in. Check your username or phone number and password, then try again.')
-      showAuthError(kind.kind, kind.message)
+      // Device-policy and delivery errors are actionable and already written
+      // for the member; wrong credentials stay deliberately generic.
+      if (e.status === 409 || e.status === 503 || e.status === 429) showAuthError('server', e.message)
+      else {
+        const kind = authError(e, 'Check your username or phone number and password, then try again.')
+        showAuthError(kind.kind, kind.message)
+      }
+    } finally { setBusy(false) }
+  }
+
+  const submitAdminCode = async () => {
+    if (busy || !adminChallenge) return
+    const code = adminCode.replace(/\s+/g, '')
+    if (!/^\d{6}$/.test(code)) {
+      setErrorKind('credentials')
+      setError('Enter the 6-digit code from the admin phone.')
+      return
+    }
+    setBusy(true); setError(''); setErrorKind('')
+    try {
+      const response = await fetch(`${API}/api/auth/admin/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge_id: adminChallenge.challenge_id, code, device_id: adminDeviceIdentity().device_id }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.token) {
+        throw Object.assign(new Error(data.error || 'That code could not be verified.'), { status: response.status })
+      }
+      setAdminChallenge(null)
+      setAdminCode('')
+      onAuthSuccess?.(data)
+    } catch (e) {
+      showAuthError(e.status === 429 || e.status === 503 ? 'server' : 'credentials', e.message || 'That code could not be verified.')
     } finally { setBusy(false) }
   }
 
@@ -1197,35 +1422,172 @@ function Onboarding({ onAuthSuccess }) {
     clearErrors(k)
   }
 
+  // Auth is the doorway into Home, so it uses the same cream surface and the
+  // same deep-purple/gold hero as the signed-in feed. The previous pastel card
+  // read like a separate product bolted onto the church app.
+  const hero = (
+    <div className="relative mx-5 mt-3 overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-br from-[#7c3aed] via-[#5b21b6] to-[#2e1065] p-5 text-white shadow-card">
+      <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full" style={{ background: 'radial-gradient(circle, rgb(245 185 66 / .28) 0%, transparent 68%)' }} />
+      <img src="/logo-mark.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -right-10 -top-2 w-40 opacity-10" />
+      <span className="relative inline-flex rounded-full bg-gold px-3 py-1.5 text-[11px] font-extrabold tracking-wide text-[#2b1c0b]">Karibu</span>
+      <h1 className="relative mt-3.5 text-[27px] font-extrabold leading-[1.12] tracking-tight">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
+      <div className="relative mt-3 h-px bg-white/15" />
+      <p className="relative mt-2.5 text-[11px] font-extrabold tracking-[0.22em] text-gold">COMPEL · RAISE · RELEASE</p>
+    </div>
+  )
+
+  if (mode === 'landing') {
+    const congregations = REG_GROUP_OPTIONS.slice(0, 8)
+    return (
+      <div className="landing-page relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
+        <div className="landing-page-underlay" aria-hidden="true">
+          <img src="/landing-worship.jpg" alt="" />
+        </div>
+        <YouthChurchAnimation />
+        <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
+          <header className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
+              <div className="min-w-0 leading-tight">
+                <p className="text-[15px] font-extrabold truncate">Harvest Family Church</p>
+                <p className="text-[10px] font-bold tracking-[0.22em] text-gold">NYERI</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => enter('login')} className="shrink-0 text-[13px] font-bold px-4 min-h-11 rounded-full border border-white/20 bg-white/10 text-white backdrop-blur active:bg-white/20">Sign in</button>
+          </header>
+
+          <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl">
+            <div className="landing-sky" aria-hidden="true" />
+            <img
+              src="/landing-worship.jpg"
+              alt=""
+              aria-hidden="true"
+              loading="eager"
+              decoding="async"
+              className="landing-photo"
+            />
+            <div className="landing-photo-tint" aria-hidden="true" />
+            <div className="landing-aurora" aria-hidden="true" />
+            <div className="landing-beams" aria-hidden="true" />
+            <div className="landing-arches" aria-hidden="true" />
+            <div className="landing-dust" aria-hidden="true" />
+            <div className="landing-grain" aria-hidden="true" />
+            <div className="landing-glow landing-glow-gold landing-float" aria-hidden="true" />
+            <div className="landing-glow landing-glow-purple landing-float landing-float-slow" aria-hidden="true" />
+            <img src="/logo-mark.svg" alt="" aria-hidden="true" className="landing-mark absolute -right-20 top-4 w-[320px] opacity-[0.09]" />
+            <div className="relative z-10 flex min-h-[520px] flex-col justify-end p-6">
+              <span className="landing-rise inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
+              </span>
+              <h1 className="landing-rise landing-rise-2 mt-5 text-[47px] font-black leading-[0.93] tracking-[-0.055em] drop-shadow-[0_2px_18px_rgba(0,0,0,0.38)]">A family<br />to belong to.</h1>
+              <p className="landing-rise landing-rise-3 mt-4 max-w-[300px] text-[14px] leading-6 text-white/75">Come as you are. Worship with us, grow in a congregation, and walk through life with people who care.</p>
+              <button type="button" onClick={() => enter('register')} className="landing-rise landing-rise-4 landing-cta relative mt-6 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white text-[15px] font-extrabold text-[#241333] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
+              <button type="button" onClick={() => enter('login')} className="landing-rise landing-rise-5 mt-2 min-h-11 text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
+            </div>
+          </section>
+
+          <main className="flex-1 px-5 pb-8 pt-7">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Compel · Raise · Release</p>
+            <h2 className="mt-2 max-w-[330px] text-[27px] font-extrabold leading-[1.08] tracking-[-0.03em]">More than a service.<br />A family.</h2>
+            <p className="mt-3 text-[14px] leading-6 text-white/60">Harvest Family Church Nyeri is one church across many congregations — a place to worship, belong, and serve.</p>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {[
+                { icon: 'heart', title: 'Worship', copy: 'Gather with the family and grow in faith.', prompt: 'Join us for worship, sermons and moments from the life of the church.' },
+                { icon: 'users', title: 'Congregations', copy: 'Find the Harvest family nearest to you.', prompt: 'Find your congregation and stay connected with the family nearest to you.' },
+                { icon: 'chat', title: 'Community', copy: 'Stay connected through the week.', prompt: 'Stay close to your church family through chats, groups and encouragement all week.' },
+                { icon: 'gift', title: 'Give', copy: 'Support the work of the church.', prompt: 'Give securely and support the work God is doing through Harvest Family Church.' },
+              ].map(item => (
+                <button key={item.title} type="button" onClick={() => setLandingPrompt({ title: item.title, copy: item.prompt })} className="group rounded-3xl border border-white/10 bg-[#191222] p-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur transition active:scale-[0.98] active:bg-[#21172e]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-gold"><Icon name={item.icon} size={20} /></div>
+                    <span aria-hidden="true" className="text-white/30 transition group-active:translate-x-0.5 group-active:text-white/70">→</span>
+                  </div>
+                  <p className="mt-3 text-[13px] font-extrabold">{item.title}</p>
+                  <p className="mt-1 text-[12px] leading-5 text-white/55">{item.copy}</p>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-white/60">Find your congregation</p>
+                {!groupsLive && <span className="text-[10px] font-semibold text-white/40">{groupsLoading ? 'Loading…' : 'Offline'}</span>}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {congregations.length
+                  ? congregations.map(g => (
+                    <button key={g} type="button" onClick={() => setLandingPrompt({ title: g, copy: 'Create an account to connect with this congregation and receive updates from your church family.' })} className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1.5 text-[12px] font-semibold text-white/80 transition active:scale-95 active:bg-white/15">{g}</button>
+                  ))
+                  : <p className="text-[12px] leading-5 text-white/55">{groupsLoading ? 'Loading congregations…' : 'Congregations will appear here when the church office publishes them.'}</p>}
+              </div>
+              {congregations.length > 0 && <p className="mt-3 text-[11px] leading-5 text-white/40">Tap your congregation to become part of it.</p>}
+            </div>
+
+            <p className="mt-8 text-center text-[11px] font-semibold text-white/35">Harvest Family Church Nyeri</p>
+          </main>
+
+          {landingPrompt && (
+            <div
+              className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-16 backdrop-blur-sm"
+              onClick={() => setLandingPrompt(null)}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="landing-prompt-title"
+                tabIndex={-1}
+                className="w-full max-w-[420px] rounded-[28px] border border-white/15 bg-[#1d1629] p-6 text-white shadow-2xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-gold">Karibu · Harvest Nyeri</p>
+                    <h2 id="landing-prompt-title" className="mt-2 text-[24px] font-extrabold leading-tight">{landingPrompt.title}</h2>
+                  </div>
+                  <button type="button" onClick={() => setLandingPrompt(null)} aria-label="Close" className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white/70 active:bg-white/15"><Icon name="close" size={18} /></button>
+                </div>
+                <p className="mt-3 text-[14px] leading-6 text-white/65">{landingPrompt.copy}</p>
+                <p className="mt-4 text-[12px] leading-5 text-white/45">Create an account to take part, or sign in if you are already part of the family.</p>
+                <button type="button" onClick={() => enter('register')} className="mt-5 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-extrabold text-[#241333] active:scale-[0.99]">Create my account <span aria-hidden="true">→</span></button>
+                <button type="button" onClick={() => enter('login')} className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
+                <button type="button" onClick={() => setLandingPrompt(null)} className="mt-1 min-h-10 w-full text-[12px] font-semibold text-white/40 active:text-white/70">Keep looking around</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-[100dvh] bg-white flex justify-center">
+    <div className="auth-screen relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
+      <div className="auth-underlay" aria-hidden="true">
+        <img src="/landing-worship.jpg" alt="" />
+      </div>
       {/* Safe-area padding keeps the app name + toggle clear of Android status-bar icons */}
-      <div className="w-full max-w-[460px] bg-white min-h-[100dvh] flex flex-col" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
-        <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
+      <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
+        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" onClick={() => enter('landing')} aria-label="Back to welcome page" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-white/70 active:bg-white/10"><Icon name="arrow-left" size={20} /></button>
+            <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 rounded-xl bg-gold object-contain shadow-sm" />
             <div className="min-w-0 leading-tight">
-              <p className="text-[15px] font-extrabold text-zinc-900 truncate">Harvest Family Church</p>
-              <p className="text-[11px] font-bold tracking-wide text-accent">NYERI</p>
+              <p className="truncate text-[14px] font-extrabold text-white">Harvest Family</p>
+              <p className="text-[11px] font-bold tracking-wide text-gold">NYERI</p>
             </div>
           </div>
-          <button type="button" onClick={switchMode} aria-label={mode === 'register' ? 'Switch to sign in' : 'Switch to create an account'} className="shrink-0 text-[13px] font-bold px-4 min-h-11 rounded-full border border-zinc-300 bg-zinc-50 text-accent-strong active:bg-zinc-100">
+          <button type="button" onClick={() => enter(mode === 'register' ? 'login' : 'register')} aria-label={mode === 'register' ? 'Switch to sign in' : 'Switch to create an account'} className="shrink-0 text-[13px] font-bold px-4 min-h-11 rounded-full border border-white/20 bg-white/10 text-white backdrop-blur active:bg-white/20">
             {mode === 'register' ? 'Sign in' : 'New here?'}
           </button>
         </div>
 
-        <div className="rounded-[22px] mx-5 mt-3 p-5 bg-gradient-to-br from-accent-soft via-accent-wash to-gold-soft border border-accent-soft shadow-sm">
-          <span className="inline-flex text-[11px] font-extrabold tracking-wide bg-gold-strong text-white px-3 py-1.5 rounded-full">Karibu</span>
-          <h1 className="mt-3.5 text-[30px] font-extrabold leading-[1.12] tracking-tight text-accent-strong">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
-          <div className="mt-3 h-px bg-accent-soft" />
-          <p className="mt-2.5 text-[12px] font-extrabold tracking-[0.22em] text-accent">COMPEL · RAISE · RELEASE</p>
-        </div>
+        {hero}
 
         {mode === 'register' ? (
           <form id="auth-form" noValidate onSubmit={e => { e.preventDefault(); void submitRegister() }} className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
             <div>
-              <h2 className="text-[17px] font-extrabold text-zinc-900">Create your account</h2>
-              <p className="text-[13px] text-zinc-600 mt-1">Use your phone number and a password you'll remember.</p>
+              <h2 className="text-[17px] font-extrabold text-white">Create your account</h2>
+              <p className="mt-1 text-[13px] text-white/55">Use your phone number and a password you'll remember.</p>
             </div>
             {error && (
               <div ref={errorRef} tabIndex={-1} className="outline-none">
@@ -1233,40 +1595,40 @@ function Onboarding({ onAuthSuccess }) {
               </div>
             )}
             <div>
-              <label htmlFor="reg-username" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username</label>
-              <input id="reg-username" name="username" autoComplete="username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={!!fieldErrors.username} aria-describedby={fieldErrors.username ? 'reg-username-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-              {fieldErrors.username && <p id="reg-username-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.username}</p>}
+              <label htmlFor="reg-username" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Username</label>
+              <input id="reg-username" name="username" autoComplete="username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={!!fieldErrors.username} aria-describedby={fieldErrors.username ? 'reg-username-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              {fieldErrors.username && <AuthFieldError id="reg-username-error">{fieldErrors.username}</AuthFieldError>}
             </div>
             <div>
-              <label htmlFor="reg-name" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Full name</label>
-              <input id="reg-name" name="name" autoComplete="name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" maxLength={120} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? 'reg-name-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-              {fieldErrors.name && <p id="reg-name-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.name}</p>}
+              <label htmlFor="reg-name" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Full name</label>
+              <input id="reg-name" name="name" autoComplete="name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" maxLength={120} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? 'reg-name-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              {fieldErrors.name && <AuthFieldError id="reg-name-error">{fieldErrors.name}</AuthFieldError>}
             </div>
             <div>
-              <label htmlFor="reg-phone" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Phone number</label>
-              <input id="reg-phone" name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" maxLength={16} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? 'reg-phone-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-              {fieldErrors.phone && <p id="reg-phone-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.phone}</p>}
+              <label htmlFor="reg-phone" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Phone number</label>
+              <input id="reg-phone" name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" maxLength={16} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? 'reg-phone-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              {fieldErrors.phone && <AuthFieldError id="reg-phone-error">{fieldErrors.phone}</AuthFieldError>}
             </div>
             <div>
-              <label htmlFor="reg-password" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password</label>
+              <label htmlFor="reg-password" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Password</label>
               <div className="relative">
-                <input id="reg-password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
+                <input id="reg-password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-white/50 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
               </div>
-              {fieldErrors.password && <p id="reg-password-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.password}</p>}
-              <p className="text-[12px] text-zinc-600 mt-1.5">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap Show to check what you typed.'}</p>
+              {fieldErrors.password && <AuthFieldError id="reg-password-error">{fieldErrors.password}</AuthFieldError>}
+              <p className="mt-1.5 text-[12px] text-white/45">{showRegPass ? 'Password is visible — make sure no one is looking.' : 'Tap Show to check what you typed.'}</p>
             </div>
             <div>
-              <label htmlFor="reg-confirm" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Confirm password</label>
-              <input id="reg-confirm" name="confirm-password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="Re-type your password" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.confirm} aria-describedby={fieldErrors.confirm ? 'reg-confirm-error' : undefined} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
+              <label htmlFor="reg-confirm" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Confirm password</label>
+              <input id="reg-confirm" name="confirm-password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="Re-type your password" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.confirm} aria-describedby={fieldErrors.confirm ? 'reg-confirm-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
               {fieldErrors.confirm
-                ? <p id="reg-confirm-error" className="text-[12px] font-semibold text-danger mt-1.5">{fieldErrors.confirm}</p>
-                : <p className="text-[12px] text-zinc-600 mt-1.5">Both boxes must match. Tap Show above to compare them.</p>}
+                ? <AuthFieldError id="reg-confirm-error">{fieldErrors.confirm}</AuthFieldError>
+                : <p className="mt-1.5 text-[12px] text-white/45">Both boxes must match. Tap Show above to compare them.</p>}
             </div>
-            <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
-              <label htmlFor="reg-group" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-2">Choose Harvest Group *</label>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+              <label htmlFor="reg-group" className="mb-2 block text-[11px] font-extrabold uppercase tracking-wider text-white/55">Choose Harvest Group *</label>
               <div className="relative">
-                <select id="reg-group" value={form.group_name} onChange={set('group_name')} aria-invalid={!!fieldErrors.group_name} aria-describedby={fieldErrors.group_name ? 'reg-group-error' : undefined} className="w-full appearance-none bg-white border border-zinc-300 rounded-xl pl-4 pr-10 py-3.5 text-[15px] font-semibold text-zinc-900 outline-none focus:border-accent focus:ring-2 focus:ring-purple-100">
+                <select id="reg-group" value={form.group_name} onChange={set('group_name')} aria-invalid={!!fieldErrors.group_name} aria-describedby={fieldErrors.group_name ? 'reg-group-error' : undefined} className="w-full appearance-none rounded-xl border border-white/15 bg-[#1d1629] py-3.5 pl-4 pr-10 text-[15px] font-semibold text-white outline-none focus:border-accent focus:ring-2 focus:ring-purple-500/20">
                   {/* An empty select with no empty option renders the FIRST
  congregation as if chosen, while form state stays '' — the waydroid
  device pass showed 'Alphas 1' checked with the validator still
@@ -1275,13 +1637,13 @@ function Onboarding({ onAuthSuccess }) {
                   {!REG_GROUP_OPTIONS.length && <option value="">{groupsLoading ? 'Loading groups…' : groupsLive ? 'No groups available' : 'Couldn’t load groups'}</option>}
                   {REG_GROUP_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
-                <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-600 text-base">▾</span>
+                <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-base text-white/50">▾</span>
               </div>
-              {fieldErrors.group_name && <p id="reg-group-error" className="text-[12px] font-semibold text-danger mt-2">{fieldErrors.group_name}</p>}
-              <p className="text-[12px] font-medium text-zinc-600 mt-2">This exact group is saved on your profile.</p>
+              {fieldErrors.group_name && <div className="mt-2"><AuthFieldError id="reg-group-error">{fieldErrors.group_name}</AuthFieldError></div>}
+              <p className="mt-2 text-[12px] font-medium text-white/45">This exact group is saved on your profile.</p>
               {!groupsLive && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2">
-                  <p className="text-[12px] text-amber-800 flex items-center gap-1">
+                  <p className="flex items-center gap-1 text-[12px] text-amber-300">
                     <Icon name="alert" size={14} className="shrink-0" /> {groupsLoading ? 'Fetching the latest group list…' : 'Couldn’t load the group list.'}
                   </p>
                   {!groupsLoading && (
@@ -1290,37 +1652,74 @@ function Onboarding({ onAuthSuccess }) {
                 </div>
               )}
               {groupsLive && !REG_GROUP_OPTIONS.length && (
-                <p className="text-[12px] text-amber-800 mt-1.5">No Harvest Groups exist yet — ask a church admin to add one.</p>
+                <p className="mt-1.5 text-[12px] text-amber-300">No Harvest Groups exist yet — ask a church admin to add one.</p>
               )}
             </div>
           </form>
         ) : (
-          <form id="auth-form" noValidate onSubmit={e => { e.preventDefault(); void submitLogin() }} className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
-            <div>
-              <h2 className="text-[17px] font-extrabold text-zinc-900">Welcome back</h2>
-              <p className="text-[13px] text-zinc-600 mt-1">Sign in with your username or phone number.</p>
-            </div>
-            {error && (
-              <div ref={errorRef} tabIndex={-1} className="outline-none">
-                <ErrorMessage
-                  kind={errorKind}
-                  title={errorKind === 'credentials' ? 'We couldn’t sign you in' : undefined}
-                  message={error}
-                />
-              </div>
+          <form id="auth-form" noValidate onSubmit={e => { e.preventDefault(); void (adminChallenge ? submitAdminCode() : submitLogin()) }} className="px-5 mt-5 flex-1 space-y-4 overflow-auto">
+            {adminChallenge ? (
+              <>
+                <div>
+                  <h2 className="text-[17px] font-extrabold text-white">Check the admin phone</h2>
+                  <p className="mt-1 text-[13px] text-white/55">We sent a 6-digit code to the phone bound to {loginId || 'HFC Nyeri'}. Enter it to approve this browser.</p>
+                </div>
+                {error && (
+                  <div id="auth-error" ref={errorRef} tabIndex={-1} className="outline-none">
+                    <ErrorMessage kind={errorKind} message={error} />
+                  </div>
+                )}
+                <div className="rounded-2xl border border-gold/25 bg-gold/[0.07] p-4">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">Admin sign-in</p>
+                  <p className="mt-1.5 text-[12px] leading-5 text-white/60">Approving this browser signs out any other browser. The phone stays signed in.</p>
+                </div>
+                <div>
+                  <label htmlFor="admin-code" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">6-digit code</label>
+                  <input
+                    id="admin-code"
+                    name="one-time-code"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={adminCode}
+                    onChange={e => { setAdminCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); clearErrors() }}
+                    placeholder="000000"
+                    aria-invalid={errorKind === 'credentials'}
+                    aria-describedby={error ? 'auth-error' : 'admin-code-help'}
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-center text-[26px] font-extrabold tracking-[0.42em] text-white outline-none placeholder:text-white/20 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20"
+                  />
+                  <p id="admin-code-help" className="mt-1.5 text-[12px] text-white/45">The code expires in 10 minutes and can only be used once.</p>
+                  {import.meta.env.DEV && adminChallenge.dev_code && (
+                    <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] font-semibold text-gold">Local test code: {adminChallenge.dev_code}</p>
+                  )}
+                </div>
+                <button type="button" onClick={() => { setAdminChallenge(null); setAdminCode(''); clearErrors() }} className="min-h-11 text-[12px] font-bold text-white/55 underline underline-offset-4 active:text-white">Back to sign in</button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <h2 className="text-[17px] font-extrabold text-white">Welcome back</h2>
+                  <p className="mt-1 text-[13px] text-white/55">Sign in with your username or phone number.</p>
+                </div>
+                {error && (
+                  <div id="auth-error" ref={errorRef} tabIndex={-1} className="outline-none">
+                    <ErrorMessage kind={errorKind} message={error} />
+                  </div>
+                )}
+                <div>
+                  <label htmlFor="login-id" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Username or phone</label>
+                  <input id="login-id" name="username" autoComplete="username" value={loginId} onChange={e => { setLoginId(e.target.value); clearErrors() }} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                </div>
+                <div>
+                  <label htmlFor="login-pass" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Password</label>
+                  <div className="relative">
+                    <input id="login-pass" name="password" autoComplete="current-password" value={loginPass} onChange={e => { setLoginPass(e.target.value); clearErrors() }} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} maxLength={128} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                    <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-white/50 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
+                  </div>
+                  <p className="mt-1.5 text-[12px] text-white/45">Forgot your password? Ask a church admin to reset it for you.</p>
+                </div>
+              </>
             )}
-            <div>
-              <label htmlFor="login-id" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Username or phone</label>
-              <input id="login-id" name="username" autoComplete="username" value={loginId} onChange={e => { setLoginId(e.target.value); clearErrors() }} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-            </div>
-            <div>
-              <label htmlFor="login-pass" className="block text-[11px] font-extrabold uppercase tracking-wider text-zinc-600 mb-1.5">Password or PIN</label>
-              <div className="relative">
-                <input id="login-pass" name="password" autoComplete="current-password" value={loginPass} onChange={e => { setLoginPass(e.target.value); clearErrors() }} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} maxLength={128} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 pr-14 text-[15px] font-medium text-zinc-900 outline-none placeholder:text-zinc-600 focus:bg-white focus:border-accent focus:ring-2 focus:ring-purple-100" />
-                <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-zinc-500 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
-              </div>
-              <p className="text-[12px] text-zinc-600 mt-1.5">Forgot your password? Ask a church admin to reset it for you.</p>
-            </div>
           </form>
         )}
 
@@ -1329,12 +1728,12 @@ function Onboarding({ onAuthSuccess }) {
             type="submit"
             form="auth-form"
             disabled={busy}
-            className={`w-full py-4 rounded-full font-extrabold text-[16px] flex items-center justify-center gap-2 shadow-sm ${busy ? 'bg-zinc-200 text-zinc-400' : 'bg-accent text-white active:bg-accent-strong'}`}
+            className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-[16px] font-extrabold shadow-sm ${busy ? 'bg-white/10 text-white/40' : 'bg-accent text-white active:bg-accent-strong'}`}
           >
-            {busy ? 'Please wait…' : mode === 'register' ? 'Create my account →' : 'Sign in →'}
+            {busy ? 'Please wait…' : adminChallenge ? 'Verify and sign in →' : mode === 'register' ? 'Create my account →' : 'Sign in →'}
           </button>
-          <p className="text-center text-[11px] font-semibold text-zinc-500 mt-3">
-            {mode === 'register' ? 'Already a member? Tap “Sign in” at the top right.' : 'New to Harvest? Tap “New here?” at the top right.'}
+          <p className="mt-3 text-center text-[11px] font-semibold text-white/40">
+            {adminChallenge ? 'Only the code sent to the admin phone can approve this browser.' : mode === 'register' ? 'Already a member? Tap “Sign in” at the top right.' : 'New to Harvest? Tap “New here?” at the top right.'}
           </p>
         </div>
       </div>
@@ -1723,13 +2122,14 @@ function Nav({ tab, setTab }) {
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef(null)
   useModalFocus(moreOpen, moreRef, () => setMoreOpen(false))
+  useAndroidBack(moreOpen, () => setMoreOpen(false))
   useEffect(() => { setMoreOpen(false) }, [tab])
   const secondaryActive = MORE_ITEMS.some(item => item.id === tab)
   return (
     <>
       <nav
         aria-label="Primary"
-        className="app-fixed-nav fixed bottom-0 left-0 right-0 z-40 flex items-stretch gap-0.5 border-t border-line bg-surface/95 px-2 backdrop-blur lg:hidden"
+        className="app-fixed-nav fixed bottom-0 left-1/2 z-40 flex w-full max-w-[560px] -translate-x-1/2 items-stretch gap-0.5 border-t border-line bg-surface/95 px-2 backdrop-blur lg:hidden xl:max-w-[620px]"
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))', boxShadow: '0 -6px 24px rgb(var(--accent) / 0.08)' }}
       >
         {NAV_ITEMS.map(item => {

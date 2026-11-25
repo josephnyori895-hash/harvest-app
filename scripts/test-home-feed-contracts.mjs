@@ -13,12 +13,14 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const home = readFileSync(join(here, '..', 'src', 'components', 'Home.tsx'), 'utf8')
+const app = readFileSync(join(here, '..', 'src', 'App.jsx'), 'utf8')
+const feedCard = readFileSync(join(here, '..', 'src', 'components', 'FeedCard.tsx'), 'utf8')
 const api = readFileSync(join(here, '..', 'src', 'lib', 'api.ts'), 'utf8')
 const BACKSLASH = String.fromCharCode(92)
 
 test('RS-217 (H1): comment/delete/share scope comes from the raw row kind, not the label', () => {
   assert.ok(home.includes("sourceKind: p.kind === 'reel' ? 'reel' : 'post'"), 'the mapped card must carry the server kind')
-  assert.ok(home.includes('onComment={() => setCommentTarget({ scope: p.sourceKind,'), 'comments must open with the raw kind')
+  assert.ok(home.includes('onComment={() => setCommentTarget(commenting ? null : { scope: p.sourceKind,'), 'comments must open with the raw kind')
   assert.ok(home.includes('onToggleMenu={() => setMenuPost(menuPost?.key === key ? null : { key, kind: p.sourceKind,'), 'the options sheet must carry the raw kind for delete')
   assert.ok(home.includes('kind: p.sourceKind })'), 'share links must carry the raw kind')
   assert.ok(!home.includes("p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'"), 'the label must never decide scope')
@@ -73,6 +75,24 @@ test('RS-223 (H7): a JSON error body reaches the toast as its message', () => {
   assert.ok(api.includes("typeof parsed?.error === 'string' && parsed.error"))
   assert.ok(!api.includes('if (body) message = body'), 'the raw body must never be the message')
   assert.ok(api.includes('body.length > 200 ?'), 'an HTML error page is not a sentence')
+})
+
+test('Ask for prayer lands in the full Chat screen, not the quick-reply card', () => {
+  assert.match(home, /onOpenDm\?\.\(\{ id: String\(pastor\.id\)/, 'the prayer action targets the pastor')
+  assert.match(app, /const openFullDm = \(user\) =>/, 'there is a full-chat DM opener')
+  assert.match(app, /setDmSheet\(false\)[\s\S]{0,180}?setTab\('chat'\)/, 'the full opener closes the mini card and changes tab')
+  assert.match(app, /onOpenDm=\{openFullDm\}/, 'Home is wired to the full-chat opener')
+})
+
+test('tapping Home waits for the fresh head before landing on the latest update', () => {
+  assert.match(home, /const \[focusArrivedTick, setFocusArrivedTick\]/, 'the explicit-refresh acknowledgement is missing')
+  assert.match(home, /if \(homeFocusPendingRef\.current\) setFocusArrivedTick/, 'the pending scroll must wait for the request to finish')
+  assert.match(home, /\}, \[feedLoaded, focusArrivedTick\]\)/, 'the scroll must key off the completed refresh, not the old feed')
+  assert.match(feedCard, /data-created-at=\{p\.created_at \|\| ''\}/, 'cards expose the timestamp used to find the newest update')
+  assert.match(home, /cards\.reduce/, 'the feed is ranked, so the newest card is selected by time, not DOM order')
+  assert.match(home, /home\.closest\('\.app-content'\)/, 'scroll the real app column scroller, not the non-scrolling Home root')
+  assert.match(app, /if \(tab === 'home'\) return/, 'tab scroll-memory must not restore an old feed position over the Home landing')
+  assert.doesNotMatch(home, /const target = c\.querySelector\('\[data-post-id\]'\)/, 'first card is not necessarily the latest')
 })
 
 test('RS-224 (H8): pull-to-refresh needs a vertical pull and a closed screen', () => {

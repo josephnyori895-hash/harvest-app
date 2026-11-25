@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth, type Role } from '../state/auth'
 import { Icon } from '../ui'
+import { adminDeviceIdentity } from '../lib/adminDevice'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const USE_API = import.meta.env.PROD ? import.meta.env.VITE_USE_API !== 'false' : import.meta.env.VITE_USE_API === 'true'
@@ -42,7 +43,7 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       if (!uname) { setErr('Enter your username before unlocking'); return }
       setErr('')
       try {
-        const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: trimmed, username: uname }) })
+        const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: trimmed, username: uname, ...adminDeviceIdentity() }) })
         const data = await response.json().catch(() => ({}))
         if (!response.ok || !data.token) throw new Error(data.error || 'Login failed')
         localStorage.setItem('harvest_token', data.token)

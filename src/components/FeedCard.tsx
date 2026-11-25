@@ -3,11 +3,10 @@
 // Attached music is the spinning disc in the media corner — tap toggles.
 
 import { useEffect, useRef, useState } from 'react'
-import { setFeedAutoplayPref, markAudioUnlocked } from '../lib/audioPlayer'
-import { toggleInlineMediaTrack, stopInlineMediaAudio, subscribeInlineMediaAudio } from '../lib/inlineMediaAudio'
-import { startFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
+import { markAudioUnlocked } from '../lib/audioPlayer'
+import { subscribeInlineMediaAudio } from '../lib/inlineMediaAudio'
+import { startFeedPlayback, startManualFeedPlayback, pauseManualFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
 import FeedMediaPreview from './FeedMediaPreview'
-import TrackArt from './TrackArt'
 import { Icon, Spinner } from '../ui'
 
 export type FeedCardPost = {
@@ -23,6 +22,7 @@ export type FeedCardPost = {
   video?: string
   caption?: string
   kind?: string
+  created_at?: string
   likes?: number
   comments?: number
   liked?: boolean
@@ -175,79 +175,42 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
 }
 
 /** Inline music state for one post: the channel is the single source of truth,
- *  so autoplay and a manual tap look identical in the UI. */
-function useInlineMusic(music?: FeedCardPost['music']) {
+ *  so a resumed post and a manual tap look identical in the UI. */
+function useInlineMusic(p: FeedCardPost) {
   const [liveId, setLiveId] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   useEffect(() => subscribeInlineMediaAudio(setLiveId), [])
-  const id = music?.id ? String(music.id) : null
-  const url = music?.url || null
+  const id = p.music?.id ? String(p.music.id) : null
+  const url = p.music?.url || null
   const playing = Boolean(id) && liveId === id && !failed
+  useEffect(() => { if (id && liveId === id) setFailed(false) }, [id, liveId])
 
   const toggle = async (): Promise<boolean> => {
     if (!id) return false
     if (!url) { setFailed(true); return false }
     if (loading) return false
     if (playing) {
-      stopInlineMediaAudio()
-      // Tapping the disc is the member's mute: remembered, so scrolling onto the
-      // next song post does not start talking again.
-      setFeedAutoplayPref(false)
+      // Pausing this post disarms it; scrolling back will stay quiet until the
+      // member taps again. Unlike the old implementation, it does not mute every
+      // other music post for the rest of the session.
+      pauseManualFeedPlayback(p)
       return false
     }
     setLoading(true)
     setFailed(false)
-    // A tap is a real gesture — the browser now lets this post (and later posts) play.
+    // A tap is a real gesture — the browser now lets this post play.
     markAudioUnlocked()
-    const ok = await toggleInlineMediaTrack({ id, url }, setLiveId)
+    const ok = await startManualFeedPlayback(p)
     setLoading(false)
-    if (ok) setFeedAutoplayPref(true)
-    else setFailed(true)
+    if (!ok) setFailed(true)
     return ok
   }
 
   return { visible: Boolean(id), playing, loading, failed, toggle }
 }
 
-/** Spinning album-art disc in the corner of the media: the feed's only music
- *  control. Frozen rotation while paused, spinner while loading, alert + retry
- *  tap when the track refuses to play. */
-function MusicDisc({ music, playing, loading, failed, onToggle, raised = false }: {
-  music?: FeedCardPost['music']
-  playing: boolean
-  loading: boolean
-  failed: boolean
-  onToggle: () => void
-  raised?: boolean
-}) {
-  const title = music?.title || 'song'
-  const state = failed ? 'failed' : loading ? 'loading' : playing ? 'playing' : 'paused'
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      data-music-disc
-      data-state={state}
-      aria-label={failed ? `Retry ${title}` : loading ? `Loading ${title}` : playing ? `Pause ${title}` : `Play ${title}`}
-      title={music?.artist ? `${title} · ${music.artist}` : title}
-      className={`absolute right-3 z-10 h-11 w-11 rounded-full bg-white/25 p-[2px] shadow-lg ring-1 ring-white/20 transition active:scale-95 ${raised ? 'bottom-14' : 'bottom-3'}`}
-    >
-      <span className="relative block h-full w-full overflow-hidden rounded-full bg-ink">
-        <TrackArt src={music?.cover_url} title={music?.title} className="h-full w-full" iconSize={16} spin={{ playing }} />
-        <span className="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-          <span className="h-2 w-2 rounded-full bg-white/85 shadow-sm" />
-        </span>
-        {loading && (
-          <span className="absolute inset-0 grid place-items-center bg-ink/55 text-white"><Spinner size={13} /></span>
-        )}
-        {failed && (
-          <span className="absolute inset-0 grid place-items-center bg-ink/65 text-white"><Icon name="alert" size={15} /></span>
-        )}
-      </span>
-    </button>
-  )
-}
+
 
 function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
   const [ratio, setRatio] = useState<number | null>(null)
@@ -282,10 +245,10 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const [busy, setBusy] = useState(false)
   const [autoPlayVideo, setAutoPlayVideo] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
-  const music = useInlineMusic(p.music)
+  const music = useInlineMusic(p)
 
-  // IG-style scroll-driven playback via the central feed coordinator. Videos
-  // arm the muted-safe stage; posts with an attached track arm the soundtrack.
+  // IG-style scroll behaviour: videos arm the muted-safe stage; a song post only
+  // resumes audio after the member has tapped that post's music control.
   useEffect(() => {
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
@@ -311,7 +274,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const longCaption = caption.length > 120
 
   return (
-    <article ref={ref} data-post-id={String(p.id ?? p.key)} className="bg-surface">
+    <article ref={ref} data-post-id={String(p.id ?? p.key)} data-created-at={p.created_at || ''} className="bg-surface">
       {/* header — 32px avatar, one bold line, one meta line, overflow */}
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -320,35 +283,49 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
               ? <img src={p.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               : String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}
           </button>
-          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="min-w-0 text-left">
+          <div className="min-w-0 flex-1">
+          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="block min-w-0 max-w-full text-left">
             <p className="flex min-w-0 items-center gap-1 text-caption font-extrabold leading-tight text-ink">
               <span className="truncate">{p.user}</span>
               {p.verified ? <VerifiedBadge size={15} /> : null}
             </p>
             <p className="truncate text-2xs text-ink-subtle">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
           </button>
+            {music.visible && (
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); void music.toggle() }}
+                data-music-control
+                data-state={music.failed ? 'failed' : music.loading ? 'loading' : music.playing ? 'playing' : 'paused'}
+                aria-label={music.failed ? `Retry ${p.music?.title || 'song'}` : music.loading ? `Loading ${p.music?.title || 'song'}` : music.playing ? `Pause ${p.music?.title || 'song'}` : `Play ${p.music?.title || 'song'}`}
+                className="mt-0.5 flex max-w-full items-center gap-1 text-left text-2xs font-bold text-accent transition active:opacity-70"
+              >
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent-soft text-accent-strong" aria-hidden="true">
+                  {music.loading
+                    ? <Spinner size={9} />
+                    : music.failed
+                      ? <Icon name="alert" size={9} />
+                      : music.playing
+                        ? <Icon name="pause" size={9} strokeWidth={2.6} />
+                        : <Icon name="play" size={9} className="fill-current" />}
+                </span>
+                <span className="truncate">{p.music?.title || 'Original audio'}</span>
+                {p.music?.artist && <span className="truncate font-semibold text-ink-subtle">· {p.music.artist}</span>}
+              </button>
+            )}
+          </div>
         </div>
         <button onClick={onToggleMenu} className="-mr-2 grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink transition hover:bg-surface-sunken" aria-label="More options" aria-expanded={menuOpen}>
           <Icon name="dots" size={20} />
         </button>
       </div>
 
-      {/* media — full bleed, no card frame; the music disc rides in its corner */}
+      {/* media — full bleed, no card frame; music metadata lives under the username */}
       {p.video || p.img ? (
         <div className="relative">
           {p.video
             ? <FeedMediaPreview src={p.video} poster={p.img} autoPlay={autoPlayVideo} />
             : <FeedImagePreview src={p.img as string} />}
-          {music.visible && (
-            <MusicDisc
-              music={p.music}
-              playing={music.playing}
-              loading={music.loading}
-              failed={music.failed}
-              onToggle={() => { void music.toggle() }}
-              raised={Boolean(p.video)}
-            />
-          )}
         </div>
       ) : (
         <div className="flex aspect-[4/5] w-full flex-col items-center justify-center gap-2 bg-surface-sunken text-ink-subtle" aria-label="Image pending review">

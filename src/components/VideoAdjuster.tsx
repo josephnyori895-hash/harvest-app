@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { captureVideoFrame } from './ImageAdjuster'
 import { useModalFocus } from '../lib/useModalFocus'
+import { useAndroidBack } from '../lib/useAndroidBack'
 
 type Props = {
   file: File
@@ -44,13 +45,15 @@ export default function VideoAdjuster({ file, onCancel, onDone }: Props) {
     } finally { setBusy(false) }
   }
 
+  useAndroidBack(true, onCancel)
+
   const label = useMemo(() => {
     const n = Math.max(0, Math.round(time))
     return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`
   }, [time])
 
   return (
-    <div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit video" className="fixed inset-0 z-[80] bg-black flex flex-col text-white outline-none">
+    <div ref={panelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit video" className="fixed inset-0 z-[80] bg-black flex flex-col text-white outline-none" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
       <header className="h-16 shrink-0 px-4 flex items-center justify-between border-b border-white/10">
         <button type="button" onClick={onCancel} className="min-w-11 min-h-11 text-sm font-bold">Cancel</button>
         <div className="text-center"><p className="text-[10px] uppercase tracking-[.16em] text-white/50">Harvest Family</p><p className="text-sm font-extrabold">Edit video</p></div>

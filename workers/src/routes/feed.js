@@ -59,9 +59,10 @@ export async function handleFeed(request, env, ctx) {
               p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
         WHERE p.approved_at IS NOT NULL AND p.created_at <= ?
+          AND (p.expires_at IS NULL OR p.expires_at > ?)
         ORDER BY p.is_pinned DESC, p.created_at DESC
         LIMIT ?`,
-      [cursor, CANDIDATE_WINDOW],
+      [cursor, new Date().toISOString(), CANDIDATE_WINDOW],
     )
     const reels = await query(
       env,

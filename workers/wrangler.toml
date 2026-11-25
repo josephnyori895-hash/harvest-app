@@ -1,6 +1,6 @@
 # Cloudflare Workers — Harvest Family API (port of server/ Fastify + Netlify Blobs)
 # Secrets (set via `npx wrangler secret put`): JWT_SECRET, MPESA_CONSUMER_KEY,
-# MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, ADMIN_PIN_HASHES (optional bootstrap).
+# MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY, ADMIN_PIN_HASHES (first-provisioning only).
 
 name = "harvestfamily-api"
 main = "src/index.js"
@@ -47,6 +47,6 @@ run_worker_first = ["/harvest-family.apk", "/harvest-family-*.apk", "/downloads/
 
 # ── Non-secret vars (APK WebView origin is https://localhost) ──
 [vars]
-CORS_ORIGINS = "https://localhost,https://harvestfamily.or.ke,capacitor://localhost"
+CORS_ORIGINS = "http://localhost,https://localhost,https://harvestfamily.or.ke,capacitor://localhost"
 # Public base for absolute signed-media URLs served to the APK (relative URLs break in the WebView).
 PUBLIC_BASE_URL = "https://harvestfamily-api.harvestfamily.workers.dev"

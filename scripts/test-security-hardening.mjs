@@ -13,6 +13,9 @@ const media = await readFile(new URL('../workers/src/lib/media.js', import.meta.
 const chat = await readFile(new URL('../workers/src/routes/chat.js', import.meta.url), 'utf8')
 const securityMigration = await readFile(new URL('../workers/migrations/0013_security_hardening.sql', import.meta.url), 'utf8')
 const departments = await readFile(new URL('../workers/src/routes/departments.js', import.meta.url), 'utf8')
+const adminDevices = await readFile(new URL('../workers/src/lib/adminDevices.js', import.meta.url), 'utf8')
+const adminMigration = await readFile(new URL('../workers/migrations/0035_admin_device_auth.sql', import.meta.url), 'utf8')
+const usersRoute = await readFile(new URL('../workers/src/routes/users.js', import.meta.url), 'utf8')
 
 // No insecure JWT fallback anywhere in the worker.
 for (const [name, src] of Object.entries({ http, auth, routesAuth, index })) {
@@ -42,6 +45,7 @@ assert.doesNotMatch(auth, /pbkdf2Verify/, 'auth middleware must not verify passw
 // Admin PIN bootstrap stays bcrypt-hashed — never plaintext comparison.
 assert.match(auth, /bcrypt\.compare/)
 assert.doesNotMatch(auth, /pin\s*===\s*env\.ADMIN_PIN/)
+assert.match(routesAuth, /adminCredential && !user\.password_hash && !user\.pin_hash/, 'bootstrap PIN must not reopen a provisioned admin account')
 assert.match(media, /if \(!signed\) return errorResponse\('signed media URL required', 401\)/)
 assert.match(media, /x-amz-meta-ownerid/)
 assert.match(chat, /canAccessConversation/)
@@ -59,6 +63,23 @@ assert.match(departments, /only the system admin can remove a department leader/
 assert.match(departments, /cannot remove the only department leader/)
 assert.match(securityMigration, /password_hash = NULL/)
 assert.match(securityMigration, /pin_hash = NULL/)
+
+// Single administrator + one phone/one browser policy.
+assert.match(adminMigration, /role = 'member'[\s\S]{0,80}username <> 'harvest_nyeri'/, 'other admins must be demoted')
+assert.match(adminMigration, /CREATE TABLE IF NOT EXISTS admin_devices/)
+assert.match(adminMigration, /UNIQUE \(user_id, kind\)/, 'one device per kind')
+assert.match(adminMigration, /admin_login_challenges/)
+assert.match(adminDevices, /primaryAdminUsername/)
+assert.match(adminDevices, /ADMIN_OTP_DEV/, 'local-only code fallback must be explicit')
+assert.match(adminDevices, /installation_id=\?[\s\S]{0,600}sendToDevice\(env,[\s\S]{0,300}admin_login_code/, 'code must be pushed to the bound phone only')
+assert.match(adminDevices, /pbkdf2Verify\(code, challenge\.code_hash\)/, 'code must be verified from its hash')
+assert.match(adminDevices, /MAX_ATTEMPTS = 5/)
+assert.match(adminDevices, /admin_web_epoch=admin_web_epoch\+1/, 'new browser must revoke the old browser token')
+assert.match(auth, /admin_web_epoch, admin_mobile_epoch/)
+assert.match(auth, /admin session was replaced by a newer sign-in/)
+assert.match(routesAuth, /verification_required: true/)
+assert.match(routesAuth, /only HFC Nyeri can sign in as admin/)
+assert.match(usersRoute, /only \$\{primaryAdminUsername\(env\)\} can hold the administrator role/)
 
 // No live credential is committed in any script: logins take E2E_USERNAME /
 // E2E_PIN from the environment (recursive scan of scripts/ AND workers/scripts/).

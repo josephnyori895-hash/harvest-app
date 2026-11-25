@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 
 const feed = await readFile(new URL('../workers/src/routes/feed.js', import.meta.url), 'utf8')
 const comments = await readFile(new URL('../src/components/Comments.tsx', import.meta.url), 'utf8')
+const home = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
 const sermons = await readFile(new URL('../src/components/Sermons.tsx', import.meta.url), 'utf8')
 const sermonRoute = await readFile(new URL('../workers/src/routes/sermons.js', import.meta.url), 'utf8')
 const migration = await readFile(new URL('../workers/migrations/0032_sermon_comments.sql', import.meta.url), 'utf8')
@@ -27,6 +28,16 @@ test('counters follow the kind instead of defaulting to posts', () => {
   // the "no ad-hoc picks" rule applies to the comments section alone.
   const commentsBlock = feed.slice(feed.indexOf('const COMMENT_TARGETS'), feed.indexOf('Story views'))
   assert.ok(!/scope === 'reel' \? 'reels' : 'posts'/.test(commentsBlock), 'no ad-hoc table picks left in the comment routes')
+})
+
+test('feed comments expand inline instead of opening a pop-up', () => {
+  assert.match(comments, /inline = false/)
+  assert.match(comments, /useModalFocus\(!inline, sheetRef, onClose\)/, 'inline comments must not trap focus like a dialog')
+  assert.match(comments, /'comments-inline w-full min-h-0 overflow-hidden rounded-2xl border border-line bg-surface-raised/)
+  assert.match(comments, /role=\{inline \? 'region' : 'dialog'\}/)
+  assert.match(home, /<Comments\s+inline/)
+  assert.match(home, /const commenting = commentTarget\?\.key === key/)
+  assert.doesNotMatch(home, /\{commentTarget && \(\s*<Comments\s+scope=/, 'the feed no longer mounts Comments as a top-level sheet')
 })
 
 test('sermon comments are reachable from the sheet and from a sermon row', () => {

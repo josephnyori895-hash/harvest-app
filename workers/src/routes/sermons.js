@@ -38,13 +38,16 @@ export async function handleSermons(request, env, ctx) {
   if (path === '/api/sermons' && method === 'GET') {
     const limit = Math.min(Math.max(parseInt(qp.limit || '50', 10) || 50, 1), 200)
     const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
-    const countRow = await query(env, 'SELECT COUNT(*) AS total FROM sermons')
+    const now = new Date().toISOString()
+    const countRow = await query(env, 'SELECT COUNT(*) AS total FROM sermons WHERE expires_at IS NULL OR expires_at > ?', [now])
     const total = Number(countRow.rows[0]?.total) || 0
     const { rows } = await query(
       env,
       `SELECT s.id, s.title, s.speaker, s.scripture, s.description, s.kind, s.duration_secs, s.bytes, s.plays, s.downloads, s.comments, s.created_at, s.media_key, s.cover_key
-         FROM sermons s ORDER BY s.created_at DESC LIMIT ? OFFSET ?`,
-      [limit, offset],
+         FROM sermons s
+        WHERE s.expires_at IS NULL OR s.expires_at > ?
+        ORDER BY s.created_at DESC LIMIT ? OFFSET ?`,
+      [now, limit, offset],
     )
     const out = await Promise.all(rows.map(async s => ({
       ...s,

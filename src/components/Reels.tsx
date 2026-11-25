@@ -444,7 +444,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   )
 
   return (
-    <div className="h-[calc(100dvh-64px)] lg:h-[calc(100vh-49px)] bg-black text-white overflow-hidden">
+    <div className="h-full bg-black text-white overflow-hidden">
       {showComments && cur.id != null && (
         <Comments
           scope="reel"
@@ -481,11 +481,14 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             ? <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-cover" fallbackIcon={<Icon name="reels" size={28} />} />
             : <VideoThumb src={cur.video} className="absolute inset-0 w-full h-full" />)}
           {videoError && !videoReady && (
-            <div className="absolute inset-0 flex items-center justify-center bg-surface-sunken pointer-events-none">
-              <div className="text-center">
-                <div className="mb-2 flex justify-center text-ink-subtle"><Icon name="reels" size={34} /></div>
-                <p className="text-2xs text-ink-muted">Video preview unavailable</p>
-                <button type="button" onClick={retryVideo} className="pointer-events-auto mt-3 inline-flex min-h-11 items-center rounded-xl border border-line bg-surface-raised px-4 text-2xs font-semibold text-ink">Try again</button>
+            <div className="absolute inset-0 flex items-center justify-center bg-[#140f1d] pointer-events-none">
+              <div aria-hidden="true" className="absolute inset-0" style={{ background: 'radial-gradient(80% 60% at 70% 20%, rgb(139 92 246 / .22), transparent 65%), radial-gradient(70% 50% at 20% 85%, rgb(245 158 11 / .12), transparent 70%)' }} />
+              <div className="landing-grain absolute inset-0" aria-hidden="true" />
+              <div className="relative px-8 text-center">
+                <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/10 text-gold"><Icon name="reels" size={26} /></div>
+                <p className="text-sm font-bold text-white">This video couldn’t play</p>
+                <p className="mt-1 max-w-[230px] text-xs leading-5 text-white/55">Check your connection, then try again. The rest of the feed is still here.</p>
+                <button type="button" onClick={retryVideo} className="pointer-events-auto mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-5 text-xs font-bold text-white backdrop-blur active:scale-95">Try again</button>
               </div>
             </div>
           )}

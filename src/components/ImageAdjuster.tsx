@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FILTERS, composeLook, lookCss, neutralAdjust, type Adjustments } from '../lib/imageFilters'
 import { useModalFocus } from '../lib/useModalFocus'
+import { useAndroidBack } from '../lib/useAndroidBack'
 
 // ImageAdjuster — Harvest Family photo editing, modelled on Instagram's create
 // screen: a dark immersive canvas that fills the width, two tabs (Filters ·
@@ -206,6 +207,7 @@ export default function ImageAdjuster({
   const croppedDisplayRatio = activeRatio ?? Math.min(Math.max(naturalRatio, MIN_RATIO), MAX_RATIO)
   // One string drives both the live preview and the export canvas.
   const previewFilter = composeLook(look, intensity, adjust)
+  useAndroidBack(true, onCancel)
 
   const ADJUST_TOOLS: { key: keyof Adjustments; label: string; min: number; max: number; scale: number }[] = [
     { key: 'brightness', label: 'Brightness', min: 50, max: 150, scale: 100 },
@@ -216,7 +218,7 @@ export default function ImageAdjuster({
   ]
 
   return (
-    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-black text-white outline-none" role="dialog" aria-modal="true" aria-label="Adjust image">
+    <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-black text-white outline-none" role="dialog" aria-modal="true" aria-label="Adjust image" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-2">
         <button onClick={onCancel} className="grid h-10 w-10 place-items-center rounded-full" aria-label="Cancel">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>

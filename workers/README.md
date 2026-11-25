@@ -11,7 +11,7 @@ Port of `server/` (Fastify + Netlify Blobs + socket.io + Postgres) to a **$0/mon
 | Netlify scheduled cleanup | Workers **Cron** `*/10 * * * *` (`scheduled()`) |
 | jsonwebtoken | WebCrypto HS256 (`src/lib/crypto.js`) — wire-compatible tokens |
 | bcryptjs password hashing | **PBKDF2-SHA256** 100k iters (bcrypt cannot run on Workers) |
-| ADMIN_PIN_HASHES bcrypt | Still bcrypt, via `bcryptjs` (admin bootstrap claim path only) |
+| ADMIN_PIN_HASHES bcrypt | Still bcrypt, via `bcryptjs`; first-provisioning only, disabled once the admin has a password or PIN |
 
 The app is **mobile-only** — the APK ships the whole frontend; this Worker is the backend.
 

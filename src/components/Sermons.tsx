@@ -17,6 +17,7 @@ import { stopFeedPlayback } from '../lib/feedPlayback'
 import { timeAgo } from '../lib/time'
 import { apiGet } from '../lib/api'
 import { useModalFocus } from '../lib/useModalFocus'
+import { nairobiIso } from '../lib/nairobiTime'
 import { useAuth } from '../state/auth'
 import Comments from './Comments'
 
@@ -62,6 +63,8 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
   const [uploadSpeaker, setUploadSpeaker] = useState('')
   const [uploadScripture, setUploadScripture] = useState('')
   const [uploadDescription, setUploadDescription] = useState('')
+  const [uploadPublishAt, setUploadPublishAt] = useState('')
+  const [uploadExpiresAt, setUploadExpiresAt] = useState('')
   const [uploading, setUploading] = useState(false)
   const [failedSermonUpload, setFailedSermonUpload] = useState<UploadHistoryEntry | null>(null)
   const [dismissedFail, setDismissedFail] = useState('')
@@ -300,11 +303,15 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       showToast(uploadKind === 'video' ? 'Video is limited to 5 GB.' : 'Audio is limited to 2 GB.', 'error')
       return
     }
+    const scheduledAt = nairobiIso(uploadPublishAt)
+    const expiresAt = nairobiIso(uploadExpiresAt)
+    if (scheduledAt && Date.parse(scheduledAt) <= Date.now()) { showToast('Choose a future publish time.', 'error'); return }
+    if (expiresAt && Date.parse(expiresAt) <= Date.parse(scheduledAt || new Date().toISOString())) { showToast('Expiry must be after the publish time.', 'error'); return }
     setUploading(true)
     const kind = uploadKind === 'video' ? 'sermon_video' : 'sermon_audio'
     void startBackgroundUpload({
       label: uploadKind === 'video' ? 'Sermon video' : 'Sermon audio',
-      successMsg: 'Sermon published',
+      successMsg: scheduledAt ? 'Sermon scheduled' : 'Sermon published',
       task: {
         kind,
         file: uploadFile,
@@ -314,6 +321,8 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
         artist: uploadSpeaker || undefined,
         scripture: uploadScripture || undefined,
         description: uploadDescription,
+        scheduled_at: scheduledAt || undefined,
+        expires_at: expiresAt || undefined,
       },
     }).then(() => {
       setUploading(false)
@@ -323,6 +332,8 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
       setUploadSpeaker('')
       setUploadScripture('')
       setUploadDescription('')
+      setUploadPublishAt('')
+      setUploadExpiresAt('')
       void load(true, { limit: PAGE })
     }).catch(() => {
       // Terminal failure: composer stays open (input retained) — retry via pill.
@@ -689,7 +700,18 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
             <input value={uploadSpeaker} onChange={e => setUploadSpeaker(e.target.value)} placeholder="Speaker / preacher" className="input-base" />
             <input value={uploadScripture} onChange={e => setUploadScripture(e.target.value)} placeholder="Scripture reference" className="input-base" />
             <textarea value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} rows={3} placeholder="Description" className="input-base resize-y" />
-            <button disabled={uploading || !uploadFile || !uploadTitle.trim()} onClick={() => void uploadSermon()} className="min-h-12 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50">{uploading ? 'Uploading…' : 'Upload sermon'}</button>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div>
+                <label className="label-caps mb-1 block" htmlFor="sermon-publish-at">Publish at (Nairobi)</label>
+                <input id="sermon-publish-at" type="datetime-local" value={uploadPublishAt} onChange={e => setUploadPublishAt(e.target.value)} className="input-base" />
+                <p className="mt-1 text-[10px] text-ink-subtle">Leave empty to publish immediately.</p>
+              </div>
+              <div>
+                <label className="label-caps mb-1 block" htmlFor="sermon-expires-at">Expire at (optional)</label>
+                <input id="sermon-expires-at" type="datetime-local" value={uploadExpiresAt} onChange={e => setUploadExpiresAt(e.target.value)} className="input-base" />
+              </div>
+            </div>
+            <button disabled={uploading || !uploadFile || !uploadTitle.trim()} onClick={() => void uploadSermon()} className="min-h-12 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-50">{uploading ? 'Uploading…' : uploadPublishAt ? 'Schedule sermon' : 'Upload sermon'}</button>
           </div>
         </div>
       )}

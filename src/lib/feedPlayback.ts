@@ -1,12 +1,61 @@
 // src/lib/feedPlayback.ts — central coordinator for feed-attached music.
 //
-// One active feed music post at a time. Autoplay is gated by the member's
-// opt-in pref + the browser interaction flag; the global worship/sermon player
-// owns the audio element exclusively while it plays, so feed music yields.
+// Instagram does not start a photo post's music just because it scrolls into
+// view. The post carries a music control; the member taps it, and that post is
+// "armed" for the session. Leaving the post pauses its audio; returning resumes
+// it at the same position. Only one feed track plays at a time, and the worship
+// player owns the audio element exclusively while it is running.
 import { startInlineMediaTrack, stopInlineMediaAudio, isInlinePlaying } from './inlineMediaAudio'
-import { audioAutoplayReady, isGlobalPlayerPlaying, getFeedAutoplayPref } from './audioPlayer'
+import { isGlobalPlayerPlaying, pausePlayer } from './audioPlayer'
 
 let activePostId: string | null = null
+// Session-only. A tap arms one post; it is intentionally not persisted, so a
+// cold app open stays silent until the member asks for sound.
+const armed = new Set<string>()
+
+const musicId = (p: any): string | null => {
+  const id = p?.music?.id
+  return id ? String(id) : null
+}
+
+export function isFeedPlaybackArmed(id: string): boolean {
+  return armed.has(String(id))
+}
+
+/** Resume a post that the member has already started. Visibility alone must
+ *  never produce sound. */
+export async function startFeedPlayback(p: any): Promise<boolean> {
+  const postId = musicId(p)
+  const url = p?.music?.url
+  if (!postId || !url || !armed.has(postId)) return false
+  if (isGlobalPlayerPlaying()) return false
+  if (activePostId === postId && isInlinePlaying(postId)) return true
+  stopFeedPlayback()
+  const ok = await startInlineMediaTrack({ id: postId, url })
+  activePostId = ok ? postId : null
+  return ok
+}
+
+/** A real member tap: arm this post, make room if worship is playing, and
+ *  start it. This is the only path that may begin feed audio. */
+export async function startManualFeedPlayback(p: any): Promise<boolean> {
+  const postId = musicId(p)
+  const url = p?.music?.url
+  if (!postId || !url) return false
+  armed.add(postId)
+  if (isGlobalPlayerPlaying()) pausePlayer()
+  stopFeedPlayback()
+  const ok = await startInlineMediaTrack({ id: postId, url })
+  activePostId = ok ? postId : null
+  return ok
+}
+
+/** Pausing the post's own control disarms it; scrolling away must not. */
+export function pauseManualFeedPlayback(p: any): void {
+  const postId = musicId(p)
+  if (postId) armed.delete(postId)
+  stopFeedPlayback(p)
+}
 
 export function stopFeedPlayback(p?: any): void {
   // Scoped stop: a card scrolling out pauses only its own track — either the
@@ -20,20 +69,6 @@ export function stopFeedPlayback(p?: any): void {
   }
   stopInlineMediaAudio()
   activePostId = null
-}
-
-export async function startFeedPlayback(p: any): Promise<boolean> {
-  const postId = String(p?.music?.id || '')
-  const url = p?.music?.url
-  if (!postId || !url) return false
-  if (!getFeedAutoplayPref()) return false
-  if (!audioAutoplayReady()) return false
-  if (isGlobalPlayerPlaying()) return false
-  if (activePostId === postId && isInlinePlaying(postId)) return true
-  stopFeedPlayback()
-  const ok = await startInlineMediaTrack({ id: postId, url })
-  if (ok) { activePostId = postId } else { activePostId = null }
-  return ok
 }
 
 if (typeof document !== 'undefined') {
