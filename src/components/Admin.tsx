@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AdminMedia from './AdminMedia'
 import { useCongregations } from '../lib/useCongregations'
 import { shareAnnouncementToWhatsApp } from '../lib/whatsappShare'
@@ -69,7 +69,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const [cleanupBusy, setCleanupBusy] = useState(false)
 
   // ── Accounts state ──
-  const [accounts, setAccounts] = useState<any[]>([])
+  const [accounts, setAccounts] = useState<any[]>(() => (Array.isArray(users) ? users : []))
   const [loadingAccounts, setLoadingAccounts] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -277,22 +277,38 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     }
   }, [status])
 
+  // The directory App already loaded is the same member data, so the panel can
+  // paint immediately instead of showing a spinner until a second copy arrives.
+  useEffect(() => {
+    if (!accounts.length && users?.length) setAccounts(users)
+  }, [users, accounts.length])
+
+  const accountsRequest = useRef(0)
+  const accountsBusy = useRef(false)
   const loadAccounts = useCallback(async () => {
-    if (!USE_API) return
+    if (accountsBusy.current) return
+    if (!USE_API) { setLoadingAccounts(false); return }
+    accountsBusy.current = true
+    const request = ++accountsRequest.current
     setLoadingAccounts(true)
     try {
       setError('')
-      // Members and ministries load together: the member card needs each
-      // person's current ministry to offer a valid change.
-      const [data, deps] = await Promise.all([
-        apiGet<any>('/api/users/map'),
-        apiGet<any>('/api/departments').catch(() => ({ departments: [] })),
-      ])
+      // Members render the moment they arrive. The ministry list only powers
+      // the per-member select and the ministries tab, so waiting for it here
+      // kept the whole Members panel on "Loading members…" whenever the
+      // slower departments call stalled or retried.
+      const data = await apiGet<any>('/api/users/map')
+      if (request !== accountsRequest.current) return
       setAccounts(data.users || [])
+      setLoadingAccounts(false)
+      const deps = await apiGet<any>('/api/departments').catch(() => ({ departments: [] }))
+      if (request !== accountsRequest.current) return
       setDepartments(deps.departments || [])
     } catch (e: any) {
+      if (request !== accountsRequest.current) return
       setError(e?.message || 'Unable to load accounts')
-    } finally { setLoadingAccounts(false) }
+      setLoadingAccounts(false)
+    } finally { accountsBusy.current = false }
   }, [])
 
   const loadChatConversations = useCallback(async () => {
@@ -827,7 +843,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               </div>
             )}
 
-            {loadingAccounts ? (
+            {loadingAccounts && !accounts.length ? (
               <p className="py-10 text-center text-sm text-ink-muted">Loading members…</p>
             ) : filteredAccounts.length === 0 ? (
               <div className="rounded-card border border-line bg-surface-raised px-5 py-10 text-center">

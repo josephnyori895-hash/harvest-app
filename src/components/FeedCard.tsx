@@ -7,6 +7,7 @@ import { markAudioUnlocked } from '../lib/audioPlayer'
 import { subscribeInlineMediaAudio } from '../lib/inlineMediaAudio'
 import { startFeedPlayback, startManualFeedPlayback, pauseManualFeedPlayback, stopFeedPlayback } from '../lib/feedPlayback'
 import FeedMediaPreview from './FeedMediaPreview'
+import TrackArt from './TrackArt'
 import { Icon, Spinner } from '../ui'
 
 export type FeedCardPost = {
@@ -300,14 +301,17 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
                 aria-label={music.failed ? `Retry ${p.music?.title || 'song'}` : music.loading ? `Loading ${p.music?.title || 'song'}` : music.playing ? `Pause ${p.music?.title || 'song'}` : `Play ${p.music?.title || 'song'}`}
                 className="mt-0.5 flex max-w-full items-center gap-1 text-left text-2xs font-bold text-accent transition active:opacity-70"
               >
-                <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent-soft text-accent-strong" aria-hidden="true">
-                  {music.loading
-                    ? <Spinner size={9} />
-                    : music.failed
-                      ? <Icon name="alert" size={9} />
-                      : music.playing
-                        ? <Icon name="pause" size={9} strokeWidth={2.6} />
-                        : <Icon name="play" size={9} className="fill-current" />}
+                <span className="relative h-5 w-5 shrink-0 overflow-hidden rounded-md bg-ink" aria-hidden="true">
+                  <TrackArt src={p.music?.cover_url} title={p.music?.title} className="h-full w-full" iconSize={11} spin={{ playing: music.playing }} />
+                  <span className="absolute inset-0 grid place-items-center bg-ink/35 text-white">
+                    {music.loading
+                      ? <Spinner size={8} />
+                      : music.failed
+                        ? <Icon name="alert" size={9} />
+                        : music.playing
+                          ? <Icon name="pause" size={9} strokeWidth={2.6} />
+                          : <Icon name="play" size={9} className="fill-current" />}
+                  </span>
                 </span>
                 <span className="truncate">{p.music?.title || 'Original audio'}</span>
                 {p.music?.artist && <span className="truncate font-semibold text-ink-subtle">· {p.music.artist}</span>}
