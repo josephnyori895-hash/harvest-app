@@ -155,7 +155,9 @@ function useDirectory(enabled, refreshMs = 30000) {
 function UpdateGate({ children }) {
   const [update, setUpdate] = useState(null)
   const [hidden, setHidden] = useState(true)
+  const [install, setInstall] = useState(null)
   const updatePanelRef = useRef(null)
+  const installStopRef = useRef(null)
   useEffect(() => {
     let live = true
     let busy = false
@@ -192,7 +194,57 @@ function UpdateGate({ children }) {
     }
   }, [])
 
+  // The native plugin reports download progress here. Keeping the listener
+  // mounted lets it continue after the one-time Android install-permission
+  // screen, which is the only moment the member leaves the app.
+  useEffect(() => () => { installStopRef.current?.() }, [])
+
+  // Returning from the package installer means the member either installed the
+  // update (this process is replaced) or cancelled. Reset the button so a
+  // cancelled install can be retried instead of staying disabled forever.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      setInstall(current => (current?.status === 'installing' ? null : current))
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  const installBusy = install?.status === 'starting' || install?.status === 'downloading' ||
+    install?.status === 'permission' || install?.status === 'installing'
+
+  const updateNow = async () => {
+    if (installBusy) return
+    installStopRef.current?.()
+    installStopRef.current = null
+    setInstall({ status: 'starting', message: 'Starting download…' })
+    try {
+      const { checkForUpdate, startUpdateInstall } = await import('./lib/appUpdate')
+      // The prompt can sit open for up to ten minutes while a release is
+      // published. Re-read the manifest so the URL and digest describe the same
+      // bytes instead of downloading a newer APK against the old checksum.
+      const latest = await checkForUpdate()
+      const target = latest.available ? latest : update
+      if (latest.available) setUpdate(latest)
+      installStopRef.current = await startUpdateInstall(target.apkUrl, target.sha256, setInstall)
+    } catch {
+      setInstall({
+        status: 'error',
+        message: 'Couldn’t start the update. Check your connection and try again.',
+      })
+    }
+  }
+
   const later = () => {
+    // The visible buttons are disabled while downloading, but Escape reaches
+    // this handler through useModalFocus. Closing here would remove the status
+    // listener while the native download keeps running and later opens the
+    // installer unannounced.
+    if (installBusy) return
+    installStopRef.current?.()
+    installStopRef.current = null
+    setInstall(null)
     import('./lib/appUpdate').then(({ dismissUpdate }) => {
       dismissUpdate(update?.versionCode || 0)
       setHidden(true)
@@ -228,13 +280,27 @@ function UpdateGate({ children }) {
             </p>
             <button
               type="button"
-              onClick={() => { import('./lib/appUpdate').then(({ openApkDownload }) => openApkDownload(update.apkUrl)) }}
-              className="mt-5 flex min-h-[52px] w-full items-center justify-center rounded-full bg-accent text-[14px] font-extrabold text-white shadow-lg transition active:scale-[0.99] active:bg-accent-strong"
-            >Update now</button>
+              onClick={updateNow}
+              disabled={installBusy}
+              className="mt-5 flex min-h-[52px] w-full items-center justify-center rounded-full bg-accent px-4 text-[14px] font-extrabold text-white shadow-lg transition active:scale-[0.99] active:bg-accent-strong disabled:cursor-wait disabled:opacity-70"
+            >
+              {install?.status === 'downloading' ? `Downloading${install.percent != null ? ` ${install.percent}%` : '…'}`
+                : install?.status === 'installing' ? 'Opening installer…'
+                : install?.status === 'permission' ? 'Allow installs'
+                : install?.status === 'starting' ? 'Starting download…'
+                : install?.status === 'error' ? 'Try again'
+                : 'Update now'}
+            </button>
+            {install?.message && (
+              <p role="status" aria-live="polite" className={`mx-auto mt-3 max-w-[300px] text-[12px] leading-5 ${install.status === 'error' || install.status === 'permission-denied' ? 'text-rose-300' : 'text-white/55'}`}>
+                {install.message}
+              </p>
+            )}
             <button
               type="button"
               onClick={later}
-              className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/60 underline-offset-4 active:text-white"
+              disabled={installBusy}
+              className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/60 underline-offset-4 active:text-white disabled:opacity-40"
             >Remind me later</button>
           </div>
         </div>
@@ -331,6 +397,9 @@ function InnerApp() {
   // Bumped whenever Home is chosen from the nav, so the feed can take the
   // member to the newest post instead of leaving them wherever they were.
   const [homeFocusKey, setHomeFocusKey] = useState(0)
+  // A sponsored project card can open the exact campaign on the Give tab, not
+  // just drop the member at the top of a long project list.
+  const [giveFocusProject, setGiveFocusProject] = useState(null)
   useEffect(() => {
     if (!sharedContent) return
     if (sharedContent.kind === 'reel') setTab('reels')
@@ -393,6 +462,10 @@ function InnerApp() {
     // landed an old inbox over a new screen. Close it with the navigation.
     if (t !== tab) setShowNotifications(false)
     setTab(t)
+  }
+  const openGive = (projectId) => {
+    setGiveFocusProject(projectId ? String(projectId) : null)
+    handleTab('give')
   }
   const [viewUser, setViewUser] = useState(null)
   const [backTarget, setBackTarget] = useState('search')
@@ -991,7 +1064,7 @@ function InnerApp() {
               scroll position and loaded feed state survive the round-trip —
               the IG feel. Other tabs still mount on demand. */}
           <div className={tab === 'home' ? 'contents' : 'hidden'}>
-            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} focusLatestKey={homeFocusKey} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openFullDm} />
+            <Home setTab={handleTab} users={users} directoryLoading={directoryLoading} directoryError={directoryError} onRefreshDirectory={refreshDirectory} focusLatestKey={homeFocusKey} onOpenUser={openProfile} sharedContent={sharedContent} onSharedContentHandled={clearSharedContent} onOpenDm={openFullDm} onOpenGive={openGive} />
           </div>
           {tab === 'search' && <Search users={users} onView={u => { setBackTarget('search'); setViewUser(u); setTab('viewuser') }} onOpenUser={openProfile} onOpenGroups={() => { setBackTarget('search'); setTab('groups') }} onOpenDepartments={() => { setBackTarget('search'); setTab('departments') }} onOpenSermons={openSermonFromSearch} onOpenReel={openReelFromSearch} />}
           {tab === 'reels' && <Reels onOpenUser={openProfile} sharedReelId={sharedContent?.kind === 'reel' ? sharedContent.id : searchReelId} onSharedReelHandled={() => { if (sharedContent) clearSharedContent(); else setSearchReelId(null) }} />}
@@ -1014,7 +1087,7 @@ function InnerApp() {
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
           {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
-          {tab === 'give' && <Give />}
+          {tab === 'give' && <Give focusProjectId={giveFocusProject} onFocusHandled={() => setGiveFocusProject(null)} />}
           {tab === 'map' && (
             <Suspense fallback={<TabFallback label="Loading map…" />}>
               <HarvestMap users={users} onOpenUser={openProfile} onRefresh={refreshDirectory} />
@@ -1219,6 +1292,38 @@ function Onboarding({ onAuthSuccess }) {
   // expires (the toast tells them to sign in again). A fresh install has no
   // stored username and starts on registration.
   const [mode, setMode] = useState('landing')
+  // Public artwork is part of the website content the church owns. It loads
+  // before sign-in so the landing page uses the same logo and welcome photo as
+  // the signed-in Home screen.
+  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '' })
+  useEffect(() => {
+    let alive = true
+    const loadArtwork = () => {
+      fetch(`${API}/api/content?view=public&t=${Date.now()}`, { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then(d => {
+          if (!alive) return
+          setSiteArt({
+            logo_url: String(d?.content?.logo_url || ''),
+            landing_hero_url: String(d?.content?.landing_hero_url || ''),
+          })
+        })
+        .catch(() => { /* shipped artwork stays */ })
+    }
+    loadArtwork()
+    const onUpdated = (e) => {
+      const next = e?.detail
+      if (!next || typeof next !== 'object') return
+      setSiteArt({
+        logo_url: String(next.logo_url || ''),
+        landing_hero_url: String(next.landing_hero_url || ''),
+      })
+    }
+    window.addEventListener('harvest:content-updated', onUpdated)
+    return () => { alive = false; window.removeEventListener('harvest:content-updated', onUpdated) }
+  }, [])
+  const brandLogo = siteArt.logo_url || '/logo.png'
+  const landingHero = siteArt.landing_hero_url || '/landing-worship.jpg'
   // Anonymous visitors can see the landing, but every feature card and
   // congregation chip must lead somewhere. Instead of dropping them on a form
   // with no context, open a small choice sheet that explains what they get and
@@ -1441,13 +1546,13 @@ function Onboarding({ onAuthSuccess }) {
     return (
       <div className="landing-page relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
         <div className="landing-page-underlay" aria-hidden="true">
-          <img src="/landing-worship.jpg" alt="" />
+          <img src={landingHero} alt="" />
         </div>
         <YouthChurchAnimation />
         <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
           <header className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
-              <img src="/logo.png" alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
+              <img src={brandLogo} alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
               <div className="min-w-0 leading-tight">
                 <p className="text-[15px] font-extrabold truncate">Harvest Family Church</p>
                 <p className="text-[10px] font-bold tracking-[0.22em] text-gold">NYERI</p>
@@ -1459,7 +1564,7 @@ function Onboarding({ onAuthSuccess }) {
           <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl">
             <div className="landing-sky" aria-hidden="true" />
             <img
-              src="/landing-worship.jpg"
+              src={landingHero}
               alt=""
               aria-hidden="true"
               loading="eager"
@@ -1563,14 +1668,14 @@ function Onboarding({ onAuthSuccess }) {
   return (
     <div className="auth-screen relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
       <div className="auth-underlay" aria-hidden="true">
-        <img src="/landing-worship.jpg" alt="" />
+        <img src={landingHero} alt="" />
       </div>
       {/* Safe-area padding keeps the app name + toggle clear of Android status-bar icons */}
       <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
           <div className="flex min-w-0 items-center gap-2">
             <button type="button" onClick={() => enter('landing')} aria-label="Back to welcome page" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-white/70 active:bg-white/10"><Icon name="arrow-left" size={20} /></button>
-            <img src="/logo.png" alt="" className="h-9 w-9 shrink-0 rounded-xl bg-gold object-contain shadow-sm" />
+            <img src={brandLogo} alt="" className="h-9 w-9 shrink-0 rounded-xl bg-gold object-contain shadow-sm" />
             <div className="min-w-0 leading-tight">
               <p className="truncate text-[14px] font-extrabold text-white">Harvest Family</p>
               <p className="text-[11px] font-bold tracking-wide text-gold">NYERI</p>

@@ -42,6 +42,10 @@ const EDITABLE = {
   // ── Church identity and page copy ──
   // The admin account runs the church app: every display string the members
   // read is editable here, not just the home banner.
+  // Brand artwork is a public http(s) URL so the unauthenticated landing page
+  // can render it without waiting for a signed media URL.
+  logo_url: 500,
+  landing_hero_url: 500,
   church_name: 120,
   church_tagline: 200,
   service_times: 400,
@@ -100,6 +104,9 @@ export async function handleContent(request, env, ctx) {
     if (entries.length > 40) return errorResponse('too many keys (max 40)', 400)
     for (const [k, v] of entries) {
       if (typeof v === 'string' && v.length > limitFor(k)) return errorResponse(`${k}: too long (max ${limitFor(k)} chars)`, 400)
+      if (['logo_url', 'landing_hero_url'].includes(k) && String(v || '').trim() && !isAbsoluteUrl(String(v).trim(), false)) {
+        return errorResponse(`${k} must be an http(s) image URL, or empty to use the shipped artwork`, 400)
+      }
     }
     // JSON-typed keys are validated here so a bad save can never break the app.
     if ('giving_funds' in body) {

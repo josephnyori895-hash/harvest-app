@@ -7,6 +7,16 @@ import { mediaUrlOrNull } from '../lib/media.js'
 // Cover art is an uploaded media key, signed on read so it never expires.
 const IMAGE_KEY_RE = /^originals\/(post|story)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]{2,5}$/i
 
+// null/blank clears a schedule; undefined means the value was not supplied.
+// Invalid dates come back undefined so the route can return a 400 instead of
+// storing a value the feed would silently ignore.
+function advertiseDate(value) {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+  const date = new Date(String(value))
+  return Number.isFinite(date.getTime()) ? date.toISOString() : undefined
+}
+
 async function auditLog(env, actor, action, targetId, meta = {}) {
   await query(
     env,
@@ -28,6 +38,9 @@ function projectRow(row, mine = null, takes = [], mineTake = null) {
     deadline: row.deadline || null,
     status: row.status,
     auto_advertise: Boolean(row.auto_advertise),
+    // The admin editor needs the same promotion window the feed filters on.
+    advertise_from: row.advertise_from || null,
+    advertise_until: row.advertise_until || null,
     icon: row.icon || '🤲',
     image_key: row.image_key || null,
     image_url: null,
@@ -301,11 +314,19 @@ export async function handleProjects(request, env, ctx) {
     const status = ['upcoming','active','paused','completed','closed'].includes(body.status) ? body.status : 'active'
     const imageKey = body.image_key === undefined || body.image_key === null || body.image_key === '' ? null : String(body.image_key)
     if (imageKey && !IMAGE_KEY_RE.test(imageKey)) return errorResponse('image_key is not a valid uploaded photo', 400)
+    const advertiseFrom = advertiseDate(body.advertise_from)
+    const advertiseUntil = advertiseDate(body.advertise_until)
+    if (advertiseFrom === undefined) return errorResponse('advertise_from must be an ISO date-time', 400)
+    if (advertiseUntil === undefined) return errorResponse('advertise_until must be an ISO date-time', 400)
+    if (advertiseFrom && advertiseUntil && advertiseUntil <= advertiseFrom) return errorResponse('advertise_until must be after advertise_from', 400)
     const id = uuid()
     const now = new Date().toISOString()
+    // Promotion is opt-in: a new project is not advertised until the admin
+    // explicitly turns it on in the project editor.
+    const autoAdvertise = body.auto_advertise === true ? 1 : 0
     await query(env, `INSERT INTO projects(id,name,description,goal_kes,deadline,status,auto_advertise,advertise_from,advertise_until,advertise_frequency_days,icon,image_key,created_by,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id,name,description,goal,body.deadline || null,status,body.auto_advertise === false ? 0 : 1,body.advertise_from || now,body.advertise_until || null,Math.max(1,Math.min(30,Number(body.advertise_frequency_days)||3)),String(body.icon||'🤲').slice(0,8),imageKey,fresh.id,now,now])
+      [id,name,description,goal,body.deadline || null,status,autoAdvertise,advertiseFrom || now,advertiseUntil,Math.max(1,Math.min(30,Number(body.advertise_frequency_days)||3)),String(body.icon||'🤲').slice(0,8),imageKey,fresh.id,now,now])
     return jsonResponse({ project: (await baseProjects(env, fresh.id)).find(x => x.id === id) }, 201)
   }
 
@@ -314,7 +335,7 @@ export async function handleProjects(request, env, ctx) {
   if (adminProject && request.method === 'PATCH') {
     const fresh = await requireAdmin(env, user)
     const id = adminProject[1]
-    const existing = (await query(env, 'SELECT id FROM projects WHERE id=?', [id])).rows[0]
+    const existing = (await query(env, 'SELECT id, advertise_from, advertise_until FROM projects WHERE id=?', [id])).rows[0]
     if (!existing) return errorResponse('project not found', 404)
     const body = await readJson(request)
     const updates = {}
@@ -334,7 +355,22 @@ export async function handleProjects(request, env, ctx) {
       if (!PROJECT_STATUSES.includes(body.status)) return errorResponse('invalid status', 400)
       updates.status = body.status
     }
-    if (body.auto_advertise !== undefined) updates.auto_advertise = body.auto_advertise === false ? 0 : 1
+    if (body.auto_advertise !== undefined) updates.auto_advertise = body.auto_advertise === true ? 1 : 0
+    if (body.advertise_from !== undefined) {
+      const from = advertiseDate(body.advertise_from)
+      if (from === undefined) return errorResponse('advertise_from must be an ISO date-time', 400)
+      updates.advertise_from = from
+    }
+    if (body.advertise_until !== undefined) {
+      const until = advertiseDate(body.advertise_until)
+      if (until === undefined) return errorResponse('advertise_until must be an ISO date-time', 400)
+      updates.advertise_until = until
+    }
+    if (updates.advertise_from !== undefined || updates.advertise_until !== undefined) {
+      const nextFrom = updates.advertise_from !== undefined ? updates.advertise_from : existing.advertise_from
+      const nextUntil = updates.advertise_until !== undefined ? updates.advertise_until : existing.advertise_until
+      if (nextFrom && nextUntil && nextUntil <= nextFrom) return errorResponse('advertise_until must be after advertise_from', 400)
+    }
     if (body.advertise_frequency_days !== undefined) updates.advertise_frequency_days = Math.max(1, Math.min(30, Number(body.advertise_frequency_days) || 3))
     if (body.icon !== undefined) updates.icon = String(body.icon || '').slice(0,8) || '🤲'
     if (body.image_key !== undefined) {

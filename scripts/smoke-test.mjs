@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
 
 const base = (process.env.SMOKE_BASE_URL || process.argv[2] || '').replace(/\/$/, '')
 if (!base) {
@@ -32,10 +33,36 @@ async function check(name, path, options = {}, assert = () => true) {
 // propagation). Runs right after deploy retry once after a short wait.
 async function checkAfterDeploy(name, path, options = {}, assert = () => true) {
   const first = await check(name, path, options, assert)
-  if (first.response?.ok) return first
+  if (checks[checks.length - 1]?.ok) return first
   await new Promise(r => setTimeout(r, 5000))
   checks.pop()
   return check(`${name} (retry)`, path, options, assert)
+}
+
+// APK checks need raw bytes. The text helper above would corrupt binary data
+// before the digest could be verified.
+async function checkBinary(name, path, options = {}, assert = () => true) {
+  const started = Date.now()
+  try {
+    const response = await fetch(`${base}${path}`, options)
+    const body = Buffer.from(await response.arrayBuffer())
+    const ok = assert(response, body)
+    checks.push({ name, ok, detail: `${response.status}, ${body.length} bytes in ${Date.now() - started}ms` })
+    if (!ok) console.error(`FAIL ${name}: unexpected ${response.status} (${body.length} bytes, content-range=${response.headers.get('content-range') || '-'})`)
+    return { response, body, ok }
+  } catch (error) {
+    checks.push({ name, ok: false, detail: error.message })
+    console.error(`FAIL ${name}:`, error.message)
+    return { response: null, body: null, ok: false }
+  }
+}
+
+async function checkBinaryAfterDeploy(name, path, options = {}, assert = () => true) {
+  const first = await checkBinary(name, path, options, assert)
+  if (first.ok) return first
+  await new Promise(r => setTimeout(r, 5000))
+  checks.pop()
+  return checkBinary(`${name} (retry)`, path, options, assert)
 }
 
 await check('health', '/health', {}, (r, b) => r.status === 200 && b?.status === 'ok' && b?.database === 'ok' && b?.storage === 'r2')
@@ -47,7 +74,33 @@ await check('M-Pesa callback accepts empty callback safely', '/api/giving/mpesa/
 await check('unknown API route does not expose stack trace', '/api/__smoke_unknown__', {}, (r, _b, text) => r.status >= 400 && !/stack|node_modules|file:\/\//i.test(text))
 // Latest-version probe must always answer shape-valid (deployments without a
 // release still return {update_available:false} rather than erroring).
-await checkAfterDeploy('app-version probe answers', '/api/app-version', {}, (r, b) => r.status === 200 && typeof b?.update_available === 'boolean')
+const versionProbe = await checkAfterDeploy('app-version probe answers', '/api/app-version', {}, (r, b) => r.status === 200 && typeof b?.update_available === 'boolean')
+
+// The in-app updater trusts the manifest digest. Verify the bytes actually
+// served at the public URL, and verify the resume path used after a dropped
+// connection. Cloudflare static assets ignore Range, so this is the one check
+// that proves the Worker is doing the slicing rather than returning a full 200.
+if (versionProbe.body?.update_available) {
+  const expected = String(versionProbe.body?.sha256 || '').toLowerCase()
+  if (/^[0-9a-f]{64}$/.test(expected)) {
+    await checkBinaryAfterDeploy('APK download matches manifest SHA-256', '/harvest-family.apk', {}, (r, body) => {
+      if (r.status !== 200) return false
+      const actual = createHash('sha256').update(body).digest('hex')
+      if (actual !== expected) console.error(`  expected ${expected}, got ${actual}`)
+      return actual === expected
+    })
+  }
+
+  await checkBinaryAfterDeploy('APK supports resumable Range requests', '/harvest-family.apk', {
+    headers: { Range: 'bytes=100-199' },
+  }, (r, body) => {
+    const contentRange = r.headers.get('content-range') || ''
+    return r.status === 206 &&
+      body.length === 100 &&
+      /^bytes 100-199\/\d+$/.test(contentRange) &&
+      /\bbytes\b/i.test(r.headers.get('accept-ranges') || '')
+  })
+}
 
 if (smokeUsername || smokePin) {
   if (!smokeUsername || !smokePin) {

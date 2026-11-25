@@ -85,6 +85,29 @@ test('treasurer tools are in the Give admin tab: record, correct, filter, export
   assert.match(give, /This writes a completed entry to the ledger\. It does not send or request any M-Pesa payment\./)
 })
 
+test('payment instructions are purpose-specific and administrators edit every field', () => {
+  assert.match(give, /Purpose-specific payment methods/)
+  assert.match(give, /Each giving purpose has its own editable payment instructions/)
+  for (const field of ['payment_number', 'account_reference', 'bank_name', 'bank_account_name', 'bank_account_number', 'instructions']) {
+    assert.match(give, new RegExp(field), `${field} must be editable`)
+  }
+  assert.match(give, /Members can give to this purpose/, 'each purpose can be switched off')
+  assert.match(give, /not published yet — ask the church office/, 'missing payment details are not invented')
+  assert.doesNotMatch(give, /4138895/, 'no hardcoded Paybill fallback')
+  assert.match(content, /Paybill\/Till number is required/, 'the server refuses empty payment destinations')
+  assert.match(content, /bank name, account name and account number are required/, 'the server refuses incomplete bank details')
+})
+
+test('admins choose project promotion, activation and schedule', () => {
+  assert.match(give, /Promote this project in the Home feed/)
+  assert.match(give, /type="datetime-local"/, 'promotion start and end are editable')
+  assert.match(give, /status,auto_advertise:auto,advertise_from:/, 'status and promotion travel with the save')
+  assert.match(projects, /advertise_from: row\.advertise_from/)
+  assert.match(projects, /advertise_until: row\.advertise_until/)
+  assert.match(projects, /advertise_until must be after advertise_from/)
+  assert.match(projects, /body\.auto_advertise === true \? 1 : 0/, 'new projects are promoted only by explicit opt-in')
+})
+
 test('admins can reorder giving purposes and every purpose can be disabled', () => {
   assert.match(fundsEditor, /const move = \(index: number, delta: number\)/)
   assert.match(fundsEditor, /aria-label={`Move \$\{f\.label\} up`}/)

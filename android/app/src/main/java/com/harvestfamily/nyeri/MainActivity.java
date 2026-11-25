@@ -17,6 +17,9 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // The update prompt downloads the APK in-app and opens the package
+        // installer; the plugin has to be registered before the bridge starts.
+        registerPlugin(UpdateInstallerPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Edge-to-edge: we draw behind the status bar and gesture bar, and

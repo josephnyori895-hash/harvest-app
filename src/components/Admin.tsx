@@ -29,7 +29,7 @@ const ADVERT_EXAMPLE = JSON.stringify([{
   advertise_until: '2026-12-24T23:59:59Z',
 }], null, 2)
 
-type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'home' | 'give' | 'chat' | 'adverts' | 'content' | 'ministries' | 'publishing'
+type Tab = 'dashboard' | 'moderation' | 'media' | 'accounts' | 'announce' | 'audit' | 'support' | 'home' | 'give' | 'chat' | 'adverts' | 'content' | 'ministries' | 'publishing'
 
 type Props = {
   onBack: () => void
@@ -60,7 +60,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   useEffect(() => { if (notice) showToast(notice, 'success') }, [notice])
 
   // ── Daily operations dashboard ──
-  const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, online: 0, verified: 0, content: [] as any[], chats: [] as any[], audit: [] as any[] })
+  const [dashboard, setDashboard] = useState({ pending: 0, members: 0, groups: 0, departments: 0, online: 0, verified: 0, content: [] as any[], chats: [] as any[], audit: [] as any[], health: null as any })
   const [loadingDashboard, setLoadingDashboard] = useState(false)
 
   // ── Moderation state ──
@@ -97,6 +97,10 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   // ── Audit state ──
   const [audit, setAudit] = useState<any[]>([])
   const [loadingAudit, setLoadingAudit] = useState(false)
+
+  // ── Support and operational health ──
+  const [health, setHealth] = useState<{ status: string; checked_at?: string; checks: any[] } | null>(null)
+  const [loadingHealth, setLoadingHealth] = useState(false)
 
   // ── Home content state (hero banner + weekly verse) ──
   const [content, setContent] = useState<Record<string, string>>({})
@@ -240,7 +244,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     try {
       // apiGet bounds each request and retries once, so one lost packet cannot
       // hang the whole dashboard on a spinner (Promise.all waits for all).
-      const [p,u,g,d,feed,ch,a] = await Promise.all([
+      const [p,u,g,d,feed,ch,a,h] = await Promise.all([
         apiGet<any>('/api/pending?status=pending'),
         apiGet<any>('/api/users/map'),
         apiGet<any>('/api/groups'),
@@ -248,6 +252,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         apiGet<any>('/api/feed?limit=8'),
         apiGet<any>('/api/chat/conversations'),
         apiGet<any>('/api/admin/audit?limit=8'),
+        apiGet<any>('/api/admin/health').catch(() => null),
       ])
       setDashboard({
         pending: (p.pending || []).length,
@@ -262,6 +267,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
         content: (feed.posts || feed.items || feed.reels || []).slice(0, 8),
         chats: (ch.team_conversations || []).slice(0, 8),
         audit: (a.audit || []).slice(0, 8),
+        health: h,
       })
     } catch (e: any) { setError(e?.message || 'Unable to load dashboard') } finally { setLoadingDashboard(false) }
   }, [])
@@ -344,6 +350,19 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     } finally { setLoadingAudit(false) }
   }, [])
 
+  const loadHealth = useCallback(async () => {
+    if (!USE_API) return
+    setLoadingHealth(true)
+    try {
+      setError('')
+      const data = await apiGet<any>('/api/admin/health')
+      setHealth({ status: data.status || 'error', checked_at: data.checked_at, checks: data.checks || [] })
+    } catch (e: any) {
+      setError(e?.message || 'Unable to run operational checks')
+      setHealth(null)
+    } finally { setLoadingHealth(false) }
+  }, [])
+
   // The hero counters must be real on arrival, not zero until Overview is
   // visited for the first time.
   useEffect(() => { void loadDashboard() }, [loadDashboard])
@@ -355,7 +374,8 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     if (tab === 'chat') void loadChatConversations()
     if (tab === 'chat') void loadChatMessages()
     if (tab === 'audit') void loadAudit()
-  }, [tab, loadDashboard, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit])
+    if (tab === 'support') void loadHealth()
+  }, [tab, loadDashboard, loadPending, loadAccounts, loadChatConversations, loadChatMessages, loadAudit, loadHealth])
 
   // Dashboard counts go stale when a group is created/deleted elsewhere —
   // re-pull whenever the groups table changes.
@@ -588,6 +608,23 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     } catch (e: any) { setError(e?.message || 'Could not rename ministry') } finally { setBusy(null) }
   }
 
+  const toggleMinistryVisibility = async (dep: any) => {
+    if (busy === `ministry-vis-${dep.slug}`) return
+    const next = !dep.is_public
+    setBusy(`ministry-vis-${dep.slug}`); setError('')
+    try {
+      const r = await fetch(`${API}/api/departments/${encodeURIComponent(dep.slug)}`, {
+        method: 'PATCH', headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_public: next }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not change ministry visibility')
+      setDepartments(list => list.map(x => x.slug === dep.slug ? { ...x, is_public: next } : x))
+      window.dispatchEvent(new Event('harvest:departments-updated'))
+      flash(`“${dep.name}” is now ${next ? 'visible in' : 'hidden from'} the ministry directory`)
+    } catch (e: any) { setError(e?.message || 'Could not change ministry visibility') } finally { setBusy(null) }
+  }
+
   const deleteMinistry = async (dep: any) => {
     if (busy === `ministry-del-${dep.slug}`) return
     if (!window.confirm(`Delete the ministry “${dep.name}”? Members are released from it and this cannot be undone.`)) return
@@ -611,8 +648,11 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
   const accountsPages = Math.max(1, Math.ceil(filteredAccounts.length / ACCOUNTS_PAGE_SIZE))
   const safeAccountsPage = Math.min(accountsPage, accountsPages)
   const pagedAccounts = filteredAccounts.slice((safeAccountsPage - 1) * ACCOUNTS_PAGE_SIZE, safeAccountsPage * ACCOUNTS_PAGE_SIZE)
-  // Reset to the first page whenever the search query changes.
-  useEffect(() => { setAccountsPage(1) }, [q])
+  // Reset to the first page whenever the search or filter changes. Without the
+  // filter dependency a page from the previous view could stay selected; the
+  // safe page clamped the rows, but Prev still looked active and needed several
+  // taps before the visible page moved.
+  useEffect(() => { setAccountsPage(1) }, [q, accountFilter])
 
   return (
     <div className="min-h-[70vh] bg-surface text-ink" data-testid="admin-shell">
@@ -672,7 +712,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
             ['People', [['moderation', 'Approvals'], ['accounts', 'Members'], ['ministries', 'Ministries']]],
             ['Content', [['publishing', 'Calendar'], ['content', 'All text'], ['home', 'Home text'], ['give', 'Giving copy'], ['adverts', 'Adverts'], ['media', 'Studio']]],
             ['Community', [['chat', 'Chats'], ['announce', 'Announce']]],
-            ['System', [['audit', 'Audit']]],
+            ['System', [['audit', 'Audit'], ['support', 'Health & help']]],
           ] as [string, [Tab, string][]][]).map(([group, entries]) => (
             <div key={group} className="flex items-center gap-2">
               <span className="w-[52px] shrink-0 text-[9px] font-extrabold uppercase tracking-[0.12em] text-ink-subtle">{group}</span>
@@ -706,6 +746,17 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
               <div className="rounded-card border border-line bg-surface-raised p-8 text-center text-sm text-ink-muted">Loading today’s operations…</div>
             ) : (
               <>
+                {dashboard.health && dashboard.health.status !== 'ok' && (
+                  <button type="button" onClick={() => setTab('support')} className="flex w-full items-center gap-3 rounded-card border border-danger/30 bg-danger-soft p-4 text-left">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger"><Icon name="shield" size={19} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-extrabold text-ink">Operational check needs attention</span>
+                      <span className="block text-2xs text-ink-muted">Open Health & help for the exact service and safe next action.</span>
+                    </span>
+                    <Icon name="chevron-right" size={16} className="shrink-0 text-danger" />
+                  </button>
+                )}
+
                 {dashboard.pending > 0 && (
                   <button type="button" onClick={() => setTab('moderation')} className="flex w-full items-center gap-3 rounded-card border border-gold/40 bg-gold-soft p-4 text-left">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold/20 text-gold-strong"><Icon name="alert" size={19} /></span>
@@ -744,6 +795,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                     <button onClick={() => onOpenMap?.()} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Live member map</button>
                     <button onClick={() => setTab('announce')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Send announcement</button>
                     <button onClick={() => setTab('content')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Church wording</button>
+                    <button onClick={() => setTab('support')} className="min-h-11 rounded-xl border border-line bg-surface-sunken text-xs font-extrabold text-ink">Health & help</button>
                   </div>
                 </div>
 
@@ -986,9 +1038,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
             {!loadingAccounts && filteredAccounts.length > ACCOUNTS_PAGE_SIZE && (
               <div className="mt-3 flex items-center justify-between gap-3 px-1">
-                <button onClick={() => setAccountsPage(p => Math.max(1, p - 1))} disabled={safeAccountsPage <= 1} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">← Prev</button>
+                <button onClick={() => setAccountsPage(Math.max(1, safeAccountsPage - 1))} disabled={safeAccountsPage <= 1} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">← Prev</button>
                 <p className="text-xs font-semibold text-ink-muted">Page {safeAccountsPage} of {accountsPages}</p>
-                <button onClick={() => setAccountsPage(p => Math.min(accountsPages, p + 1))} disabled={safeAccountsPage >= accountsPages} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">Next →</button>
+                <button onClick={() => setAccountsPage(Math.min(accountsPages, safeAccountsPage + 1))} disabled={safeAccountsPage >= accountsPages} className="min-h-9 rounded-full border border-line bg-surface-raised px-4 text-xs font-extrabold text-ink-muted disabled:opacity-40">Next →</button>
               </div>
             )}
 
@@ -1008,7 +1060,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           <div className="space-y-3" data-testid="admin-ministries">
             <div className="rounded-card border border-line bg-surface-raised p-4">
               <h2 className="text-sm font-extrabold">Ministry teams</h2>
-              <p className="mt-1 text-xs text-ink-muted">Rename a ministry (for example to HYP), create a new one, or delete one. Members keep their place when a ministry is renamed.</p>
+              <p className="mt-1 text-xs text-ink-muted">Rename a ministry (for example to HYP), choose whether it appears in the member directory, create a new one, or delete one. Members keep their place when a ministry is renamed.</p>
               <div className="mt-3 flex gap-2">
                 <input value={newMinistry} onChange={e => setNewMinistry(e.target.value)} placeholder="New ministry name" aria-label="New ministry name" className="input-base min-w-0 flex-1" />
                 <button onClick={() => void createMinistry()} disabled={busy === 'ministry-create' || !newMinistry.trim()} className="min-h-11 shrink-0 rounded-xl bg-accent px-4 text-xs font-extrabold text-white disabled:opacity-50">
@@ -1046,7 +1098,16 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                     {busy === `ministry-${d.slug}` ? 'Saving…' : 'Save name'}
                   </button>
                 </div>
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void toggleMinistryVisibility(d)}
+                    disabled={busy === `ministry-vis-${d.slug}`}
+                    aria-pressed={d.is_public !== false}
+                    className={`min-h-9 rounded-full border px-3 text-[10px] font-extrabold disabled:opacity-50 ${d.is_public !== false ? 'border-success/30 bg-success-soft text-success' : 'border-line bg-surface-sunken text-ink-muted'}`}
+                  >
+                    {busy === `ministry-vis-${d.slug}` ? 'Saving…' : d.is_public !== false ? 'Shown to members' : 'Hidden from members'}
+                  </button>
                   <button onClick={() => void deleteMinistry(d)} disabled={busy === `ministry-del-${d.slug}`} className="min-h-9 rounded-full border border-danger/30 bg-danger-soft px-3 text-[10px] font-extrabold text-danger disabled:opacity-50">
                     {busy === `ministry-del-${d.slug}` ? 'Deleting…' : 'Delete ministry'}
                   </button>
@@ -1179,6 +1240,96 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
           </div>
         )}
 
+        {/* ── Support and operational health ── */}
+        {tab === 'support' && (
+          <div className="space-y-3" data-testid="admin-support">
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-extrabold">Health & help</h2>
+                  <p className="mt-1 text-xs text-ink-muted">A read-only check of the systems the church app depends on. Nothing here changes data.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadHealth()}
+                  disabled={loadingHealth}
+                  className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-sunken px-3 text-2xs font-extrabold text-ink-muted disabled:opacity-50"
+                >
+                  <Icon name="retry" size={14} /> {loadingHealth ? 'Checking…' : 'Run checks'}
+                </button>
+              </div>
+              {health && (
+                <div className={`mt-3 rounded-xl border p-3 ${health.status === 'ok' ? 'border-success/30 bg-success-soft' : health.status === 'warning' ? 'border-gold/40 bg-gold-soft' : 'border-danger/30 bg-danger-soft'}`}>
+                  <p className={`text-xs font-extrabold ${health.status === 'ok' ? 'text-success' : health.status === 'warning' ? 'text-gold-strong' : 'text-danger'}`}>
+                    {health.status === 'ok' ? 'Everything the app needs is working.' : health.status === 'warning' ? 'Some items need attention.' : 'A core service needs attention.'}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-ink-muted">Checked {health.checked_at ? new Date(health.checked_at).toLocaleString() : 'just now'} · counts contain no member data.</p>
+                </div>
+              )}
+            </div>
+
+            {loadingHealth && !health ? (
+              <p className="py-10 text-center text-sm text-ink-muted">Running operational checks…</p>
+            ) : health ? (
+              <div className="space-y-2">
+                {health.checks.map((check: any) => (
+                  <div key={check.id} className="rounded-card border border-line bg-surface-raised p-3">
+                    <div className="flex items-start gap-3">
+                      <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${check.status === 'ok' ? 'bg-success-soft text-success' : check.status === 'warning' ? 'bg-gold-soft text-gold-strong' : 'bg-danger-soft text-danger'}`}>
+                        <Icon name={check.status === 'ok' ? 'check' : 'alert'} size={15} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-extrabold">{check.label}</p>
+                        <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">{check.detail}</p>
+                        {check.action?.tab && (
+                          <button
+                            type="button"
+                            onClick={() => setTab(check.action.tab as Tab)}
+                            className="mt-2 inline-flex min-h-8 items-center gap-1 rounded-full bg-ink px-3 text-2xs font-extrabold text-white"
+                          >
+                            {check.action.label || 'Open'} <Icon name="chevron-right" size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-card border border-line bg-surface-raised p-5 text-center">
+                <p className="text-sm font-extrabold">Checks could not run</p>
+                <p className="mt-1 text-xs text-ink-muted">The app could not reach the admin health endpoint. Check the connection and try again.</p>
+                <button type="button" onClick={() => void loadHealth()} className="mt-3 min-h-10 rounded-xl bg-accent px-4 text-xs font-extrabold text-white">Try again</button>
+              </div>
+            )}
+
+            <div className="rounded-card border border-line bg-surface-raised p-4">
+              <h2 className="text-sm font-extrabold">If something stays red</h2>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-xs leading-5 text-ink-muted">
+                <li>Open the workflow linked above and retry the action once.</li>
+                <li>Refresh this page. A recovered service should turn green on the next run.</li>
+                <li>Do not repeatedly save money or publishing changes while the database is red.</li>
+                <li>If it remains red, copy the diagnostic report and send it to the app maintainer.</li>
+              </ol>
+              <button
+                type="button"
+                disabled={!health}
+                onClick={() => {
+                  if (!health) return
+                  const report = JSON.stringify({ status: health.status, checked_at: health.checked_at, checks: health.checks }, null, 2)
+                  navigator.clipboard?.writeText(report)
+                    .then(() => showToast('Diagnostic report copied — it contains status and counts only', 'success'))
+                    .catch(() => showToast('Could not copy the report. Take a screenshot of this page instead.', 'error'))
+                }}
+                className="mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-line bg-surface-sunken px-3.5 text-xs font-extrabold text-ink disabled:opacity-40"
+              >
+                <Icon name="copy" size={15} /> Copy diagnostic report
+              </button>
+              <p className="mt-2 text-[10px] text-ink-subtle">The report contains service states and counts, never names, phone numbers, tokens or payment details.</p>
+            </div>
+          </div>
+        )}
+
         {/* ── Audit ── */}
         {tab === 'audit' && (
           <div className="space-y-2" data-testid="admin-audit">
@@ -1301,6 +1452,32 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                 {contentBusy ? 'Saving…' : 'Save home text — live for everyone'}
               </button>
               <p className="text-[10px] text-ink-muted">Clear a field to fall back to the shipped wording. Saved changes reach every open screen immediately.</p>
+            </div>
+
+            <div className="space-y-3 rounded-card border border-line bg-surface-raised p-4" data-testid="admin-brand-images">
+              <div>
+                <h2 className="text-sm font-extrabold">Brand and welcome artwork</h2>
+                <p className="mt-0.5 text-xs text-ink-muted">Paste a public HTTPS image link. Use a square logo and a landscape welcome photo; leave either empty to keep the shipped artwork.</p>
+              </div>
+              <div>
+                <label htmlFor="brand-logo-url" className="label-caps mb-1 block">Church logo URL</label>
+                <input id="brand-logo-url" value={contentValue('logo_url')} onChange={e => setContentValue('logo_url', e.target.value.slice(0, 500))} placeholder="https://…/logo.png" inputMode="url" className="input-base" />
+                {contentValue('logo_url') && (
+                  <div className="mt-2 flex items-center gap-3 rounded-xl border border-line bg-surface-sunken p-2">
+                    <img src={contentValue('logo_url')} alt="Logo preview" className="h-12 w-12 rounded-xl border border-line object-contain" />
+                    <p className="text-[10px] text-ink-muted">Preview — check the logo is clear on both light and dark backgrounds.</p>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label htmlFor="landing-hero-url" className="label-caps mb-1 block">Welcome page photo URL</label>
+                <input id="landing-hero-url" value={contentValue('landing_hero_url')} onChange={e => setContentValue('landing_hero_url', e.target.value.slice(0, 500))} placeholder="https://…/welcome.jpg" inputMode="url" className="input-base" />
+                {contentValue('landing_hero_url') && <img src={contentValue('landing_hero_url')} alt="Welcome page preview" className="mt-2 h-32 w-full rounded-xl border border-line object-cover" />}
+              </div>
+              <button onClick={() => void saveContent()} disabled={contentBusy} className="min-h-11 w-full rounded-xl bg-accent text-sm font-extrabold text-white disabled:opacity-40">
+                {contentBusy ? 'Saving…' : 'Save artwork — live for everyone'}
+              </button>
+              <p className="text-[10px] text-ink-muted">Only http(s) links are accepted. The app never uploads or copies the image; it loads the public link you provide.</p>
             </div>
           </div>
         )}

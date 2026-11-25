@@ -53,7 +53,7 @@ test('auth carries the dark landing atmosphere into sign-in and sign-up', () => 
 })
 
 test('landing motion is visible but respects reduced motion', () => {
-  assert.match(app, /src="\/landing-worship\.jpg"/, 'the landing needs a real photographic background')
+  assert.match(app, /landingHero = siteArt\.landing_hero_url \|\| '\/landing-worship\.jpg'/, 'the landing needs a real photographic background, with the shipped photo as its fallback')
   assert.match(css, /@keyframes landingPhotoDrift/, 'the photo must have its own slow Ken Burns motion')
   assert.match(css, /@keyframes landingPageDrift/, 'the full-page photo must drift too')
   assert.match(css, /\.landing-page-underlay/, 'the landing must not fall back to flat black')

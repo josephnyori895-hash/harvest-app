@@ -7,6 +7,9 @@ const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
 const worker = readFileSync(new URL('../workers/src/index.js', import.meta.url), 'utf8')
 const apkScript = readFileSync(new URL('../update-apk.sh', import.meta.url), 'utf8')
 const workflow = readFileSync(new URL('../.github/workflows/android-release.yml', import.meta.url), 'utf8')
+const manifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8')
+const plugin = readFileSync(new URL('../android/app/src/main/java/com/harvestfamily/nyeri/UpdateInstallerPlugin.java', import.meta.url), 'utf8')
+const mainActivity = readFileSync(new URL('../android/app/src/main/java/com/harvestfamily/nyeri/MainActivity.java', import.meta.url), 'utf8')
 
 test('the installed build is read from the native package, not from config', () => {
   // Capacitor.Config.versionCode is never injected in this repo, so reading it
@@ -35,13 +38,57 @@ test('the release endpoint reports 1000 + run, matching the stamped versionCode'
   assert.match(worker, /url\.pathname === '\/api\/app-version'/)
   assert.match(worker, /version_code: 1000 \+ run/)
   assert.match(worker, /apk_url: '\/harvest-family\.apk'/)
+  assert.match(worker, /sha256: \/\^\[0-9a-f\]\{64\}\$\/\.test\(sha256\)/,
+    'the manifest digest is validated before it reaches the app')
+  assert.match(worker, /sha256: manifest\.sha256/, 'the endpoint exposes the shipped APK digest')
+})
+
+test('the Worker slices APK Range requests instead of forwarding them to assets', async () => {
+  // Cloudflare static assets ignore Range and always return the whole file.
+  // The updater resumes only on 206, so the Worker has to do the slicing.
+  assert.match(worker, /async function serveApkAsset/, 'range-serving helper exists')
+  assert.match(worker, /status: 206/, 'the helper answers partial content')
+  assert.match(worker, /Content-Range/, 'the helper reports the selected bytes')
+
+  const bytes = Buffer.from('0123456789abcdefghij')
+  const { default: app } = await import('../workers/src/index.js')
+  const env = {
+    RELEASE_APK_FILENAME: 'harvest-family-7-abcdef0.apk',
+    ASSETS: {
+      async fetch(request) {
+        assert.equal(request.headers.get('Range'), null, 'Range is not forwarded to the asset layer')
+        return new Response(bytes, { headers: { 'Content-Type': 'application/vnd.android.package-archive' } })
+      },
+    },
+  }
+  const response = await app.fetch(new Request('https://example.test/harvest-family.apk', {
+    headers: { Range: 'bytes=5-9' },
+  }), env, {})
+  assert.equal(response.status, 206)
+  assert.equal(response.headers.get('Content-Range'), 'bytes 5-9/20')
+  assert.equal(response.headers.get('Content-Length'), '5')
+  assert.equal(response.headers.get('Accept-Ranges'), 'bytes')
+  assert.equal(await response.text(), '56789')
+
+  const invalid = await app.fetch(new Request('https://example.test/harvest-family.apk', {
+    headers: { Range: 'bytes=50-' },
+  }), env, {})
+  assert.equal(invalid.status, 416)
+  assert.equal(invalid.headers.get('Content-Range'), 'bytes */20')
 })
 
 test('the prompt offers update and a 24h deferral', () => {
   assert.match(app, /Update available/)
   assert.match(app, /dismissUpdate\(update\?\.versionCode \|\| 0\)/)
-  assert.match(app, /openApkDownload\(update\.apkUrl\)/)
+  assert.match(app, /const latest = await checkForUpdate\(\)/,
+    'tapping Update refreshes the manifest before downloading')
+  assert.match(app, /startUpdateInstall\(target\.apkUrl, target\.sha256, setInstall\)/)
   assert.match(update, /const DISMISS_HOURS = 24/)
+})
+
+test('the update prompt cannot be dismissed while a download is running', () => {
+  assert.match(app, /if \(installBusy\) return/,
+    'Escape and Later are ignored while starting, downloading or installing')
 })
 
 test('the update prompt is a centred dialog, never an edge-to-edge banner', () => {
@@ -83,11 +130,57 @@ test('the APK build bakes an API origin, so the check can reach the Worker', () 
   assert.ok(apkScript.indexOf('VITE_API_URL') < apkScript.indexOf('npm run build'), 'the origin is set before vite runs')
 })
 
-test('Update hands the APK to the system browser, not a WebView popup', () => {
-  // '_blank' inside the Android WebView opened nothing that could save the APK
-  // (Waydroid: app fell to the launcher, /sdcard/Download stayed empty).
-  assert.match(update, /window\.open\(target, native \? '_system' : '_blank', 'noopener'\)/)
-  assert.match(update, /const native = Boolean\(Capacitor\.isNativePlatform\?\.\(\)\)/)
+test('Update downloads and installs inside the app instead of opening a browser', () => {
+  // The old '_blank' path saved nothing and '_system' handed the member to a
+  // browser. Android now uses the native downloader + package installer.
+  assert.doesNotMatch(app, /openApkDownload\(update\.apkUrl\)/)
+  assert.match(update, /registerPlugin<UpdateInstallerPlugin>\('UpdateInstaller'\)/)
+  assert.match(update, /downloadAndInstall\(\{\s*url: apkTarget\(apkUrl\),\s*\.\.\.\(sha256 \? \{ sha256 \} : \{\}\),\s*\}\)/,
+    'the digest travels with the download request')
+  assert.match(update, /Allow installs from Harvest Family, then come back/)
+
+  const webFallback = update.indexOf('openApkDownload(apkUrl)')
+  const nativeGuard = update.indexOf("if (!Capacitor.isNativePlatform?.())")
+  assert.ok(webFallback > nativeGuard, 'only the non-native branch opens the browser')
+
+  assert.match(manifest, /android\.permission\.REQUEST_INSTALL_PACKAGES/)
+  assert.match(mainActivity, /registerPlugin\(UpdateInstallerPlugin\.class\)[\s\S]*super\.onCreate/,
+    'the plugin must be registered before the bridge starts')
+})
+
+test('the native downloader saves the APK and opens the package installer', () => {
+  assert.match(plugin, /extends Plugin/)
+  assert.match(plugin, /getCacheDir\(\), APK_NAME/)
+  assert.match(plugin, /openFollowingRedirects\(url, existing\)/, 'redirects are followed manually, including http→https')
+  assert.match(plugin, /FileProvider\.getUriForFile/)
+  assert.match(plugin, /application\/vnd\.android\.package-archive/)
+  assert.match(plugin, /INSTALLER_PACKAGES[\s\S]*setPackage\(installer\)/,
+    'target the package installer directly instead of showing an Open with chooser')
+  assert.match(plugin, /Settings\.ACTION_MANAGE_UNKNOWN_APP_SOURCES/)
+  assert.match(plugin, /handleOnResume\(\)[\s\S]*startDownload\(url, checksum\)/,
+    'returning from the permission screen continues the download automatically')
+})
+
+test('the native downloader resumes interrupted downloads', () => {
+  assert.match(plugin, /PART_NAME = "harvest-update\.apk\.part"/)
+  assert.match(plugin, /setRequestProperty\("Range", "bytes=" \+ rangeStart \+ "-"\)/,
+    'a partial file asks the server for the remaining bytes')
+  assert.match(plugin, /HttpURLConnection\.HTTP_PARTIAL/)
+  assert.match(plugin, /new FileOutputStream\(part, append\)/, 'a 206 response appends to the partial file')
+  assert.match(plugin, /if \(total > 0 && done < total\)/, 'a short body is treated as an interruption')
+  assert.doesNotMatch(plugin, /catch \(Exception e\) \{\s*downloading = false;\s*part\.delete\(\)/,
+    'network failures keep the .part file so the next tap can resume')
+  assert.match(plugin, /preparePartial\(url, checksum, part, meta\)/,
+    'a partial file is only reused for the same release')
+})
+
+test('the native downloader verifies the APK SHA-256 before installing', () => {
+  assert.match(plugin, /MessageDigest\.getInstance\("SHA-256"\)/)
+  assert.match(plugin, /!checksum\.equals\(sha256\(part\)\)/)
+  assert.match(plugin, /throw new ChecksumException\(\)/)
+  assert.match(plugin, /The update file failed its security check/)
+  assert.match(update, /const checksum = String\(d\.sha256 \|\| ''\)\.trim\(\)\.toLowerCase\(\)/)
+  assert.match(update, /sha256: \/\^\[0-9a-f\]\{64\}\$\/\.test\(checksum\) \? checksum : ''/)
 })
 
 test('the shipped version travels with the assets, not with the deploy command', () => {
@@ -101,6 +194,21 @@ test('the shipped version travels with the assets, not with the deploy command',
   assert.doesNotMatch(worker, /if \(!filename \|\| !\/\^harvest-family-/, 'the hard 503 guard on the deploy var is gone')
   assert.match(workflow, /app-version\.json/, 'CI writes the manifest')
   assert.match(apkScript, /app-version\.json/, 'the local release script writes it too')
+  assert.match(workflow, /"sha256": "%s"/, 'CI publishes the APK digest')
+  assert.match(apkScript, /"sha256": "%s"/, 'the local release script publishes it too')
+  assert.match(workflow, /LOCAL_SHA/, 'the digest describes the staged signed APK')
+  assert.match(workflow, /cp "\$\{APK_PATH\}" workers\/public\/harvest-family\.apk/,
+    'the signed APK replaces the stale checked-in file at the permanent URL')
+  assert.match(apkScript, /Range: bytes=0-99/, 'the local release checks resumable downloads')
+  assert.match(apkScript, /RANGE_CODE.*206|\"206\"/s, 'the local release requires a 206')
+})
+
+test('production smoke verifies the served APK digest and Range support', () => {
+  const smoke = readFileSync(new URL('../scripts/smoke-test.mjs', import.meta.url), 'utf8')
+  assert.match(smoke, /createHash\('sha256'\)/, 'the smoke test hashes the real download')
+  assert.match(smoke, /APK download matches manifest SHA-256/)
+  assert.match(smoke, /Range: 'bytes=100-199'/, 'the smoke test exercises resume')
+  assert.match(smoke, /r\.status === 206/, 'a full 200 response fails the resume check')
 })
 
 test('a local build stays below the CI version band', () => {

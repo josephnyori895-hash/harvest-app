@@ -90,19 +90,6 @@ jobs:
           echo "HARVEST_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           echo "HARVEST_VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
-      # The Worker reads the shipped version from the assets, so the
-      # latest-version probe always matches the APK in this deployment. It used
-      # to live only in the deploy-time RELEASE_APK_FILENAME var, which any
-      # plain `wrangler deploy` dropped — after which /api/app-version answered
-      # update_available:false and updates stopped for every install.
-      - name: Write app version manifest
-        run: |
-          set -euo pipefail
-          test -d workers/public || { echo "::error::workers/public was not staged"; exit 1; }
-          printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk"}\n' \
-            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" > workers/public/app-version.json
-          cat workers/public/app-version.json
-
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -217,6 +204,12 @@ jobs:
           cp "${APK}" "${APK_PATH}"
           test -s "${APK_PATH}"
 
+          # The earlier web-staging step copies the old checked-in APK. Replace
+          # it with this signed build so /harvest-family.apk stays correct even
+          # when RELEASE_APK_FILENAME is missing after a later plain deploy.
+          cp "${APK_PATH}" workers/public/harvest-family.apk
+          test -s workers/public/harvest-family.apk
+
           test -n "${PREVIOUS_RUN}"
           test -n "${PREVIOUS_RUN_ID}"
           test -n "${PREVIOUS_SHA_COMMIT}"
@@ -293,6 +286,22 @@ jobs:
           echo "Versioned APK: ${APK_FILENAME}"
           echo "LOCAL SHA256: ${LOCAL_SHA}"
           echo "APK size: ${APK_SIZE} bytes"
+
+      # The Worker reads the shipped version from the assets, so the
+      # latest-version probe always matches the APK in this deployment. It used
+      # to live only in the deploy-time RELEASE_APK_FILENAME var, which any
+      # plain `wrangler deploy` dropped — after which /api/app-version answered
+      # update_available:false and updates stopped for every install. This runs
+      # after the signed APK is staged because the digest must describe the
+      # exact bytes the download URL will serve.
+      - name: Write app version manifest
+        run: |
+          set -euo pipefail
+          test -d workers/public || { echo "::error::workers/public was not staged"; exit 1; }
+          test -n "$LOCAL_SHA" || { echo "::error::LOCAL_SHA is not set"; exit 1; }
+          printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
+            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" > workers/public/app-version.json
+          cat workers/public/app-version.json
 
       - name: Install Worker dependencies
         run: npm ci --prefix workers

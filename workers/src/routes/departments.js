@@ -7,9 +7,11 @@ import { hasCap } from '../lib/capabilities.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
 
 async function getDepartment(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, created_at FROM departments WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, is_public, created_at FROM departments WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
+
+const publicDepartment = row => row ? { ...row, is_public: row.is_public !== 0 } : row
 
 function slugify(name) {
   return String(name).trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
@@ -29,20 +31,25 @@ export async function handleDepartments(request, env, ctx) {
   const method = request.method
   const user = ctx.user
 
-  // GET /api/departments — list all with member counts (any signed-in member).
+  // GET /api/departments — list ministries with member counts. Members see
+  // public ministries plus any hidden team they already serve on; admins see
+  // every ministry so visibility can be managed from the control centre.
   if (path === '/api/departments' && method === 'GET') {
     const fresh = await requireMember(env, user)
+    const isAdmin = fresh.role === 'admin'
     const { rows } = await query(
       env,
-      `SELECT d.id, d.slug, d.name, d.description,
+      `SELECT d.id, d.slug, d.name, d.description, d.is_public,
               COUNT(dm.user_id) AS member_count
          FROM departments d
          LEFT JOIN department_members dm ON dm.department_id = d.id
+        ${isAdmin ? '' : 'WHERE d.is_public=1 OR EXISTS (SELECT 1 FROM department_members own WHERE own.department_id=d.id AND own.user_id=?)'}
         GROUP BY d.id ORDER BY d.created_at ASC, d.name ASC`,
+      isAdmin ? [] : [fresh.id],
     )
     const mine = await query(env, 'SELECT department_id, role FROM department_members WHERE user_id=?', [fresh.id])
     const mineMap = new Map(mine.rows.map(r => [r.department_id, r.role]))
-    const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, joined: mineMap.has(r.id), leader: mineMap.get(r.id) === 'leader' }))
+    const out = rows.map(r => ({ ...publicDepartment(r), member_count: Number(r.member_count) || 0, joined: mineMap.has(r.id), leader: mineMap.get(r.id) === 'leader' }))
     return jsonResponse({ departments: out })
   }
 
@@ -58,13 +65,14 @@ export async function handleDepartments(request, env, ctx) {
     if (!slug) return errorResponse('invalid department name', 400)
     const exists = await getDepartment(env, slug)
     if (exists) return errorResponse('department already exists', 409)
+    const isPublic = body.is_public === false && fresh.role === 'admin' ? 0 : 1
     const id = uuid()
-    await query(env, 'INSERT INTO departments (id, slug, name, description, created_at) VALUES (?,?,?,?,?)', [id, slug, name, description, new Date().toISOString()])
+    await query(env, 'INSERT INTO departments (id, slug, name, description, is_public, created_at) VALUES (?,?,?,?,?,?)', [id, slug, name, description, isPublic, new Date().toISOString()])
     // The creator becomes the first department leader so the person who
     // creates a ministry team can manage it immediately.
     await query(env, `INSERT INTO department_members (department_id, user_id, role, joined_at) VALUES (?,?,'leader',?) ON CONFLICT (department_id, user_id) DO UPDATE SET role='leader'`, [id, fresh.id, new Date().toISOString()])
-    await audit(env, fresh, 'department_created', id, { name, creator: fresh.username })
-    return jsonResponse({ department: { id, slug, name, description, member_count: 1 }, creator_role: 'leader' }, 201)
+    await audit(env, fresh, 'department_created', id, { name, creator: fresh.username, is_public: !!isPublic })
+    return jsonResponse({ department: { id, slug, name, description, is_public: !!isPublic, member_count: 1 }, creator_role: 'leader' }, 201)
   }
 
   // GET /api/departments/mine — the viewer's own memberships.
@@ -88,9 +96,13 @@ export async function handleDepartments(request, env, ctx) {
 
   // GET /api/departments/:slug — one department with its member list.
   if (!sub && method === 'GET') {
-    await requireMember(env, user)
+    const fresh = await requireMember(env, user)
     const dep = await getDepartment(env, slug)
     if (!dep) return errorResponse('department not found', 404)
+    if (!dep.is_public && fresh.role !== 'admin') {
+      const membership = await query(env, 'SELECT 1 AS ok FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
+      if (!membership.rows[0]) return errorResponse('department not found', 404)
+    }
     const { rows } = await query(
       env,
       `SELECT u.id, u.username, u.name, u.group_name, u.verified, dm.role, dm.joined_at
@@ -100,7 +112,7 @@ export async function handleDepartments(request, env, ctx) {
       [dep.id],
     )
     rows.forEach(r => { r.verified = !!r.verified })
-    return jsonResponse({ department: dep, members: rows })
+    return jsonResponse({ department: publicDepartment(dep), members: rows })
   }
 
   // POST /api/departments/:slug/join — self-join (one department per user).
@@ -222,13 +234,15 @@ export async function handleDepartments(request, env, ctx) {
     const actor = await query(env, 'SELECT role FROM department_members WHERE department_id=? AND user_id=?', [dep.id, fresh.id])
     if (fresh.role !== 'admin' && actor.rows[0]?.role !== 'leader') return errorResponse('department leader required', 403)
     const body = await readJson(request)
+    if (body.is_public !== undefined && fresh.role !== 'admin') return errorResponse('only the system admin can change ministry visibility', 403)
     const name = body.name !== undefined ? String(body.name).trim().slice(0, 80) : dep.name
     const description = body.description !== undefined ? (String(body.description).trim().slice(0, 300) || null) : dep.description
+    const isPublic = body.is_public !== undefined ? (body.is_public ? 1 : 0) : dep.is_public
     if (name.length < 2) return errorResponse('department name required', 400)
-    if (name === dep.name && description === dep.description) return jsonResponse({ ok: true, department: dep, unchanged: true })
-    await query(env, 'UPDATE departments SET name=?, description=? WHERE id=?', [name, description, dep.id])
-    await audit(env, fresh, 'department_updated', dep.id, { slug: dep.slug, before: { name: dep.name, description: dep.description }, after: { name, description } })
-    return jsonResponse({ ok: true, department: { ...dep, name, description } })
+    if (name === dep.name && description === dep.description && isPublic === dep.is_public) return jsonResponse({ ok: true, department: publicDepartment(dep), unchanged: true })
+    await query(env, 'UPDATE departments SET name=?, description=?, is_public=? WHERE id=?', [name, description, isPublic, dep.id])
+    await audit(env, fresh, 'department_updated', dep.id, { slug: dep.slug, before: { name: dep.name, description: dep.description, is_public: !!dep.is_public }, after: { name, description, is_public: !!isPublic } })
+    return jsonResponse({ ok: true, department: publicDepartment({ ...dep, name, description, is_public: isPublic }) })
   }
 
   // DELETE /api/departments/:slug (admin) — remove the department itself.

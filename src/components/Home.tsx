@@ -58,7 +58,7 @@ const quickLinks: { tab: string; icon: IconName; title: string }[] = [
 // full instead of growing without limit.
 const FEED_MAX_LOADED = 120
 
-export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void }) {
+export default function Home({ setTab, users, directoryLoading, directoryError, onRefreshDirectory, focusLatestKey, onSwitchAccount, onOpenUser, sharedContent, onSharedContentHandled, onOpenDm, onOpenGive }: { setTab: (t: string) => void; users: any[]; directoryLoading?: boolean; directoryError?: boolean; onRefreshDirectory?: () => void; focusLatestKey?: number; onSwitchAccount?: () => void; onOpenUser?: (u: any) => void; sharedContent?: { kind: 'post' | 'story' | 'reel'; id: string } | null; onSharedContentHandled?: () => void; onOpenDm?: (user: { id: string; username: string; name?: string }) => void; onOpenGive?: (projectId?: string) => void }) {
   const [momentIdx, setMomentIdx] = useState<number | null>(null)
   const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(() => new Set())
   const [, setLikesTick] = useState(0)
@@ -767,7 +767,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           so the header's own actions never sit underneath it. */}
       <div className="flex items-center justify-between gap-2 py-3 pl-4 pr-14">
         <button onClick={() => onSwitchAccount?.()} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open account switcher">
-          <img src="/logo.png" alt="" className="h-10 w-10 shrink-0 rounded-2xl border border-line bg-surface-sunken object-contain" />
+          <img src={content.logo_url || '/logo.png'} alt="" className="h-10 w-10 shrink-0 rounded-2xl border border-line bg-surface-sunken object-contain" />
           <span className="min-w-0">
             {/* whitespace-nowrap: at 390px the kicker used to break into
                 "HARVEST" / "FAMILY" on two lines and shove the header taller. */}
@@ -901,7 +901,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
             <div className="px-3"><div className="skeleton mt-3 h-3 w-4/5 rounded-full" /></div>
           </div>
         ))}{allUpdates.map((p: any, i: number) => { const key = p.key || `update_${p.user}_${p.img?.slice(-8) ?? i}_${i}`;
-        if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpen={() => setTab('give')} onBrowseProjects={() => setTab('give')} /></div>
+        if (p.kind === 'advert') return <div key={String(p.id)} className="px-3 py-4"><AdvertCard advert={p} onOpenProject={(id) => onOpenGive ? onOpenGive(id) : setTab('give')} onBrowseProjects={() => onOpenGive ? onOpenGive() : setTab('give')} /></div>
         const liked = api ? Boolean(p.liked) : !!likesTable[key]; const displayLikes = api ? (Number(p.likes) || 0) : (Number(p.likes) || 0) + (liked ? 1 : 0); const commenting = commentTarget?.key === key; return (
         <Fragment key={key}>
         <FeedCard

@@ -16,6 +16,7 @@ import { handleContent } from './routes/content.js'
 import { handleSermons } from './routes/sermons.js'
 import { handleSocial } from './routes/social.js'
 import { handleAdminAudit } from './routes/adminAudit.js'
+import { handleAdminHealth } from './routes/adminHealth.js'
 import { handleShare } from './routes/share.js'
 import { handleNotifications } from './routes/notifications.js'
 import { handlePublishing, runPublishingSweep } from './routes/publishing.js'
@@ -39,10 +40,15 @@ async function readAppVersionManifest(env, url) {
     const data = await res.json()
     const code = Number(data?.version_code)
     if (!Number.isFinite(code) || code <= 0) return null
+    // The updater verifies the APK before installing it. Older manifests do
+    // not carry a digest; omit it rather than sending a malformed value so
+    // those installs keep working without verification.
+    const sha256 = String(data?.sha256 || '').trim().toLowerCase()
     return {
       version_code: code,
       version_name: String(data?.version_name || ''),
       apk_url: String(data?.apk_url || '/harvest-family.apk'),
+      sha256: /^[0-9a-f]{64}$/.test(sha256) ? sha256 : '',
     }
   } catch {
     return null
@@ -58,6 +64,73 @@ async function resolveReleaseApk(env, url) {
   if (VERSIONED_APK.test(fromManifest)) return { filename: fromManifest }
   if (!fromManifest || fromManifest === 'harvest-family.apk') return { filename: 'harvest-family.apk' }
   return null
+}
+
+// Cloudflare's static-asset binding ignores Range: it always answers with the
+// full object and a 200. The Android downloader depends on 206 responses to
+// resume an interrupted APK, so slice the asset here and return the range
+// ourselves. APKs are a few megabytes, which is well inside a Worker's memory
+// budget. This also advertises Accept-Ranges, which the asset surface omits.
+async function serveApkAsset(request, env, target, extraHeaders = {}) {
+  const assetResponse = await env.ASSETS.fetch(new Request(target.toString(), { method: 'GET' }))
+  if (!assetResponse.ok) return assetResponse
+
+  const headers = new Headers(assetResponse.headers)
+  headers.set('Accept-Ranges', 'bytes')
+  for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value)
+
+  const range = request.headers.get('Range')
+  if (!range) {
+    return new Response(assetResponse.body, {
+      status: assetResponse.status,
+      statusText: assetResponse.statusText,
+      headers,
+    })
+  }
+
+  const bytes = await assetResponse.arrayBuffer()
+  const total = bytes.byteLength
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim())
+  const invalid = () => new Response(null, {
+    status: 416,
+    headers: {
+      ...Object.fromEntries(headers),
+      'Accept-Ranges': 'bytes',
+      'Content-Range': `bytes */${total}`,
+      'Content-Length': '0',
+    },
+  })
+
+  if (!match || (!match[1] && !match[2])) return invalid()
+
+  let start
+  let end
+  if (!match[1]) {
+    // A suffix range asks for the final N bytes; this is not what the updater
+    // sends, but supporting it keeps the endpoint correct for other clients.
+    const suffix = Number(match[2])
+    if (!Number.isSafeInteger(suffix) || suffix <= 0 || total === 0) return invalid()
+    start = Math.max(0, total - suffix)
+    end = total - 1
+  } else {
+    start = Number(match[1])
+    end = match[2] ? Number(match[2]) : total - 1
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= total) {
+      return invalid()
+    }
+    end = Math.min(end, total - 1)
+  }
+
+  // The body comes from the decoded asset. If an upstream encoding was
+  // present, its metadata no longer describes these bytes.
+  headers.delete('Content-Encoding')
+  headers.set('Content-Range', `bytes ${start}-${end}/${total}`)
+  headers.set('Content-Length', String(end - start + 1))
+  return new Response(bytes.slice(start, end + 1), {
+    status: 206,
+    statusText: 'Partial Content',
+    headers,
+  })
 }
 
 export default {
@@ -85,24 +158,20 @@ export default {
       // This keeps the permanent URL cache-independent while preserving the
       // versioned APK as the immutable asset underneath it.
       target.searchParams.set('release', filename)
-      const assetResponse = await env.ASSETS.fetch(new Request(target.toString(), request))
-      if (!assetResponse.ok) return assetResponse
-
-      const headers = new Headers(assetResponse.headers)
-      headers.set('Cache-Control', 'no-store, max-age=0')
-      headers.set('Content-Disposition', 'attachment; filename="' + filename + '"')
-      return new Response(assetResponse.body, {
-        status: assetResponse.status,
-        statusText: assetResponse.statusText,
-        headers,
+      return serveApkAsset(request, env, target, {
+        'Cache-Control': 'no-store, max-age=0',
+        'Content-Disposition': 'attachment; filename="' + filename + '"',
       })
     }
 
     // Serve immutable release APKs through the assets binding. The release
     // workflow makes this Worker run first for APK paths so these requests
-    // cannot fall through to the authenticated API router.
+    // cannot fall through to the authenticated API router. Range slicing is
+    // handled here for the same reason as the permanent URL above.
     if (/^\/harvest-family-[0-9]+-[0-9a-f]{7}\.apk$/.test(url.pathname) && request.method === 'GET') {
-      return env.ASSETS.fetch(request)
+      return serveApkAsset(request, env, url, {
+        'Content-Disposition': 'attachment; filename="' + url.pathname.slice(1) + '"',
+      })
     }
 
     // Public latest-version probe for the in-app update prompt. The release
@@ -118,6 +187,7 @@ export default {
           version_code: manifest.version_code,
           version_name: manifest.version_name,
           apk_url: manifest.apk_url,
+          ...(manifest.sha256 ? { sha256: manifest.sha256 } : {}),
         }), env, request)
       }
       // Fallback for deployments made before app-version.json shipped.
@@ -201,7 +271,7 @@ export default {
         await adminOperationRateLimit(env, request, user)
       }
 
-      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handlePublishing, handleSocial, handleAdminAudit, handleNotifications]
+      const handlers = [handleAuth, handleUsers, handleFeed, handleMedia, handleChat, handlePending, handleGiving, handleProjects, handleDepartments, handleGroups, handleContent, handleSermons, handlePublishing, handleSocial, handleAdminAudit, handleAdminHealth, handleNotifications]
       for (const handler of handlers) {
         const res = await handler(request, env, ctx2, extractParams(url))
         if (res) return withCors(res, env, request)

@@ -6,7 +6,7 @@
 // the UI offers the permanent download URL.
 //
 // Web builds (no Capacitor) never prompt — there is nothing to update.
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import { App } from '@capacitor/app'
 
 export const BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -16,10 +16,30 @@ export type UpdateInfo = {
   versionCode?: number
   versionName?: string
   apkUrl?: string
+  sha256?: string
 }
 
 const DISMISS_KEY = 'harvest_update_dismissed_code'
 const DISMISS_HOURS = 24
+
+export type UpdateInstallState = {
+  status: 'starting' | 'permission' | 'permission-denied' | 'downloading' | 'installing' | 'error'
+  percent?: number
+  message?: string
+}
+
+interface UpdateInstallerPlugin {
+  downloadAndInstall(options: { url: string; sha256?: string }): Promise<{ status: string }>
+  addListener(
+    eventName: 'status',
+    listener: (state: UpdateInstallState) => void,
+  ): Promise<PluginListenerHandle>
+}
+
+// Native half of the update flow. See UpdateInstallerPlugin.java: it downloads
+// the APK into the app cache and opens Android's package installer, so tapping
+// Update never hands the member to a browser tab.
+const UpdateInstaller = registerPlugin<UpdateInstallerPlugin>('UpdateInstaller')
 
 // The installed build has to come from the native package, not from config.
 // Nothing in this repo injects versionCode into Capacitor.Config — the value
@@ -85,11 +105,15 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
       ? latest > installed
       : Boolean(installedName && latestName) && compareVersionNames(latestName, installedName) > 0
     if (!newer) return { available: false }
+    const checksum = String(d.sha256 || '').trim().toLowerCase()
     return {
       available: true,
       versionCode: Number.isFinite(latest) ? latest : 0,
       versionName: latestName,
       apkUrl: String(d.apk_url || '/harvest-family.apk'),
+      // Older manifests have no digest. The native side verifies whenever one
+      // is present, so an install never has to trust a truncated download.
+      sha256: /^[0-9a-f]{64}$/.test(checksum) ? checksum : '',
     }
   } catch {
     // Offline or endpoint unavailable — never nag on failure.
@@ -133,13 +157,56 @@ export function isDismissed(versionCode: number): boolean {
   }
 }
 
+function apkTarget(apkUrl: string) {
+  return /^https?:\/\//.test(apkUrl) ? apkUrl : `${BASE}${apkUrl}`
+}
+
+// Kept for web builds; Android no longer uses it.
 export function openApkDownload(apkUrl: string) {
-  const target = /^https?:\/\//.test(apkUrl) ? apkUrl : `${BASE}${apkUrl}`
-  // In the Android WebView, '_blank' is a throwaway window that saves nothing —
-  // verified on Waydroid: tapping Update dropped the app to the launcher and
-  // /sdcard/Download stayed empty. '_system' hands the URL to the OS browser,
-  // which is the only path that can actually download and install an APK. Web
-  // builds keep the ordinary tab behaviour.
   const native = Boolean(Capacitor.isNativePlatform?.())
-  window.open(target, native ? '_system' : '_blank', 'noopener')
+  window.open(apkTarget(apkUrl), native ? '_system' : '_blank', 'noopener')
+}
+
+/**
+ * Download and install the update without leaving the app. Resolves with a
+ * cleanup function once the attempt has started; progress and failures arrive
+ * through onState. On Android 8+ the first attempt opens the app's
+ * "install unknown apps" settings page and, once granted, the native plugin
+ * continues the download automatically when the member returns.
+ */
+export async function startUpdateInstall(
+  apkUrl: string,
+  sha256: string | undefined,
+  onState: (state: UpdateInstallState) => void,
+): Promise<() => void> {
+  if (!Capacitor.isNativePlatform?.()) {
+    openApkDownload(apkUrl)
+    return () => {}
+  }
+
+  let listener: PluginListenerHandle | null = null
+  try {
+    listener = await UpdateInstaller.addListener('status', state => onState(state))
+    const result = await UpdateInstaller.downloadAndInstall({
+      url: apkTarget(apkUrl),
+      ...(sha256 ? { sha256 } : {}),
+    })
+    if (result?.status === 'permission') {
+      onState({
+        status: 'permission',
+        message: 'Allow installs from Harvest Family, then come back — the update continues automatically.',
+      })
+    } else if (result?.status === 'downloading') {
+      onState({ status: 'downloading', percent: 0, message: 'Starting download…' })
+    }
+  } catch {
+    try { await listener?.remove() } catch { /* bridge already gone */ }
+    onState({
+      status: 'error',
+      message: 'Couldn’t start the update. Check your connection and try again.',
+    })
+    return () => {}
+  }
+
+  return () => { try { void listener?.remove() } catch { /* bridge already gone */ } }
 }

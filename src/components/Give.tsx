@@ -36,6 +36,16 @@ function deadlineLabel(value: any): string {
   return `Ends ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}`
 }
 
+// datetime-local wants the browser's wall-clock value, not a UTC ISO string.
+// The API still receives an ISO instant on save, so the schedule is unambiguous.
+function toDateTimeInput(value: any): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (!Number.isFinite(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /** Campaign maths, shared by the project card and the project cockpit sheet so
  *  the two can never disagree about progress, backers or pledges. */
 function projectStats(p: any) {
@@ -54,7 +64,12 @@ function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; on
   const [description,setDescription]=useState<string>(initial?.description !== undefined ? initial.description : '')
   const [goal,setGoal]=useState<number | ''>(initial?.goal_kes !== undefined ? initial.goal_kes : '')
   const [deadline,setDeadline]=useState<string>(initial?.deadline ? String(initial.deadline).slice(0,10) : '')
-  const [auto,setAuto]=useState<boolean>(initial?.auto_advertise !== false)
+  const [status,setStatus]=useState<string>(initial?.status || 'active')
+  // Promotion is opt-in. A project is not advertised just because it exists;
+  // the admin explicitly chooses which campaigns enter the shared feed slot.
+  const [auto,setAuto]=useState<boolean>(initial?.auto_advertise === true)
+  const [advertiseFrom,setAdvertiseFrom]=useState<string>(toDateTimeInput(initial?.advertise_from))
+  const [advertiseUntil,setAdvertiseUntil]=useState<string>(toDateTimeInput(initial?.advertise_until))
   const [imageKey,setImageKey]=useState<string>(initial?.image_key || '')
   const [preview,setPreview]=useState<string>(initial?.image_url || '')
   const [busy,setBusy]=useState(false)
@@ -70,11 +85,39 @@ function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; on
     } catch (e) { showToast(e instanceof Error ? e.message : 'Could not upload the photo', 'error') }
     finally { setPhotoBusy(false) }
   }
-  const submit=async()=>{ const n=name.trim(), g=Number(goal); if(!n||!Number.isFinite(g)||g<=0){showToast('Enter a project name and positive goal','error');return}; setBusy(true); try { const payload={name:n,description,goal_kes:g,deadline:deadline?new Date(deadline).toISOString():null,auto_advertise:auto,image_key: imageKey || null}; if (initial?.id) { const d=await updateGivingProject(String(initial.id),payload); onUpdated?.(d.project); showToast('Project updated','success') } else { const d=await createGivingProject(payload); onCreated?.(d.project); setName('');setDescription('');setGoal('');setDeadline('');setImageKey('');setPreview(''); showToast('Project created','success') } } catch(e){showToast(e instanceof Error?e.message:'Could not save project','error')} finally{setBusy(false)} }
+  const submit=async()=>{
+    const n=name.trim(), g=Number(goal)
+    if(!n||!Number.isFinite(g)||g<=0){showToast('Enter a project name and positive goal','error');return}
+    const from = advertiseFrom ? new Date(advertiseFrom) : null
+    const until = advertiseUntil ? new Date(advertiseUntil) : null
+    if (from && !Number.isFinite(from.getTime())) { showToast('Enter a valid promotion start', 'error'); return }
+    if (until && !Number.isFinite(until.getTime())) { showToast('Enter a valid promotion end', 'error'); return }
+    if (from && until && until <= from) { showToast('Promotion end must be after it starts', 'error'); return }
+    setBusy(true)
+    try {
+      const payload={name:n,description,goal_kes:g,deadline:deadline?new Date(deadline).toISOString():null,status,auto_advertise:auto,advertise_from:from?from.toISOString():null,advertise_until:until?until.toISOString():null,image_key: imageKey || null}
+      if (initial?.id) {
+        const d=await updateGivingProject(String(initial.id),payload); onUpdated?.(d.project); showToast('Project updated','success')
+      } else {
+        const d=await createGivingProject(payload); onCreated?.(d.project)
+        setName('');setDescription('');setGoal('');setDeadline('');setStatus('active');setAuto(false);setAdvertiseFrom('');setAdvertiseUntil('');setImageKey('');setPreview('')
+        showToast('Project created','success')
+      }
+    } catch(e){showToast(e instanceof Error?e.message:'Could not save project','error')} finally{setBusy(false)}
+  }
   return <div className="mt-3 space-y-3">
     <input value={name} onChange={e=>setName(e.target.value)} placeholder="Project name" className="input-premium" />
     <textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="What are we working toward?" className="input-premium min-h-20" />
     <div className="grid grid-cols-2 gap-2"><input inputMode="numeric" value={goal} onChange={e=>setGoal(e.target.value===''?'':Number(e.target.value))} placeholder="Goal KES" className="input-premium" /><input type="date" value={deadline} onChange={e=>setDeadline(e.target.value)} className="input-premium" /></div>
+    <label className="block text-xs font-bold">Project status
+      <select value={status} onChange={e=>setStatus(e.target.value)} className="input-premium mt-1">
+        <option value="active">Active — giving and sharing open</option>
+        <option value="upcoming">Upcoming — visible, not started</option>
+        <option value="paused">Paused — hidden from promotion</option>
+        <option value="completed">Completed — goal reached</option>
+        <option value="closed">Closed — archived</option>
+      </select>
+    </label>
     <div>
       <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-muted">Cover photo</p>
       <label htmlFor={`project-photo-${initial?.id || 'new'}`} className="mt-1 flex min-h-24 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border border-dashed border-line bg-surface-sunken">
@@ -86,12 +129,22 @@ function ProjectAdminForm({ initial, onCreated, onUpdated }: { initial?: any; on
       {imageKey && <button type="button" onClick={() => { setImageKey(''); setPreview('') }} className="mt-1 text-2xs font-bold text-danger">Remove photo</button>}
       <p className="mt-1 text-[10px] text-ink-subtle">Shown on the project card and on its advert in the feed.</p>
     </div>
-    <label className="flex items-center gap-2 text-xs font-semibold"><input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} /> Auto advertise in Home feed</label>
+    <div className="rounded-2xl border border-line bg-surface p-3">
+      <label className="flex items-start gap-2 text-xs font-semibold">
+        <input type="checkbox" checked={auto} onChange={e=>setAuto(e.target.checked)} className="mt-0.5" />
+        <span>Promote this project in the Home feed<span className="mt-0.5 block text-[10px] font-normal text-ink-muted">Only promoted projects appear as sponsored cards. They share the same placement, interval and daily appearance cap as adverts.</span></span>
+      </label>
+      {auto && <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="block text-[10px] font-bold text-ink-muted">Promotion starts<input type="datetime-local" value={advertiseFrom} onChange={e=>setAdvertiseFrom(e.target.value)} className="input-premium mt-1" /></label>
+        <label className="block text-[10px] font-bold text-ink-muted">Promotion ends<input type="datetime-local" value={advertiseUntil} onChange={e=>setAdvertiseUntil(e.target.value)} className="input-premium mt-1" /></label>
+        <p className="col-span-2 text-[10px] leading-4 text-ink-muted">Leave start blank to begin immediately; leave end blank to keep it open.</p>
+      </div>}
+    </div>
     <button type="button" disabled={busy} onClick={() => void submit()} className="btn-primary-lg w-full disabled:opacity-60">{initial?.id ? (busy?'Saving…':'Save changes') : (busy?'Creating…':'Create project')}</button>
   </div>
 }
 
-export default function Give() {
+export default function Give({ focusProjectId, onFocusHandled }: { focusProjectId?: string | null; onFocusHandled?: () => void } = {}) {
   const [fund, setFund] = useState('tithe')
   const [amount, setAmount] = useState<number | ''>(500)
   const [phone, setPhone] = useState('')
@@ -433,6 +486,21 @@ export default function Give() {
     setTakeJoinId(project?.mine_take ? String(project.mine_take.take_id) : '')
     setTakeNote('')
   }
+
+  // A sponsored project card on Home names the campaign it opened. Once the
+  // Give list arrives, open that exact sheet instead of making the member hunt
+  // through every project. Clear the request immediately so closing the sheet
+  // does not reopen it on the next render.
+  useEffect(() => {
+    if (!focusProjectId) return
+    const project = projects.find(p => String(p.id) === String(focusProjectId))
+    if (project) {
+      openProject(project)
+      onFocusHandled?.()
+      return
+    }
+    if (projects.length) onFocusHandled?.()
+  }, [focusProjectId, projects, onFocusHandled])
 
   // Sharing: the native sheet on Android/iOS, the clipboard everywhere else.
   // A cancelled share sheet is not a failure; a real one must be visible.
@@ -955,7 +1023,8 @@ export default function Give() {
           })()}
         </div>
         <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Manage projects</h2><p className="text-xs text-ink-muted mt-0.5">Edit, pause, complete or remove what the family is giving toward.</p>{projectsError && <div className="mt-2"><ErrorMessage message={projectsError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} /></div>}{!projectsError && projects.length === 0 && <p className="text-xs text-ink-muted mt-2">No projects yet — create one below.</p>}{projects.map(p => <div key={p.id} className="py-3 border-b last:border-0 border-line"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold truncate">{p.icon} {p.name} <span className="text-[10px] font-bold uppercase tracking-wide text-accent ml-1">{p.status}</span></p><p className="text-xs text-ink-muted mt-0.5">KES {Number(p.raised_kes||0).toLocaleString()} raised of KES {Number(p.goal_kes).toLocaleString()} · {p.participants} participating</p></div><div className="flex flex-col gap-1 shrink-0"><button onClick={()=>setEditingProject(p)} className="px-3 py-1.5 rounded-xl bg-accent-soft text-accent-strong text-[11px] font-extrabold">Edit</button>{p.status === 'active' && <button onClick={()=>void changeProjectStatus(p,'paused')} className="px-3 py-1.5 rounded-xl bg-gold-soft border border-gold text-gold-strong text-[11px] font-extrabold">Pause</button>}{(p.status === 'paused' || p.status === 'upcoming') && <button onClick={()=>void changeProjectStatus(p,'active')} className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-[11px] font-extrabold">Activate</button>}{p.status !== 'completed' && <button onClick={()=>void changeProjectStatus(p,'completed')} className="px-3 py-1.5 rounded-xl bg-success-soft border border-success text-success text-[11px] font-extrabold">Complete</button>}<button onClick={()=>void removeProject(p)} className="px-3 py-1.5 rounded-xl bg-danger-soft border border-danger text-danger text-[11px] font-extrabold">Delete</button></div></div></div>)}</div>
-        <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Create project</h2><p className="text-xs text-ink-muted mt-1">Projects can be promoted automatically in the Home feed.</p><ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
+        <div className="rounded-card border border-line bg-surface-raised p-4"><h2 className="text-sm font-extrabold">Create project</h2><p className="text-xs text-ink-muted mt-1">Only projects you explicitly promote appear as sponsored cards in the Home feed.</p>
+<ProjectAdminForm onCreated={p => setProjects(prev => [p, ...prev])} /></div>
         {editingProject && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={()=>setEditingProject(null)}><div ref={editProjectSheetRef} tabIndex={-1} className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-t-[28px] bg-surface p-5 outline-none" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Edit project"><div className="flex items-center justify-between"><h2 className="font-extrabold">Edit project</h2><button onClick={()=>setEditingProject(null)} className="w-10 h-10 rounded-full bg-surface-raised border border-line" aria-label="Close">×</button></div><ProjectAdminForm initial={editingProject} onUpdated={p => { setProjects(prev => prev.map(x => x.id === p.id ? p : x)) }} /></div></div>}
         {adminError && <ErrorMessage message={adminError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} />}
         {!adminError && <div className="grid grid-cols-2 gap-3"><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Completed</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.completed_kes||0).toLocaleString()}</p></div><div className="bg-surface-raised border border-line rounded-2xl p-4"><p className="text-xs text-ink-muted">Pending</p><p className="text-xl font-extrabold">KES {Number(adminData?.totals?.pending_kes||0).toLocaleString()} <span className="text-[11px] font-bold text-ink-subtle">({adminData?.totals?.pending_count||0} awaiting M-Pesa)</span></p></div></div>}

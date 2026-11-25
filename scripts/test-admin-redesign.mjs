@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [admin, map, badge, app, auth, users, pending] = await Promise.all([
+const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration] = await Promise.all([
   read('src/components/Admin.tsx'),
   read('src/components/HarvestMap.tsx'),
   read('src/components/VerifiedBadge.tsx'),
@@ -15,6 +15,11 @@ const [admin, map, badge, app, auth, users, pending] = await Promise.all([
   read('src/state/auth.tsx'),
   read('workers/src/routes/users.js'),
   read('workers/src/routes/pending.js'),
+  read('workers/src/routes/departments.js'),
+  read('workers/src/routes/content.js'),
+  read('workers/src/routes/adminHealth.js'),
+  read('src/components/Home.tsx'),
+  read('workers/migrations/0037_department_visibility.sql'),
 ])
 
 test('admin centre is one redesigned shell with grouped, accessible navigation', () => {
@@ -48,12 +53,58 @@ test('admin can rename a ministry (e.g. to HYP) directly from the control centre
   assert.match(admin, /Ministry teams/, 'ministry manager heading is missing')
 })
 
+test('ministry visibility is admin-controlled and hidden teams stay private', () => {
+  assert.match(migration, /ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1/, 'existing ministries must stay visible after migration')
+  assert.match(admin, /toggleMinistryVisibility/, 'admin visibility control is missing')
+  assert.match(admin, /is_public: next/, 'visibility toggle must send the new state')
+  assert.match(admin, /Hidden from members/, 'hidden state must be explicit')
+  assert.match(departments, /only the system admin can change ministry visibility/, 'visibility must be admin-only server-side')
+  assert.match(departments, /d\.is_public=1 OR EXISTS/, 'members must see public ministries plus their own hidden team')
+  assert.match(departments, /if \(!dep\.is_public && fresh\.role !== 'admin'\)/, 'hidden ministry detail must be protected')
+})
+
+test('support centre exposes safe, read-only operational checks', () => {
+  assert.match(admin, /data-testid="admin-support"/, 'support panel is missing')
+  assert.match(admin, /apiGet<any>\('\/api\/admin\/health'\)/, 'support panel must call the health endpoint')
+  assert.match(admin, /Health & help/, 'support navigation is missing')
+  assert.match(admin, /setTab\(check\.action\.tab as Tab\)/, 'health actions must link to the fixing workflow')
+  assert.match(admin, /Counts contain no member data|counts contain no member data/i, 'diagnostics must explain what they share')
+  assert.match(healthRoute, /if \(!user \|\| user\.role !== 'admin'\) return errorResponse\('admin required', 403\)/, 'health checks must be admin-only')
+  assert.match(healthRoute, /request\.method !== 'GET'/, 'health checks must stay read-only')
+  assert.doesNotMatch(healthRoute, /\b(INSERT|UPDATE|DELETE)\b/, 'health checks must never mutate data')
+  for (const id of ['database', 'media', 'approvals', 'publishing', 'notifications']) {
+    assert.match(healthRoute, new RegExp(`id: '${id}'`), `${id} check is missing`)
+  }
+  assert.match(admin, /dashboard\.health\.status !== 'ok'/, 'dashboard must surface failing checks')
+})
+
+test('logo and welcome artwork are editable, public and safely validated', () => {
+  assert.match(contentRoute, /logo_url: 500/, 'logo URL key is missing')
+  assert.match(contentRoute, /landing_hero_url: 500/, 'welcome photo key is missing')
+  assert.match(contentRoute, /must be an http\(s\) image URL/, 'brand URLs must be validated')
+  assert.match(admin, /data-testid="admin-brand-images"/, 'brand editor is missing')
+  assert.match(admin, /setContentValue\('logo_url'/, 'logo editor is not wired to content')
+  assert.match(admin, /setContentValue\('landing_hero_url'/, 'welcome photo editor is not wired to content')
+  assert.match(app, /const brandLogo = siteArt\.logo_url \|\| '\/logo\.png'/, 'landing logo must use the saved artwork with a safe fallback')
+  assert.match(app, /const landingHero = siteArt\.landing_hero_url \|\| '\/landing-worship\.jpg'/, 'landing photo must use the saved artwork with a safe fallback')
+  assert.match(home, /content\.logo_url \|\| '\/logo\.png'/, 'signed-in Home must use the saved logo')
+})
+
 test('member verification is a first-class admin action with busy and error states', () => {
   assert.match(admin, /data-testid="member-verify"/)
   assert.match(admin, /verified: !u\.verified/, 'verify toggle must send the inverse flag')
   assert.match(admin, /disabled=\{busy === u\.username\}/, 'member actions must disable while saving')
   assert.match(admin, /Remove verification/, 'unverify action must be explicit')
   assert.match(admin, /Verification unlocks posts, reels, music and sermon uploads/, 'verification consequences must be explained')
+})
+
+test('member pagination cannot strand the admin on a page the filter removed', () => {
+  assert.match(admin, /useEffect\(\(\) => \{ setAccountsPage\(1\) \}, \[q, accountFilter\]\)/,
+    'search and filters both return to page one')
+  assert.match(admin, /setAccountsPage\(Math.max\(1, safeAccountsPage - 1\)\)/,
+    'Prev moves from the page actually displayed')
+  assert.match(admin, /setAccountsPage\(Math.min\(accountsPages, safeAccountsPage \+ 1\)\)/,
+    'Next moves from the page actually displayed')
 })
 
 test('admin dashboard shows live presence and new-member counts that actually load', () => {

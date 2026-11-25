@@ -83,7 +83,7 @@ export async function handleFeed(request, env, ctx) {
       WHERE p.status='active' AND p.auto_advertise=1
         AND (p.advertise_from IS NULL OR p.advertise_from <= ?)
         AND (p.advertise_until IS NULL OR p.advertise_until >= ?)
-      ORDER BY p.updated_at DESC LIMIT 3`, [new Date().toISOString(), new Date().toISOString()])
+      ORDER BY p.updated_at DESC LIMIT 20`, [new Date().toISOString(), new Date().toISOString()])
 
     // Saved set for the bookmark toggles — one query, Set lookup per item.
     const savedSet = user?.id
@@ -218,8 +218,13 @@ export async function handleFeed(request, env, ctx) {
       && inSchedule(ad)
       && (String(ad.audience || 'all') !== 'members' || Boolean(user?.id)))
     // Projects are included only when their own advertise window already
-    // matched in the project query above.
-    const eligibleRaw = [...eligibleAdverts, ...projectCampaigns]
+    // matched in the project query above. Rotate the combined campaign list by
+    // viewer+day so external adverts cannot always occupy every slot before a
+    // promoted church project gets a turn.
+    const combined = [...eligibleAdverts, ...projectCampaigns]
+    let rotation = 0
+    for (const ch of `${user?.id || 'guest'}:${nowIso.slice(0, 10)}`) rotation = (rotation * 31 + ch.charCodeAt(0)) % 9973
+    const eligibleRaw = combined.length ? [...combined.slice(rotation % combined.length), ...combined.slice(0, rotation % combined.length)] : []
     let eligible = eligibleRaw
     let servedCounter = null
     if (user?.id) {
@@ -265,7 +270,7 @@ export async function handleFeed(request, env, ctx) {
     }
 
     const nextOffset = offset + limit
-    return jsonResponse({ posts: pagePosts, projects, stories, nextOffset, hasMore: ranked.length > offset + limit, cursor })
+    return jsonResponse({ posts: pagePosts, stories, nextOffset, hasMore: ranked.length > offset + limit, cursor })
   }
 
   // GET /api/stories

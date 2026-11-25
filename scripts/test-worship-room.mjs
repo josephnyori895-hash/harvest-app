@@ -71,24 +71,33 @@ test('every track surface renders artwork, even without a cover', () => {
 test('the sponsored project is a campaign card, not a banner', () => {
   // Dark campaign card: one number, a thin gold progress line, one action.
   assert.match(feed, /data-testid="advert-progress"/)
-  assert.match(feed, /Harvest project/)
+  assert.match(feed, /Sponsored project/, 'projects are labelled separately from adverts')
   assert.match(feed, /rounded-full bg-gold text-2xs font-extrabold text-ink/)
   assert.match(feed, /Take part <Icon name="arrow-right"/)
   // A project advert offers both: join this goal, or go find another one.
-  assert.match(feed, /export function AdvertCard\(\{ advert, onOpen, onBrowseProjects \}/)
+  assert.match(feed, /export function AdvertCard\(\{ advert, onOpen, onOpenProject, onBrowseProjects \}/)
   assert.match(feed, /Take up another project/)
-  assert.match(home, /onBrowseProjects=\{\(\) => setTab\('give'\)\}/)
-  // Partner adverts are image-forward with their own single CTA.
+  assert.match(home, /onOpenProject=\{\(id\) => onOpenGive \? onOpenGive\(id\) : setTab\('give'\)\}/)
+  assert.match(home, /onBrowseProjects=\{\(\) => onOpenGive \? onOpenGive\(\) : setTab\('give'\)\}/)
+  // External adverts are image-forward with their own CTA and a distinct label.
   assert.match(feed, /Harvest partner/)
+  assert.match(feed, /Advertisement/)
   assert.match(feed, /Learn more <Icon name="arrow-right"/)
-  assert.match(feed, /aria-label="Sponsored"|>Sponsored</)
-  assert.match(home, /<AdvertCard advert=\{p\} onOpen=\{\(\) => setTab\('give'\)\} onBrowseProjects=\{\(\) => setTab\('give'\)\} \/>/)
+  assert.match(feed, /if \(!projectId && advert\.cta_url\) \{ window\.open\(advert\.cta_url/)
   // Promoted projects share the feed's one campaign pipeline now, instead of a
   // separate vertical "Church projects" shelf above the community feed.
   assert.doesNotMatch(home, /Church projects/, 'the separate promoted-project shelf must be gone')
   assert.doesNotMatch(home, /liveProjects/)
   assert.match(feedRoute, /projectCampaigns/)
   assert.match(feedRoute, /sponsor_kind: ad\.sponsor_kind \|\| 'advert'/, 'external ads and promoted projects share one placement system')
+  assert.match(feedRoute, /const combined = \[\.\.\.eligibleAdverts, \.\.\.projectCampaigns\]/)
+  assert.match(feedRoute, /rotation % combined\.length/, 'projects and adverts rotate fairly')
+  assert.match(feedRoute, /p\.status='active' AND p\.auto_advertise=1/, 'only active, opted-in projects are promoted')
+  assert.match(feedRoute, /advertise_from <= \?/, 'project schedules are enforced')
+  assert.match(feedRoute, /advert_impressions/, 'both campaign kinds share the impression store')
+  assert.match(feedRoute, /organicSinceAd % interval === 0/, 'organic-only feeds are the fallback')
+  assert.match(feedRoute, /ad\.audience.*members.*Boolean\(user\?\.id\)/s, 'audience targeting is preserved')
+  assert.doesNotMatch(feedRoute, /posts: pagePosts, projects/, 'the feed no longer ships a separate project list')
   assert.doesNotMatch(home, /Ends \$\{timeAgo\(project\.deadline\)\}/, 'deadlines are dates, not relative timestamps')
 })
 

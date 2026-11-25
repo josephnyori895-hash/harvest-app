@@ -11,17 +11,30 @@ Every push to `main` starts `.github/workflows/android-release.yml`.
 The workflow:
 
 1. Installs the frontend dependencies.
-2. Runs lint, typecheck, and the production web build.
-3. Syncs Capacitor into Android.
-4. Restores the protected release keystore from GitHub Actions secrets.
-5. Builds a signed release APK.
-6. Assigns a monotonically increasing `versionCode` from the workflow run number.
-7. Copies the APK into `workers/downloads/harvest-family.apk`.
-8. Deploys the Worker and static APK together with Wrangler.
-9. Downloads the deployed APK and compares its SHA-256 checksum with the build.
-10. Stores the APK as a short-lived GitHub Actions artifact.
+2. Runs lint, typecheck, the test suite, and the production web build.
+3. Stages the web app into `workers/public`.
+4. Syncs Capacitor into Android.
+5. Restores the protected release keystore from GitHub Actions secrets.
+6. Builds and verifies a signed release APK.
+7. Assigns a monotonically increasing `versionCode` from the workflow run number.
+8. Stores the signed APK as an immutable `harvest-family-<run>-<sha>.apk` and also replaces the permanent `workers/public/harvest-family.apk`.
+9. Writes `workers/public/app-version.json` with the version, permanent download URL, and SHA-256 of the exact signed APK being deployed.
+10. Deploys the Worker and assets together with Wrangler.
+11. Runs the production smoke test: manifest shape, deployed APK digest, and a `Range: bytes=100-199` request that must return `206`.
 
-Cloudflare Workers static assets are deployed together with the Worker, and the download headers in `workers/downloads/_headers` force the APK to revalidate instead of relying on a stale browser copy.
+The Worker handles Range requests itself. Cloudflare Workers static assets answer Range requests with the full file and a `200`, so forwarding them directly would silently disable resumable downloads. The Worker slices the APK and returns `206 Partial Content`.
+
+## Making a release
+
+Normal path: merge to `main`. The workflow builds, signs, deploys, and verifies the update automatically. No manual `wrangler deploy` is needed.
+
+Local fallback:
+
+```bash
+./update-apk.sh --release
+```
+
+The local script builds, syncs Capacitor, deploys the Worker and APK, and verifies both the live SHA-256 and a real `206` Range response. Do not deploy `workers/public` with a plain `wrangler deploy` after a release; that can drop `RELEASE_APK_FILENAME` and serve an asset set that no longer matches the manifest.
 
 ## Required one-time GitHub secrets
 
@@ -38,23 +51,24 @@ The Cloudflare token should be limited to the Worker deployment permissions need
 
 Never commit the keystore or `android/keystore.properties`.
 
-## Local release
-
-For local releases, use:
-
-```bash
-./update-apk.sh --release
-```
-
-That path still builds and deploys locally. The CI workflow is the repeatable production path after pushes to `main`.
-
 ## Verification
 
 After a successful release, download:
 
 https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk
 
-Then install it over the existing Harvest Family app. Confirm that Android recognizes it as an update rather than an unrelated installation.
+Confirm the served bytes match the manifest:
+
+```bash
+curl -fsSL https://harvestfamily-api.harvestfamily.workers.dev/api/app-version
+curl -fsSL https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | sha256sum
+curl -fsSL -D - -o /dev/null -H 'Range: bytes=100-199' \
+  https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk
+```
+
+The last request must answer `206`, include `Content-Range: bytes 100-199/<size>`, and return exactly 100 bytes. A `200` means resumable updates are broken.
+
+Then install the APK over the existing Harvest Family app. Confirm that Android recognizes it as an update rather than an unrelated installation.
 
 For each release, record:
 

@@ -76,8 +76,9 @@ export type ProjectAdvert = {
   } | null
 }
 
-export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: ProjectAdvert; onOpen?: () => void; onBrowseProjects?: () => void }) {
+export function AdvertCard({ advert, onOpen, onOpenProject, onBrowseProjects }: { advert: ProjectAdvert; onOpen?: () => void; onOpenProject?: (id: string) => void; onBrowseProjects?: () => void }) {
   const project = advert.project || null
+  const projectId = project?.id ? String(project.id) : null
   const title = project?.name || advert.title || advert.caption || 'Harvest partner'
   const body = advert.body || project?.description || advert.caption || ''
   const raised = Number(project?.raised_kes) || 0
@@ -88,14 +89,21 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
   const daysLeft = deadline && Number.isFinite(deadline.getTime())
     ? Math.ceil((deadline.getTime() - Date.now()) / 86_400_000)
     : null
-  const open = () => { if (onOpen) onOpen(); else if (advert.cta_url) window.open(advert.cta_url, '_blank', 'noopener') }
+  // A project opens its own Give sheet; an external advert opens its sponsor
+  // link. The old single callback sent both to the Give tab, so every advert
+  // looked like it was broken.
+  const open = () => {
+    if (projectId && onOpenProject) { onOpenProject(projectId); return }
+    if (!projectId && advert.cta_url) { window.open(advert.cta_url, '_blank', 'noopener,noreferrer'); return }
+    if (onOpen) onOpen()
+  }
   const cover = advert.image_url || project?.image_url || null
 
   // Church project → dark campaign card: one number, one action.
   if (project && goal > 0) {
     return (
-      <article className="overflow-hidden rounded-3xl bg-ink text-surface shadow-card" data-advert-id={advert.advert_id || advert.id}>
-        <button type="button" onClick={open} className="block w-full text-left" aria-label={`Open ${title}`}>
+      <article className="overflow-hidden rounded-3xl bg-ink text-surface shadow-card" data-advert-id={advert.advert_id || advert.id} data-sponsor-kind="project">
+        <button type="button" onClick={open} className="block w-full text-left" aria-label={`Open sponsored project ${title}`}>
           {cover && (
             <div className="relative aspect-[16/9] w-full overflow-hidden">
               <img src={cover} alt={title} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
@@ -105,7 +113,7 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
           <div className="p-4 pb-0">
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">
-                <span className="h-1 w-1 rounded-full bg-gold" aria-hidden="true" /> Harvest project
+                <span className="h-1 w-1 rounded-full bg-gold" aria-hidden="true" /> Sponsored project
               </span>
               <span className="rounded-full bg-surface/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-surface/60">Sponsored</span>
             </div>
@@ -147,8 +155,8 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
 
   // Partner advert → image-forward card; artworkless sponsors get the navy monogram tile.
   return (
-    <article className="overflow-hidden rounded-3xl border border-line bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id}>
-      <button type="button" onClick={open} className="relative block w-full text-left" aria-label={`Open ${title}`}>
+    <article className="overflow-hidden rounded-3xl border border-line bg-surface-raised shadow-card" data-advert-id={advert.advert_id || advert.id} data-sponsor-kind="advertisement">
+      <button type="button" onClick={open} className="relative block w-full text-left" aria-label={`Open advertisement ${title}`}>
         <div className="relative aspect-[16/10] w-full overflow-hidden">
           {advert.image_url
             ? <img src={advert.image_url} alt={title} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
@@ -158,7 +166,7 @@ export function AdvertCard({ advert, onOpen, onBrowseProjects }: { advert: Proje
               </div>
             )}
           <span className="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-transparent" />
-          <span className="absolute left-3 top-3 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white backdrop-blur-sm">Sponsored</span>
+          <span className="absolute left-3 top-3 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.14em] text-white backdrop-blur-sm">Advertisement</span>
           <span className="absolute inset-x-3 bottom-3 block">
             <span className="block text-lg font-extrabold leading-tight tracking-tight text-white">{title}</span>
             {body && <span className="mt-1 line-clamp-2 block max-w-[46ch] text-2xs leading-snug text-white/65">{body}</span>}

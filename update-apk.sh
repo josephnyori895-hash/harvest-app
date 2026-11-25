@@ -59,8 +59,11 @@ mkdir -p workers/public
 cp -r dist/. workers/public/
 rm -f workers/public/_redirects workers/public/_headers
 cp "$STAGED" workers/public/harvest-family.apk
-printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk"}\n' \
-  "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" > workers/public/app-version.json
+# The app verifies this digest before opening the installer. Without it in the
+# manifest the updater can only trust the transport, not the downloaded bytes.
+APK_SHA256=$(sha256sum "$STAGED" | cut -d' ' -f1)
+printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
+  "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$APK_SHA256" > workers/public/app-version.json
 
 echo "▸ 5/6 Deploying worker + APK to Cloudflare…"
 cd workers
@@ -71,14 +74,33 @@ echo "▸ 6/6 Verifying live download…"
 sleep 3
 LIVE_SHA256=$(curl -fsSL --retry 5 --retry-delay 3 -m 120 https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk | sha256sum | cut -d' ' -f1)
 LOCAL_SHA256=$(sha256sum "$STAGED" | cut -d' ' -f1)
-if [[ "$LIVE_SHA256" == "$LOCAL_SHA256" ]]; then
-  echo "✅ LIVE APK verified — SHA-256 checksums match ($LIVE_SHA256)"
-  echo "   versionCode: $HARVEST_VERSION_CODE"
-  echo "   versionName: $HARVEST_VERSION_NAME"
-  echo "   https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk"
-else
+if [[ "$LIVE_SHA256" != "$LOCAL_SHA256" ]]; then
   echo "⚠️  SHA-256 mismatch:"
   echo "   local: $LOCAL_SHA256"
   echo "   live:  $LIVE_SHA256"
   exit 1
 fi
+
+# Resuming depends on a real 206 from the Worker. Cloudflare's static asset
+# layer ignores Range, so a plain 200 here means the next interrupted download
+# would restart from zero.
+RANGE_FILE=$(mktemp)
+trap 'rm -f "$RANGE_FILE"' EXIT
+RANGE_CODE=$(curl -sS --retry 5 --retry-delay 3 -m 120 \
+  -H 'Range: bytes=0-99' \
+  -o "$RANGE_FILE" \
+  -w '%{http_code}' \
+  https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk || true)
+RANGE_BYTES=$(wc -c < "$RANGE_FILE" | tr -d ' ')
+if [[ "$RANGE_CODE" != "206" || "$RANGE_BYTES" != "100" ]]; then
+  echo "⚠️  Resumable download check failed:"
+  echo "   expected HTTP 206 with 100 bytes"
+  echo "   got HTTP $RANGE_CODE with $RANGE_BYTES bytes"
+  exit 1
+fi
+
+echo "✅ LIVE APK verified — SHA-256 checksums match ($LIVE_SHA256)"
+echo "   Range request: HTTP 206, 100 bytes"
+echo "   versionCode: $HARVEST_VERSION_CODE"
+echo "   versionName: $HARVEST_VERSION_NAME"
+echo "   https://harvestfamily-api.harvestfamily.workers.dev/harvest-family.apk"
