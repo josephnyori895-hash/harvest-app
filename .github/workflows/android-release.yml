@@ -34,6 +34,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The APK Range contract test imports the real Worker entrypoint, which
+      # pulls Worker-only modules such as bcryptjs. Install those before the
+      # test gate so CI exercises the same dependency graph as production.
+      - name: Install Worker dependencies
+        run: npm ci --prefix workers
+
       - name: Configure production API URL
         run: echo "VITE_API_URL=https://harvestfamily-api.harvestfamily.workers.dev" >> "$GITHUB_ENV"
 
@@ -302,9 +308,6 @@ jobs:
           printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
             "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" > workers/public/app-version.json
           cat workers/public/app-version.json
-
-      - name: Install Worker dependencies
-        run: npm ci --prefix workers
 
       - name: Apply D1 migrations
         working-directory: workers
