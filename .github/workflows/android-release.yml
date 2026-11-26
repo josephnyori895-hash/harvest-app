@@ -326,6 +326,24 @@ jobs:
             --previous-apk "$PREVIOUS" \
             --expect-package "$(tr -d '[:space:]' < android/release-package-id.txt)"
 
+      # Hardware acceleration has to be unblocked first. A runner-image update
+      # removed the runner user's /dev/kvm access, after which the emulator
+      # silently falls back to '-accel off' (pure software emulation) and never
+      # finishes booting — which is what "Timeout waiting for emulator to boot"
+      # was on three consecutive releases. Fail loudly if KVM is unavailable
+      # instead of waiting out a boot that cannot succeed.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 0666 /dev/kvm 2>/dev/null || true
+          ls -l /dev/kvm || {
+            echo "::error::/dev/kvm is not available; this runner cannot boot an accelerated emulator"
+            exit 1
+          }
+
       # Install the new APK on an emulator directly over the previous release,
       # confirm data is preserved, and confirm it launches. A failure here
       # blocks publication.
