@@ -93,8 +93,21 @@ jobs:
 
       - name: Set Android version
         run: |
-          echo "HARVEST_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "HARVEST_VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          set -euo pipefail
+          # Never roll the versionCode back: take the higher of this run's code
+          # and one past what production is currently serving. A re-run, or a
+          # reset run counter, can then never publish something an installed
+          # app refuses as a downgrade.
+          LIVE_CODE="$(curl -fsS --max-time 30 "https://harvestfamily-api.harvestfamily.workers.dev/api/app-version" | jq -r '.version_code // 0')"
+          RUN_CODE=$((1000 + GITHUB_RUN_NUMBER))
+          if [ "${LIVE_CODE:-0}" -ge "${RUN_CODE}" ] 2>/dev/null; then
+            CODE=$((LIVE_CODE + 1))
+          else
+            CODE=$RUN_CODE
+          fi
+          echo "HARVEST_VERSION_CODE=${CODE}" >> "$GITHUB_ENV"
+          echo "HARVEST_VERSION_NAME=1.0.${CODE}" >> "$GITHUB_ENV"
+          echo "Release versionCode: ${CODE} (live was ${LIVE_CODE:-unknown})"
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -129,6 +142,11 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose "$APK"
+          # The install-over-update contract: the certificate must be the one
+          # every released app already trusts. A locally built APK signed with
+          # a developer keystore cannot install over the app ("package
+          # conflicts with an existing package"), so it must never publish.
+          APKSIGNER="$APKSIGNER" node scripts/verify-apk-cert.mjs "$APK"
           echo "APK SHA256:"
           sha256sum "$APK"
           echo "APK size:"
@@ -292,6 +310,38 @@ jobs:
           echo "Versioned APK: ${APK_FILENAME}"
           echo "LOCAL SHA256: ${LOCAL_SHA}"
           echo "APK size: ${APK_SIZE} bytes"
+
+      # Release compatibility gate. The previous verified APK is on disk by
+      # now (staged above). This blocks a build that would fail to install over
+      # the released app: package id, signing certificate, and a strictly
+      # increasing versionCode are all compared against it.
+      - name: Release compatibility gate
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          PREVIOUS="workers/downloads/${PREVIOUS_APK_FILENAME}"
+          test -s "$PREVIOUS" || { echo "::error::Previous verified APK is missing for the compatibility check"; exit 1; }
+          node scripts/release-compat-check.mjs \
+            --apk "$APK" \
+            --previous-apk "$PREVIOUS" \
+            --expect-package "$(tr -d '[:space:]' < android/release-package-id.txt)"
+
+      # Install the new APK on an emulator directly over the previous release,
+      # confirm data is preserved, and confirm it launches. A failure here
+      # blocks publication.
+      - name: Upgrade installation test (emulator)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot
+          script: |
+            set -euo pipefail
+            bash scripts/android-upgrade-test.sh \
+              "workers/downloads/${PREVIOUS_APK_FILENAME}" \
+              "android/app/build/outputs/apk/release/app-release.apk"
 
       # The Worker reads the shipped version from the assets, so the
       # latest-version probe always matches the APK in this deployment. It used

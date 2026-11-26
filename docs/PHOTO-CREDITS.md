@@ -2,10 +2,11 @@
 
 ## Landing hero
 
-- **File:** `public/landing-worship.jpg`
-- **Title:** Joyful celebration in a vibrant church setting
-- **Photographer:** Mbaraga Bernard
-- **Source:** https://www.pexels.com/photo/joyful-celebration-in-a-vibrant-church-setting-35388499/
-- **License:** Pexels License — free to use, no attribution required. Credited here for the church's records.
+- **File:** `public/landing/hero.jpg`
+- **Title:** Member following the service on a phone during worship
+- **Source:** Supplied by Harvest Family Church Nyeri (church-owned photograph)
+- **License:** Used with the church's permission.
 
-The image is cropped, colour-treated and overlaid in-app; the original is not redistributed as a standalone asset.
+The photo is resized, colour-treated and overlaid in-app. The previous Pexels
+stock photo ("Joyful celebration in a vibrant church setting" by Mbaraga
+Bernard) is no longer used.

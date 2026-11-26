@@ -28,3 +28,21 @@ test('KEY_RE is not duplicated divergently (routes re-declare it — both must l
   const keyRe = /originals\\\/\(avatar\|post\|story\|reel\|track[^=]*?sermon_audio\|sermon_video\)/
   assert.ok(media.match(keyRe) && media.match(keyRe)[0].includes('chat'))
 })
+
+test('a chat photo opens full screen and can be downloaded', () => {
+  assert.match(chat, /function ChatPhoto\(\{ messageId, onOpen \}/, 'the photo bubble must invite a full-screen open')
+  assert.match(chat, /aria-label="Open photo full screen"/, 'the thumbnail must be an accessible open control')
+  assert.match(chat, /role="dialog"[\s\S]{0,200}aria-label="Photo viewer"/, 'a full-screen viewer dialog must exist')
+  assert.match(chat, /downloadPhoto/, 'the viewer must offer a download action')
+  assert.match(chat, /link\.download = `harvest-photo-/, 'download must save a named photo file')
+  assert.match(chat, /useModalFocus\(Boolean\(photoViewer\)/, 'the viewer must trap focus and close on Escape')
+})
+
+test('chat avatars use the same profile picture as the feed', async () => {
+  const route = await readFile(new URL('../workers/src/routes/chat.js', import.meta.url), 'utf8')
+  assert.match(route, /async function withSenderAvatars/, 'chat history needs one avatar lookup per page')
+  assert.match(route, /SELECT username, avatar_key FROM users WHERE username IN/, 'avatar comes from the same users.avatar_key as the feed')
+  assert.match(route, /messages: await withSenderAvatars\(env, rows\.reverse\(\)\)/, 'history must attach sender avatars')
+  assert.match(route, /messages: await withSenderAvatars\(env, rows\)/, 'live updates must attach sender avatars too')
+  assert.match(chat, /m\.avatar_url \? <img src=\{m\.avatar_url\}/, 'team messages show the profile photo, not initials')
+})

@@ -49,6 +49,14 @@ assert.match(feed, /const CANDIDATE_WINDOW = \d+/)
 assert.match(feed, /qp\.cursor/)
 assert.match(feed, /created_at <= \?/)
 assert.match(feed, /ORDER BY p\.is_pinned DESC, p\.created_at DESC\s*\n\s*LIMIT \?/)
+// Feedback: a 19-hour-old post outranked a 20-minute-old one because the feed
+// mixed engagement, affinity and verification into the order. The timeline is
+// pinned-first, then strictly by when each post went out.
+assert.match(feed, /function byNewest\(a, b\)/, 'the feed needs one chronological comparator')
+assert.match(feed, /is_pinned \? 1 : 0/, 'pinned notices stay on top')
+assert.match(feed, /new Date\(b\.created_at\)\.getTime\(\) - new Date\(a\.created_at\)\.getTime\(\)/, 'then newest-first by posted time')
+assert.match(feed, /items\.sort\(byNewest\)/, 'the merged feed must use that comparator')
+assert.doesNotMatch(feed, /rank_score|scoreOne/, 'engagement ranking must not reorder the timeline')
 assert.match(feed, /SELECT scope, post_id FROM post_likes WHERE user_id=\? AND post_id IN/)
 assert.doesNotMatch(feed, /posts\.rows, \.\.\.reels\.rows\]\.map\(async/, 'feed must not fetch likes per post')
 assert.match(feed, /music: r\.music_track_id/)

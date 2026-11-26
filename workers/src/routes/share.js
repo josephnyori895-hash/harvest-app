@@ -4,6 +4,7 @@
 // (WhatsApp crawls these for the rich preview) plus a Get-the-app CTA.
 // No auth: only approved/public rows are shown, and only minimal fields.
 import { mediaUrlOrNull } from '../lib/media.js'
+import { securityHeaders } from '../lib/http.js'
 
 const BRAND = 'Harvest Family Church · Nyeri'
 const APK_URL = '/harvest-family.apk'
@@ -24,7 +25,7 @@ export async function handleShare(request, env, _ctx, _params) {
   if (!kind && !id) {
     if (!env.ASSETS) return null
     const page = await env.ASSETS.fetch(new Request(new URL('/index.html', url.origin).toString(), { headers: request.headers }))
-    return new Response(page.body, { status: page.status, headers: new Headers({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }) })
+    return new Response(page.body, { status: page.status, headers: new Headers({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...securityHeaders() }) })
   }
   if (!kind || !id) {
     return html(shareShell('Invalid link', 'This share link is not valid.'))
@@ -110,13 +111,13 @@ function shareShell(title, message, card) {
   .hero { width: 100%; max-height: 320px; object-fit: cover; display: block; }
   .hero-fallback { display: flex; align-items: center; justify-content: center; font-size: 56px; background: linear-gradient(135deg, #EDE9FE, #FEF3C7); height: 140px; }
   .body { padding: 20px; }
-  .kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #7C3AED; margin-bottom: 8px; }
+  .kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #221A56; margin-bottom: 8px; }
   .caption { font-size: 16px; line-height: 1.5; color: #1c1917; white-space: pre-wrap; word-break: break-word; }
   .when { margin-top: 10px; font-size: 12px; color: #8B8175; }
   .brand { margin-top: 24px; text-align: center; }
   .brand h1 { font-size: 15px; color: #4c1d95; letter-spacing: .12em; }
   .brand p { font-size: 12px; color: #8B8175; margin-top: 4px; }
-  .cta { display: inline-block; margin-top: 16px; background: linear-gradient(135deg, #7C3AED, #DB2777); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 28px; border-radius: 999px; box-shadow: 0 8px 20px rgba(124, 58, 237, .35); }
+  .cta { display: inline-block; margin-top: 16px; background: linear-gradient(135deg, #221A56, #3A2F86); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 28px; border-radius: 999px; box-shadow: 0 8px 20px rgba(34, 26, 86, .35); }
   .footer { margin-top: 28px; font-size: 11px; color: #B8AE9E; }
 </style>
 </head>
@@ -135,6 +136,6 @@ function shareShell(title, message, card) {
 function html(body) {
   return new Response(body, {
     status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...securityHeaders() },
   })
 }

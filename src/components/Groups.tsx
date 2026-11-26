@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
-import { apiGet } from '../lib/api'
+import { apiGet, presign, uploadToMinio } from '../lib/api'
 import { useGrants } from '../lib/useGrants'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+// Map code is only downloaded when an admin opens the picker.
+const GroupLocationPicker = lazy(() => import('./GroupLocationPicker'))
 
 function notifyGroupsChanged() { window.dispatchEvent(new Event('harvest:groups-changed')) }
 
@@ -38,8 +40,16 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const [addUname, setAddUname] = useState('')
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  // The community is chosen from what already exists; a new name is a
+  // deliberate second step, so a typo cannot quietly create another community.
+  const [newCommunity, setNewCommunity] = useState(false)
+  const [renamingCommunity, setRenamingCommunity] = useState(false)
+  const [communityDraft, setCommunityDraft] = useState('')
+  const [artBusy, setArtBusy] = useState('')
   const [unreadByGroup, setUnreadByGroup] = useState<Record<string, number>>({})
   const [groupQuery, setGroupQuery] = useState('')
+  const communities = Array.from(new Set(groups.map(g => String(g.community || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 
   // Android hardware back should close an open group detail/settings screen
   // before the app-level navigator changes tabs.
@@ -222,8 +232,18 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         send_message_history: stForm.sendMessageHistory,
       }
       if (isAdmin) {
-        if (stForm.lat.trim() !== '') body.lat = Number(stForm.lat)
-        if (stForm.lng.trim() !== '') body.lng = Number(stForm.lng)
+        const latText = stForm.lat.trim()
+        const lngText = stForm.lng.trim()
+        if ((latText && !Number.isFinite(Number(latText))) || (lngText && !Number.isFinite(Number(lngText)))) {
+          throw new Error('Latitude and longitude must be numbers, e.g. -0.4197 and 36.9475')
+        }
+        if (Boolean(latText) !== Boolean(lngText)) {
+          throw new Error('Enter both latitude and longitude, or leave both empty to unlink the area')
+        }
+        // Blank means "no area" — send null so the worker clears it instead of
+        // silently keeping the previous coordinates.
+        body.lat = latText === '' ? null : Number(latText)
+        body.lng = lngText === '' ? null : Number(lngText)
         body.location_label = stForm.location_label
       }
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/settings`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) })
@@ -238,10 +258,63 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     } catch (e: any) { showToast(e?.message || 'Could not save settings') } finally { setSavingSettings(false); setBusy('') }
   }
 
+  // Rename a community label on every group at once. Moving a single group to
+  // another community is the select above; this is the deliberate bulk rename.
+  const renameCommunity = async () => {
+    const from = stForm.community.trim()
+    const to = communityDraft.trim()
+    if (!from) return showToast('Choose a community first')
+    if (to.length < 2) return showToast('Enter the new community name')
+    setBusy('community')
+    try {
+      const r = await fetch(`${API}/api/groups/communities/rename`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ from, to }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not rename community')
+      setStForm(f => ({ ...f, community: to }))
+      setRenamingCommunity(false)
+      setCommunityDraft('')
+      showToast(`Renamed for ${d.renamed} group${d.renamed === 1 ? '' : 's'} ✓`)
+      notifyGroupsChanged()
+      void refreshDetail()
+      load()
+    } catch (e: any) { showToast(e?.message || 'Could not rename community') } finally { setBusy('') }
+  }
+
+  // Group photo + chat background. The creator/group admin uploads directly to
+  // R2 (same 'avatar' media type as member photos), then saves the key.
+  // Refresh the open group without closing the settings panel (uploadGroupArt
+  // used to call openDetail, which hid the panel after the first upload).
+  const refreshDetail = async () => {
+    if (!openSlug) return
+    try {
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug)}`, { headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (r.ok) { setDetail({ group: d.group, members: d.members || [] }); setRequests(d.requests || []) }
+    } catch { /* keep the current view */ }
+  }
+
+  const uploadGroupArt = async (file: File | null | undefined, field: 'avatar_key' | 'chat_background_key') => {
+    if (!file || !openSlug || artBusy) return
+    setArtBusy(field)
+    try {
+      const pre = await presign({ type: 'avatar', contentType: file.type || 'image/jpeg', bytes: file.size, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() })
+      await uploadToMinio(pre.url, pre.fields || {}, file)
+      const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug)}/settings`, {
+        method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: pre.key }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not save the photo')
+      showToast(field === 'avatar_key' ? 'Group photo updated' : 'Chat background updated', 'success')
+      await refreshDetail()
+      load()
+    } catch (e: any) { showToast(e?.message || 'Could not upload the photo') } finally { setArtBusy('') }
+  }
+
   const startSettings = () => {
     if (!detail) return
     const g = detail.group
     setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history, lat: g.lat === null || g.lat === undefined ? '' : String(g.lat), lng: g.lng === null || g.lng === undefined ? '' : String(g.lng), location_label: g.location_label || '' })
+    setNewCommunity(false)
     setShowSettings(true)
   }
 
@@ -326,6 +399,28 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
               <div className="space-y-3">
                 <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-3 shadow-sm">
                   <p className="text-[10px] font-extrabold text-accent tracking-widest">ADMIN — GROUP SETTINGS</p>
+                  <div className="rounded-xl border border-line bg-surface-sunken p-3">
+                    <p className="text-[10px] font-extrabold text-ink-subtle tracking-widest">GROUP PHOTO & CHAT BACKGROUND</p>
+                    <p className="mt-1 text-[11px] text-ink-muted">The photo appears on the group and in its chat. The background sits behind the conversation for everyone.</p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-line bg-surface text-2xs font-extrabold text-ink-muted">
+                        {detail.group.avatar_url ? <img src={detail.group.avatar_url} alt="" className="h-full w-full object-cover" /> : 'PHOTO'}
+                      </div>
+                      <label className={`min-h-10 cursor-pointer rounded-full border border-line bg-surface px-3 py-2 text-2xs font-extrabold text-ink-muted ${artBusy === 'avatar_key' ? 'opacity-50' : ''}`}>
+                        {artBusy === 'avatar_key' ? 'Uploading…' : detail.group.avatar_url ? 'Change photo' : 'Set photo'}
+                        <input type="file" accept="image/*" className="sr-only" disabled={!!artBusy} onChange={e => void uploadGroupArt(e.target.files?.[0], 'avatar_key')} />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex items-center gap-3">
+                      <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-line bg-surface">
+                        {detail.group.chat_background_url ? <img src={detail.group.chat_background_url} alt="" className="h-full w-full object-cover" /> : null}
+                      </div>
+                      <label className={`min-h-10 cursor-pointer rounded-full border border-line bg-surface px-3 py-2 text-2xs font-extrabold text-ink-muted ${artBusy === 'chat_background_key' ? 'opacity-50' : ''}`}>
+                        {artBusy === 'chat_background_key' ? 'Uploading…' : detail.group.chat_background_url ? 'Change background' : 'Set chat background'}
+                        <input type="file" accept="image/*" className="sr-only" disabled={!!artBusy} onChange={e => void uploadGroupArt(e.target.files?.[0], 'chat_background_key')} />
+                      </label>
+                    </div>
+                  </div>
                   <div>
                     <label htmlFor="gst-name" className="block text-[10px] font-bold text-ink-muted mb-1">GROUP NAME</label>
                     <input id="gst-name" value={stForm.name} onChange={e => setStForm(f => ({ ...f, name: e.target.value }))} className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
@@ -336,12 +431,57 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                   </div>
                   <div>
                     <label htmlFor="gst-com" className="block text-[10px] font-bold text-ink-muted mb-1">COMMUNITY (congregation)</label>
-                    <input id="gst-com" value={stForm.community} onChange={e => setStForm(f => ({ ...f, community: e.target.value }))} placeholder="e.g. Harvest Central" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+                    <select
+                      id="gst-com"
+                      value={newCommunity ? '__new__' : stForm.community}
+                      onChange={e => {
+                        const value = e.target.value
+                        if (value === '__new__') { setNewCommunity(true); setStForm(f => ({ ...f, community: '' })) }
+                        else { setNewCommunity(false); setStForm(f => ({ ...f, community: value })) }
+                      }}
+                      className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent"
+                    >
+                      <option value="">No community</option>
+                      {communities.map(c => <option key={c} value={c}>{c}</option>)}
+                      {stForm.community && !communities.includes(stForm.community) && <option value={stForm.community}>{stForm.community}</option>}
+                      <option value="__new__">＋ New community…</option>
+                    </select>
+                    {newCommunity && (
+                      <input
+                        value={stForm.community}
+                        onChange={e => setStForm(f => ({ ...f, community: e.target.value }))}
+                        autoFocus
+                        placeholder="Name the new community"
+                        maxLength={80}
+                        className="mt-2 w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent"
+                      />
+                    )}
+                    <p className="mt-1 text-[10px] text-ink-muted">Pick an existing community so its groups stay together, or add a new one deliberately.</p>
+                    {isAdmin && stForm.community && (
+                      <div className="mt-2 rounded-xl border border-line bg-surface-sunken p-2">
+                        {!renamingCommunity ? (
+                          <button type="button" onClick={() => { setRenamingCommunity(true); setCommunityDraft(stForm.community) }} className="text-[10px] font-extrabold text-accent-strong underline">
+                            Rename this community on all its groups
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <input value={communityDraft} onChange={e => setCommunityDraft(e.target.value)} maxLength={80} autoFocus placeholder="New community name" className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs outline-none focus:border-accent" />
+                            <div className="flex gap-2">
+                              <button type="button" disabled={busy === 'community'} onClick={() => void renameCommunity()} className="rounded-full bg-accent px-3 py-1.5 text-[10px] font-extrabold text-white disabled:opacity-50">{busy === 'community' ? 'Renaming…' : 'Rename'}</button>
+                              <button type="button" onClick={() => { setRenamingCommunity(false); setCommunityDraft('') }} className="rounded-full border border-line bg-surface px-3 py-1.5 text-[10px] font-bold">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {isAdmin && (
                     <div className="p-3 rounded-xl bg-[#F5F3FF] border border-accent-soft space-y-2">
                       <p className="text-[10px] font-extrabold text-accent-strong tracking-widest">📍 REGISTRATION LOCATION</p>
                       <p className="text-[11px] text-accent-strong/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
+                      <button type="button" onClick={() => setPickerOpen(true)} className="min-h-10 w-full rounded-xl border border-accent/40 bg-surface text-xs font-extrabold text-accent-strong">
+                        Pick the area on a map
+                      </button>
                       <div className="grid min-w-0 grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="gst-lat" className="block text-[10px] font-bold text-ink-muted mb-1">LATITUDE</label>
@@ -489,6 +629,21 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             )}
           </div>
         )}
+        {pickerOpen && (
+          <Suspense fallback={null}>
+            <GroupLocationPicker
+              initialLat={stForm.lat}
+              initialLng={stForm.lng}
+              groupName={stForm.name}
+              onClose={() => setPickerOpen(false)}
+              onPick={(lat, lng) => {
+                setStForm(f => ({ ...f, lat, lng }))
+                setPickerOpen(false)
+                showToast('Area selected — save settings to apply it', 'success')
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     )
   }
@@ -498,9 +653,9 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       <div className="px-4 pt-5 pb-4 bg-gradient-to-br from-accent-strong via-accent-strong to-accent text-white">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-amber-200 font-bold">Harvest Family</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-gold font-bold">Harvest Family</p>
             <h1 className="text-2xl font-extrabold">Groups</h1>
-            <p className="text-xs text-purple-100 mt-1">Fellowship in small groups across Nyeri.</p>
+            <p className="text-xs text-white/70 mt-1">Fellowship in small groups across Nyeri.</p>
           </div>
           {canCreate && <button onClick={() => setShowCreate(s => !s)} className="px-4 py-2 rounded-full bg-white text-accent-strong text-xs font-extrabold shadow-sm">{showCreate ? 'Close' : '+ New'}</button>}
         </div>
@@ -521,7 +676,8 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
             <input value={form.admin_username} onChange={e => setForm(f => ({ ...f, admin_username: e.target.value }))} placeholder="Group admin username (e.g. pst.grace)" autoCapitalize="none" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
-            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} placeholder="Community (e.g. Harvest Central)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <input value={form.community} onChange={e => setForm(f => ({ ...f, community: e.target.value }))} list="group-community-options" placeholder="Community (e.g. Harvest Central)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+            <datalist id="group-community-options">{communities.map(c => <option key={c} value={c} />)}</datalist>
             <p className="text-[10px] text-ink-subtle">A community hosts 3–10 groups.</p>
             <div className="p-3 rounded-xl bg-gold-soft border border-gold">
               <p className="text-[11px] font-extrabold text-gold-strong">CREATOR ADMIN</p>

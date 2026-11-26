@@ -415,7 +415,15 @@ export async function handlePublishing(request, env, ctx) {
     const { rows } = await query(
       env,
       `SELECT * FROM content_publications ${where}
-        ORDER BY COALESCE(scheduled_at, published_at, created_at) DESC LIMIT 300`,
+        ORDER BY COALESCE(
+          CASE status
+            WHEN 'published' THEN published_at
+            WHEN 'expired' THEN expired_at
+            WHEN 'canceled' THEN canceled_at
+            ELSE scheduled_at
+          END,
+          created_at
+        ) DESC LIMIT 300`,
       where ? [status] : [],
     )
     const out = []

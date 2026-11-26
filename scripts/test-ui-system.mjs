@@ -16,7 +16,7 @@ test('tokens exist for every semantic role, in both schemes', () => {
     assert.match(css, new RegExp(`${token}:`), `${token} must be declared`)
   }
   assert.match(css, /\.dark\s*\{/, 'dark scheme must be a variable swap')
-  assert.match(css, /--surface:\s*24 22 20/, 'dark surface override missing')
+  assert.match(css, /--surface:\s*20 17 43/, 'dark surface override missing')
 })
 
 test('tailwind maps semantic names to the variables, not to hex', () => {

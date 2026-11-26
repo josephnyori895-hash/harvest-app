@@ -32,6 +32,17 @@ export async function authenticate(env, request) {
       const column = kind === 'mobile' ? 'admin_mobile_epoch' : 'admin_web_epoch'
       const { rows } = await query(env, `SELECT ${column} AS epoch FROM users WHERE id=?`, [payload.id])
       if (!rows[0] || Number(rows[0].epoch) !== Number(payload.admin_epoch)) return null
+      // Two devices in total (see MAX_TRUSTED_DEVICES). A device evicted by a
+      // newer approval no longer has a row, so its token stops working even
+      // though the epoch is shared.
+      if (payload.admin_device_id) {
+        const device = await query(
+          env,
+          'SELECT 1 FROM admin_devices WHERE user_id=? AND kind=? AND device_id=? LIMIT 1',
+          [payload.id, kind, String(payload.admin_device_id)],
+        )
+        if (!device.rows[0]) return null
+      }
     }
     return payload
   } catch {
@@ -53,14 +64,23 @@ export async function requireRole(env, user, ...allowed) {
   if (!current.active) throw httpError(403, 'account is deactivated')
   if (!['admin', 'member'].includes(current.role)) throw httpError(403, 'account role is invalid')
 
-  // An admin token is bound to one device kind and an epoch. Approving a new
-  // browser bumps the web epoch, so the old browser's 7-day token dies at its
-  // next request instead of remaining a second web session.
+  // An admin token is bound to one device kind, an epoch and its device row.
+  // Approving past the two-device allowance deletes the row of the device used
+  // longest ago, so that device's 7-day token dies at its next request.
   if (current.role === 'admin') {
     const kind = user.admin_kind
     if (!['mobile', 'web'].includes(kind)) throw httpError(401, 'admin session is missing its device binding — sign in again')
     const column = kind === 'mobile' ? 'admin_mobile_epoch' : 'admin_web_epoch'
     if (Number(current[column]) !== Number(user.admin_epoch)) throw httpError(401, 'this admin session was replaced by a newer sign-in')
+    // Device cap: an evicted device's token must die immediately.
+    if (user.admin_device_id) {
+      const { rows: devices } = await query(
+        env,
+        'SELECT 1 FROM admin_devices WHERE user_id=? AND kind=? AND device_id=? LIMIT 1',
+        [current.id, kind, String(user.admin_device_id)],
+      )
+      if (!devices[0]) throw httpError(401, 'this device was signed out — sign in again')
+    }
   }
 
   const fresh = { ...user, id: current.id, username: current.username, name: current.name, role: current.role, verified: !!current.verified, grants: current.grants || '' }

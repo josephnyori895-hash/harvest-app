@@ -25,6 +25,7 @@ import NotificationsScreen from './components/NotificationsScreen'
 import { Icon, Spinner } from './ui'
 import { VerifiedBadge } from './components/VerifiedBadge'
 import YouthChurchAnimation from './components/YouthChurchAnimation'
+import LandingBackdrop from './components/LandingBackdrop'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
 import { adminDeviceIdentity } from './lib/adminDevice'
 import { connectSocket, disconnectSocket, onSocket } from './lib/realtime'
@@ -135,6 +136,9 @@ function useDirectory(enabled, refreshMs = 30000) {
     load()
     window.addEventListener('harvest:verified', load)
     window.addEventListener('harvest:profile-updated', load)
+    // Group settings save a new registration location; the map must pick the
+    // new coordinates up without waiting for the next 30s poll or a reload.
+    window.addEventListener('harvest:groups-changed', load)
     const refreshOnVisible = () => { if (document.visibilityState === 'visible') load() }
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') load()
@@ -145,6 +149,7 @@ function useDirectory(enabled, refreshMs = 30000) {
       document.removeEventListener('visibilitychange', refreshOnVisible)
       window.removeEventListener('harvest:verified', load)
       window.removeEventListener('harvest:profile-updated', load)
+      window.removeEventListener('harvest:groups-changed', load)
     }
   }, [enabled, refreshMs])
   return [users, setUsers, loading, error, load]
@@ -316,6 +321,46 @@ function InnerApp() {
   const { setUsername, setRole, setVerified, verified, isAdmin } = useAuth()
   const [onboarded, setOnboarded] = useState(() => !!localStorage.getItem('harvest_token'))
   const [tab, setTab] = useState('home')
+  // Live browser sign-in approval for the admin phone. A browser that knows the
+  // admin password asks this phone over the realtime socket; approving reveals
+  // the code, denying kills the attempt.
+  const [adminLoginAsk, setAdminLoginAsk] = useState(null)
+  const [adminLoginBusy, setAdminLoginBusy] = useState('')
+  const [adminLoginApproved, setAdminLoginApproved] = useState(false)
+  // The phone answers here, not inside Nav: the request arrives on this
+  // screen's authenticated socket and drives the modal below.
+  useEffect(() => {
+    if (!isAdmin || !onboarded) return
+    return onSocket('admin:login-request', (data) => {
+      if (!data?.challenge_id) return
+      // Any already-trusted admin session may answer — the phone app, or a
+      // browser the admin is signed in on — but never the device asking for a
+      // code: that would approve itself.
+      const me = adminDeviceIdentity()
+      if (data.device_kind === me.device_kind && data.device_id === me.device_id) return
+      setAdminLoginAsk(data)
+      setAdminLoginApproved(false)
+    })
+  }, [isAdmin, onboarded])
+
+  const decideAdminLogin = async (decision) => {
+    const id = adminLoginAsk?.challenge_id
+    if (!id || adminLoginBusy) return
+    setAdminLoginBusy(decision)
+    try {
+      const response = await fetch(`${API}/api/auth/admin/requests/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('harvest_token') || ''}` },
+        body: JSON.stringify({ decision }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Could not update the sign-in')
+      if (decision === 'deny') { setAdminLoginAsk(null); return }
+      setAdminLoginApproved(true)
+    } catch (e) {
+      showToast(e?.message || 'Could not update the sign-in', 'error')
+    } finally { setAdminLoginBusy('') }
+  }
   const [showNotifications, setShowNotifications] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [notificationFilter, setNotificationFilter] = useState('all')
@@ -336,6 +381,7 @@ function InnerApp() {
   const notificationMutationQueueRef = useRef(Promise.resolve())
   const dmLayerRef = useRef(null)
   const notificationsDrawerRef = useRef(null)
+  const adminLoginPanelRef = useRef(null)
   // The server owns the true unread total. The inbox only holds one page, so
   // counting the visible rows capped the badge at the page size and it could
   // never show "47" once a member had more unread than a page.
@@ -739,6 +785,10 @@ function InnerApp() {
 
   useModalFocus(showNotifications, notificationsDrawerRef, () => setShowNotifications(false))
   useModalFocus(dmSheet && !dmMinimized, dmLayerRef, () => setDmSheet(false), () => document.querySelector('[data-testid="chat-fab"]'))
+  // The admin sign-in approval is a security dialog: focus must move into it,
+  // Tab must stay inside, and Escape must deny rather than leave it open behind
+  // the rest of the page.
+  useModalFocus(Boolean(adminLoginAsk), adminLoginPanelRef, () => { setAdminLoginAsk(null); setAdminLoginApproved(false) })
 
   const openFullChatFromMini = () => {
     if (miniPeer?.username) {
@@ -1233,6 +1283,36 @@ function InnerApp() {
         )}
         <UploadPill />
         <NowPlayingBar onOpen={t => setTab(t)} />
+        {adminLoginAsk && (
+          <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center">
+            <div ref={adminLoginPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="admin-login-ask-title" className="w-full max-w-[420px] rounded-3xl border border-line bg-surface p-5 pb-6 text-ink shadow-raised outline-none">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold-strong">Admin sign-in request</p>
+              <h2 id="admin-login-ask-title" className="mt-1 text-lg font-extrabold">
+                {adminLoginApproved ? 'Browser approved' : 'Is this you signing in?'}
+              </h2>
+              {adminLoginApproved ? (
+                <>
+                  <p className="mt-2 text-[13px] text-ink-muted">Type this code in the browser within 10 minutes.</p>
+                  <p className="mt-3 rounded-2xl border border-line bg-surface-sunken py-4 text-center text-4xl font-extrabold tracking-[0.3em]">{adminLoginAsk.code}</p>
+                  <button type="button" onClick={() => { setAdminLoginAsk(null); setAdminLoginApproved(false) }} className="mt-4 min-h-12 w-full rounded-full bg-accent text-sm font-extrabold text-white">Done</button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-[13px] leading-5 text-ink-muted">A browser is trying to sign in as the church admin.</p>
+                  <div className="mt-3 space-y-1 rounded-2xl border border-line bg-surface-sunken p-3 text-[12px] text-ink-muted">
+                    <p><span className="font-bold text-ink">Device:</span> {adminLoginAsk.label || 'Unknown browser'}</p>
+                    <p><span className="font-bold text-ink">Network:</span> {adminLoginAsk.ip || 'unknown'}</p>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <button type="button" disabled={!!adminLoginBusy} onClick={() => void decideAdminLogin('deny')} className="min-h-12 flex-1 rounded-full border border-line bg-surface-sunken text-sm font-extrabold text-ink-muted disabled:opacity-50">Deny</button>
+                    <button type="button" disabled={!!adminLoginBusy} onClick={() => void decideAdminLogin('approve')} className="min-h-12 flex-[1.4] rounded-full bg-accent text-sm font-extrabold text-white disabled:opacity-50">{adminLoginBusy === 'approve' ? 'Approving…' : 'Authorize'}</button>
+                  </div>
+                  <p className="mt-2 text-center text-[11px] text-ink-subtle">If this isn't you, tap Deny and change the admin password.</p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         {tab !== 'chat' && <Nav tab={tab} setTab={handleTab} />}
       </div>
     </div>
@@ -1295,7 +1375,7 @@ function Onboarding({ onAuthSuccess }) {
   // Public artwork is part of the website content the church owns. It loads
   // before sign-in so the landing page uses the same logo and welcome photo as
   // the signed-in Home screen.
-  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '' })
+  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '', landing_background_url: '', social_instagram_url: '', social_youtube_url: '', social_tiktok_url: '' })
   useEffect(() => {
     let alive = true
     const loadArtwork = () => {
@@ -1306,6 +1386,10 @@ function Onboarding({ onAuthSuccess }) {
           setSiteArt({
             logo_url: String(d?.content?.logo_url || ''),
             landing_hero_url: String(d?.content?.landing_hero_url || ''),
+            landing_background_url: String(d?.content?.landing_background_url || ''),
+            social_instagram_url: String(d?.content?.social_instagram_url || ''),
+            social_youtube_url: String(d?.content?.social_youtube_url || ''),
+            social_tiktok_url: String(d?.content?.social_tiktok_url || ''),
           })
         })
         .catch(() => { /* shipped artwork stays */ })
@@ -1317,19 +1401,39 @@ function Onboarding({ onAuthSuccess }) {
       setSiteArt({
         logo_url: String(next.logo_url || ''),
         landing_hero_url: String(next.landing_hero_url || ''),
+        landing_background_url: String(next.landing_background_url || ''),
+        social_instagram_url: String(next.social_instagram_url || ''),
+        social_youtube_url: String(next.social_youtube_url || ''),
+        social_tiktok_url: String(next.social_tiktok_url || ''),
       })
     }
     window.addEventListener('harvest:content-updated', onUpdated)
     return () => { alive = false; window.removeEventListener('harvest:content-updated', onUpdated) }
   }, [])
   const brandLogo = siteArt.logo_url || '/logo.png'
-  const landingHero = siteArt.landing_hero_url || '/landing-worship.jpg'
+  const landingHero = siteArt.landing_hero_url || '/landing/hero.jpg'
+  // Social icons on the landing page. The admin saves either a full profile
+  // link or a bare @handle; a handle is expanded to the platform's profile URL.
+  // With no link saved yet the icon still shows and opens the platform itself,
+  // so the row is never empty on the landing page while the admin fills it in.
+  const socialLinks = [
+    { key: 'instagram', label: 'Instagram', icon: 'instagram', value: siteArt.social_instagram_url, base: 'https://instagram.com/', fallback: 'https://instagram.com/' },
+    { key: 'youtube', label: 'YouTube', icon: 'youtube', value: siteArt.social_youtube_url, base: 'https://youtube.com/@', fallback: 'https://youtube.com/' },
+    { key: 'tiktok', label: 'TikTok', icon: 'tiktok', value: siteArt.social_tiktok_url, base: 'https://tiktok.com/@', fallback: 'https://tiktok.com/' },
+  ].map(({ value, base, fallback, ...rest }) => {
+    const raw = String(value || '').trim()
+    const href = !raw ? fallback : (/^https?:\/\//i.test(raw) ? raw : base + raw.replace(/^@/, ''))
+    return { ...rest, href }
+  })
+  // The page backdrop is a separate set of photos that rotate on their own; the
+  // hero photo never doubles as the page background. Missing files drop out, so
+  // the gradient shows when nothing has been added.
   // Anonymous visitors can see the landing, but every feature card and
   // congregation chip must lead somewhere. Instead of dropping them on a form
   // with no context, open a small choice sheet that explains what they get and
   // offers both paths: create an account or sign in.
   const [landingPrompt, setLandingPrompt] = useState(null)
-  const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations(true, true)
+  const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations(true)
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', confirm: '', group_name: '' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
@@ -1337,6 +1441,11 @@ function Onboarding({ onAuthSuccess }) {
   // the bound phone. Until the code verifies, no JWT is issued.
   const [adminChallenge, setAdminChallenge] = useState(null)
   const [adminCode, setAdminCode] = useState('')
+  // Break-glass path: when the bound phone cannot receive the code (push not
+  // configured, notifications denied, phone lost) the admin can approve this
+  // browser with the server-held recovery code instead of being locked out.
+  const [adminRecovery, setAdminRecovery] = useState('')
+  const [showRecovery, setShowRecovery] = useState(false)
   const [showRegPass, setShowRegPass] = useState(false)
   const [showLoginPass, setShowLoginPass] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1378,7 +1487,7 @@ function Onboarding({ onAuthSuccess }) {
   const enter = (next) => {
     setLandingPrompt(null)
     setMode(next)
-    setAdminChallenge(null); setAdminCode('')
+    setAdminChallenge(null); setAdminCode(''); setAdminRecovery(''); setShowRecovery(false)
     setError(''); setErrorKind(''); setFieldErrors({})
     // The landing is tall and auth is a separate screen; without this, tapping
     // "Join" near the bottom opens the form halfway down the page with the
@@ -1475,6 +1584,10 @@ function Onboarding({ onAuthSuccess }) {
       if (data.verification_required) {
         setAdminChallenge(data)
         setAdminCode('')
+        setAdminRecovery('')
+        // Always start on the 6-digit field: an approved phone reveals that code.
+        // The recovery link is offered underneath for when the phone is unusable.
+        setShowRecovery(false)
         setError(''); setErrorKind('')
         requestAnimationFrame(() => document.getElementById('admin-code')?.focus())
         return
@@ -1497,9 +1610,10 @@ function Onboarding({ onAuthSuccess }) {
   const submitAdminCode = async () => {
     if (busy || !adminChallenge) return
     const code = adminCode.replace(/\s+/g, '')
-    if (!/^\d{6}$/.test(code)) {
+    const recovery = adminRecovery.trim()
+    if (!recovery && !/^\d{6}$/.test(code)) {
       setErrorKind('credentials')
-      setError('Enter the 6-digit code from the admin phone.')
+      setError(showRecovery ? 'Enter the admin recovery code.' : 'Enter the 6-digit code from the admin phone.')
       return
     }
     setBusy(true); setError(''); setErrorKind('')
@@ -1507,7 +1621,11 @@ function Onboarding({ onAuthSuccess }) {
       const response = await fetch(`${API}/api/auth/admin/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challenge_id: adminChallenge.challenge_id, code, device_id: adminDeviceIdentity().device_id }),
+        body: JSON.stringify({
+          challenge_id: adminChallenge.challenge_id,
+          device_id: adminDeviceIdentity().device_id,
+          ...(recovery ? { recovery_code: recovery } : { code }),
+        }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.token) {
@@ -1515,6 +1633,8 @@ function Onboarding({ onAuthSuccess }) {
       }
       setAdminChallenge(null)
       setAdminCode('')
+      setAdminRecovery('')
+      setShowRecovery(false)
       onAuthSuccess?.(data)
     } catch (e) {
       showAuthError(e.status === 429 || e.status === 503 ? 'server' : 'credentials', e.message || 'That code could not be verified.')
@@ -1528,12 +1648,11 @@ function Onboarding({ onAuthSuccess }) {
   }
 
   // Auth is the doorway into Home, so it uses the same cream surface and the
-  // same deep-purple/gold hero as the signed-in feed. The previous pastel card
+  // same navy/gold hero as the signed-in feed. The previous pastel card
   // read like a separate product bolted onto the church app.
   const hero = (
-    <div className="relative mx-5 mt-3 overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-br from-[#7c3aed] via-[#5b21b6] to-[#2e1065] p-5 text-white shadow-card">
+    <div className="relative mx-5 mt-3 overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-br from-[#3a2f86] via-[#221a56] to-[#151036] p-5 text-white shadow-card">
       <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-44 w-44 rounded-full" style={{ background: 'radial-gradient(circle, rgb(245 185 66 / .28) 0%, transparent 68%)' }} />
-      <img src="/logo-mark.svg" alt="" aria-hidden="true" className="pointer-events-none absolute -right-10 -top-2 w-40 opacity-10" />
       <span className="relative inline-flex rounded-full bg-gold px-3 py-1.5 text-[11px] font-extrabold tracking-wide text-[#2b1c0b]">Karibu</span>
       <h1 className="relative mt-3.5 text-[27px] font-extrabold leading-[1.12] tracking-tight">Welcome to<br />Harvest Family<br />Church Nyeri</h1>
       <div className="relative mt-3 h-px bg-white/15" />
@@ -1545,9 +1664,7 @@ function Onboarding({ onAuthSuccess }) {
     const congregations = REG_GROUP_OPTIONS.slice(0, 8)
     return (
       <div className="landing-page relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
-        <div className="landing-page-underlay" aria-hidden="true">
-          <img src={landingHero} alt="" />
-        </div>
+        <LandingBackdrop variant="landing" urls={siteArt.landing_background_url} />
         <YouthChurchAnimation />
         <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
           <header className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
@@ -1578,18 +1695,32 @@ function Onboarding({ onAuthSuccess }) {
             <div className="landing-dust" aria-hidden="true" />
             <div className="landing-grain" aria-hidden="true" />
             <div className="landing-glow landing-glow-gold landing-float" aria-hidden="true" />
-            <div className="landing-glow landing-glow-purple landing-float landing-float-slow" aria-hidden="true" />
-            <img src="/logo-mark.svg" alt="" aria-hidden="true" className="landing-mark absolute -right-20 top-4 w-[320px] opacity-[0.09]" />
+            <div className="landing-glow landing-glow-navy landing-float landing-float-slow" aria-hidden="true" />
             <div className="relative z-10 flex min-h-[520px] flex-col justify-end p-6">
               <span className="landing-rise inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
               </span>
               <h1 className="landing-rise landing-rise-2 mt-5 text-[47px] font-black leading-[0.93] tracking-[-0.055em] drop-shadow-[0_2px_18px_rgba(0,0,0,0.38)]">A family<br />to belong to.</h1>
               <p className="landing-rise landing-rise-3 mt-4 max-w-[300px] text-[14px] leading-6 text-white/75">Come as you are. Worship with us, grow in a congregation, and walk through life with people who care.</p>
-              <button type="button" onClick={() => enter('register')} className="landing-rise landing-rise-4 landing-cta relative mt-6 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white text-[15px] font-extrabold text-[#241333] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
+              <button type="button" onClick={() => enter('register')} className="landing-rise landing-rise-4 landing-cta relative mt-6 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white text-[15px] font-extrabold text-[#221a56] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
               <button type="button" onClick={() => enter('login')} className="landing-rise landing-rise-5 mt-2 min-h-11 text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
             </div>
           </section>
+
+          {/* Visitors on a phone need the app itself, not just a sign-in form:
+              this links to the Worker's stable APK URL (always the current
+              release, served as an attachment with the versioned filename). */}
+          <a
+            href={`${API}/harvest-family.apk`}
+            className="mx-4 mt-3 flex min-h-[60px] items-center gap-3 rounded-[24px] border border-gold/40 bg-[#1d1629]/90 p-3.5 pl-4 shadow-[0_12px_34px_rgba(0,0,0,0.32)] backdrop-blur transition active:scale-[0.99] active:bg-[#251b34]"
+          >
+            <span aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gold text-[#2b1c0b]"><Icon name="download" size={20} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-extrabold">Download the app</span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-white/55">Install Harvest on Android — free</span>
+            </span>
+            <span aria-hidden="true" className="pr-1 text-[15px] text-gold">↓</span>
+          </a>
 
           <main className="flex-1 px-5 pb-8 pt-7">
             <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Compel · Raise · Release</p>
@@ -1629,7 +1760,27 @@ function Onboarding({ onAuthSuccess }) {
               {congregations.length > 0 && <p className="mt-3 text-[11px] leading-5 text-white/40">Tap your congregation to become part of it.</p>}
             </div>
 
-            <p className="mt-8 text-center text-[11px] font-semibold text-white/35">Harvest Family Church Nyeri</p>
+            {socialLinks.length > 0 && (
+              <div className="mt-8 text-center">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-white/40">Follow the church</p>
+                <div className="mt-3 flex items-center justify-center gap-3">
+                  {socialLinks.map(l => (
+                    <a
+                      key={l.key}
+                      href={l.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Harvest Family Church on ${l.label}`}
+                      title={l.label}
+                      className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[0.07] text-white/80 transition active:scale-95 active:bg-white/15"
+                    >
+                      <Icon name={l.icon} size={21} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="mt-6 text-center text-[11px] font-semibold text-white/35">Harvest Family Church Nyeri</p>
           </main>
 
           {landingPrompt && (
@@ -1654,7 +1805,7 @@ function Onboarding({ onAuthSuccess }) {
                 </div>
                 <p className="mt-3 text-[14px] leading-6 text-white/65">{landingPrompt.copy}</p>
                 <p className="mt-4 text-[12px] leading-5 text-white/45">Create an account to take part, or sign in if you are already part of the family.</p>
-                <button type="button" onClick={() => enter('register')} className="mt-5 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-extrabold text-[#241333] active:scale-[0.99]">Create my account <span aria-hidden="true">→</span></button>
+                <button type="button" onClick={() => enter('register')} className="mt-5 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-extrabold text-[#221a56] active:scale-[0.99]">Create my account <span aria-hidden="true">→</span></button>
                 <button type="button" onClick={() => enter('login')} className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
                 <button type="button" onClick={() => setLandingPrompt(null)} className="mt-1 min-h-10 w-full text-[12px] font-semibold text-white/40 active:text-white/70">Keep looking around</button>
               </div>
@@ -1667,9 +1818,7 @@ function Onboarding({ onAuthSuccess }) {
 
   return (
     <div className="auth-screen relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
-      <div className="auth-underlay" aria-hidden="true">
-        <img src={landingHero} alt="" />
-      </div>
+      <LandingBackdrop variant="auth" urls={siteArt.landing_background_url} />
       {/* Safe-area padding keeps the app name + toggle clear of Android status-bar icons */}
       <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4">
@@ -1701,23 +1850,23 @@ function Onboarding({ onAuthSuccess }) {
             )}
             <div>
               <label htmlFor="reg-username" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Username</label>
-              <input id="reg-username" name="username" autoComplete="username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={!!fieldErrors.username} aria-describedby={fieldErrors.username ? 'reg-username-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              <input id="reg-username" name="username" autoComplete="username" value={form.username} onChange={set('username')} placeholder="e.g. joy_wambui" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={!!fieldErrors.username} aria-describedby={fieldErrors.username ? 'reg-username-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
               {fieldErrors.username && <AuthFieldError id="reg-username-error">{fieldErrors.username}</AuthFieldError>}
             </div>
             <div>
               <label htmlFor="reg-name" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Full name</label>
-              <input id="reg-name" name="name" autoComplete="name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" maxLength={120} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? 'reg-name-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              <input id="reg-name" name="name" autoComplete="name" value={form.name} onChange={set('name')} placeholder="e.g. Joy Wambui" maxLength={120} aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? 'reg-name-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
               {fieldErrors.name && <AuthFieldError id="reg-name-error">{fieldErrors.name}</AuthFieldError>}
             </div>
             <div>
               <label htmlFor="reg-phone" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Phone number</label>
-              <input id="reg-phone" name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" maxLength={16} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? 'reg-phone-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              <input id="reg-phone" name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={set('phone')} placeholder="07xx or 01xx" inputMode="tel" maxLength={16} aria-invalid={!!fieldErrors.phone} aria-describedby={fieldErrors.phone ? 'reg-phone-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
               {fieldErrors.phone && <AuthFieldError id="reg-phone-error">{fieldErrors.phone}</AuthFieldError>}
             </div>
             <div>
               <label htmlFor="reg-password" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Password</label>
               <div className="relative">
-                <input id="reg-password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                <input id="reg-password" name="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
                 <button type="button" onClick={() => setShowRegPass(v => !v)} aria-label={showRegPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-white/50 active:opacity-60"><span className="text-2xs font-extrabold">{showRegPass ? 'Hide' : 'Show'}</span></button>
               </div>
               {fieldErrors.password && <AuthFieldError id="reg-password-error">{fieldErrors.password}</AuthFieldError>}
@@ -1725,7 +1874,7 @@ function Onboarding({ onAuthSuccess }) {
             </div>
             <div>
               <label htmlFor="reg-confirm" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Confirm password</label>
-              <input id="reg-confirm" name="confirm-password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="Re-type your password" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.confirm} aria-describedby={fieldErrors.confirm ? 'reg-confirm-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+              <input id="reg-confirm" name="confirm-password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="Re-type your password" type={showRegPass ? 'text' : 'password'} maxLength={128} aria-invalid={!!fieldErrors.confirm} aria-describedby={fieldErrors.confirm ? 'reg-confirm-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
               {fieldErrors.confirm
                 ? <AuthFieldError id="reg-confirm-error">{fieldErrors.confirm}</AuthFieldError>
                 : <p className="mt-1.5 text-[12px] text-white/45">Both boxes must match. Tap Show above to compare them.</p>}
@@ -1733,7 +1882,7 @@ function Onboarding({ onAuthSuccess }) {
             <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
               <label htmlFor="reg-group" className="mb-2 block text-[11px] font-extrabold uppercase tracking-wider text-white/55">Choose Harvest Group *</label>
               <div className="relative">
-                <select id="reg-group" value={form.group_name} onChange={set('group_name')} aria-invalid={!!fieldErrors.group_name} aria-describedby={fieldErrors.group_name ? 'reg-group-error' : undefined} className="w-full appearance-none rounded-xl border border-white/15 bg-[#1d1629] py-3.5 pl-4 pr-10 text-[15px] font-semibold text-white outline-none focus:border-accent focus:ring-2 focus:ring-purple-500/20">
+                <select id="reg-group" value={form.group_name} onChange={set('group_name')} aria-invalid={!!fieldErrors.group_name} aria-describedby={fieldErrors.group_name ? 'reg-group-error' : undefined} className="w-full appearance-none rounded-xl border border-white/15 bg-[#1d1629] py-3.5 pl-4 pr-10 text-[15px] font-semibold text-white outline-none focus:border-accent focus:ring-2 focus:ring-accent/20">
                   {/* An empty select with no empty option renders the FIRST
  congregation as if chosen, while form state stays '' — the waydroid
  device pass showed 'Alphas 1' checked with the validator still
@@ -1748,7 +1897,7 @@ function Onboarding({ onAuthSuccess }) {
               <p className="mt-2 text-[12px] font-medium text-white/45">This exact group is saved on your profile.</p>
               {!groupsLive && (
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2">
-                  <p className="flex items-center gap-1 text-[12px] text-amber-300">
+                  <p className="flex items-center gap-1 text-[12px] text-gold">
                     <Icon name="alert" size={14} className="shrink-0" /> {groupsLoading ? 'Fetching the latest group list…' : 'Couldn’t load the group list.'}
                   </p>
                   {!groupsLoading && (
@@ -1757,7 +1906,7 @@ function Onboarding({ onAuthSuccess }) {
                 </div>
               )}
               {groupsLive && !REG_GROUP_OPTIONS.length && (
-                <p className="mt-1.5 text-[12px] text-amber-300">No Harvest Groups exist yet — ask a church admin to add one.</p>
+                <p className="mt-1.5 text-[12px] text-gold">No Harvest Groups exist yet — ask a church admin to add one.</p>
               )}
             </div>
           </form>
@@ -1766,8 +1915,12 @@ function Onboarding({ onAuthSuccess }) {
             {adminChallenge ? (
               <>
                 <div>
-                  <h2 className="text-[17px] font-extrabold text-white">Check the admin phone</h2>
-                  <p className="mt-1 text-[13px] text-white/55">We sent a 6-digit code to the phone bound to {loginId || 'HFC Nyeri'}. Enter it to approve this browser.</p>
+                  <h2 className="text-[17px] font-extrabold text-white">{showRecovery ? 'Approve with the recovery code' : 'Check the admin phone'}</h2>
+                  <p className="mt-1 text-[13px] text-white/55">
+                    {showRecovery
+                      ? 'The admin phone could not receive a code. Enter the recovery code to approve this browser.'
+                      : `We sent a 6-digit code to the phone bound to ${loginId || 'HFC Nyeri'}. Enter it to approve this browser.`}
+                  </p>
                 </div>
                 {error && (
                   <div id="auth-error" ref={errorRef} tabIndex={-1} className="outline-none">
@@ -1776,29 +1929,63 @@ function Onboarding({ onAuthSuccess }) {
                 )}
                 <div className="rounded-2xl border border-gold/25 bg-gold/[0.07] p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">Admin sign-in</p>
-                  <p className="mt-1.5 text-[12px] leading-5 text-white/60">Approving this browser signs out any other browser. The phone stays signed in.</p>
+                  <p className="mt-1.5 text-[12px] leading-5 text-white/60">The admin account trusts two devices. This browser is approved with a code from the admin phone, and adding a third device signs out the one used longest ago.</p>
                 </div>
-                <div>
-                  <label htmlFor="admin-code" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">6-digit code</label>
-                  <input
-                    id="admin-code"
-                    name="one-time-code"
-                    autoComplete="one-time-code"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={adminCode}
-                    onChange={e => { setAdminCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); clearErrors() }}
-                    placeholder="000000"
-                    aria-invalid={errorKind === 'credentials'}
-                    aria-describedby={error ? 'auth-error' : 'admin-code-help'}
-                    className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-center text-[26px] font-extrabold tracking-[0.42em] text-white outline-none placeholder:text-white/20 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20"
-                  />
-                  <p id="admin-code-help" className="mt-1.5 text-[12px] text-white/45">The code expires in 10 minutes and can only be used once.</p>
-                  {import.meta.env.DEV && adminChallenge.dev_code && (
-                    <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] font-semibold text-gold">Local test code: {adminChallenge.dev_code}</p>
-                  )}
-                </div>
-                <button type="button" onClick={() => { setAdminChallenge(null); setAdminCode(''); clearErrors() }} className="min-h-11 text-[12px] font-bold text-white/55 underline underline-offset-4 active:text-white">Back to sign in</button>
+                {adminChallenge.delivery !== 'push' && !showRecovery && (
+                  <div className="rounded-2xl border border-line bg-white/[0.05] p-4">
+                    <p className="text-[12px] leading-5 text-white/70">
+                      A request is waiting on the admin phone. Tap <span className="font-extrabold text-white">Authorize</span> there, then type the 6-digit code it shows here.
+                    </p>
+                  </div>
+                )}
+                {showRecovery ? (
+                  <div>
+                    <label htmlFor="admin-recovery" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Recovery code</label>
+                    <input
+                      id="admin-recovery"
+                      name="recovery-code"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={adminRecovery}
+                      onChange={e => { setAdminRecovery(e.target.value.slice(0, 96)); clearErrors() }}
+                      placeholder="Recovery code"
+                      aria-invalid={errorKind === 'credentials'}
+                      aria-describedby={error ? 'auth-error' : 'admin-recovery-help'}
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-semibold tracking-wider text-white outline-none placeholder:text-white/25 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20"
+                    />
+                    <p id="admin-recovery-help" className="mt-1.5 text-[12px] text-white/45">The church's saved recovery code. Wrong codes are limited to 5 tries per sign-in.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label htmlFor="admin-code" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">6-digit code</label>
+                    <input
+                      id="admin-code"
+                      name="one-time-code"
+                      autoComplete="one-time-code"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={adminCode}
+                      onChange={e => { setAdminCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); clearErrors() }}
+                      placeholder="000000"
+                      aria-invalid={errorKind === 'credentials'}
+                      aria-describedby={error ? 'auth-error' : 'admin-code-help'}
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-center text-[26px] font-extrabold tracking-[0.42em] text-white outline-none placeholder:text-white/20 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20"
+                    />
+                    <p id="admin-code-help" className="mt-1.5 text-[12px] text-white/45">The code expires in 10 minutes and can only be used once.</p>
+                    {import.meta.env.DEV && adminChallenge.dev_code && (
+                      <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-[12px] font-semibold text-gold">Local test code: {adminChallenge.dev_code}</p>
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowRecovery(v => !v); setAdminCode(''); setAdminRecovery(''); clearErrors() }}
+                  className="min-h-11 text-[12px] font-bold text-white/55 underline underline-offset-4 active:text-white"
+                >
+                  {showRecovery ? 'Use the 6-digit phone code instead' : 'Phone not receiving a code? Use a recovery code'}
+                </button>
+                <button type="button" onClick={() => { setAdminChallenge(null); setAdminCode(''); setAdminRecovery(''); setShowRecovery(false); clearErrors() }} className="min-h-11 text-[12px] font-bold text-white/55 underline underline-offset-4 active:text-white">Back to sign in</button>
               </>
             ) : (
               <>
@@ -1813,12 +2000,12 @@ function Onboarding({ onAuthSuccess }) {
                 )}
                 <div>
                   <label htmlFor="login-id" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Username or phone</label>
-                  <input id="login-id" name="username" autoComplete="username" value={loginId} onChange={e => { setLoginId(e.target.value); clearErrors() }} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                  <input id="login-id" name="username" autoComplete="username" value={loginId} onChange={e => { setLoginId(e.target.value); clearErrors() }} placeholder="e.g. joy_wambui or 07xx" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
                 </div>
                 <div>
                   <label htmlFor="login-pass" className="mb-1.5 block text-[11px] font-extrabold uppercase tracking-wider text-white/50">Password</label>
                   <div className="relative">
-                    <input id="login-pass" name="password" autoComplete="current-password" value={loginPass} onChange={e => { setLoginPass(e.target.value); clearErrors() }} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} maxLength={128} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-purple-500/20" />
+                    <input id="login-pass" name="password" autoComplete="current-password" value={loginPass} onChange={e => { setLoginPass(e.target.value); clearErrors() }} placeholder="Your password" type={showLoginPass ? 'text' : 'password'} maxLength={128} aria-invalid={errorKind === 'credentials'} aria-describedby={error ? 'auth-error' : undefined} className="w-full rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3.5 pr-14 text-[15px] font-medium text-white outline-none placeholder:text-white/35 focus:border-accent focus:bg-white/[0.09] focus:ring-2 focus:ring-accent/20" />
                     <button type="button" onClick={() => setShowLoginPass(v => !v)} aria-label={showLoginPass ? 'Hide password' : 'Show password'} className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center text-lg text-white/50 active:opacity-60"><span className="text-2xs font-extrabold">{showLoginPass ? 'Hide' : 'Show'}</span></button>
                   </div>
                   <p className="mt-1.5 text-[12px] text-white/45">Forgot your password? Ask a church admin to reset it for you.</p>
@@ -1949,7 +2136,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       </div>
 
       <div className="px-4 mt-4 flex gap-4 items-center">
-        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-yellow-400 to-purple-600 p-[3px]">
+        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-gold to-accent p-[3px]">
           {me?.avatar_url ? (
             <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-surface" />
           ) : (

@@ -10,16 +10,17 @@ const music = await readFile(new URL('../src/components/Music.tsx', import.meta.
 const sermons = await readFile(new URL('../src/components/Sermons.tsx', import.meta.url), 'utf8')
 const media = await readFile(new URL('../src/components/FeedMediaPreview.tsx', import.meta.url), 'utf8')
 
-test('1. a song post becoming visible never starts audio on its own', () => {
+test('1. a song post scrolling into view starts its attached music', () => {
   assert.match(feed, /if \(musicEligible\) void startFeedPlayback\(p\)/)
-  assert.match(playback, /if \(!postId \|\| !url \|\| !armed\.has\(postId\)\) return false/)
-  assert.doesNotMatch(playback, /getFeedAutoplayPref|audioAutoplayReady/)
+  assert.match(playback, /if \(!postId \|\| !url\) return false/)
+  assert.match(playback, /if \(!getFeedAutoplayPref\(\)\) return false/, 'the member mute must still be respected')
+  assert.match(playback, /await startInlineMediaTrack\(\{ id: postId, url \}\)/, 'the visible card starts its own track')
 })
 
-test('2. tapping the on-post music control arms and starts that post', () => {
+test('2. tapping the on-post music control starts and re-enables autoplay', () => {
   assert.match(feed, /startManualFeedPlayback\(p\)/)
   assert.match(playback, /export async function startManualFeedPlayback/)
-  assert.match(playback, /armed\.add\(postId\)/)
+  assert.match(playback, /setFeedAutoplayPref\(true\)/)
 })
 
 test('3. scrolling away pauses the song', () => {
@@ -27,16 +28,16 @@ test('3. scrolling away pauses the song', () => {
   assert.match(playback, /export function stopFeedPlayback/)
 })
 
-test('4. scrolling back resumes an armed post at its saved position', () => {
-  assert.match(playback, /const armed = new Set<string>\(\)/)
+test('4. scrolling back resumes the track at its saved position', () => {
+  assert.match(playback, /if \(activePostId === postId && isInlinePlaying\(postId\)\) return true/)
   assert.match(inline, /resumeAt\.set\(previousId, previous\.currentTime \|\| 0\)/)
   assert.match(inline, /const at = resumeAt\.get\(id\)/)
 })
 
-test('5. pausing a post disarms only that post, not every song in the feed', () => {
+test('5. the music control is a persistent mute, not a one-post pause', () => {
   assert.match(feed, /pauseManualFeedPlayback\(p\)/)
-  assert.match(playback, /armed\.delete\(postId\)/)
-  assert.doesNotMatch(feed, /setFeedAutoplayPref/)
+  assert.match(playback, /setFeedAutoplayPref\(false\)/)
+  assert.doesNotMatch(playback, /armed/)
 })
 
 test('6. a browser that refuses playback shows a retry state, not a dead control', () => {
@@ -77,4 +78,20 @@ test('11. videos keep their muted-safe viewport autoplay', () => {
 
 test('12. the global player still exposes playing state for priority checks', () => {
   assert.match(player, /isGlobalPlayerPlaying/)
+})
+
+test('13. a blocked first play starts muted and the first gesture unmutes it', () => {
+  // Chrome/Safari refuse audible autoplay before a gesture. The feed must not
+  // go silent for the session: start muted (always allowed), then unmute on the
+  // first tap/keypress instead of waiting for the disc to be tapped.
+  assert.match(inline, /audio\.muted = true/)
+  assert.match(inline, /export function unmuteInlineMediaAudio/)
+  assert.match(playback, /unmuteInlineMediaAudio\(\)/)
+  assert.match(playback, /export function retryPendingFeedPlayback/)
+  assert.match(playback, /addEventListener\(type, retryPendingFeedPlayback, \{ passive: true \}\)/)
+})
+
+test('14. a post taller than the viewport still counts as focused', () => {
+  assert.match(feed, /entry\.boundingClientRect\.height > \(window\.innerHeight \|\| 0\) \* 0\.9/)
+  assert.match(feed, /tall && entry\.intersectionRatio >= 0\.35/)
 })

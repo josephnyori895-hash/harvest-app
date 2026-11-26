@@ -38,6 +38,48 @@ called healthy. The APK-level release record lives in `release-ledger.md`.
 
 ## Remaining P1 gates before "original scope complete"
 
+## Release compatibility contract
+
+Every Harvest APK must install **directly over** the installed app. Three things
+are pinned, and publication is blocked if any of them drifts:
+
+| Contract | Pinned value | Where |
+| --- | --- | --- |
+| Application id | `com.harvestfamily.nyeri` | `android/release-package-id.txt` (gradle build fails on mismatch) |
+| Signing certificate SHA-256 | `88af053c2bfda59abe8a64a75c3015755d25f0e5ebc1eeb4c4cc508e87aa54d9` | `android/release-cert-sha256.txt` |
+| Version code | strictly greater than the live release | release workflow + `android/version-code.txt` floor |
+
+Gates, in order, before deployment:
+
+1. `scripts/verify-apk-cert.mjs <apk>` — the signing key is the approved one.
+2. `scripts/release-compat-check.mjs --apk <new> --previous-apk <previous>` —
+   same package id, same certificate, higher versionCode than the previous
+   verified release.
+3. `scripts/android-upgrade-test.sh <previous> <new>` on an emulator — installs
+   the previous release, installs the new one with `adb install -r`, asserts
+   `firstInstallTime` did not change (data preserved), and launches the app.
+4. After deploy: versioned and permanent APK URLs must serve byte-identical
+   files, and the published SHA-256 must match the verified artifact.
+
+The versionCode is `max(1000 + run number, live versionCode + 1)`, so a re-run
+or a reset run counter can never publish a downgrade. The signing key is never
+rotated to fix an install error, and the application id is never changed to
+bypass one.
+
+### APK signing — never publish a locally built APK
+
+Android only installs an update signed with the same certificate as the app
+already on the phone. A local `./gradlew assembleRelease` uses the developer
+keystore and produces an APK that fails with **“App not installed as package
+conflicts with an existing package.”**
+
+- The published certificate is pinned in `android/release-cert-sha256.txt`.
+- Before any APK is copied into `workers/public/`, run
+  `node scripts/verify-apk-cert.mjs <apk>`; it exits non-zero on a mismatch.
+- The release workflow runs the same check before staging, so CI fails instead
+  of shipping a conflicting build. If you re-stage an APK by hand, run the check
+  too.
+
 ### Gate 1 — FCM live send (needs Firebase credentials)
 
 **Engineering prerequisites — COMPLETE:**

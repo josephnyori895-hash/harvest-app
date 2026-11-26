@@ -143,7 +143,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
   return (
     <>
       {error && <div className="px-4 pt-3"><ErrorMessage message={error} /></div>}
-       <div data-profile-user-id={profile.id || ''} data-profile-username={profile.username || ''} data-profile-name={displayName} data-profile-congregation={groupName} data-profile-verified={profile.verified ? 'true' : 'false'} data-profile-role={profile.role || 'member'} className="min-h-screen bg-gradient-to-b from-amber-50 to-purple-50 text-neutral-900">
+       <div data-profile-user-id={profile.id || ''} data-profile-username={profile.username || ''} data-profile-name={displayName} data-profile-congregation={groupName} data-profile-verified={profile.verified ? 'true' : 'false'} data-profile-role={profile.role || 'member'} className="min-h-screen bg-gradient-to-b from-surface to-accent-soft text-neutral-900">
       {storyIdx !== null && <StoryViewer idx={storyIdx} setIdx={setStoryIdx} allStories={allProfileStories} users={[]} />}
       <div className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-neutral-200 flex items-center gap-3 pl-4 pr-14 h-14">
         <button onClick={onBack} aria-label="Back" className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-2xl hover:bg-neutral-100 active:scale-95 transition">‹</button>
@@ -170,7 +170,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
             onClick={() => { if (stories.length) setStoryIdx(0) }}
             disabled={!stories.length}
             aria-label={stories.length ? `View ${displayName}'s status` : 'No status'}
-            className={`flex-shrink-0 w-24 h-24 rounded-full p-1 ${stories.length ? 'bg-gradient-to-br from-amber-400 to-purple-600 cursor-pointer active:scale-95 transition-transform' : 'bg-neutral-200'}`}
+            className={`flex-shrink-0 w-24 h-24 rounded-full p-1 ${stories.length ? 'bg-gradient-to-br from-gold to-accent cursor-pointer active:scale-95 transition-transform' : 'bg-neutral-200'}`}
           >
             {profile.avatar_url ? (
               <img src={profile.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
@@ -187,7 +187,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
               <div className="flex-1"><p className="text-lg font-bold text-gradient-warm">{followState.follows_you ? 'Yes' : '—'}</p><p className="text-xs text-neutral-600">Follows you</p></div>
             </div>
           </div>
-          <div className="text-right"><span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap block ${profile.role === 'admin' ? 'badge-admin' : profile.role === 'leader' ? 'bg-amber-100 text-amber-800' : profile.verified ? 'badge-verified' : 'badge-member'}`}>{profile.role === 'admin' ? 'Admin' : profile.role === 'leader' ? 'Leader' : profile.verified ? 'Verified' : 'Member'}</span></div>
+          <div className="text-right"><span className={`text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap block ${profile.role === 'admin' ? 'badge-admin' : profile.role === 'leader' ? 'bg-gold-soft text-gold-strong' : profile.verified ? 'badge-verified' : 'badge-member'}`}>{profile.role === 'admin' ? 'Admin' : profile.role === 'leader' ? 'Leader' : profile.verified ? 'Verified' : 'Member'}</span></div>
         </div>
         <div className="mt-4 space-y-2">
           <div className="flex items-center gap-2 text-sm"><Icon name="map" size={16} className="text-accent" /><span className="font-medium">{profile.location || 'Nyeri'}</span></div>
@@ -212,14 +212,14 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
           <p className="mb-3 inline-flex items-center gap-1.5 text-2xs font-extrabold uppercase tracking-[0.12em] text-accent-strong"><Icon name="shield" size={13} /> Admin controls</p>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => void toggleVerify()} disabled={busy} className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${profile.verified ? 'bg-danger-soft text-danger hover:bg-danger/15' : 'bg-success-soft text-success hover:bg-success/15'}`}>{profile.verified ? <><Icon name="close" size={13} /> Unverify</> : <><Icon name="check" size={13} /> Verify</>}</button>
-            <button onClick={() => void cycleRole()} disabled={busy} className="px-3 py-2 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700 transition-all">Role: {profile.role === 'admin' ? 'Admin' : 'Member'}</button>
+            <button onClick={() => void cycleRole()} disabled={busy} className="px-3 py-2 rounded-lg bg-accent text-white text-xs font-bold hover:bg-accent-strong transition-all">Role: {profile.role === 'admin' ? 'Admin' : 'Member'}</button>
           </div>
           <p className="text-xs text-neutral-600 mt-3 mb-2 font-medium">Move to Group:</p>
           <div className="flex flex-wrap gap-2">{groups.map(g => <button key={g} disabled={busy || g === groupName} onClick={() => addToGroup(g)} className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${g === groupName ? 'bg-accent text-white' : 'border border-line bg-surface-raised text-accent-strong hover:bg-accent-soft'}`}>{g === groupName ? <><Icon name="check" size={12} /> {g.split(' ')[1]}</> : <>{g.split(' ')[1]} <Icon name="arrow-right" size={12} /></>}</button>)}</div>
         </div>
       )}
       {stories.length > 0 && (
-        <div className="mt-6 px-4"><h3 className="mb-3 text-sm font-extrabold text-ink">Stories</h3><div className="flex gap-3 overflow-x-auto pb-2">{stories.slice(0, 5).map((s: any, i: number) => <button key={s.id || i} onClick={() => setStoryIdx(i)} className="flex-shrink-0 w-20 h-28 rounded-xl overflow-hidden border-2 border-neutral-200 hover:border-purple-400 transition-all hover-lift relative">{s.thumb_url ? <img src={s.thumb_url} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} /> : String(s.media_type) === 'video' ? (s.video_url ? <video src={`${s.video_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink to-surface-inverse"><Icon name="reels" size={22} className="text-white/70" /></div>) : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft"><Icon name="camera" size={22} className="text-accent-strong/60" /></div>}{String(s.media_type) === 'video' && s.thumb_url && <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-ink/60 flex items-center justify-center text-[10px] text-white">▶</span>}</button>)}</div></div>
+        <div className="mt-6 px-4"><h3 className="mb-3 text-sm font-extrabold text-ink">Stories</h3><div className="flex gap-3 overflow-x-auto pb-2">{stories.slice(0, 5).map((s: any, i: number) => <button key={s.id || i} onClick={() => setStoryIdx(i)} className="flex-shrink-0 w-20 h-28 rounded-xl overflow-hidden border-2 border-neutral-200 hover:border-accent transition-all hover-lift relative">{s.thumb_url ? <img src={s.thumb_url} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} /> : String(s.media_type) === 'video' ? (s.video_url ? <video src={`${s.video_url}#t=0.001`} className="w-full h-full object-cover" muted playsInline preload="metadata" /> : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink to-surface-inverse"><Icon name="reels" size={22} className="text-white/70" /></div>) : <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft"><Icon name="camera" size={22} className="text-accent-strong/60" /></div>}{String(s.media_type) === 'video' && s.thumb_url && <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-ink/60 flex items-center justify-center text-[10px] text-white">▶</span>}</button>)}</div></div>
       )}
       <div className="mt-6 px-4">
         <h3 className="mb-3 text-sm font-extrabold text-ink">Posts</h3>

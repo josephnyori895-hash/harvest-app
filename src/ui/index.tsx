@@ -32,7 +32,8 @@ export type IconName =
   | 'alert' | 'info' | 'close' | 'copy' | 'retry' | 'chevron-right'
   | 'chevron-down' | 'bank' | 'shield' | 'bookmark' | 'camera' | 'dots'
   | 'arrow-left' | 'arrow-right' | 'map' | 'send' | 'reply' | 'star' | 'trash' | 'share' | 'users' | 'smile'
-  | 'play' | 'pause' | 'music' | 'mic' | 'sparkle' | 'pencil' | 'volume' | 'volume-x'
+  | 'play' | 'pause' | 'music' | 'mic' | 'sparkle' | 'pencil' | 'volume' | 'volume-x' | 'download'
+  | 'instagram' | 'youtube' | 'tiktok'
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   home: <><path d="M3 10.7 12 3.2l9 7.5" /><path d="M5.4 9.6V20h13.2V9.6" /></>,
@@ -80,6 +81,10 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   pencil: <><path d="M4.2 19.8h4l10.4-10.4a2.4 2.4 0 0 0-3.4-3.4L4.8 16.4l-.6 3.4Z" /><path d="m13.6 7.4 3.4 3.4" /></>,
   volume: <><path d="M4.2 9.4h3.2L12 5.6v12.8L7.4 14.6H4.2V9.4Z" /><path d="M15.6 9.2a3.8 3.8 0 0 1 0 5.6" /><path d="M18.2 6.6a7.4 7.4 0 0 1 0 10.8" /></>,
   'volume-x': <><path d="M4.2 9.4h3.2L12 5.6v12.8L7.4 14.6H4.2V9.4Z" /><path d="m16 9.6 4.4 4.8M20.4 9.6 16 14.4" /></>,
+  download: <><path d="M12 3.8v10.6" /><path d="m7.4 10 4.6 4.6 4.6-4.6" /><path d="M4.8 19.6h14.4" /></>,
+  instagram: <><rect x="3.6" y="3.6" width="16.8" height="16.8" rx="5" /><circle cx="12" cy="12" r="4.1" /><path d="M16.9 7.2h.01" /></>,
+  youtube: <><rect x="2.8" y="5.4" width="18.4" height="13.2" rx="4" /><path d="m10.4 9.4 4.8 2.6-4.8 2.6z" /></>,
+  tiktok: <><path d="M14.4 3.8v9.6a3.4 3.4 0 1 1-3.4-3.4" /><path d="M14.4 5.8c.6 2.2 2 3.4 4.2 3.6" /></>,
 }
 
 export function Icon({

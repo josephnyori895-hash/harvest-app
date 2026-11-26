@@ -74,7 +74,7 @@ assert.match(departments, /cannot remove the only department leader/)
 assert.match(capabilities, /'create_groups'[\s\S]{0,120}'create_departments'/)
 assert.match(departments, /hasCap\(fresh, 'create_departments'\)/, 'department creation must honour the delegated grant')
 assert.match(departments, /department creation is granted by the admin/)
-assert.match(departments, /if \(fresh\.role !== 'admin' && actor\.rows\[0\]\?\.role !== 'leader'\) return errorResponse\('department leader required', 403\)[\s\S]{0,900}?UPDATE departments SET name=\?/, 'system admin and department leader can edit a department')
+assert.match(departments, /if \(fresh\.role !== 'admin' && actor\.rows\[0\]\?\.role !== 'leader'\) return errorResponse\('department leader required', 403\)[\s\S]{0,1700}?UPDATE departments SET name=\?/, 'system admin and department leader can edit a department')
 assert.match(groups, /hasCap\(fresh, 'create_groups'\)/, 'group creation must honour the delegated grant')
 assert.match(groups, /const isAdmin = fresh\.role === 'admin' \|\| actorRole === 'admin' \|\| hasCap\(fresh, 'manage_groups'\)/, 'system admin can edit any group')
 assert.match(securityMigration, /password_hash = NULL/)
@@ -92,16 +92,28 @@ assert.match(workerConfig, /ADMIN_USERNAME = "hfcnyeri"/, 'the readable admin la
 assert.match(adminDevices, /primaryAdminUsername/)
 assert.match(adminDevices, /ADMIN_OTP_DEV/, 'local-only code fallback must be explicit')
 
+// Break-glass recovery: the single admin must not be permanently locked out
+// when the bound phone cannot receive a push code. The recovery secret is
+// long, compared in constant time, and only usable after the password check.
+assert.match(adminDevices, /ADMIN_RECOVERY_CODE/, 'a server-held recovery code must exist')
+assert.match(adminDevices, /length >= 12/, 'the recovery code must be long enough to resist guessing')
+assert.match(adminDevices, /secretMatches\(recovery, String\(env\.ADMIN_RECOVERY_CODE/, 'the recovery code must be compared in constant time')
+assert.match(adminDevices, /if \(adminRecoveryConfigured\(env\)\) return \{ ok: true, challengeId: id, expiresAt, delivery: 'unavailable' \}/, 'an undeliverable code must keep the challenge alive for recovery')
+assert.match(adminDevices, /recovery \? 'that recovery code is not right/, 'wrong recovery codes must be rate-limited like wrong phone codes')
+assert.match(routesAuth, /recovery_available: adminRecoveryConfigured\(env\)/, 'the client must know whether recovery is offered')
+
 // The primary admin is identified by id. Renaming the account must not remove
 // admin access or verification.
 const { isPrimaryAdmin } = await import('../workers/src/lib/adminDevices.js')
 assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'stable-id', username: 'renamed-admin' }), true, 'a renamed primary admin keeps access')
 assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'other-id', username: 'hfcnyeri' }), false, 'a username alone cannot claim the primary admin')
 assert.doesNotMatch(usersRoute, /isPrimaryAdmin\(env, [^)]*\.username\)/, 'role checks must not depend on a mutable username')
-assert.match(adminDevices, /installation_id=\?[\s\S]{0,600}sendToDevice\(env,[\s\S]{0,300}admin_login_code/, 'code must be pushed to the bound phone only')
+assert.match(adminDevices, /installation_id=\?[\s\S]{0,1400}sendToDevice\(env, pushRows\[0\]\.fcm_token,[\s\S]{0,300}admin_login_code/, 'code must be pushed to the bound phone only')
 assert.match(adminDevices, /pbkdf2Verify\(code, challenge\.code_hash\)/, 'code must be verified from its hash')
 assert.match(adminDevices, /MAX_ATTEMPTS = 5/)
-assert.match(adminDevices, /admin_web_epoch=admin_web_epoch\+1/, 'new browser must revoke the old browser token')
+assert.match(adminDevices, /DELETE FROM admin_devices[\s\S]{0,220}ORDER BY last_seen_at DESC LIMIT \?/, 'approving past the two-device allowance evicts the device used longest ago')
+assert.match(adminDevices, /MAX_TRUSTED_DEVICES = 2/, 'the allowance is two devices in total')
+assert.match(auth, /SELECT 1 FROM admin_devices WHERE user_id=\? AND kind=\? AND device_id=\?/, 'an evicted device token must stop working immediately')
 assert.match(auth, /admin_web_epoch, admin_mobile_epoch/)
 assert.match(auth, /admin session was replaced by a newer sign-in/)
 assert.match(routesAuth, /verification_required: true/)

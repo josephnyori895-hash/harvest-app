@@ -31,6 +31,20 @@ const STATUS_TONE: Record<string, string> = {
   canceled: 'bg-danger-soft text-danger border-danger/20',
 }
 
+// The calendar must sit in the order things actually went out. A published
+// post can have been scheduled days earlier, so scheduled_at is only the right
+// stamp while it is still queued; afterwards the state's own timestamp wins.
+function postedAt(p: Publication) {
+  if (p.status === 'published') return p.published_at || p.scheduled_at || p.created_at
+  if (p.status === 'expired') return p.expired_at || p.published_at || p.scheduled_at || p.created_at
+  if (p.status === 'canceled') return p.canceled_at || p.scheduled_at || p.created_at
+  return p.scheduled_at || p.created_at
+}
+function postedTime(p: Publication) {
+  const t = Date.parse(postedAt(p))
+  return Number.isFinite(t) ? t : 0
+}
+
 type Publication = {
   id: string
   content_type: string
@@ -199,8 +213,9 @@ export default function PublishingCalendar() {
       return p.status === 'expired' || p.status === 'canceled'
     })
     return rows.sort((a, b) => {
-      const at = Date.parse(a.scheduled_at || a.published_at || a.created_at)
-      const bt = Date.parse(b.scheduled_at || b.published_at || b.created_at)
+      const at = postedTime(a)
+      const bt = postedTime(b)
+      // Upcoming reads soonest-first; everything else newest-first.
       return filter === 'upcoming' ? at - bt : bt - at
     })
   }, [pubs, filter])
@@ -208,7 +223,7 @@ export default function PublishingCalendar() {
   const groups = useMemo(() => {
     const out: { key: string; label: string; rows: Publication[] }[] = []
     for (const p of visible) {
-      const stamp = p.scheduled_at || p.published_at || p.created_at
+      const stamp = postedAt(p)
       const key = nairobiDay(stamp)
       let group = out.find(x => x.key === key)
       if (!group) { group = { key, label: nairobiDayLabel(stamp), rows: [] }; out.push(group) }
@@ -477,7 +492,8 @@ export default function PublishingCalendar() {
             <h3 className="px-1 text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-subtle">{group.label}</h3>
             {group.rows.map(p => {
               const editable = p.status === 'draft' || p.status === 'scheduled'
-              const when = p.scheduled_at || p.published_at
+              const when = postedAt(p)
+              const whenLabel = p.status === 'published' ? 'Published' : p.status === 'expired' ? 'Expired' : p.status === 'canceled' ? 'Canceled' : 'Scheduled'
               return (
                 <article key={p.id} className="rounded-card border border-line bg-surface-raised p-3.5">
                   <div className="flex items-start justify-between gap-2">
@@ -490,7 +506,7 @@ export default function PublishingCalendar() {
                     <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-extrabold ${STATUS_TONE[p.status] || STATUS_TONE.draft}`}>{STATUS_LABEL[p.status] || p.status}</span>
                   </div>
                   <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-2xs">
-                    <div><dt className="text-ink-subtle">{p.status === 'published' ? 'Published' : p.status === 'expired' ? 'Expired' : 'Scheduled'}</dt><dd className="font-bold text-ink-muted">{formatNairobi(when)}</dd></div>
+                    <div><dt className="text-ink-subtle">{whenLabel}</dt><dd className="font-bold text-ink-muted">{formatNairobi(when)}</dd></div>
                     <div><dt className="text-ink-subtle">Expiry</dt><dd className="font-bold text-ink-muted">{formatNairobi(p.expires_at)}</dd></div>
                   </dl>
                   {p.last_error && <p className="mt-2 rounded-xl bg-danger-soft p-2 text-[10px] font-semibold text-danger">Retry: {p.last_error}</p>}

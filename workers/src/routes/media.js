@@ -457,10 +457,17 @@ export async function handleMedia(request, env, ctx) {
     if (isAdmin || fresh.verified || hasCap(fresh, 'post_media')) {
       const id = uuid()
       if (type === 'post') {
+        // Album posts: the composer uploads each extra photo first, then sends
+        // their keys. Keep the original key first so old readers still work;
+        // only keys this member just uploaded under originals/post/ are kept.
+        const extra = (Array.isArray(body?.media_keys) ? body.media_keys : [])
+          .map(k => String(k || '').trim())
+          .filter(k => k.startsWith('originals/post/') && k !== key)
+        const mediaKeys = [...new Set([key, ...extra])].slice(0, 10)
         await query(
           env,
-          `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          [id, userId, caption || '', key, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+          `INSERT INTO posts (id, user_id, caption, original_key, media_keys, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, userId, caption || '', key, mediaKeys.length > 1 ? JSON.stringify(mediaKeys) : null, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
         )
       } else if (type === 'reel') {
         // Optional client-picked poster (cover frame) for reels: captured by the

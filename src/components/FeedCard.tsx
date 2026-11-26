@@ -20,6 +20,8 @@ export type FeedCardPost = {
   loc?: string
   time?: string
   img?: string
+  /** Album posts: two or more photos rendered as a swipeable carousel. */
+  media?: string[]
   video?: string
   caption?: string
   kind?: string
@@ -200,9 +202,8 @@ function useInlineMusic(p: FeedCardPost) {
     if (!url) { setFailed(true); return false }
     if (loading) return false
     if (playing) {
-      // Pausing this post disarms it; scrolling back will stay quiet until the
-      // member taps again. Unlike the old implementation, it does not mute every
-      // other music post for the rest of the session.
+      // Pausing this control mutes feed music; scrolling back stays quiet until
+      // the member taps a music control again.
       pauseManualFeedPlayback(p)
       return false
     }
@@ -249,6 +250,47 @@ function FeedImagePreview({ src, alt = '' }: { src: string; alt?: string }) {
   )
 }
 
+// Album post: swipe between photos, with a counter so the member knows there
+// is more than one. Uses native scroll-snap, so it works with touch, trackpad
+// and keyboard without a gesture library.
+function FeedAlbum({ images }: { images: string[] }) {
+  const [index, setIndex] = useState(0)
+  const trackRef = useRef<HTMLDivElement>(null)
+  return (
+    <div className="relative w-full bg-surface-sunken" data-testid="feed-album">
+      <div
+        ref={trackRef}
+        className="flex w-full snap-x snap-mandatory overflow-x-auto"
+        style={{ scrollbarWidth: 'none' }}
+        onScroll={event => {
+          const el = event.currentTarget
+          if (!el.clientWidth) return
+          setIndex(Math.round(el.scrollLeft / el.clientWidth))
+        }}
+      >
+        {images.map((src, i) => (
+          <img
+            key={`${src}-${i}`}
+            src={src}
+            alt={`Photo ${i + 1} of ${images.length}`}
+            loading={i === 0 ? 'eager' : 'lazy'}
+            decoding="async"
+            className="max-h-[70vh] w-full shrink-0 snap-center object-contain"
+          />
+        ))}
+      </div>
+      <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-ink/60 px-2 py-0.5 text-[10px] font-extrabold text-white backdrop-blur-sm">
+        {index + 1}/{images.length}
+      </span>
+      <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1">
+        {images.map((src, i) => (
+          <span key={`${src}-dot-${i}`} className={`h-1.5 w-1.5 rounded-full ${i === index ? 'bg-white' : 'bg-white/40'}`} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMenu, onLike, onComment, onShare, saved, onSave, onOpenUser }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -256,15 +298,21 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
   const ref = useRef<HTMLElement | null>(null)
   const music = useInlineMusic(p)
 
-  // IG-style scroll behaviour: videos arm the muted-safe stage; a song post only
-  // resumes audio after the member has tapped that post's music control.
+  // IG-style scroll behaviour: the card that is mostly on screen plays its
+  // video and its attached music. Scrolling away pauses both; scrolling back
+  // resumes them, and the music control mutes/unmutes.
   useEffect(() => {
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
     const musicEligible = Boolean(p.music?.url && p.music?.id)
     if (!p.video && !musicEligible) return
     const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+      // A full-bleed portrait post can be taller than the viewport, and 60% of
+      // it then never fits on screen — the track would never start on a phone.
+      // Tall cards only need a third of themselves visible to count as "focused".
+      const tall = entry.boundingClientRect.height > (window.innerHeight || 0) * 0.9
+      const focused = entry.isIntersecting && (entry.intersectionRatio >= 0.6 || (tall && entry.intersectionRatio >= 0.35))
+      if (focused) {
         if (p.video) setAutoPlayVideo(true)
         if (musicEligible) void startFeedPlayback(p).catch(() => {})
       } else {
@@ -273,7 +321,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
         if (musicEligible) stopFeedPlayback(p)
         setAutoPlayVideo(false)
       }
-    }, { threshold: [0, 0.6] })
+    }, { threshold: [0, 0.35, 0.6] })
     io.observe(el)
     return () => { io.disconnect() }
   }, [p.music, p.video])
@@ -332,17 +380,16 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
         </button>
       </div>
 
-      {/* media — full bleed, no card frame; music metadata lives under the username */}
-      {p.video || p.img ? (
+      {/* media — full bleed, no card frame; music metadata lives under the username.
+          Text-only posts (calendar announcements and feed posts) must not reserve
+          a fake 4:5 media stage: an absent image is not a pending image. */}
+      {(p.video || p.img) && (
         <div className="relative">
           {p.video
             ? <FeedMediaPreview src={p.video} poster={p.img} autoPlay={autoPlayVideo} />
-            : <FeedImagePreview src={p.img as string} />}
-        </div>
-      ) : (
-        <div className="flex aspect-[4/5] w-full flex-col items-center justify-center gap-2 bg-surface-sunken text-ink-subtle" aria-label="Image pending review">
-          <Icon name="camera" size={26} />
-          <span className="text-2xs font-semibold">Photo on its way</span>
+            : p.media && p.media.length > 1
+              ? <FeedAlbum images={p.media} />
+              : <FeedImagePreview src={p.img as string} />}
         </div>
       )}
 

@@ -18,6 +18,8 @@ export type UploadKind = 'avatar' | 'story' | 'post' | 'reel' | 'track' | 'sermo
 export type UploadTask = {
   kind: UploadKind
   file: File | Blob
+  /** Album posts only: additional photos uploaded with the same post. */
+  extra_files?: File[]
   /** Stable per-logical-upload key — retries of the same upload reuse it. */
   idempotency_key?: string
   filename?: string
@@ -520,6 +522,20 @@ async function performUpload(task: UploadTask, onPct: (p: number) => void) {
   // not allow — decode here and ship a compact JPEG instead.
   const source = task.kind === 'avatar' ? await coverThumbnail(task.file, 512) : task.file
   const audioKey = await uploadOne(source, task.kind, task.filename, onPct, 0, task.kind === 'track' ? 88 : 95, idempotencyKey)
+  // Album posts: each extra photo is a separate presigned upload, then the
+  // confirm call carries the ordered key list. Progress is shared across the
+  // whole album so the pill reflects the real transfer.
+  const extraKeys: string[] = []
+  const extras = Array.isArray(task.extra_files) ? task.extra_files : []
+  if (task.kind === 'post' && extras.length) {
+    for (let i = 0; i < extras.length; i++) {
+      const key = await uploadOne(
+        extras[i], 'post', extras[i].name, onPct, 0, 95,
+        `${idempotencyKey}-${i + 1}`,
+      )
+      extraKeys.push(key)
+    }
+  }
   let coverKey: string | undefined
   if (task.kind === 'track' && task.cover) {
     const cover = await coverThumbnail(task.cover)
@@ -542,6 +558,7 @@ async function performUpload(task: UploadTask, onPct: (p: number) => void) {
       // Tracks upload their cover in this lifecycle; reels may already have
       // a pre-uploaded poster key. Prefer the newly uploaded cover when present.
       cover_key: coverKey ?? task.cover_key,
+      ...(task.kind === 'post' && extraKeys.length ? { media_keys: [audioKey, ...extraKeys] } : {}),
       duration_secs: task.duration_secs,
       scheduled_at: task.scheduled_at,
       expires_at: task.expires_at,

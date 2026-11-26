@@ -496,6 +496,8 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     // Reels: the video itself is the preview (posters are optional). Only real
     // images go through img — feeding a video URL to <img> renders broken.
     img: p.kind === 'reel' ? (p.thumb_url || undefined) : (p.thumb_url || undefined),
+    // Album posts: every photo, in the author's order.
+    media: Array.isArray(p.media_urls) && p.media_urls.length > 1 ? p.media_urls : undefined,
     video: p.kind === 'reel' ? (p.hls_url || undefined) : undefined,
     caption: p.caption || '',
     kind: p.is_pinned ? 'Pinned' : p.kind === 'reel' ? 'Video' : 'Community',

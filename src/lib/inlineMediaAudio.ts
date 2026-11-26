@@ -6,6 +6,10 @@ let inlineAudio: HTMLAudioElement | null = null
 let activeId: string | null = null
 let onChange: ((id: string | null) => void) | null = null
 const listeners = new Set<(id: string | null) => void>()
+// True when the only way the browser would start this track was muted (sound-on
+// autoplay before any gesture is blocked). The first gesture raises the volume
+// instead of leaving the feed silently "playing".
+let mutedForPolicy = false
 // Last playback position per track id — scrolling back to a track resumes where
 // the member left it instead of restarting from zero.
 const resumeAt = new Map<string, number>()
@@ -22,6 +26,7 @@ export function stopInlineMediaAudio() {
   const previousId = activeId
   inlineAudio = null
   activeId = null
+  mutedForPolicy = false
   const previousChange = onChange
   onChange = null
   if (previous) {
@@ -54,6 +59,10 @@ export async function startInlineMediaTrack(track: { id: string; url?: string | 
 
   stopInlineMediaAudio()
   const audio = new Audio(track.url)
+  // Feed audio is short and starts on a scroll gesture: buffer immediately so
+  // play() is not rejected/delayed while the request is still in flight.
+  audio.preload = 'auto'
+  audio.setAttribute('playsinline', '')
   inlineAudio = audio
   activeId = id
   onChange = changed || null
@@ -71,9 +80,32 @@ export async function startInlineMediaTrack(track: { id: string; url?: string | 
     if (at && at > 1) { try { audio.currentTime = at } catch { void restorePosition(audio, id, resumeAt) } }
     return true
   } catch {
-    if (inlineAudio === audio) stopInlineMediaAudio()
-    return false
+    // Sound-on autoplay is blocked until the member interacts. Start the track
+    // muted instead (allowed everywhere): it begins on scroll like a feed app,
+    // and the first tap/keypress unmutes it through unmuteInlineMediaAudio().
+    if (inlineAudio !== audio) return false
+    try {
+      audio.muted = true
+      await audio.play()
+      mutedForPolicy = true
+      markAudioUnlocked()
+      const at = resumeAt.get(id)
+      if (at && at > 1) { try { audio.currentTime = at } catch { void restorePosition(audio, id, resumeAt) } }
+      return true
+    } catch {
+      if (inlineAudio === audio) stopInlineMediaAudio()
+      return false
+    }
   }
+}
+
+/** Raise the volume on a track that autoplay forced to start muted. Returns
+ *  true when sound was restored. */
+export function unmuteInlineMediaAudio(): boolean {
+  if (!inlineAudio || !mutedForPolicy) return false
+  inlineAudio.muted = false
+  mutedForPolicy = false
+  return true
 }
 
 // Restore position once metadata has loaded when the early seek throws.

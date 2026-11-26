@@ -7,17 +7,15 @@ import { recordNotificationsSafe } from '../lib/notif.js'
 import { hasCap } from '../lib/capabilities.js'
 import { mediaUrlOrNull } from '../lib/media.js'
 
-// SQL scoring mirror (score = 0.45*exp(-h/72) + 0.25*engNorm + 0.20*affinity + 0.10*verified + pinned)
-function scoreOne({ created_at, likes = 0, comments = 0, group_name, constituency, faith, verified, is_pinned }, viewer, maxEngRaw) {
-  const h = (Date.now() - new Date(created_at).getTime()) / 3600000
-  const recency = Math.exp(-h / 72)
-  const engRaw = Math.log(1 + (likes || 0) + (comments || 0) * 3)
-  const engNorm = maxEngRaw > 0 ? engRaw / maxEngRaw : 0
-  const affinity = group_name && viewer?.group_name && group_name === viewer.group_name ? 0.5
-    : constituency && viewer?.constituency && constituency === viewer.constituency ? 0.3
-    : faith && viewer?.faith && faith === viewer.faith ? 0.2 : 0
-  const pinnedBoost = is_pinned ? 1000 : 0
-  return 0.45 * recency + 0.25 * engNorm + 0.20 * affinity + 0.10 * (verified ? 1 : 0) + pinnedBoost
+// The feed reads like a church timeline: pinned notices on top, then strictly
+// newest-first by the moment the post went out. It used to mix likes, group
+// affinity and verification into the order, which let a 19-hour-old post sit
+// above something posted 20 minutes ago. Readers expect date order, so the
+// sort is pinned → created_at only.
+function byNewest(a, b) {
+  const pin = (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0)
+  if (pin) return pin
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 }
 
 // Ranking needs the candidate set in memory, so the window is bounded: the
@@ -46,16 +44,11 @@ export async function handleFeed(request, env, ctx) {
     // every later page. A post published mid-scroll then cannot shift offsets,
     // which is what made offset paging duplicate and skip items.
     const cursor = cursorRaw || new Date().toISOString()
-    let viewer = null
-    if (user?.id) {
-      const r = await query(env, 'SELECT group_name, constituency, faith FROM users WHERE id=?', [user.id])
-      viewer = r.rows[0] || null
-    }
-    // Union posts + reels (approved), rank in JS (identical math to the pg SQL version).
+    // Union posts + reels (approved), then order them pinned-first, newest-first.
     const posts = await query(
       env,
       `SELECT p.id, p.user_id, u.username, u.name, u.avatar_key, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
-              p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.likes, p.comments, p.created_at,
+              p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.media_keys, p.likes, p.comments, p.created_at,
               p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
         WHERE p.approved_at IS NOT NULL AND p.created_at <= ?
@@ -117,10 +110,7 @@ export async function handleFeed(request, env, ctx) {
       image_url: p.image_key ? await mediaUrlOrNull(env, p.image_key, 6 * 3600) : null,
       project: { id:p.id, name:p.name, description:p.description || '', goal_kes:Number(p.goal_kes)||0, raised_kes:Number(p.raised_kes)||0, committed_kes:Number(p.committed_kes)||0, participants:Number(p.participants)||0, deadline:p.deadline, status:p.status, icon:p.icon || '🤲', image_url: p.image_key ? await mediaUrlOrNull(env, p.image_key, 6 * 3600) : null }
     })))
-    const maxEngRaw = Math.max(...items.map(i => Math.log(1 + (i.likes || 0) + (i.comments || 0) * 3)), 0)
-    const ranked = items
-      .map(i => ({ ...i, rank_score: scoreOne(i, viewer, maxEngRaw) }))
-      .sort((a, b) => b.rank_score - a.rank_score || new Date(b.created_at) - new Date(a.created_at))
+    const ranked = items.sort(byNewest)
     // Page a slice of the fixed window, so the same data always yields the same
     // order for a given offset and SQL remains the only thing touching tables.
     const page = ranked.slice(offset, offset + limit)
@@ -148,8 +138,21 @@ export async function handleFeed(request, env, ctx) {
       }
     }
 
-    const enriched = await Promise.all(page.map(async r => ({
+    const enriched = await Promise.all(page.map(async r => {
+      // Album posts: sign each photo. A bad/legacy value must not break the
+      // feed, so a parse failure simply falls back to the single original.
+      let mediaUrls
+      if (r.kind === 'post' && r.media_keys) {
+        try {
+          const keys = JSON.parse(String(r.media_keys))
+          if (Array.isArray(keys) && keys.length > 1) {
+            mediaUrls = (await Promise.all(keys.slice(0, 10).map(k => mediaUrlOrNull(env, String(k), 3600)))).filter(Boolean)
+          }
+        } catch { /* single-photo post */ }
+      }
+      return {
       ...r,
+      media_urls: mediaUrls,
       avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
       // Reels: thumb_url must be a POSTER image, never the video itself —
       // falling back to original_key gave clients a video URL as "thumbnail",
@@ -159,7 +162,8 @@ export async function handleFeed(request, env, ctx) {
         : await mediaUrlOrNull(env, r.thumb_key || r.original_key, 900),
       hls_url: r.kind === 'reel' ? await mediaUrlOrNull(env, r.original_key, 900) : null,
       music: r.music_track_id ? await musicFor(r.music_track_id) : null,
-    })))
+      }
+    }))
 
     // stories top strip
     let stories = []

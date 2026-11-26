@@ -88,6 +88,9 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const [musicLoading, setMusicLoading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // Album posts: extra photos beyond the first. Photos only — a reel, story or
+  // track is still one item.
+  const [extras, setExtras] = useState<{ file: File; url: string }[]>([])
   // Natural ratio of the previewed image, so the canvas matches the exact
   // geometry the feed will render — no black/white letterbox around a photo.
   const [imgRatio, setImgRatio] = useState<number | null>(null)
@@ -98,6 +101,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const [videoCover, setVideoCover] = useState<Blob | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const moreInput = useRef<HTMLInputElement>(null)
   const canCreate = canCreateContent(user, type)
   // Instagram's create sequence: pick & edit the media first, and the share
   // screen (caption + music) arrives only after. Photo/story/reel only —
@@ -110,6 +115,10 @@ export default function PostCreate({ onDone, initialType }: Props) {
     if (!previewUrl?.startsWith('blob:')) return
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
+
+  // Album thumbnails own their object URLs; release them when the selection
+  // changes or the composer closes.
+  useEffect(() => () => { for (const x of extras) URL.revokeObjectURL(x.url) }, [extras])
 
   useEffect(() => {
     if (!musicOpen) return
@@ -167,10 +176,47 @@ export default function PostCreate({ onDone, initialType }: Props) {
     }
   }
 
+  // A multi-photo selection becomes one album post: the first photo takes the
+  // usual edit step, the rest join it. Videos never mix with photos.
+  const onFiles = (list: FileList | null) => {
+    const picked = Array.from(list || [])
+    if (!picked.length) return
+    if (type === 'post' && picked.length > 1) {
+      const images = picked.filter(f => f.type.startsWith('image/')).slice(0, 10)
+      if (!images.length) { setNotice('Choose photos for a post, or one video.'); return }
+      const tooBig = images.map(f => uploadTooLarge('post', f.size)).find(Boolean)
+      if (tooBig) { setNotice(tooBig); return }
+      setNotice('')
+      for (const x of extras) URL.revokeObjectURL(x.url)
+      setExtras(images.slice(1).map(f => ({ file: f, url: URL.createObjectURL(f) })))
+      takeFile(images[0])
+      return
+    }
+    takeFile(picked[0])
+  }
+
   const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const f = event.target.files?.[0]
-    if (f) takeFile(f)
+    onFiles(event.target.files)
     event.target.value = ''
+  }
+
+  const addMorePhotos = (list: FileList | null) => {
+    const images = Array.from(list || []).filter(f => f.type.startsWith('image/'))
+    if (!images.length) return
+    const room = 10 - (file ? 1 : 0) - extras.length
+    const next = images.slice(0, Math.max(0, room))
+    if (!next.length) { setNotice('A post can hold up to 10 photos.'); return }
+    const tooBig = next.map(f => uploadTooLarge('post', f.size)).find(Boolean)
+    if (tooBig) { setNotice(tooBig); return }
+    setExtras(prev => [...prev, ...next.map(f => ({ file: f, url: URL.createObjectURL(f) }))])
+  }
+
+  const removeExtra = (index: number) => {
+    setExtras(prev => {
+      const gone = prev[index]
+      if (gone) URL.revokeObjectURL(gone.url)
+      return prev.filter((_, i) => i !== index)
+    })
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -198,6 +244,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
   const resetFor = (next: ContentType) => {
     setType(next); setFile(null); setPreviewUrl(null); setMusicTrack(null)
+    for (const x of extras) URL.revokeObjectURL(x.url)
+    setExtras([])
     setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null); setShare(false)
   }
 
@@ -248,6 +296,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
           task: {
             kind: serverTypeOf(file) as any,
             file,
+            extra_files: type === 'post' && extras.length ? extras.map(x => x.file) : undefined,
             caption: caption.trim(),
             title: (type === 'music' || type === 'sermon') ? title.trim() : undefined,
             artist: type === 'music' ? artist.trim() || 'Harvest Worship' : (type === 'sermon' ? artist.trim() || undefined : undefined),
@@ -416,13 +465,52 @@ export default function PostCreate({ onDone, initialType }: Props) {
                   <span className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3.5 py-2 text-2xs font-extrabold text-accent-strong">
                     <Icon name="camera" size={14} /> Choose from device
                   </span>
+                  {type === 'post' && <span className="text-[10px] font-semibold text-ink-subtle">Pick several photos to share one album</span>}
                 </button>
               )}
-              {/* No `capture` hint: Android would jump straight to the camera and
-                  hide the gallery. The picker must offer both. */}
-              <input ref={fileInput} type="file" accept={accept} onChange={onFile} className="hidden" />
+              {/* Gallery and camera are separate entries: a `capture` hint on the
+                  only input would hide the gallery, but a second input lets the
+                  member take a photo on the spot. */}
+              <input ref={fileInput} type="file" accept={accept} multiple={type === 'post'} onChange={onFile} className="hidden" />
+              <input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
+              <input ref={moreInput} type="file" accept="image/*" multiple onChange={e => { addMorePhotos(e.target.files); e.target.value = '' }} className="hidden" />
+              {!previewUrl && type !== 'video' && (
+                <button
+                  type="button"
+                  onClick={() => cameraInput.current?.click()}
+                  className="absolute right-3 top-3 inline-flex min-h-10 items-center gap-1.5 rounded-full bg-ink/60 px-3.5 text-2xs font-extrabold text-white backdrop-blur-sm"
+                >
+                  <Icon name="camera" size={14} /> Take photo
+                </button>
+              )}
             </div>
           )
+        )}
+
+        {isMediaKind && type === 'post' && extras.length > 0 && !share && (
+          <div className="flex items-center gap-2 overflow-x-auto px-3 pt-2" data-testid="create-album">
+            {extras.map((x, i) => (
+              <div key={x.url} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-line">
+                <img src={x.url} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeExtra(i)}
+                  aria-label={`Remove photo ${i + 2}`}
+                  className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-full bg-ink/70 text-white"
+                >
+                  <Icon name="close" size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => moreInput.current?.click()}
+              aria-label="Add more photos"
+              className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line text-ink-muted"
+            >
+              <Icon name="plus" size={18} />
+            </button>
+          </div>
         )}
 
         {!needsFile && (

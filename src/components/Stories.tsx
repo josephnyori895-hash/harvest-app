@@ -355,7 +355,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             <button onClick={()=>{setShowReplies(v=>!v); setShowViews(false); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs" aria-label="Open replies"><Icon name="chat" size={17} /></button>
           </>) : (<>
             <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
-            <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-purple-600 text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
+            <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-accent text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
           </>) }
         </div>
           <div className="text-center text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Forward') : 'Tap to pause • hold to pause • swipe to move'}</div>

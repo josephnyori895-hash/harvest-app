@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration] = await Promise.all([
+const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration, realtime, adminDevices, groupsScreen, payments, groupsRoute] = await Promise.all([
   read('src/components/Admin.tsx'),
   read('src/components/HarvestMap.tsx'),
   read('src/components/VerifiedBadge.tsx'),
@@ -20,6 +20,11 @@ const [admin, map, badge, app, auth, users, pending, departments, contentRoute, 
   read('workers/src/routes/adminHealth.js'),
   read('src/components/Home.tsx'),
   read('workers/migrations/0037_department_visibility.sql'),
+  read('workers/src/realtime.js'),
+  read('workers/src/lib/adminDevices.js'),
+  read('src/components/Groups.tsx'),
+  read('src/components/GivingPaymentEditor.tsx'),
+  read('workers/src/routes/groups.js'),
 ])
 
 test('admin centre is one redesigned shell with grouped, accessible navigation', () => {
@@ -32,6 +37,23 @@ test('admin centre is one redesigned shell with grouped, accessible navigation',
   assert.match(admin, /aria-selected=\{tab === value\}/, 'active section must be announced')
   assert.match(admin, /min-h-11/, 'controls must keep 44px touch targets')
   assert.match(admin, /rounded-card/, 'cards must use the design-system token')
+})
+
+test('admin is six destinations, each with its own workspace sections', () => {
+  assert.match(admin, /const WORKSPACES/, 'the six-destination map is missing')
+  for (const label of ['Dashboard', 'People & Structure', 'Content & Publishing', 'Giving & Finance', 'Community', 'App Settings & Security']) {
+    assert.ok(admin.includes(label), `${label} destination is missing`)
+  }
+  assert.match(admin, /aria-label="Administration destinations"/, 'the destination list needs an accessible name')
+  assert.match(admin, /data-testid="admin-workspace"/, 'each destination needs its workspace header')
+  assert.match(admin, /aria-label=\{`\$\{active\.label\} sections`\}/, 'workspace sub-sections must be a labelled tablist')
+  assert.match(admin, /aria-haspopup="menu"/, 'the central Create action needs a menu affordance')
+  assert.match(admin, /role="menuitem"/, 'Create must offer real creation routes')
+  // Every pre-existing screen stays reachable: no feature was dropped in the
+  // consolidation, only regrouped.
+  for (const section of ['dashboard', 'accounts', 'moderation', 'ministries', 'publishing', 'announce', 'home', 'content', 'media', 'give', 'chat', 'adverts', 'audit', 'support']) {
+    assert.ok(admin.includes(`['${section}'`), `section ${section} is no longer reachable`)
+  }
 })
 
 test('admin can move a member into a ministry without leaving one first', () => {
@@ -81,13 +103,55 @@ test('support centre exposes safe, read-only operational checks', () => {
 test('logo and welcome artwork are editable, public and safely validated', () => {
   assert.match(contentRoute, /logo_url: 500/, 'logo URL key is missing')
   assert.match(contentRoute, /landing_hero_url: 500/, 'welcome photo key is missing')
+  assert.match(contentRoute, /landing_background_url: 1400/, 'landing background photo key is missing')
   assert.match(contentRoute, /must be an http\(s\) image URL/, 'brand URLs must be validated')
+  assert.match(contentRoute, /k === 'landing_background_url'[\s\S]{0,600}at most 8 photos/, 'the rotating background list must be validated too')
   assert.match(admin, /data-testid="admin-brand-images"/, 'brand editor is missing')
   assert.match(admin, /setContentValue\('logo_url'/, 'logo editor is not wired to content')
   assert.match(admin, /setContentValue\('landing_hero_url'/, 'welcome photo editor is not wired to content')
+  assert.match(admin, /setContentValue\('landing_background_url'/, 'landing background editor is not wired to content')
+  assert.match(app, /landing_background_url: String\(d\?\.content\?\.landing_background_url \|\| ''\)/, 'the landing must read the saved background photo')
   assert.match(app, /const brandLogo = siteArt\.logo_url \|\| '\/logo\.png'/, 'landing logo must use the saved artwork with a safe fallback')
-  assert.match(app, /const landingHero = siteArt\.landing_hero_url \|\| '\/landing-worship\.jpg'/, 'landing photo must use the saved artwork with a safe fallback')
+  assert.match(app, /const landingHero = siteArt\.landing_hero_url \|\| '\/landing\/hero\.jpg'/, 'landing photo must use the saved artwork with a safe fallback')
   assert.match(home, /content\.logo_url \|\| '\/logo\.png'/, 'signed-in Home must use the saved logo')
+})
+
+test('social media links are admin-managed and rendered on the landing page', () => {
+  assert.match(contentRoute, /social_instagram_url: 300/, 'Instagram link key is missing')
+  assert.match(contentRoute, /social_youtube_url: 300/, 'YouTube link key is missing')
+  assert.match(contentRoute, /social_tiktok_url: 300/, 'TikTok link key is missing')
+  assert.match(contentRoute, /must be a full http\(s\) link or a @handle/, 'social links must reject unsafe values')
+  assert.match(admin, /data-testid="admin-social-links"/, 'social link editor is missing')
+  assert.match(admin, /key: 'social_instagram_url'/, 'Instagram editor is missing from the social card')
+  assert.match(admin, /key: 'social_tiktok_url'[\s\S]{0,1400}setContentValue\(f\.key/, 'social inputs are not wired to content')
+  assert.match(admin, /Share profile \/ Copy profile link/, 'the Instagram instructions must tell the admin where the link lives')
+  assert.match(admin, /Copy channel link/, 'the YouTube instructions must tell the admin where the link lives')
+  assert.match(admin, /Share profile, then Copy link/, 'the TikTok instructions must tell the admin where the link lives')
+  assert.match(app, /social_instagram_url: String\(d\?\.content\?\.social_instagram_url \|\| ''\)/, 'the landing must read the saved social links')
+  assert.match(app, /target="_blank"/, 'social icons must open in a new tab')
+  assert.match(app, /rel="noopener noreferrer"/, 'external social links must not leak the opener')
+  assert.match(app, /aria-label=\{`Harvest Family Church on \$\{l\.label\}`\}/, 'each social icon needs an accessible label')
+  assert.match(app, /fallback: 'https:\/\/instagram\.com\/'/, 'an unset Instagram link must still point at Instagram')
+  assert.match(app, /fallback: 'https:\/\/youtube\.com\/'/, 'an unset YouTube link must still point at YouTube')
+  assert.match(app, /fallback: 'https:\/\/tiktok\.com\/'/, 'an unset TikTok link must still point at TikTok')
+})
+
+test('admin sign-in approval actually reaches the admin phone', () => {
+  // The DO's /publish route used to replay the frame through handleEvent,
+  // which expects a verified token payload. A username string has no user.id,
+  // so every server-published event was dropped and no approval popup or code
+  // ever reached the phone.
+  assert.match(realtime, /pathname === '\/publish'[\s\S]{0,900}sendToUser\(username/, 'server-published events must be delivered straight to the member sockets')
+  assert.doesNotMatch(realtime, /handleEvent\(frame\.user/, 'a publish frame must not be replayed as a client event')
+  const listener = app.indexOf("onSocket('admin:login-request'")
+  const nav = app.indexOf('function Nav(')
+  assert.ok(listener > 0, 'the phone must listen for admin sign-in requests')
+  assert.ok(listener < nav, 'the approval listener must live on the signed-in screen, not inside Nav')
+  assert.ok(app.indexOf('const decideAdminLogin') < nav, 'the approval handler must share scope with the modal state')
+  assert.match(app, /data\.device_kind === me\.device_kind && data\.device_id === me\.device_id/, 'a device must never approve its own sign-in request')
+  assert.match(realtime, /sendToUser\(username, \{ event: String\(frame\.event\)/, 'the phone must get the approval event over its socket')
+  assert.doesNotMatch(auth, /approve sign-ins from the admin phone, not a browser/, 'a trusted browser session must be able to approve too')
+  assert.match(adminDevices, /this is the device asking to sign in/, 'the server must refuse a self-approval even if a client asks')
 })
 
 test('member verification is a first-class admin action with busy and error states', () => {
@@ -204,4 +268,43 @@ test('the floating message bubble is unread-only and replies in the compact card
   assert.match(app, /onClick=\{openChatBubble\}/, 'the bubble must not navigate to the Chat tab')
   assert.match(app, /New messages, \$\{chatUnread\.count\} unread/, 'the bubble must announce its unread count')
   assert.match(app, /data-testid="dm-layer"/, 'the compact in-place reply card is missing')
+})
+
+test('the area an admin saves for a group is what the map uses', () => {
+  assert.match(users, /group_lat: centre\[0\], group_lng: centre\[1\]/, 'the map API must send the saved group centre with each member')
+  assert.match(users, /group_locations/, 'the API must expose the saved centres')
+  assert.match(map, /function groupCentresOf/, 'the client must use the saved centres')
+  assert.match(map, /groupCentresOf\(users\)/, 'pin positions must be built from the live centres')
+  assert.match(map, /u\.group_lat === null/, 'a missing centre must not be read as 0,0')
+  assert.match(map, /Location not shared — shown at/, 'an area pin must not claim an exact location')
+  assert.match(groupsScreen, /GroupLocationPicker/, 'admins must be able to pick the area on a map')
+  assert.match(groupsScreen, /Pick the area on a map/, 'the picker needs a visible entry point')
+  // The settings screen returns early, so a picker mounted in the list branch
+  // could never open (the bug fixed after live testing). Keep it inside the
+  // open-group branch, before the list return.
+  const detailBranch = groupsScreen.indexOf('if (openSlug)')
+  const pickerBlock = groupsScreen.indexOf('{pickerOpen &&')
+  const listReturn = groupsScreen.indexOf('  return (\n    <div className="min-h-[70vh]')
+  assert.ok(detailBranch !== -1 && pickerBlock > detailBranch, 'the picker modal must live in the open-group branch')
+  assert.ok(listReturn === -1 || pickerBlock < listReturn, 'the picker modal must not be left in the group list branch')
+})
+
+test('group community is chosen from existing communities or added deliberately', () => {
+  assert.match(groupsScreen, /＋ New community…/, 'a new community must be an explicit choice')
+  assert.match(groupsScreen, /const communities = Array\.from\(new Set/, 'the select must be built from real communities')
+  assert.match(groupsScreen, /group-community-options/, 'the create form should suggest existing communities too')
+  assert.match(groupsScreen, /Rename this community on all its groups/, 'admins need a deliberate bulk community rename')
+  assert.match(groupsRoute, /communities\/rename/, 'the worker needs a community rename endpoint')
+  assert.match(groupsRoute, /UPDATE groups SET community=\? WHERE community=\?/, 'a community rename must update every group at once')
+  assert.match(groupsRoute, /fresh\.role !== 'admin'/, 'only a system admin may rename a community')
+})
+
+test('admin sets a till, paybill or bank destination for every giving purpose', () => {
+  assert.match(admin, /GivingPaymentEditor/, 'the per-purpose destination editor must be mounted')
+  assert.match(admin, /paymentProblem\(adminFunds, adminPayments\)/, 'an incomplete destination must block the save with a clear message')
+  assert.match(admin, /Fallback method/, 'the fallback must say whether its number is a paybill or a till')
+  assert.match(payments, /M-Pesa Till \(Buy Goods\)/, 'till must be a first-class method')
+  assert.match(payments, /payment_number: e\.target\.value\.replace/, 'the number field must reject non-digits')
+  assert.match(contentRoute, /giving_fallback_method/, 'the server must accept the fallback method')
+  assert.match(contentRoute, /must be 'paybill' or 'till'/, 'the server must validate the fallback method')
 })

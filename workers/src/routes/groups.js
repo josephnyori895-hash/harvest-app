@@ -6,13 +6,14 @@ import { query, uuid } from '../lib/db.js'
 import { requireMember } from '../lib/auth.js'
 import { hasCap } from '../lib/capabilities.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
+import { mediaUrlOrNull, isReadableKey } from '../lib/media.js'
 
 function slugify(name) {
   return String(name).trim().toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 }
 
 async function getGroup(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, avatar_key, chat_background_key, created_by, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
 
@@ -54,7 +55,9 @@ export async function handleGroups(request, env, ctx) {
     const fresh = user ? await requireMember(env, user) : null
     const { rows } = await query(
       env,
-      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.invite_token, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
+      // Never select invite_token here: this catalog is public, and a leaked
+      // token would let anyone join an invite-only group.
+      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
          FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
         GROUP BY g.id ORDER BY g.community ASC, g.name ASC`,
     )
@@ -69,6 +72,28 @@ export async function handleGroups(request, env, ctx) {
     const out = rows.map(r => ({ ...r, member_count: Number(r.member_count) || 0, my_role: mineMap.get(r.id) || null, joined: mineMap.has(r.id), is_group_admin: mineMap.get(r.id) === 'admin', add_only: !!r.invite_only, my_request: pendingSet.has(r.id) ? 'pending' : null }))
     const communities = await communityGroupCounts(env)
     return jsonResponse({ groups: out, communities })
+  }
+
+  // POST /api/groups/communities/rename — rename a community everywhere.
+  // A community is only a label stored on each group, so without this an admin
+  // had to open 36 groups to rename one congregation safely.
+  if (path === '/api/groups/communities/rename' && method === 'POST') {
+    const fresh = await requireMember(env, user)
+    if (fresh.role !== 'admin') return errorResponse('admin required', 403)
+    const body = await readJson(request)
+    const from = String(body.from || '').trim().slice(0, 80)
+    const to = String(body.to || '').trim().slice(0, 80)
+    if (!from) return errorResponse('current community required', 400)
+    if (to.length < 2) return errorResponse('new community name required', 400)
+    if (from.toLowerCase() === to.toLowerCase()) return errorResponse('choose a different community name', 400)
+    const current = await query(env, 'SELECT COUNT(*) AS n FROM groups WHERE community=?', [from])
+    const n = Number(current.rows[0]?.n) || 0
+    if (!n) return errorResponse('community not found', 404)
+    const target = await query(env, 'SELECT COUNT(*) AS n FROM groups WHERE community=?', [to])
+    if ((Number(target.rows[0]?.n) || 0) + n > 10) return errorResponse('that community already has 10 groups', 409)
+    await query(env, 'UPDATE groups SET community=? WHERE community=?', [to, from])
+    await audit(env, fresh, 'community_renamed', from, { from, to, groups: n })
+    return jsonResponse({ renamed: n, from, to })
   }
 
   // GET /api/groups/mine — only groups the viewer belongs to.
@@ -98,6 +123,10 @@ export async function handleGroups(request, env, ctx) {
     const slug = slugify(body.slug || name)
     if (!slug) return errorResponse('invalid group name', 400)
     if (await getGroup(env, slug)) return errorResponse('group already exists', 409)
+    // Names are the key members and the map use (users.group_name, saved group
+    // centres), so two groups may never share one, even with different slugs.
+    const sameName = await query(env, 'SELECT id FROM groups WHERE lower(name)=lower(?) LIMIT 1', [name])
+    if (sameName.rows[0]) return errorResponse('a group with that name already exists', 409)
     // Community rule: a community hosts at most 10 groups (3 is the healthy minimum).
     if (community) {
       const counts = await communityGroupCounts(env)
@@ -152,7 +181,14 @@ export async function handleGroups(request, env, ctx) {
       [g.id],
     )
     rows.forEach(r => { r.verified = !!r.verified })
-    return jsonResponse({ group: g, members: rows })
+    return jsonResponse({
+      group: {
+        ...g,
+        avatar_url: await mediaUrlOrNull(env, g.avatar_key, 3600),
+        chat_background_url: await mediaUrlOrNull(env, g.chat_background_key, 3600),
+      },
+      members: rows,
+    })
   }
 
   // POST /api/groups/:slug/leave — any member (incl. group admin) can leave.
@@ -328,13 +364,34 @@ export async function handleGroups(request, env, ctx) {
       if (Object.keys(body).some(key => !allowed.has(key))) return errorResponse('members can edit only the group name and description', 403)
     }
     const sets = [], vals = []
+    // Renaming is not only a groups-row change: users.group_name is the label
+    // every member carries, and the map keys saved areas by it. Leaving it on
+    // the old name split the congregation and dropped its members back to the
+    // default centre after a rename.
+    let renamedFrom = null
+    let nextName = null
     if (body.name !== undefined) {
       const name = String(body.name).trim().slice(0, 80)
       if (name.length < 2) return errorResponse('group name required', 400)
+      nextName = name
+      if (name !== g.name) {
+        const taken = await query(env, 'SELECT id FROM groups WHERE lower(name)=lower(?) AND id<>? LIMIT 1', [name, g.id])
+        if (taken.rows[0]) return errorResponse('a group with that name already exists', 409)
+        renamedFrom = g.name
+      }
       sets.push('name=?'); vals.push(name)
     }
     if (body.description !== undefined) {
       sets.push('description=?'); vals.push(String(body.description).trim().slice(0, 300))
+    }
+    // The group photo and chat background are identity, not copy: only the
+    // creator/group admins may set them, never a member granted "edit info".
+    for (const field of ['avatar_key', 'chat_background_key']) {
+      if (body[field] === undefined) continue
+      if (!isAdmin) return errorResponse('only group admins can change the group photo and chat background', 403)
+      const key = String(body[field] || '').trim()
+      if (key && !isReadableKey(key)) return errorResponse(`${field} must be an uploaded image`, 400)
+      sets.push(`${field}=?`); vals.push(key || null)
     }
     if (body.community !== undefined) {
       sets.push('community=?'); vals.push(String(body.community).trim().slice(0, 80))
@@ -347,15 +404,23 @@ export async function handleGroups(request, env, ctx) {
     // join that congregation automatically (auth.js → geo.js reads these live).
     if (body.lat !== undefined || body.lng !== undefined || body.location_label !== undefined) {
       if (!isAdmin) return errorResponse('only admins can change the group location', 403)
+      // '' or null clears the location, so an admin can unlink a group from a
+      // wrong area instead of being stuck with the old coordinates.
       if (body.lat !== undefined) {
-        const lat = Number(body.lat)
-        if (!Number.isFinite(lat) || lat < -90 || lat > 90) return errorResponse('lat must be between -90 and 90', 400)
-        sets.push('lat=?'); vals.push(lat)
+        if (body.lat === null || body.lat === '') { sets.push('lat=?'); vals.push(null) }
+        else {
+          const lat = Number(body.lat)
+          if (!Number.isFinite(lat) || lat < -90 || lat > 90) return errorResponse('lat must be between -90 and 90', 400)
+          sets.push('lat=?'); vals.push(lat)
+        }
       }
       if (body.lng !== undefined) {
-        const lng = Number(body.lng)
-        if (!Number.isFinite(lng) || lng < -180 || lng > 180) return errorResponse('lng must be between -180 and 180', 400)
-        sets.push('lng=?'); vals.push(lng)
+        if (body.lng === null || body.lng === '') { sets.push('lng=?'); vals.push(null) }
+        else {
+          const lng = Number(body.lng)
+          if (!Number.isFinite(lng) || lng < -180 || lng > 180) return errorResponse('lng must be between -180 and 180', 400)
+          sets.push('lng=?'); vals.push(lng)
+        }
       }
       if (body.location_label !== undefined) {
         sets.push('location_label=?'); vals.push(String(body.location_label).trim().slice(0, 80))
@@ -378,8 +443,11 @@ export async function handleGroups(request, env, ctx) {
     if (!sets.length) return errorResponse('nothing to update', 400)
     vals.push(g.id)
     await query(env, `UPDATE groups SET ${sets.join(', ')} WHERE id=?`, vals)
+    if (renamedFrom && nextName) {
+      await query(env, 'UPDATE users SET group_name=? WHERE group_name=?', [nextName, renamedFrom])
+    }
     await audit(env, fresh, 'group_settings_updated', g.id, { slug: g.slug, changes: Object.keys(body) })
-    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label FROM groups WHERE id=?', [g.id])
+    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, avatar_key, chat_background_key, created_by FROM groups WHERE id=?', [g.id])
     return jsonResponse({ ok: true, group: updated.rows[0] })
   }
 

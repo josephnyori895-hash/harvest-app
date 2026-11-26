@@ -37,13 +37,27 @@ test('the Admin screen edits every key in one place and saves them together', ()
   assert.match(admin, /copy_new_heading/, 'admins can add a new key on the spot')
 })
 
-test('admin can reach every church surface from its own screen', () => {
-  // Grouped sections: People, Content, Community, System.
-  for (const label of ['Overview', 'Approvals', 'Members', 'All text', 'Home text', 'Giving copy', 'Adverts', 'Chats', 'Announce', 'Audit']) {
-    assert.match(admin, new RegExp(`'${label}'`), `${label} tab missing`)
+test('public church details and advert limits are friendly controls, not raw JSON', () => {
+  for (const key of ['church_name', 'church_tagline', 'service_times', 'church_address', 'church_phone', 'church_email', 'community_rules', 'announcement_banner']) {
+    assert.match(admin, new RegExp(`key: '${key}'`), `${key} needs a labelled control in Home text`)
   }
-  // Member-facing screens with no admin tab get a direct row.
-  for (const label of ['Groups', 'Departments', 'Sermons', 'Worship']) {
+  assert.match(admin, /id="ad-placement"/, 'advert placement must be a select')
+  assert.match(admin, /id="ad-interval"/, 'advert frequency must be a number field')
+  assert.match(admin, /id="ad-cap"/, 'advert daily cap must be a number field')
+  assert.match(admin, /Advanced: edit advert data as JSON/, 'raw JSON must stay behind an advanced disclosure')
+  assert.doesNotMatch(admin, /window\.confirm\('Publish these adverts/, 'publishing adverts must not use a browser confirm')
+})
+
+test('admin can reach every church surface from its own screen', () => {
+  // Six destinations, each keeping the screens underneath them.
+  for (const label of ['Dashboard', 'People & Structure', 'Content & Publishing', 'Giving & Finance', 'Community', 'App Settings & Security']) {
+    assert.match(admin, new RegExp(`label: '${label}'`), `${label} workspace missing`)
+  }
+  for (const label of ['Overview', 'Approvals', 'Members', 'All text', 'Banners', 'Giving setup', 'Adverts', 'Chats', 'Announcements', 'Audit', 'Devices']) {
+    assert.match(admin, new RegExp(`'${label}'`), `${label} section missing`)
+  }
+  // Member-facing work the admin starts from the Create menu.
+  for (const label of ['Announcement', 'Sermon', 'Event', 'Homepage banner', 'Member account', 'Giving purpose']) {
     assert.match(admin, new RegExp(`\\['${label}',`), `${label} shortcut missing`)
   }
   assert.match(app, /<Admin[\s\S]*onOpenMusic=\{\(\) => setTab\('music'\)\}/)

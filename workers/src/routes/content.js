@@ -23,6 +23,8 @@ const EDITABLE = {
   giving_subtitle: 300,
   paybill_number: 20,
   paybill_name: 120,
+  // 'paybill' | 'till' — how the fallback number above is presented to members.
+  giving_fallback_method: 10,
   // Give screen is fully admin-run: limits, closing note and the history title
   // are church copy, not code.
   giving_min_kes: 10,
@@ -46,6 +48,14 @@ const EDITABLE = {
   // can render it without waiting for a signed media URL.
   logo_url: 500,
   landing_hero_url: 500,
+  // One or more public image URLs, separated by commas or new lines: the
+  // landing page cross-fades through them on its own.
+  landing_background_url: 1400,
+  // Public profile links shown as icons on the landing page. A full http(s)
+  // link, or a bare @handle, which the app turns into the platform's URL.
+  social_instagram_url: 300,
+  social_youtube_url: 300,
+  social_tiktok_url: 300,
   church_name: 120,
   church_tagline: 200,
   service_times: 400,
@@ -93,7 +103,7 @@ export async function handleContent(request, env, ctx) {
     for (const r of rows) out[r.key] = r.value
     // Hand the admin UI its own map of what is editable, so the "Everything"
     // editor is driven by the server and cannot fall behind the whitelist.
-    return jsonResponse({ content: out, editable: EDITABLE, customLimit: CUSTOM_LIMIT }, 200, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+    return jsonResponse({ content: out, editable: EDITABLE, customLimit: CUSTOM_LIMIT }, 200, { 'Cache-Control': 'no-store, no-cache, must-revalidate' })
   }
 
   if (path === '/api/content' && request.method === 'PUT') {
@@ -104,8 +114,22 @@ export async function handleContent(request, env, ctx) {
     if (entries.length > 40) return errorResponse('too many keys (max 40)', 400)
     for (const [k, v] of entries) {
       if (typeof v === 'string' && v.length > limitFor(k)) return errorResponse(`${k}: too long (max ${limitFor(k)} chars)`, 400)
-      if (['logo_url', 'landing_hero_url'].includes(k) && String(v || '').trim() && !isAbsoluteUrl(String(v).trim(), false)) {
+      if (k === 'landing_background_url') {
+        // A rotation of photos: each entry must be a real http(s) URL, or the
+        // whole list empty so the shipped files take over.
+        const list = String(v || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+        if (list.length > 8) return errorResponse('landing_background_url: at most 8 photos', 400)
+        if (list.some(u => !isAbsoluteUrl(u, false))) {
+          return errorResponse('landing_background_url must be http(s) image URLs separated by commas, or empty to use the shipped artwork', 400)
+        }
+      } else if (['logo_url', 'landing_hero_url'].includes(k) && String(v || '').trim() && !isAbsoluteUrl(String(v).trim(), false)) {
         return errorResponse(`${k} must be an http(s) image URL, or empty to use the shipped artwork`, 400)
+      } else if (['social_instagram_url', 'social_youtube_url', 'social_tiktok_url'].includes(k)) {
+        // A full profile link, or a handle the landing page expands itself.
+        const val = String(v || '').trim()
+        if (val && !isAbsoluteUrl(val, false) && !/^@?[A-Za-z0-9._-]{1,80}$/.test(val)) {
+          return errorResponse(`${k} must be a full http(s) link or a @handle`, 400)
+        }
       }
     }
     // JSON-typed keys are validated here so a bad save can never break the app.
@@ -160,6 +184,10 @@ export async function handleContent(request, env, ctx) {
         const cap = Number(settings.daily_cap ?? 2)
         if (!Number.isInteger(cap) || cap < 1 || cap > 10) return errorResponse('advert_settings: daily_cap must be an integer (1-10)', 400)
       } catch { return errorResponse('advert_settings must be valid JSON', 400) }
+    }
+    if ('giving_fallback_method' in body) {
+      const fallbackMethod = String(body.giving_fallback_method || '').trim()
+      if (fallbackMethod && !['paybill', 'till'].includes(fallbackMethod)) return errorResponse("giving_fallback_method must be 'paybill' or 'till'", 400)
     }
     if ('giving_payment_methods' in body) {
       try {

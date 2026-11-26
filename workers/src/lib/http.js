@@ -1,6 +1,18 @@
 // HTTP plumbing: CORS, security headers, JSON helpers, error envelope.
 // Mirrors app.js onSend hooks + error handler. CORS_ORIGINS arrives via env (wrangler vars/secrets).
 
+// Baseline headers for raw HTML responses that do not pass through corsFor.
+// Keeping the public landing and share pages covered closes the clickjacking
+// and MIME-sniffing gap without imposing a policy that could break the app.
+export function securityHeaders() {
+  return {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'geolocation=(), payment=()',
+  }
+}
+
 export function corsFor(env, request) {
   const allowed = String(env.CORS_ORIGINS || '')
     .split(',').map(v => v.trim()).filter(Boolean)

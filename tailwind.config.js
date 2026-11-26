@@ -47,12 +47,12 @@ export default {
         // Legacy alias kept so the palette already referenced in older files
         // keeps compiling. New code uses the semantic names above.
         harvest: {
-          purple: "#7C3AED",
-          dark: "#5B21B6",
-          amber: "#F59E0B",
-          lavender: "#EDE9FE",
-          cream: "#FFFBEB",
-          border: "#E8DEC9",
+          purple: "#221A56",
+          dark: "#140F38",
+          amber: "#EEB609",
+          lavender: "#E8E5F4",
+          cream: "#F6F4EC",
+          border: "#DDD7C8",
         },
       },
       fontFamily: {

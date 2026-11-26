@@ -5,9 +5,10 @@ import { query, uuid } from '../lib/db.js'
 import { requireMember, requireAdmin } from '../lib/auth.js'
 import { hasCap } from '../lib/capabilities.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
+import { mediaUrlOrNull, isReadableKey } from '../lib/media.js'
 
 async function getDepartment(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, is_public, created_at FROM departments WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, is_public, avatar_key, chat_background_key, created_at FROM departments WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
 
@@ -112,7 +113,14 @@ export async function handleDepartments(request, env, ctx) {
       [dep.id],
     )
     rows.forEach(r => { r.verified = !!r.verified })
-    return jsonResponse({ department: publicDepartment(dep), members: rows })
+    return jsonResponse({
+      department: publicDepartment({
+        ...dep,
+        avatar_url: await mediaUrlOrNull(env, dep.avatar_key, 3600),
+        chat_background_url: await mediaUrlOrNull(env, dep.chat_background_key, 3600),
+      }),
+      members: rows,
+    })
   }
 
   // POST /api/departments/:slug/join — self-join (one department per user).
@@ -238,11 +246,26 @@ export async function handleDepartments(request, env, ctx) {
     const name = body.name !== undefined ? String(body.name).trim().slice(0, 80) : dep.name
     const description = body.description !== undefined ? (String(body.description).trim().slice(0, 300) || null) : dep.description
     const isPublic = body.is_public !== undefined ? (body.is_public ? 1 : 0) : dep.is_public
+    // The department photo and chat background belong to its leaders (the
+    // creator is the first leader), same rule as renaming the team.
+    let avatarKey = dep.avatar_key || null
+    let backgroundKey = dep.chat_background_key || null
+    for (const field of ['avatar_key', 'chat_background_key']) {
+      if (body[field] === undefined) continue
+      const key = String(body[field] || '').trim()
+      if (key && !isReadableKey(key)) return errorResponse(`${field} must be an uploaded image`, 400)
+      if (field === 'avatar_key') avatarKey = key || null
+      else backgroundKey = key || null
+    }
     if (name.length < 2) return errorResponse('department name required', 400)
-    if (name === dep.name && description === dep.description && isPublic === dep.is_public) return jsonResponse({ ok: true, department: publicDepartment(dep), unchanged: true })
-    await query(env, 'UPDATE departments SET name=?, description=?, is_public=? WHERE id=?', [name, description, isPublic, dep.id])
-    await audit(env, fresh, 'department_updated', dep.id, { slug: dep.slug, before: { name: dep.name, description: dep.description, is_public: !!dep.is_public }, after: { name, description, is_public: !!isPublic } })
-    return jsonResponse({ ok: true, department: publicDepartment({ ...dep, name, description, is_public: isPublic }) })
+    if (name === dep.name && description === dep.description && isPublic === dep.is_public && avatarKey === (dep.avatar_key || null) && backgroundKey === (dep.chat_background_key || null)) {
+      return jsonResponse({ ok: true, department: publicDepartment(dep), unchanged: true })
+    }
+    await query(env, 'UPDATE departments SET name=?, description=?, is_public=?, avatar_key=?, chat_background_key=? WHERE id=?', [name, description, isPublic, avatarKey, backgroundKey, dep.id])
+    await audit(env, fresh, 'department_updated', dep.id, { slug: dep.slug, before: { name: dep.name, description: dep.description, is_public: !!dep.is_public }, after: { name, description, is_public: !!isPublic, avatar: !!avatarKey, background: !!backgroundKey } })
+    const avatar_url = await mediaUrlOrNull(env, avatarKey, 3600)
+    const chat_background_url = await mediaUrlOrNull(env, backgroundKey, 3600)
+    return jsonResponse({ ok: true, department: publicDepartment({ ...dep, name, description, is_public: isPublic, avatar_key: avatarKey, chat_background_key: backgroundKey, avatar_url, chat_background_url }) })
   }
 
   // DELETE /api/departments/:slug (admin) — remove the department itself.

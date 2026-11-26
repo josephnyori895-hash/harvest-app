@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TouchEvent } from 'react'
 import { useAuth } from '../state/auth'
+import { useModalFocus } from '../lib/useModalFocus'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 import { onSocket, emitSocket, connectSocket, realtimeEnabled } from '../lib/realtime'
 import { Icon, Spinner } from '../ui'
@@ -101,7 +102,7 @@ async function fetchSignedMediaUrl(messageId: string, force = false): Promise<st
   } catch { return null }
 }
 
-function ChatPhoto({ messageId }: { messageId: string }) {
+function ChatPhoto({ messageId, onOpen }: { messageId: string; onOpen?: (src: string) => void }) {
   const [src, setSrc] = useState<string | null>(() => cachedSignedUrl(messageId))
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -125,7 +126,22 @@ function ChatPhoto({ messageId }: { messageId: string }) {
     </button>
   )
   if (!src) return <div className="mb-1.5 h-40 w-56 animate-pulse rounded-xl bg-surface-sunken" />
-  return <img src={src} alt="photo" className="mb-1.5 max-h-72 w-auto rounded-xl" loading="lazy" onError={() => { invalidateSignedUrl(messageId); setFailed(true) }} />
+  return (
+    <button
+      type="button"
+      onClick={e => { e.stopPropagation(); onOpen?.(src) }}
+      className="mb-1.5 block max-w-full overflow-hidden rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+      aria-label="Open photo full screen"
+    >
+      <img
+        src={src}
+        alt="Shared photo"
+        className="max-h-72 w-auto rounded-xl"
+        loading="lazy"
+        onError={() => { invalidateSignedUrl(messageId); setFailed(true) }}
+      />
+    </button>
+  )
 }
 
 function dayLabel(iso: string) {
@@ -163,7 +179,7 @@ function chatListTime(iso: string) {
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
 }
 
-export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number }
+export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number; avatar_url?: string | null; chat_background_url?: string | null }
 
 export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, onActiveChange, onMinimize, onExpand, compact = false }: {
   onBack: () => void
@@ -194,6 +210,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [photoViewer, setPhotoViewer] = useState<{ src: string; id: string } | null>(null)
+  const photoViewerRef = useRef<HTMLDivElement>(null)
+  useModalFocus(Boolean(photoViewer), photoViewerRef, () => setPhotoViewer(null))
   const [inbox, setInbox] = useState<any[]>([])
   const [inboxLoading, setInboxLoading] = useState(true)
   const [inboxError, setInboxError] = useState('')
@@ -206,6 +225,26 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const [replyTo, setReplyTo] = useState<any | null>(null)
   // Team chat: departments AND small groups — both are server-enforced memberships.
   const [team, setTeam] = useState<TeamChat | null>(null)
+  // The group/department photo and chat background are managed by its leaders.
+  // Load them when a team conversation opens (the chat entry only carries slug).
+  useEffect(() => {
+    if (!team?.slug) return
+    let alive = true
+    const url = team.kind === 'group'
+      ? `/api/groups/${encodeURIComponent(team.slug)}`
+      : `/api/departments/${encodeURIComponent(team.slug)}`
+    api<any>(url)
+      .then(d => {
+        if (!alive) return
+        const t = d?.group || d?.department
+        if (!t) return
+        setTeam(prev => prev && prev.slug === team.slug
+          ? { ...prev, avatar_url: t.avatar_url || null, chat_background_url: t.chat_background_url || null }
+          : prev)
+      })
+      .catch(() => { /* art is supplemental */ })
+    return () => { alive = false }
+  }, [team?.kind, team?.slug])
   useEffect(() => {
     if (teamChat) {
       // A team route is authoritative: never leave a previous DM or Community
@@ -811,6 +850,33 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
   }
 
+  // Saving is a real download, not a link the browser might just open: a
+  // signed URL is cross-origin, where the `download` attribute is ignored, so
+  // fetch the bytes first and hand the browser a same-origin blob.
+  const downloadPhoto = async () => {
+    if (!photoViewer) return
+    try {
+      setNotice('Saving photo…')
+      const response = await fetch(photoViewer.src)
+      if (!response.ok) throw new Error('Could not download the photo')
+      const blob = await response.blob()
+      const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : blob.type.includes('heic') ? 'heic' : 'jpg'
+      const href = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `harvest-photo-${photoViewer.id.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'photo'}.${ext}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(href), 4000)
+      setNotice('Photo saved to your downloads')
+    } catch (e: any) {
+      setError(e?.message || 'Unable to download photo')
+    } finally {
+      window.setTimeout(() => setNotice(''), 1800)
+    }
+  }
+
   const moderateDelete = async (m: any) => {
     const id = String(m?.id || '')
     if (!id || id.startsWith('tmp_')) return
@@ -1089,7 +1155,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
           <div className="relative h-11 w-11 shrink-0">
             <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent-soft font-bold text-accent-strong">
-              {isTeam ? <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} /> : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
+              {isTeam
+                ? (team!.avatar_url
+                    ? <img src={team!.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} />)
+                : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
             </div>
             {!isTeam && presence[active.username]?.online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface-raised bg-success" />}
           </div>
@@ -1121,7 +1191,17 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         </header>
 
         <div className="relative min-h-0 min-w-0 flex-1">
-        <div ref={messagesRef} onScroll={syncScrollState} className="chat-messages h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4">
+        <div
+          ref={messagesRef}
+          onScroll={syncScrollState}
+          className="chat-messages h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4"
+          style={team?.chat_background_url ? {
+            backgroundImage: `linear-gradient(rgb(var(--surface) / .90), rgb(var(--surface) / .95)), url("${team.chat_background_url}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          } : undefined}
+        >
           {thread.length === 0 ? (
             <div className="flex min-h-full items-center justify-center py-12">
               <div className="w-full max-w-sm px-6 text-center">
@@ -1160,7 +1240,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <div className={`flex ${groupStart ? 'mt-3' : 'mt-[3px]'} ${mine ? 'justify-end' : 'justify-start'}`}>
                   {isTeam && !mine && (
                     showAvatar
-                      ? <div className="mr-1.5 mb-1 grid h-7 w-7 shrink-0 place-items-center self-end rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{(m.from?.[0] || '?').toUpperCase()}</div>
+                      ? <div className="mr-1.5 mb-1 grid h-7 w-7 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</div>
                       : <div className="mr-1.5 w-7 shrink-0" aria-hidden="true" />
                   )}
                   <div className="group/msg relative max-w-[min(78%,34rem)]">
@@ -1179,7 +1259,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                         </div>
                       )}
                       {m.media_type === 'image' && m.media_key && !String(m.id).startsWith('tmp_') && (
-                        <ChatPhoto messageId={String(m.id)} />
+                        <ChatPhoto messageId={String(m.id)} onOpen={src => setPhotoViewer({ src, id: String(m.id) })} />
                       )}
                       {m.media_type === 'image' && !m.media_key && <div className="mb-1.5 grid h-28 w-40 place-items-center rounded-xl bg-surface-sunken text-ink-subtle"><Icon name="camera" size={26} /></div>}
                       {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
@@ -1224,6 +1304,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                         <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="smile" size={16} className="text-ink-muted" /> React</button>
                         <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="copy" size={16} className="text-ink-muted" /> Copy</button>
                         {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="share" size={16} className="text-ink-muted" /> Share photo</button>}
+                        {m.media_type === 'image' && m.media_key && <button type="button" onClick={async e => { e.stopPropagation(); setActionFor(null); const url = await fetchSignedMediaUrl(String(m.id)); if (url) setPhotoViewer({ src: url, id: String(m.id) }) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="download" size={16} className="text-ink-muted" /> View &amp; download</button>}
                         {isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"><Icon name="trash" size={16} /> Remove for everyone</button>}
                       </div>
                     )}
@@ -1297,6 +1378,38 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           </div>
         </div>
         </section>
+
+        {photoViewer && (
+          <div
+            ref={photoViewerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Photo viewer"
+            tabIndex={-1}
+            className="fixed inset-0 z-[95] flex flex-col bg-black/95 text-white outline-none"
+            style={{
+              paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))',
+              paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))',
+            }}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+              <button type="button" onClick={() => setPhotoViewer(null)} className="flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-bold text-white/85 active:bg-white/10" aria-label="Close photo">
+                <Icon name="close" size={20} /> Close
+              </button>
+              <button type="button" onClick={() => void downloadPhoto()} className="flex min-h-11 items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 text-sm font-extrabold text-white active:bg-white/20" aria-label="Download photo">
+                <Icon name="download" size={18} /> Download
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPhotoViewer(null)}
+              aria-label="Close photo"
+              className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3"
+            >
+              <img src={photoViewer.src} alt="Shared photo" className="max-h-full max-w-full rounded-lg object-contain" />
+            </button>
+          </div>
+        )}
       </main>
     )
   }

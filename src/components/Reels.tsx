@@ -537,7 +537,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             className="flex items-center gap-2 text-left pointer-events-auto"
             aria-label={`View ${cur.user}'s profile`}
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-300 to-purple-500 flex items-center justify-center font-bold text-xs">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gold to-accent flex items-center justify-center font-bold text-xs">
               {String(cur.user).charAt(0).toUpperCase()}
             </div>
             <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={14} />}</span>
@@ -570,7 +570,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
 
           <div className="flex flex-col items-center gap-0.5">
             <button onClick={(e) => { e.stopPropagation(); void toggleEncourage() }}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[19px] leading-none shadow-sm transition-transform active:scale-95 ${Boolean(cur.liked ?? encouraged[key]) ? 'ring-2 ring-purple-300/70' : ''}`}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[19px] leading-none shadow-sm transition-transform active:scale-95 ${Boolean(cur.liked ?? encouraged[key]) ? 'ring-2 ring-gold/70' : ''}`}
               aria-label="Encourage"><Icon name="heart" size={20} className={Boolean(cur.liked ?? encouraged[key]) ? 'fill-current' : ''} /></button>
             <span className="min-h-3 text-2xs leading-3 font-medium text-white/85 drop-shadow">{fmtViews(cur.likes)}</span>
           </div>
@@ -587,7 +587,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             aria-label="Share"><Icon name="share" size={19} /></button>
 
           <button onClick={(e) => { e.stopPropagation(); toggleSave() }}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${currentSaved ? 'ring-2 ring-amber-300/70' : ''}`}
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/25 backdrop-blur-sm border border-white/10 text-[18px] leading-none shadow-sm transition-transform active:scale-95 ${currentSaved ? 'ring-2 ring-gold/70' : ''}`}
             aria-label={currentSaved ? 'Remove from saved videos' : 'Save video'}><Icon name="bookmark" size={19} className={currentSaved ? 'fill-current' : ''} /></button>
 
           <button onClick={(e) => { e.stopPropagation(); setShowMore(v => !v) }}
@@ -611,7 +611,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Next video"><Icon name="chevron-down" size={18} /></button>
         {cur?.video && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15 z-10 pointer-events-none" aria-hidden>
-            <div className="h-full bg-amber-300/90 transition-[width] duration-150 ease-linear" style={{ width: `${reelProgress}%` }} />
+            <div className="h-full bg-gold/90 transition-[width] duration-150 ease-linear" style={{ width: `${reelProgress}%` }} />
           </div>
         )}
       </section>

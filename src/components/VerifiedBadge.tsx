@@ -5,7 +5,7 @@ import { useId } from 'react'
 // from 12px inline text up to a 28px profile header.
 //
 // Design rules:
-//   * brand purple gradient, never flat blue/green — verification is a church
+//   * brand navy gradient, never flat blue/green — verification is a church
 //     trust mark, not a generic social-network check;
 //   * a hairline inner ring keeps the seal readable on both light and dark
 //     surfaces;
@@ -36,9 +36,9 @@ export function VerifiedBadge({
       <title>{label}</title>
       <defs>
         <linearGradient id={gradientId} x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#A78BFA" />
-          <stop offset="0.45" stopColor="#7C3AED" />
-          <stop offset="1" stopColor="#5B21B6" />
+          <stop offset="0" stopColor="#5B4FB0" />
+          <stop offset="0.45" stopColor="#221A56" />
+          <stop offset="1" stopColor="#140F38" />
         </linearGradient>
       </defs>
       {/* Scalloped seal */}

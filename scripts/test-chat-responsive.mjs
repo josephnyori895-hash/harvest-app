@@ -39,7 +39,9 @@ test('the verified badge is one fixed-size control that cannot shrink or wrap', 
 test('chat draws colour from design tokens, not a hardcoded dark palette', () => {
   // (A translucent bg-white/15 inside an accent bubble is fine; a solid
   // bg-white surface is what made the screen look pasted-on.)
-  for (const legacy of [/bg-stone-\d/, /text-stone-\d/, /border-stone-\d/, /bg-black\b/, /bg-white['"\s]/, /from-purple-6\d\d/, /to-fuchsia-6\d\d/]) {
+  // A translucent black backdrop for the full-screen photo viewer is fine; a
+  // solid bg-black surface is the pasted-on slab this guards against.
+  for (const legacy of [/bg-stone-\d/, /text-stone-\d/, /border-stone-\d/, /bg-black(?!\/)/, /bg-white['"\s]/, /from-purple-6\d\d/, /to-fuchsia-6\d\d/]) {
     assert.doesNotMatch(chat, legacy, `legacy palette class leaked back in: ${legacy}`)
   }
   assert.match(chat, /bg-surface/, 'screen must paint the surface token')

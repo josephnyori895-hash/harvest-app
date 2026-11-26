@@ -15,14 +15,14 @@ type Person = {
 }
 
 const PEOPLE: Person[] = [
-  { src: '/youth/1.jpg', x: '12%', y: '66%', fx: '-52vw', fy: '8vh', rot: '-7deg', delay: '0s' },
-  { src: '/youth/2.jpg', x: '21%', y: '57%', fx: '-44vw', fy: '-4vh', rot: '5deg', delay: '.1s' },
-  { src: '/youth/3.jpg', x: '30%', y: '51%', fx: '-34vw', fy: '-14vh', rot: '-4deg', delay: '.2s' },
-  { src: '/youth/4.jpg', x: '39%', y: '48%', fx: '-22vw', fy: '-22vh', rot: '6deg', delay: '.3s' },
-  { src: '/youth/5.jpg', x: '61%', y: '48%', fx: '22vw', fy: '-22vh', rot: '-6deg', delay: '.3s' },
-  { src: '/youth/6.jpg', x: '70%', y: '51%', fx: '34vw', fy: '-14vh', rot: '4deg', delay: '.2s' },
-  { src: '/youth/7.jpg', x: '79%', y: '57%', fx: '44vw', fy: '-4vh', rot: '-5deg', delay: '.1s' },
-  { src: '/youth/8.jpg', x: '88%', y: '66%', fx: '52vw', fy: '8vh', rot: '7deg', delay: '0s' },
+  { src: '/landing/01.jpg', x: '12%', y: '66%', fx: '-52vw', fy: '8vh', rot: '-7deg', delay: '0s' },
+  { src: '/landing/02.jpg', x: '21%', y: '57%', fx: '-44vw', fy: '-4vh', rot: '5deg', delay: '.1s' },
+  { src: '/landing/03.jpg', x: '30%', y: '51%', fx: '-34vw', fy: '-14vh', rot: '-4deg', delay: '.2s' },
+  { src: '/landing/04.jpg', x: '39%', y: '48%', fx: '-22vw', fy: '-22vh', rot: '6deg', delay: '.3s' },
+  { src: '/landing/05.jpg', x: '61%', y: '48%', fx: '22vw', fy: '-22vh', rot: '-6deg', delay: '.3s' },
+  { src: '/landing/06.jpg', x: '70%', y: '51%', fx: '34vw', fy: '-14vh', rot: '4deg', delay: '.2s' },
+  { src: '/landing/07.jpg', x: '79%', y: '57%', fx: '44vw', fy: '-4vh', rot: '-5deg', delay: '.1s' },
+  { src: '/landing/08.jpg', x: '88%', y: '66%', fx: '52vw', fy: '8vh', rot: '7deg', delay: '0s' },
 ]
 
 export default function YouthChurchAnimation() {

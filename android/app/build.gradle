@@ -11,22 +11,29 @@ android {
     namespace = "com.harvestfamily.nyeri"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
+        // The application id is part of the upgrade contract: changing it makes
+        // every installed copy refuse the update. Pin it and fail the build if
+        // the pin file and this value ever diverge.
+        def pinnedAppId = rootProject.file("release-package-id.txt").text.trim()
+        if (pinnedAppId != "com.harvestfamily.nyeri") {
+            throw new GradleException("applicationId com.harvestfamily.nyeri does not match android/release-package-id.txt (${pinnedAppId})")
+        }
         applicationId "com.harvestfamily.nyeri"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Versioning: CI (android-release.yml) injects HARVEST_VERSION_CODE =
-        // 1000 + run number, so every release outranks the previous one and
-        // ADB/Play installs never hit INSTALL_FAILED_VERSION_DOWNGRADE.
-        // Locally (no env set), fall back to a stamp derived from the git
-        // commit count so successive local builds also increase. CI's value
-        // (1000+) stays ahead of local counts (< 1000) so they never clash.
-        def localVersionCode = 1000
-        try {
-          def gitCount = 'git rev-list --count HEAD'.execute().text.trim()
-          if (gitCount?.isInteger()) localVersionCode = Math.max(1, gitCount.toInteger() % 900)
-        } catch (ignored) { /* not a git checkout — keep the floor */ }
+        // Versioning: CI (android-release.yml) injects HARVEST_VERSION_CODE,
+        // and its compatibility gate rejects anything that does not outrank the
+        // previous release. A local build (no env set) reads the committed
+        // monotonic floor in android/version-code.txt. The git commit count is
+        // deliberately NOT used: it produced codes below 1000 and made local
+        // builds look newer than they were.
+        def floorFile = rootProject.file("version-code.txt")
+        def localVersionCode = floorFile.exists() ? (floorFile.text.trim().toInteger()) : 1
         def harvestVersionCode = (System.getenv("HARVEST_VERSION_CODE") ?: "${localVersionCode}").toInteger()
-        def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0.${localVersionCode}"
+        def harvestVersionName = System.getenv("HARVEST_VERSION_NAME") ?: "1.0.${harvestVersionCode}"
+        if (harvestVersionCode < localVersionCode) {
+            throw new GradleException("versionCode ${harvestVersionCode} is below the floor ${localVersionCode} in android/version-code.txt")
+        }
         versionCode harvestVersionCode
         versionName harvestVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

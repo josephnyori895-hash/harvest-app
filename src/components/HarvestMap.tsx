@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 // Leaflet's stylesheet belongs to the map chunk now that the map is lazy — keep
 // it here so opening the map loads CSS with the code.
 import 'leaflet/dist/leaflet.css'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useAuth } from '../state/auth'
 import { VerifiedBadge } from './VerifiedBadge'
@@ -24,8 +24,28 @@ const fallbackGroupCoords: Record<string, [number, number]> = {
   'Harvest Nyeri': [-0.4197, 36.9475],
 }
 
+type GroupCentre = { lat: number; lng: number; label?: string }
+
 const groupOf = (u: any) => u.group_name || u.group || 'Harvest Nyeri'
-const hasCoords = (u: any) => Number.isFinite(Number(u.lat)) && Number.isFinite(Number(u.lng))
+// null must never count as a coordinate: Number(null) is 0, which used to pin
+// every member who never shared a location at 0,0 instead of their group area.
+const hasCoords = (u: any) =>
+  u.lat !== null && u.lat !== undefined && u.lng !== null && u.lng !== undefined &&
+  Number.isFinite(Number(u.lat)) && Number.isFinite(Number(u.lng))
+
+/** The centre the admin saved in Group settings, carried on each member by
+ *  /api/users/map. The hard-coded list below is only a last resort for a group
+ *  that has no saved coordinates yet. */
+function groupCentresOf(users: any[]): Record<string, GroupCentre> {
+  const out: Record<string, GroupCentre> = {}
+  users.forEach(u => {
+    if (u.group_lat === null || u.group_lat === undefined || u.group_lng === null || u.group_lng === undefined) return
+    const lat = Number(u.group_lat)
+    const lng = Number(u.group_lng)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) out[groupOf(u)] = { lat, lng, label: u.group_location_label || '' }
+  })
+  return out
+}
 
 /**
  * Where a member's pin sits.
@@ -36,19 +56,22 @@ const hasCoords = (u: any) => Number.isFinite(Number(u.lat)) && Number.isFinite(
  * not stacked on one dot — so each of them is still individually visible and
  * tappable, and the popup says the location was not shared.
  */
-function pinPosition(u: any, i = 0): [number, number] {
+function pinPosition(u: any, i = 0, centres?: Record<string, GroupCentre>): [number, number] {
   if (hasCoords(u)) return [Number(u.lat), Number(u.lng)]
-  const gc = fallbackGroupCoords[groupOf(u)] || [-0.4197, 36.9475]
+  const centre = centres?.[groupOf(u)]
+  const gc: [number, number] = centre
+    ? [centre.lat, centre.lng]
+    : fallbackGroupCoords[groupOf(u)] || [-0.4197, 36.9475]
   const angle = ((i * 47) % 360) * (Math.PI / 180)
   const radius = 0.0045 + 0.0015 * ((i * 7) % 4)
   return [gc[0] + Math.sin(angle) * radius, gc[1] + Math.cos(angle) * radius]
 }
 
-function FitMarkers({ users }: { users: any[] }) {
+function FitMarkers({ users, centres }: { users: any[]; centres: Record<string, GroupCentre> }) {
   const map = useMap()
-  const signature = users.map(u => `${u.id || u.username}:${u.lat}:${u.lng}`).join('|')
+  const signature = users.map(u => `${u.id || u.username}:${u.lat}:${u.lng}:${u.group_lat}:${u.group_lng}`).join('|')
   useEffect(() => {
-    const points = users.map((u, i) => pinPosition(u, i))
+    const points = users.map((u, i) => pinPosition(u, i, centres))
     if (points.length > 1) map.fitBounds(points, { padding: [28, 28], maxZoom: 14 })
     else if (points.length === 1) map.setView(points[0], 14)
     // Signature (not the array identity) drives fitting: the directory refresh
@@ -92,7 +115,7 @@ function memberPin(u: any) {
   // divIcon HTML is injected as a string — take one alphanumeric character so
   // a display name can never inject markup into the map layer.
   const label = (String(u.name || u.username || '').match(/[a-zA-Z0-9]/)?.[0] || '?').toUpperCase()
-  const ring = u.hidden ? '#A8A29E' : online ? '#059669' : u.verified ? '#7C3AED' : '#FFFFFF'
+  const ring = u.hidden ? '#A8A29E' : online ? '#059669' : u.verified ? '#EEB609' : '#FFFFFF'
   const dot = online
     ? '<span style="position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:9999px;background:#10B981;border:2px solid #FFFBF0;"></span>'
     : ''
@@ -130,6 +153,9 @@ export default function HarvestMap({
   })
 
   const myGroup = users.find(u => u.me)?.['group_name'] || users.find(u => u.me)?.group || null
+  // Kept in a memo so panning/zooming and the 30s directory refresh do not
+  // rebuild every pin position.
+  const groupCentres = useMemo(() => groupCentresOf(users), [users])
   const visibleUsers = useMemo(() => users.filter(u => u.hidden !== true), [users])
   const hiddenUsers = useMemo(() => users.filter(u => u.hidden === true), [users])
   const inFilter = (u: any) => filter === 'all' || groupOf(u) === filter
@@ -284,9 +310,29 @@ export default function HarvestMap({
       <div className="h-[320px] border-b border-line">
         <MapContainer center={[-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap contributors" />
-          <FitMarkers users={mapUsers} />
+          <FitMarkers users={mapUsers} centres={groupCentres} />
+          {/* The saved registration area, so an admin can see the shape their
+              coordinates describe instead of only a cluster of pins. */}
+          {Object.entries(groupCentres)
+            .filter(([name]) => filter === 'all' || filter === name)
+            .map(([name, centre]) => (
+              <Circle
+                key={`area-${name}`}
+                center={[centre.lat, centre.lng]}
+                radius={400}
+                pathOptions={{ color: '#EEB609', weight: 1.5, fillColor: '#EEB609', fillOpacity: 0.08 }}
+              >
+                <Popup>
+                  <div className="text-xs">
+                    <b>{name}</b>
+                    <div className="text-ink-subtle">{centre.label || 'Saved registration area'}</div>
+                    <div className="text-ink-subtle">Approximate 400 m area</div>
+                  </div>
+                </Popup>
+              </Circle>
+            ))}
           {visibleUsers.filter(inFilter).map((u, i) => {
-            const [lat, lng] = pinPosition(u, i)
+            const [lat, lng] = pinPosition(u, i, groupCentres)
             return (
               <Marker key={u.id || u.username + '_vis'} position={[lat, lng]} icon={memberPin(u)}>
                 <Popup>
@@ -300,8 +346,8 @@ export default function HarvestMap({
                     <div className="mt-1 flex items-center gap-1 font-semibold">
                       <span className={u.online ? 'text-success' : 'text-ink-subtle'}>{formatPresence(u)}</span>
                     </div>
-                    <div>{u.location || u.location_label || groupOf(u)}</div>
-                    <div className="mt-1 text-ink-subtle">{hasCoords(u) ? formatLocationAge(u.location_updated_at) : `Location not shared — shown at ${groupOf(u)} area`}</div>
+                    <div>{u.location || u.location_label || u.group_location_label || groupOf(u)}</div>
+                    <div className="mt-1 text-ink-subtle">{hasCoords(u) ? formatLocationAge(u.location_updated_at) : `Location not shared — shown at ${groupOf(u)}${u.group_location_label ? ` · ${u.group_location_label}` : ''} area`}</div>
                     {isAdmin && u.phone && (
                       <a href={`tel:${u.phone}`} className="mt-1 block font-semibold text-success">{u.phone}</a>
                     )}
@@ -319,7 +365,7 @@ export default function HarvestMap({
             )
           })}
           {hiddenUsers.filter(inFilter).map((u, i) => {
-            const pos = pinPosition(u, i)
+            const pos = pinPosition(u, i, groupCentres)
             return (
               <Marker key={u.id || u.username + '_hid'} position={pos} icon={memberPin(u)}>
                 <Popup>
@@ -340,6 +386,7 @@ export default function HarvestMap({
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-success" /> Active now</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-accent" /> Verified</span>
           <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-stone-400" /> Location not shared</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-gold bg-gold/10" /> Saved group area</span>
         </div>
       )}
 

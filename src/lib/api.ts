@@ -93,7 +93,7 @@ export async function apiGet<T = any>(path: string, init: RequestInit = {}): Pro
   return apiJson(path, { ...init, method: 'GET' }, { retries: 1 }) as Promise<T>
 }
 
-export async function presign(params: { type: 'post'|'story'|'reel'|'track', contentType: string, bytes: number, ext?: string }) {
+export async function presign(params: { type: 'post'|'story'|'reel'|'track'|'avatar', contentType: string, bytes: number, ext?: string }) {
   return apiJson('/api/media/presign', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(params) }) as Promise<{url:string,fields:Record<string,string>,key:string,expiresAt:string,method?:'PUT'|'POST'}>
 }
 

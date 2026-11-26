@@ -102,8 +102,14 @@ export async function handleUsers(request, env, ctx, params) {
     const out = await Promise.all(rows.map(async u => {
       bool(u, 'verified')
       const mutual = isAdmin || (followsSet.has(u.id) && followersSet.has(u.id)) || u.id === fresh.id
+      // The group's admin-saved centre travels with every member so the map can
+      // show a member who never shared a location in the right area. Without
+      // this the client fell back to a second, hard-coded set of coordinates
+      // and an admin's "registration location" edit never reached the map.
+      const centre = groupCentroids[u.group_name]
+      const groupFields = centre ? { group_lat: centre[0], group_lng: centre[1], group_location_label: centre[2] || null } : {}
       const avatar_url = await mediaUrlOrNull(env, u.avatar_key, 3600)
-      if (mutual) return { ...u, online: isOnline(u), ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
+      if (mutual) return { ...u, ...groupFields, online: isOnline(u), ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475, '']
       // Deterministic jitter keeps an approximate member marker stable across
       // refreshes; Math.random() made members appear to move every 30 seconds.
@@ -116,10 +122,13 @@ export async function handleUsers(request, env, ctx, params) {
         location: null, verified: u.verified, role: undefined,
         lat: gc[0] + jitterLat, lng: gc[1] + jitterLng,
         location_updated_at: null, last_seen: null, online: false, hidden: true, approx: true,
-        location_label: gc[2] || null, avatar_url
+        location_label: gc[2] || null, ...groupFields, avatar_url
       }
     }))
-    return jsonResponse({ users: out, viewer: fresh.username, isAdmin, server_time: new Date().toISOString() })
+    // The full centre list lets a client place groups (not just members) and
+    // keeps every consumer on the coordinates the admin actually saved.
+    const group_locations = groupRows.map(g => ({ name: g.name, lat: Number(g.lat), lng: Number(g.lng), label: g.location_label || '' }))
+    return jsonResponse({ users: out, group_locations, viewer: fresh.username, isAdmin, server_time: new Date().toISOString() })
   }
 
   // POST /api/admin/users

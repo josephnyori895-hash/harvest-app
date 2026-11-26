@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../state/auth'
 import { showToast } from './Toast'
-import { apiGet } from '../lib/api'
+import { apiGet, presign, uploadToMinio } from '../lib/api'
 import { useGrants } from '../lib/useGrants'
 
 import ErrorMessage from './ErrorMessage'
@@ -45,6 +45,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editing, setEditing] = useState(false)
+  const [artBusy, setArtBusy] = useState('')
   const [unreadByDepartment, setUnreadByDepartment] = useState<Record<string, number>>({})
   const [departmentQuery, setDepartmentQuery] = useState('')
   const [updates, setUpdates] = useState<any[]>([])
@@ -186,6 +187,36 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     } catch (e: any) { showToast(e?.message || 'Could not update department') } finally { setBusy('') }
   }
 
+  // The creator is the first department leader, so leaders own the ministry
+  // photo and the chat background — the same R2 'avatar' media type as members.
+  // Refresh in place so the edit panel (and its upload buttons) stay open.
+  const refreshDetail = async () => {
+    const slug = detail?.department?.slug
+    if (!slug) return
+    try {
+      const r = await fetch(`${API}/api/departments/${encodeURIComponent(slug)}`, { headers: authHeaders() })
+      const d = await r.json().catch(() => ({}))
+      if (r.ok) setDetail(d)
+    } catch { /* keep the current view */ }
+  }
+
+  const uploadDepartmentArt = async (file: File | null | undefined, field: 'avatar_key' | 'chat_background_key') => {
+    if (!file || !detail?.department?.slug || artBusy) return
+    setArtBusy(field)
+    try {
+      const pre = await presign({ type: 'avatar', contentType: file.type || 'image/jpeg', bytes: file.size, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() })
+      await uploadToMinio(pre.url, pre.fields || {}, file)
+      const r = await fetch(`${API}/api/departments/${encodeURIComponent(detail.department.slug)}`, {
+        method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: pre.key }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error || 'Could not save the photo')
+      showToast(field === 'avatar_key' ? 'Department photo updated' : 'Chat background updated', 'success')
+      await refreshDetail()
+      load()
+    } catch (e: any) { showToast(e?.message || 'Could not upload the photo') } finally { setArtBusy('') }
+  }
+
   const deleteDepartment = async (slug: string, name: string) => {
     if (!window.confirm(`Permanently delete "${name}"? Members will be released and this cannot be undone.`)) return
     setBusy(`del_${slug}`)
@@ -293,6 +324,27 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
                 <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Department settings</p>
                 <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="Department name" className="w-full mb-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
                 <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Short description (optional)" className="w-full mb-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
+                <div className="mb-2 rounded-xl border border-line bg-surface p-3">
+                  <p className="text-2xs font-extrabold uppercase tracking-[0.12em] text-ink-subtle">Department photo & chat background</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full border border-line bg-surface-sunken text-2xs font-extrabold text-ink-muted">
+                      {detail.department.avatar_url ? <img src={detail.department.avatar_url} alt="" className="h-full w-full object-cover" /> : 'PHOTO'}
+                    </div>
+                    <label className={`min-h-10 cursor-pointer rounded-full border border-line bg-surface-raised px-3 py-2 text-2xs font-extrabold text-ink-muted ${artBusy === 'avatar_key' ? 'opacity-50' : ''}`}>
+                      {artBusy === 'avatar_key' ? 'Uploading…' : detail.department.avatar_url ? 'Change photo' : 'Set photo'}
+                      <input type="file" accept="image/*" className="sr-only" disabled={!!artBusy} onChange={e => void uploadDepartmentArt(e.target.files?.[0], 'avatar_key')} />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-line bg-surface-sunken">
+                      {detail.department.chat_background_url ? <img src={detail.department.chat_background_url} alt="" className="h-full w-full object-cover" /> : null}
+                    </div>
+                    <label className={`min-h-10 cursor-pointer rounded-full border border-line bg-surface-raised px-3 py-2 text-2xs font-extrabold text-ink-muted ${artBusy === 'chat_background_key' ? 'opacity-50' : ''}`}>
+                      {artBusy === 'chat_background_key' ? 'Uploading…' : detail.department.chat_background_url ? 'Change background' : 'Set chat background'}
+                      <input type="file" accept="image/*" className="sr-only" disabled={!!artBusy} onChange={e => void uploadDepartmentArt(e.target.files?.[0], 'chat_background_key')} />
+                    </label>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <button disabled={busy === 'edit'} onClick={() => void saveEdit()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">{busy === 'edit' ? 'Saving…' : 'Save changes'}</button>
                   <button disabled={busy === 'edit'} onClick={() => setEditing(false)} className="rounded-xl border border-line bg-surface-sunken px-4 py-2.5 text-xs font-bold text-ink-muted">Cancel</button>
@@ -339,7 +391,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
                 <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink text-xs font-extrabold text-white">{String(u.name || u.username)[0].toUpperCase()}</div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-400 text-black font-extrabold ml-1">LEADER</span>}</p>
+                    <p className="text-sm font-semibold truncate">{u.name || u.username}{u.username === viewerName ? ' (you)' : ''} {u.role === 'leader' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gold text-black font-extrabold ml-1">LEADER</span>}</p>
                     <p className="truncate text-2xs text-ink-muted">@{u.username} · {u.group_name || 'Harvest'}</p>
                   </div>
                 </button>
@@ -366,11 +418,11 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
 
   return (
     <div className="bg-surface text-ink min-h-[70vh] pb-8">
-      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-line bg-gradient-to-br from-accent via-[#5B2DBF] to-[#3B1E86]">
-        <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-fuchsia-500/20 blur-3xl" />
-        <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-violet-500/15 blur-3xl" />
+      <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-line bg-gradient-to-br from-accent via-[#312878] to-[#1B1445]">
+        <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-gold/20 blur-3xl" />
+        <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-[#6B5FC7]/20 blur-3xl" />
         <div className="relative">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-purple-200/70 font-bold">Harvest Family · Serve together</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-gold/80 font-bold">Harvest Family · Serve together</p>
           <h1 className="text-3xl font-black tracking-tight mt-1">Departments</h1>
           <p className="mt-2 max-w-sm text-sm text-white/80">Find your place, build your team, and keep the conversation moving.</p>
           <div className="flex gap-2 mt-5">

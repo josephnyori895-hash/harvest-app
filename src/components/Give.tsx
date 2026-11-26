@@ -208,6 +208,9 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
   const [takeNote, setTakeNote] = useState('')
   const [entityOptions, setEntityOptions] = useState<{ group: string[]; department: string[]; community: string[] }>({ group: [], department: [], community: [] })
   const [adminAmts, setAdminAmts] = useState<Record<string, string>>({})
+  // Long project lists sit below the giving form now, but 20 cards still make
+  // the page heavy. Three are enough to show the idea; the rest stay one tap away.
+  const [allProjects, setAllProjects] = useState(false)
 
   const refreshProject = async () => {
     try {
@@ -301,6 +304,9 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
   // screen says so instead of showing an old hardcoded number members might
   // still pay into.
   const fallbackPaybill = String(selectedPayment.payment_number || paybill || content.paybill_number || '').trim()
+  // The fallback number is read as a Paybill by default, but the church can
+  // publish a Till instead. The admin chooses which one in Giving setup.
+  const fallbackMethod = content.giving_fallback_method === 'till' ? 'till' : 'paybill'
   const savePaymentConfigs = async () => {
     setPaymentSaving(true)
     try {
@@ -553,6 +559,9 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
   }
   // Dark campaign card — the same shape as the sponsored project in the feed:
   // one big number, a thin gold progress line, small-caps detail, one action.
+  const liveProjects = projects.filter(p => ['active', 'upcoming'].includes(p.status))
+  const shownProjects = allProjects ? liveProjects : liveProjects.slice(0, 3)
+
   const projectCard = (p: any) => {
     const goal = Number(p.goal_kes) || 0
     const raised = Number(p.raised_kes) || 0
@@ -617,7 +626,7 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
       if (/unavailable|503/i.test(msg)) {
         setMpesaEnabled(false)
         setMessage('')
-        showToast('Online push is being set up — use the Paybill option below for now', 'info')
+        showToast('Online push is being set up — use the M-Pesa instructions below for now', 'info')
       } else {
         showToast(msg, 'error')
       }
@@ -639,8 +648,6 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
           <h1 className="text-2xl font-extrabold mt-1">{content.giving_title || 'Give with purpose'}</h1>
           <p className="text-sm text-ink-muted mt-1">{content.giving_subtitle || 'Secure M-Pesa giving for Harvest Family Church.'}</p>
         </div>
-
-        {(projects.length > 0 || projectsError) && <section className="mb-7"><div className="mb-3"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold-strong">Projects</p><h2 className="text-lg font-extrabold">Give with purpose</h2><p className="text-xs text-ink-muted mt-1">Take part, track your progress, and help complete a shared goal.</p></div>{projectsError && <ErrorMessage message={projectsError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} />}<div className="space-y-3">{projects.filter(p => ['active','upcoming'].includes(p.status)).map(projectCard)}</div></section>}
 
         {/* Purpose → amount → M-Pesa, one sheet. Purposes scroll; the amount is
             the biggest thing on screen because that is the decision. */}
@@ -671,8 +678,8 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
         {selectedPayment.enabled === false ? <div className="mb-4 rounded-2xl bg-danger-soft border border-danger p-4 text-sm text-danger">Giving to {purpose} is temporarily unavailable. Please choose another purpose or contact the church office.</div> : selectedPayment.method !== 'stk' ? (
           <div className="mb-4 rounded-2xl bg-surface-raised border border-line p-4 text-sm">
             <p className="font-bold">{selectedPayment.method === 'paybill' ? 'M-Pesa Paybill' : selectedPayment.method === 'till' ? 'M-Pesa Till' : selectedPayment.method === 'bank' ? 'Bank transfer' : 'Giving instructions'} · {purpose}</p>
-            {selectedPayment.method === 'paybill' && <p className="mt-2">Business number: <b className="select-all">{selectedPayment.payment_number}</b> · Account: <b className="select-all">{selectedPayment.account_reference || purpose}</b></p>}
-            {selectedPayment.method === 'till' && <p className="mt-2">Till number: <b className="select-all">{selectedPayment.payment_number}</b></p>}
+            {selectedPayment.method === 'paybill' && <p className="mt-2">Business number: <b className="select-all">{selectedPayment.payment_number}</b>{' '}<button type="button" onClick={() => { navigator.clipboard?.writeText(String(selectedPayment.payment_number || '')); showToast('Paybill number copied', 'success') }} className="text-accent font-bold underline">copy</button> · Account: <b className="select-all">{selectedPayment.account_reference || purpose}</b></p>}
+            {selectedPayment.method === 'till' && <p className="mt-2">Till number: <b className="select-all">{selectedPayment.payment_number}</b>{' '}<button type="button" onClick={() => { navigator.clipboard?.writeText(String(selectedPayment.payment_number || '')); showToast('Till number copied', 'success') }} className="text-accent font-bold underline">copy</button></p>}
             {selectedPayment.method === 'bank' && <div className="mt-2 space-y-1"><p>Bank: <b>{selectedPayment.bank_name}</b></p><p>Account name: <b>{selectedPayment.bank_account_name}</b></p><p>Account number: <b className="select-all">{selectedPayment.bank_account_number}</b></p>{selectedPayment.account_reference && <p>Reference: <b>{selectedPayment.account_reference}</b></p>}</div>}
             {selectedPayment.instructions && <p className="mt-3 whitespace-pre-wrap">{selectedPayment.instructions}</p>}
             <p className="mt-3 text-xs text-ink-muted">Please verify the details before sending. This app does not automatically confirm manual transfers.</p>
@@ -683,11 +690,11 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
         </>}
         {mpesaEnabled === false && selectedPayment.method === 'stk' && (
           <div className="mb-4 rounded-2xl bg-gold-soft border border-gold p-4 text-sm">
-            <p className="font-bold text-gold-strong">Give via M-Pesa Paybill (works right now)</p>
+            <p className="font-bold text-gold-strong">Give via M-Pesa {fallbackMethod === 'till' ? 'Till' : 'Paybill'} (works right now)</p>
             <ol className="list-decimal ml-4 mt-2 space-y-1 text-gold-strong">
-              <li>Open <b>M-Pesa</b> → <b>Lipa na M-Pesa</b> → <b>Pay Bill</b></li>
-              <li>Business Number: {fallbackPaybill ? <><b className="select-all">{fallbackPaybill}</b> <button onClick={() => { navigator.clipboard?.writeText(fallbackPaybill); showToast('Paybill number copied', 'success') }} className="ml-1 text-accent font-bold underline">copy</button></> : <b>not published yet — ask the church office</b>}</li>
-              <li>Account: <b>{purpose}</b> (or your name)</li>
+              <li>Open <b>M-Pesa</b> → <b>Lipa na M-Pesa</b> → <b>{fallbackMethod === 'till' ? 'Buy Goods and Services' : 'Pay Bill'}</b></li>
+              <li>{fallbackMethod === 'till' ? 'Till Number' : 'Business Number'}: {fallbackPaybill ? <><b className="select-all">{fallbackPaybill}</b> <button onClick={() => { navigator.clipboard?.writeText(fallbackPaybill); showToast(`${fallbackMethod === 'till' ? 'Till' : 'Paybill'} number copied`, 'success') }} className="ml-1 text-accent font-bold underline">copy</button></> : <b>not published yet — ask the church office</b>}</li>
+              {fallbackMethod === 'paybill' && <li>Account: <b>{purpose}</b> (or your name)</li>}
               <li>Amount: <b>KES {Number(amount || 0).toLocaleString()}</b> → enter your PIN</li>
             </ol>
             <p className="text-[11px] text-gold-strong mt-2">Your gift is recorded by the church treasurer. Automatic receipts activate when online giving is switched on.</p>
@@ -698,6 +705,11 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
         {pollingId && <div className="mb-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] p-4 text-sm text-[#1E40AF] flex items-center gap-2"><span className="inline-block w-2 h-2 rounded-full bg-[#3B82F6] animate-pulse" />Waiting for you to enter your M-Pesa PIN…</div>}
         {message && <div className="mb-4 rounded-2xl bg-success-soft border border-success p-4 text-sm text-success">{message}</div>}
         {content.giving_note && <p className="mb-4 px-1 text-2xs leading-relaxed text-ink-subtle">{content.giving_note}</p>}
+
+        {/* Projects come after the giving form on purpose: with many projects a
+            long list would push the purpose, amount and M-Pesa destination out
+            of reach. Giving money is the primary action; projects are next. */}
+        {(projects.length > 0 || projectsError) && <section className="mt-8 mb-7"><div className="mb-3"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold-strong">Projects</p><h2 className="text-lg font-extrabold">Projects you can support</h2><p className="text-xs text-ink-muted mt-1">Take part, track your progress, and help complete a shared goal.</p></div>{projectsError && <ErrorMessage message={projectsError} kind="network" action={<button type="button" onClick={() => setMoneyReload(k => k + 1)} className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-xs font-bold text-danger">Try again</button>} />}<div className="space-y-3">{shownProjects.map(projectCard)}</div>{liveProjects.length > 3 && <button type="button" onClick={() => setAllProjects(v => !v)} className="mt-3 min-h-11 w-full rounded-full border border-line bg-surface-raised text-xs font-extrabold text-ink">{allProjects ? 'Show fewer projects' : `Show all ${liveProjects.length} projects`}</button>}</section>}
 
         <div className="rounded-card border border-line bg-surface-raised p-4">
           <h2 className="mb-3 text-sm font-extrabold">{content.giving_history_title || 'My giving'}</h2>

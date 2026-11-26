@@ -2,8 +2,8 @@
 import { query, uuid, bool } from '../lib/db.js'
 import { pbkdf2Hash, pbkdf2Verify, jwtSign } from '../lib/crypto.js'
 import { jsonResponse, errorResponse, readJson } from '../lib/http.js'
-import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute, registerRateLimit, recordRegister } from '../lib/auth.js'
-import { checkAdminDevice, createBrowserChallenge, verifyBrowserChallenge, normalizeAdminDevice, isPrimaryAdmin } from '../lib/adminDevices.js'
+import { loginRateLimit, clearLoginRateLimit, recordLoginAttempt, verifyAdminPin, isValidMemberPin, requireJwtSecretForRoute, registerRateLimit, recordRegister, requireMember } from '../lib/auth.js'
+import { checkAdminDevice, createBrowserChallenge, verifyBrowserChallenge, normalizeAdminDevice, isPrimaryAdmin, adminRecoveryConfigured, decideAdminLoginRequest, listAdminDevices, revokeAdminDevice, MAX_TRUSTED_DEVICES } from '../lib/adminDevices.js'
 import { nearestCommunity, nearestFromRows } from '../lib/geo.js'
 
 const RESERVED_USERNAMES = new Set(['allan', 'admin', 'administrator', 'harvest', 'harvest_nyeri', 'harvestfamily', 'harvestfamilychurch', 'support', 'help', 'root', 'moderator', 'pst.simon', 'youth_harvest', 'worship_team'])
@@ -35,10 +35,11 @@ function normalizePhone(raw) {
   return m ? `+254${m[1]}` : null
 }
 
-export async function handleAuth(request, env, _ctx) {
+export async function handleAuth(request, env, ctx) {
   requireJwtSecretForRoute(env)
   const path = new URL(request.url).pathname
   const method = request.method
+  const callerIp = String(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '').split(',')[0].trim().slice(0, 64)
 
   // POST /api/auth/register
   if (path === '/api/auth/register' && method === 'POST') {
@@ -84,7 +85,11 @@ export async function handleAuth(request, env, _ctx) {
         // Choice missing/invalid: try GPS nearest, then the pick again
         // (belt-and-braces), then the first congregation group.
         let near = null
-        const hasGps = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+        // A missing coordinate is not 0,0. Number(null) is 0, which used to look
+        // like a real GPS fix and assign a congregation from the Gulf of Guinea.
+        const hasGps = lat !== null && lat !== undefined && lat !== '' &&
+          lng !== null && lng !== undefined && lng !== '' &&
+          Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
         if (hasGps) {
           try {
             const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
@@ -113,7 +118,7 @@ export async function handleAuth(request, env, _ctx) {
         `INSERT INTO users (id, username, name, phone, phone_normalized, group_name, role, verified, password_hash, lat, lng, created_at)
          VALUES (?,?,?,?,?,?, 'member', 0, ?, ?, ?, ?)`,
         [id, uname, fullName, String(phone || '').trim().slice(0, 32), normPhone, group, hash,
-         Number.isFinite(Number(lat)) ? Number(lat) : null, Number.isFinite(Number(lng)) ? Number(lng) : null, now],
+         hasGps ? Number(lat) : null, hasGps ? Number(lng) : null, now],
       )
       // A group explicitly chosen during signup is an immediate membership, not a join request.
       // Keep users.group_name as the profile/congregation label and create the canonical
@@ -145,6 +150,40 @@ export async function handleAuth(request, env, _ctx) {
     }
   }
 
+  // POST /api/auth/admin/requests/:id — an already signed-in admin session
+  // authorises or denies a browser sign-in it was just asked about. Any trusted
+  // admin session may decide (a phone, or a browser the admin already trusts);
+  // the deciding session may never approve the very device it is running on.
+  if (/^\/api\/auth\/admin\/requests\/[^/]+$/.test(path) && method === 'POST') {
+    const fresh = await requireMember(env, ctx?.user)
+    if (fresh.role !== 'admin' || !isPrimaryAdmin(env, fresh)) return errorResponse('admin sign-in required', 403)
+    const body = await readJson(request)
+    const id = path.split('/').pop()
+    const result = await decideAdminLoginRequest(env, fresh, id, String(body?.decision || ''))
+    if (!result.ok) return errorResponse(result.error, result.status || 400)
+    return jsonResponse({ ok: true, decision: result.decision })
+  }
+
+  // GET /api/auth/admin/devices — every device that currently holds a session.
+  // One row per installation, so a device that signed out and back in appears
+  // once, with the time it was last seen.
+  if (path === '/api/auth/admin/devices' && method === 'GET') {
+    const fresh = await requireMember(env, ctx?.user)
+    if (fresh.role !== 'admin' || !isPrimaryAdmin(env, fresh)) return errorResponse('admin sign-in required', 403)
+    const devices = await listAdminDevices(env, fresh.id, fresh.admin_device_id)
+    return jsonResponse({ devices, limit: MAX_TRUSTED_DEVICES })
+  }
+
+  // DELETE /api/auth/admin/devices/:id — sign a device out from here. The row
+  // is the session: the evicted device's token is refused on its next request.
+  if (/^\/api\/auth\/admin\/devices\/[^/]+$/.test(path) && method === 'DELETE') {
+    const fresh = await requireMember(env, ctx?.user)
+    if (fresh.role !== 'admin' || !isPrimaryAdmin(env, fresh)) return errorResponse('admin sign-in required', 403)
+    const result = await revokeAdminDevice(env, fresh.id, path.split('/').pop(), fresh.admin_device_id)
+    if (!result.ok) return errorResponse(result.error, result.status || 400)
+    return jsonResponse({ ok: true, devices: await listAdminDevices(env, fresh.id, fresh.admin_device_id) })
+  }
+
   // POST /api/auth/admin/verify — finish a new-browser admin sign-in with the
   // 6-digit code pushed to the bound phone. No JWT yet: the challenge is the
   // only thing this route trusts until the code verifies.
@@ -168,7 +207,7 @@ export async function handleAuth(request, env, _ctx) {
     if (!isPrimaryAdmin(env, user)) return errorResponse('this admin account is retired — only HFC Nyeri can sign in as admin', 403)
     const result = await verifyBrowserChallenge(env, user, body)
     if (!result.ok) return errorResponse(result.error, result.status || 400)
-    return jsonResponse(await adminSessionResponse(user, { admin_kind: result.kind, admin_epoch: result.epoch }, env))
+    return jsonResponse(await adminSessionResponse(user, { admin_kind: result.kind, admin_epoch: result.epoch, admin_device_id: String(body?.device_id || '') }, env))
   }
 
   // POST /api/auth/login
@@ -177,7 +216,7 @@ export async function handleAuth(request, env, _ctx) {
     const identity = await loginRateLimit(env, request, body.username)
     const ip = identity.ip
     const { pin, password, username } = body
-    const device = normalizeAdminDevice(body.device_kind, body.device_id, body.device_label)
+    const device = normalizeAdminDevice(body.device_kind, body.device_id, body.device_label, body.device_details, callerIp)
     const p = String(password ?? pin ?? '').trim()
     const identifier = String(username || '').trim().toLowerCase()
     const uname = identifier.replace(/[^a-z0-9._-]/g, '').slice(0, 32)
@@ -244,12 +283,15 @@ export async function handleAuth(request, env, _ctx) {
           challenge_id: challenge.challengeId,
           expires_at: challenge.expiresAt,
           delivery: challenge.delivery,
-          message: 'Enter the 6-digit code sent to the admin phone.',
+          recovery_available: adminRecoveryConfigured(env),
+          message: challenge.delivery === 'push'
+            ? 'Enter the 6-digit code sent to the admin phone.'
+            : 'Approve this sign-in on the admin phone, or use the recovery code.',
           ...(challenge.devCode ? { dev_code: challenge.devCode } : {}),
         }, 202)
       }
       if (!state.ok) return denied(state.status || 403, state.error)
-      adminClaims = { admin_kind: state.kind, admin_epoch: state.epoch }
+      adminClaims = { admin_kind: state.kind, admin_epoch: state.epoch, admin_device_id: state.deviceId || device.deviceId }
     }
 
     await recordLoginAttempt(env, ip, uname || user.username, true)

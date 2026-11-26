@@ -78,6 +78,19 @@ function messageSelect() {
           FROM messages`
 }
 
+// Team chats show the same profile picture as the feed, not initials. One
+// lookup per page covers every sender instead of one per message.
+async function withSenderAvatars(env, rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows
+  const names = [...new Set(rows.map(r => r?.from).filter(Boolean).map(String))]
+  if (!names.length) return rows
+  const marks = names.map(() => '?').join(',')
+  const { rows: users } = await query(env, `SELECT username, avatar_key FROM users WHERE username IN (${marks})`, names)
+  const urls = new Map()
+  for (const u of users) urls.set(String(u.username), await mediaUrlOrNull(env, u.avatar_key, 3600))
+  return rows.map(r => ({ ...r, avatar_url: urls.get(String(r.from)) || null }))
+}
+
 export async function handleChat(request, env, ctx) {
   const url = new URL(request.url)
   const path = url.pathname
@@ -96,7 +109,7 @@ export async function handleChat(request, env, ctx) {
     const sql = `${messageSelect()} WHERE conversation_key=? ${before ? 'AND created_at < ?' : ''} ORDER BY created_at DESC LIMIT ?`
     const params = before ? [conv.key, String(before), lim] : [conv.key, lim]
     const { rows } = await query(env, sql, params)
-    return jsonResponse({ messages: rows.reverse(), conversation_key: conv.key })
+    return jsonResponse({ messages: await withSenderAvatars(env, rows.reverse()), conversation_key: conv.key })
   }
 
   // GET /api/chat/updates — incremental polling (`after` timestamp).
@@ -112,7 +125,7 @@ export async function handleChat(request, env, ctx) {
       `${messageSelect()} WHERE conversation_key=? AND created_at > ? ORDER BY created_at ASC LIMIT ?`,
       [conv.key, String(after), lim],
     )
-    return jsonResponse({ messages: rows, conversation_key: conv.key, server_time: new Date().toISOString() })
+    return jsonResponse({ messages: await withSenderAvatars(env, rows), conversation_key: conv.key, server_time: new Date().toISOString() })
   }
 
   // POST /api/chat/messages — text, replies, and image messages in one endpoint.
@@ -190,10 +203,12 @@ export async function handleChat(request, env, ctx) {
         else rec.catch(() => {})
       }
     } catch { /* push must never break chat */ }
-    return jsonResponse(
-      { message: { id, kind: conv.kind, conversation_key: conv.key, from: fresh.username, to: conv.recipientUsername || null, text: text || (mediaType === 'image' ? '📷' : ''), status: 'sent', created_at: now, at: now.slice(11, 16), reply_to_id: replyToId, reply_preview: replyPreview, media_key: mediaKey, media_type: mediaType, reaction: null } },
-      201,
-    )
+    const [message] = await withSenderAvatars(env, [{
+      id, kind: conv.kind, conversation_key: conv.key, from: fresh.username, to: conv.recipientUsername || null,
+      text: text || (mediaType === 'image' ? '📷' : ''), status: 'sent', created_at: now, at: now.slice(11, 16),
+      reply_to_id: replyToId, reply_preview: replyPreview, media_key: mediaKey, media_type: mediaType, reaction: null,
+    }])
+    return jsonResponse({ message }, 201)
   }
 
   // POST /api/chat/messages/:id/react — Instagram-style quick reaction.

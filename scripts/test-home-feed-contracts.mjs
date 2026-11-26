@@ -26,6 +26,12 @@ test('RS-217 (H1): comment/delete/share scope comes from the raw row kind, not t
   assert.ok(!home.includes("p.kind === 'Video' || p.kind === 'reel' ? 'reel' : 'post'"), 'the label must never decide scope')
 })
 
+test('calendar text posts do not render a fake 4:5 media stage', () => {
+  assert.match(feedCard, /\{\(p\.video \|\| p\.img\) && \(/, 'media must render only when the post actually has media')
+  assert.doesNotMatch(feedCard, /Photo on its way/, 'a text-only calendar post is not a pending photo')
+  assert.doesNotMatch(feedCard, /Image pending review/, 'the feed must not label an absent image as pending review')
+})
+
 test('RS-218 (H2): a successful empty page says so and offers the composer', () => {
   assert.ok(home.includes('allUpdates.length === 0 &&'))
   assert.ok(home.includes('No community updates yet'))
@@ -132,4 +138,27 @@ test('RS-229 (H13): the mounted window is bounded and says when it is full', () 
   assert.ok(home.includes('if (next.length >= FEED_MAX_LOADED) break'))
   assert.ok(home.includes('setFeedHasMore(atCap ? false : Boolean(d?.hasMore))'))
   assert.ok(home.includes('Showing the latest {FEED_MAX_LOADED} updates.'))
+})
+
+// Multi-photo posts and the camera entry point in the composer.
+test('a post can carry several photos', () => {
+  const post = readFileSync(join(here, '..', 'src', 'components', 'PostCreate.tsx'), 'utf8')
+  const uploads = readFileSync(join(here, '..', 'src', 'lib', 'backgroundUploads.ts'), 'utf8')
+  const media = readFileSync(join(here, '..', 'workers', 'src', 'routes', 'media.js'), 'utf8')
+  const feed = readFileSync(join(here, '..', 'workers', 'src', 'routes', 'feed.js'), 'utf8')
+  const migration = readFileSync(join(here, '..', 'workers', 'migrations', '0042_post_media.sql'), 'utf8')
+
+  assert.match(migration, /ALTER TABLE posts ADD COLUMN media_keys TEXT/, 'album posts need their own column')
+  assert.match(media, /mediaKeys\.length > 1 \? JSON\.stringify\(mediaKeys\)/, 'the confirm route must store the album list')
+  assert.match(media, /k\.startsWith\('originals\/post\/'\)/, 'only post uploads may join an album')
+  assert.match(feed, /p\.media_keys/, 'the feed must select the album list')
+  assert.match(feed, /media_urls: mediaUrls/, 'the feed must return signed album URLs')
+  assert.match(post, /multiple=\{type === 'post'\}/, 'the picker must allow selecting several photos')
+  assert.match(post, /extra_files: type === 'post' && extras\.length/, 'the composer must hand the extra photos to the uploader')
+  assert.match(post, /capture="environment"/, 'the composer needs a camera entry point')
+  assert.match(post, /data-testid="create-album"/, 'the album strip is missing')
+  assert.match(uploads, /extra_files\?: File\[\]/, 'the upload task needs the extra-photo list')
+  assert.match(uploads, /media_keys: \[audioKey, \.\.\.extraKeys\]/, 'confirm must carry the album keys')
+  assert.match(feedCard, /function FeedAlbum/, 'the feed needs an album carousel')
+  assert.match(home, /media: Array\.isArray\(p\.media_urls\)/, 'Home must map the album URLs onto the card')
 })

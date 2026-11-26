@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiGet } from './api'
 
-export function useCongregations(enabled = true, onlyCongregations = false): {
+export function useCongregations(enabled = true): {
   congregations: string[]
   live: boolean
   loading: boolean
@@ -25,14 +25,11 @@ export function useCongregations(enabled = true, onlyCongregations = false): {
         .then(d => {
           if (cancelled) return
           const rows: any[] = Array.isArray(d?.groups) ? d.groups : []
-          // Sign-up and the public landing page need congregations, not every
-          // temporary/e2e group that happens to exist in the groups table.
-          // Admin-managed congregation rows carry a location label; ordinary
-          // chat groups do not.
-          const visible = onlyCongregations
-            ? rows.filter((g: any) => String(g.location_label || '').trim())
-            : rows
-          const names = [...new Set<string>(visible.map((g: any) => String(g.name || '')).filter(Boolean))]
+          // Every picker reads the real groups table. Filtering to rows with a
+          // location label used to empty the sign-up picker whenever the
+          // church had not set an area on its groups (all 36 Nyeri groups had
+          // a blank label, so sign-up claimed no Harvest Group existed).
+          const names = [...new Set<string>(rows.map((g: any) => String(g.name || '')).filter(Boolean))]
           setCongregations(names); setLive(true); setLoading(false)
         })
         .catch(() => { if (!cancelled) { setCongregations([]); setLive(false); setLoading(false) } })
@@ -41,7 +38,7 @@ export function useCongregations(enabled = true, onlyCongregations = false): {
     // Refresh when groups change anywhere in the app (create/delete/settings).
     window.addEventListener('harvest:groups-changed', load)
     return () => { cancelled = true; window.removeEventListener('harvest:groups-changed', load) }
-  }, [enabled, onlyCongregations, attempt])
+  }, [enabled, attempt])
   // Manual retry for pickers that block a required action (sign-up) when
   // the list failed to load. Callers that ignore it are unaffected.
   const retry = useCallback(() => setAttempt(n => n + 1), [])

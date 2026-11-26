@@ -62,7 +62,18 @@ test('calendar exposes publish, edit, cancel, preview and history in Nairobi tim
   assert.match(calendar, /Confirm cancel/)
   assert.match(calendar, /formatNairobi/)
   assert.match(admin, /PublishingCalendar/)
-  assert.match(admin, /\['publishing', 'Calendar'\]/)
+  assert.match(admin, /\['publishing', 'Schedule'\]/)
+})
+
+test('the calendar is ordered by when each item actually went out', () => {
+  assert.match(calendar, /function postedAt\(p: Publication\)/, 'one shared timestamp helper keeps order, grouping and labels consistent')
+  assert.match(calendar, /if \(p\.status === 'published'\) return p\.published_at \|\| p\.scheduled_at \|\| p\.created_at/, 'published items must rank by published_at, not the earlier schedule slot')
+  assert.match(calendar, /if \(p\.status === 'expired'\) return p\.expired_at/, 'expired items rank by when they expired')
+  assert.match(calendar, /if \(p\.status === 'canceled'\) return p\.canceled_at/, 'canceled items rank by when they were canceled')
+  assert.doesNotMatch(calendar, /Date\.parse\(a\.scheduled_at \|\| a\.published_at/, 'the old schedule-first sort must not return')
+  assert.match(calendar, /const stamp = postedAt\(p\)/, 'day groupings must use the same posted time as the ordering')
+  assert.match(calendar, /const when = postedAt\(p\)/, 'the card must show the time it went out')
+  assert.match(route, /WHEN 'published' THEN published_at[\s\S]{0,220}ELSE scheduled_at/, 'the server query must order the same way before its 300-row limit')
 })
 
 test('Nairobi conversion never uses the browser’s local timezone', async () => {

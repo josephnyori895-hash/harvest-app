@@ -49,6 +49,11 @@ export class Realtime {
         if (!kind || !['web', 'mobile'].includes(kind) || !Number.isFinite(epoch) || epoch !== current) {
           return new Response('admin session expired — sign in again', { status: 403 })
         }
+        // Three-device cap: an evicted browser cannot open a socket either.
+        if (user.admin_device_id) {
+          const bound = await query(this.env, 'SELECT 1 FROM admin_devices WHERE user_id=? AND kind=? AND device_id=? LIMIT 1', [user.id, kind, String(user.admin_device_id)])
+          if (!bound.rows[0]) return new Response('this device was signed out — sign in again', { status: 403 })
+        }
       }
       user = { ...user, username: dbUser.username, role: dbUser.role }
 
@@ -90,10 +95,17 @@ export class Realtime {
 
     if (url.pathname === '/publish' && request.method === 'POST') {
       // Worker → DO: inject a validated event (server-side fan-out helper).
-      const frame = await request.json()
+      // The Worker has already authenticated and authorised the caller, so this
+      // is a direct delivery to that member's live sockets — not a client frame
+      // replayed through handleEvent, which expects a token payload and used to
+      // swallow every server-published event (e.g. admin sign-in approval).
       try {
-        await this.handleEvent(frame.user, frame.event, frame.data, frame.ackId ?? null, null)
-      } catch {}
+        const frame = await request.json()
+        const username = String(frame?.user || '').trim()
+        if (username && frame?.event) {
+          this.sendToUser(username, { event: String(frame.event), data: frame.data ?? null })
+        }
+      } catch { /* best effort */ }
       return new Response('ok')
     }
 
