@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, Marker, TileLayer, Circle, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useModalFocus } from '../lib/useModalFocus'
@@ -39,15 +39,17 @@ function Recentre({ point }: { point: [number, number] | null }) {
 export default function GroupLocationPicker({
   initialLat,
   initialLng,
+  initialRadius,
   groupName,
   onClose,
   onPick,
 }: {
   initialLat: string
   initialLng: string
+  initialRadius?: string
   groupName?: string
   onClose: () => void
-  onPick: (lat: string, lng: string) => void
+  onPick: (lat: string, lng: string, radius: number) => void
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const startLat = Number(initialLat)
@@ -55,6 +57,10 @@ export default function GroupLocationPicker({
   const validStart = initialLat.trim() !== '' && initialLng.trim() !== '' &&
     Number.isFinite(startLat) && Number.isFinite(startLng)
   const [point, setPoint] = useState<[number, number]>(validStart ? [startLat, startLng] : NYERI)
+  const startRadius = Number(initialRadius)
+  const [radius, setRadius] = useState(
+    Number.isFinite(startRadius) && startRadius >= 50 && startRadius <= 10000 ? Math.round(startRadius) : 400,
+  )
   const [locating, setLocating] = useState(false)
   const [error, setError] = useState('')
   useModalFocus(true, panelRef, onClose)
@@ -104,6 +110,7 @@ export default function GroupLocationPicker({
             <ClickToPlace onPlace={(lat, lng) => setPoint([lat, lng])} />
             <Recentre point={point} />
             <Marker position={point} icon={pinIcon()} />
+            <Circle center={point} radius={radius} pathOptions={{ color: '#EEB609', weight: 1.5, fillColor: '#EEB609', fillOpacity: 0.1 }} />
           </MapContainer>
         </div>
 
@@ -111,6 +118,30 @@ export default function GroupLocationPicker({
           <div className="rounded-xl border border-line bg-surface-raised px-3 py-2 text-[11px] text-ink-muted">
             <b className="text-ink">Selected point:</b>{' '}
             {point[0].toFixed(6)}, {point[1].toFixed(6)}
+            <div className="mt-2 flex items-center gap-2">
+              <label htmlFor="gst-picker-radius" className="shrink-0 font-bold text-ink">Area radius</label>
+              <input
+                type="range"
+                min={50}
+                max={2000}
+                step={50}
+                value={Math.min(2000, radius)}
+                onChange={e => setRadius(Number(e.target.value))}
+                aria-label="Area radius slider"
+                className="min-w-0 flex-1 accent-accent"
+              />
+              <input
+                id="gst-picker-radius"
+                type="number"
+                min={50}
+                max={10000}
+                step={50}
+                value={radius}
+                onChange={e => setRadius(Number(e.target.value) || 50)}
+                className="w-20 rounded-lg border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+              />
+              <span className="text-ink-subtle">m</span>
+            </div>
           </div>
           {error && <p className="text-[11px] font-semibold text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
@@ -124,7 +155,7 @@ export default function GroupLocationPicker({
             </button>
             <button
               type="button"
-              onClick={() => onPick(point[0].toFixed(6), point[1].toFixed(6))}
+              onClick={() => onPick(point[0].toFixed(6), point[1].toFixed(6), radius)}
               className="min-h-11 flex-1 rounded-full bg-accent px-4 text-xs font-extrabold text-white"
             >
               Use this point

@@ -77,8 +77,8 @@ export async function handleUsers(request, env, ctx, params) {
     // Read congregation locations live from D1. These are the same coordinates
     // used by signup nearest-group matching; the map must not drift to a second
     // hard-coded set of locations.
-    const { rows: groupRows } = await query(env, 'SELECT name, lat, lng, location_label FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
-    const groupCentroids = Object.fromEntries(groupRows.map(g => [g.name, [Number(g.lat), Number(g.lng), g.location_label || '']]))
+    const { rows: groupRows } = await query(env, 'SELECT name, lat, lng, location_label, location_radius FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
+    const groupCentroids = Object.fromEntries(groupRows.map(g => [g.name, [Number(g.lat), Number(g.lng), g.location_label || '', Number(g.location_radius) || 400]]))
     // Phone numbers are admin-only: members never receive other people's numbers.
     const { rows } = await query(
       env,
@@ -107,7 +107,7 @@ export async function handleUsers(request, env, ctx, params) {
       // this the client fell back to a second, hard-coded set of coordinates
       // and an admin's "registration location" edit never reached the map.
       const centre = groupCentroids[u.group_name]
-      const groupFields = centre ? { group_lat: centre[0], group_lng: centre[1], group_location_label: centre[2] || null } : {}
+      const groupFields = centre ? { group_lat: centre[0], group_lng: centre[1], group_location_label: centre[2] || null, group_location_radius: centre[3] } : {}
       const avatar_url = await mediaUrlOrNull(env, u.avatar_key, 3600)
       if (mutual) return { ...u, ...groupFields, online: isOnline(u), ...(isAdmin ? { phone: u.phone || u.phone_normalized || null } : {}), avatar_url, hidden: false }
       const gc = groupCentroids[u.group_name] || [-0.4197, 36.9475, '']
@@ -127,7 +127,7 @@ export async function handleUsers(request, env, ctx, params) {
     }))
     // The full centre list lets a client place groups (not just members) and
     // keeps every consumer on the coordinates the admin actually saved.
-    const group_locations = groupRows.map(g => ({ name: g.name, lat: Number(g.lat), lng: Number(g.lng), label: g.location_label || '' }))
+    const group_locations = groupRows.map(g => ({ name: g.name, lat: Number(g.lat), lng: Number(g.lng), label: g.location_label || '', radius: Number(g.location_radius) || 400 }))
     return jsonResponse({ users: out, group_locations, viewer: fresh.username, isAdmin, server_time: new Date().toISOString() })
   }
 

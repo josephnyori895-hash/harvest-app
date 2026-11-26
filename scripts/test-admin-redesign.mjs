@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration, realtime, adminDevices, groupsScreen, payments, groupsRoute] = await Promise.all([
+const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration, realtime, adminDevices, groupsScreen, payments, groupsRoute, authRoute] = await Promise.all([
   read('src/components/Admin.tsx'),
   read('src/components/HarvestMap.tsx'),
   read('src/components/VerifiedBadge.tsx'),
@@ -25,6 +25,7 @@ const [admin, map, badge, app, auth, users, pending, departments, contentRoute, 
   read('src/components/Groups.tsx'),
   read('src/components/GivingPaymentEditor.tsx'),
   read('workers/src/routes/groups.js'),
+  read('workers/src/routes/auth.js'),
 ])
 
 test('admin centre is one redesigned shell with grouped, accessible navigation', () => {
@@ -279,6 +280,11 @@ test('the area an admin saves for a group is what the map uses', () => {
   assert.match(map, /Location not shared — shown at/, 'an area pin must not claim an exact location')
   assert.match(groupsScreen, /GroupLocationPicker/, 'admins must be able to pick the area on a map')
   assert.match(groupsScreen, /Pick the area on a map/, 'the picker needs a visible entry point')
+  assert.match(users, /group_location_radius/, 'the saved radius must travel with each member')
+  assert.match(map, /radius=\{centre\.radius \|\| 400\}/, 'the map circle must use the group radius')
+  assert.match(groupsScreen, /AREA RADIUS \(METRES\)/, 'admins must be able to edit the radius')
+  assert.match(groupsScreen, /body\.location_radius = Math\.round\(radius\)/, 'the radius must be saved with the location')
+  assert.match(groupsScreen, /onPick=\{\(lat, lng, radius\)/, 'the picker must return the chosen radius')
   // The settings screen returns early, so a picker mounted in the list branch
   // could never open (the bug fixed after live testing). Keep it inside the
   // open-group branch, before the list return.
@@ -289,6 +295,13 @@ test('the area an admin saves for a group is what the map uses', () => {
   assert.ok(listReturn === -1 || pickerBlock < listReturn, 'the picker modal must not be left in the group list branch')
 })
 
+test('signup resolves GPS validity before the group branch uses it in the insert', () => {
+  // hasGps used to be declared inside the else block, so choosing a group made
+  // every registration throw "hasGps is not defined" and return 500.
+  assert.match(authRoute, /^ {6}const hasGps =/m, 'hasGps must be declared before the group branch, not inside it')
+  assert.match(authRoute, /hasGps \? Number\(lat\) : null/, 'the insert must still store GPS only when it is valid')
+})
+
 test('group community is chosen from existing communities or added deliberately', () => {
   assert.match(groupsScreen, /＋ New community…/, 'a new community must be an explicit choice')
   assert.match(groupsScreen, /const communities = Array\.from\(new Set/, 'the select must be built from real communities')
@@ -296,6 +309,8 @@ test('group community is chosen from existing communities or added deliberately'
   assert.match(groupsScreen, /Rename this community on all its groups/, 'admins need a deliberate bulk community rename')
   assert.match(groupsRoute, /communities\/rename/, 'the worker needs a community rename endpoint')
   assert.match(groupsRoute, /UPDATE groups SET community=\? WHERE community=\?/, 'a community rename must update every group at once')
+  assert.match(groupsRoute, /location_radius=/, 'the worker must persist the area radius')
+  assert.match(groupsRoute, /area radius must be between 50 and 10000 metres/, 'the radius must be bounded')
   assert.match(groupsRoute, /fresh\.role !== 'admin'/, 'only a system admin may rename a community')
 })
 

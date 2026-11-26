@@ -13,7 +13,7 @@ function slugify(name) {
 }
 
 async function getGroup(env, slug) {
-  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, avatar_key, chat_background_key, created_by, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
+  const { rows } = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, location_radius, avatar_key, chat_background_key, created_by, created_at FROM groups WHERE slug=?', [String(slug).slice(0, 80)])
   return rows[0] || null
 }
 
@@ -57,7 +57,7 @@ export async function handleGroups(request, env, ctx) {
       env,
       // Never select invite_token here: this catalog is public, and a leaked
       // token would let anyone join an invite-only group.
-      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.lat, g.lng, g.location_label, COUNT(gm.user_id) AS member_count
+      `SELECT g.id, g.slug, g.name, g.description, g.community, g.invite_only, g.allow_member_edit_info, g.allow_member_send, g.allow_member_add, g.allow_member_invite, g.approve_new_members, g.send_message_history, g.lat, g.lng, g.location_label, g.location_radius, COUNT(gm.user_id) AS member_count
          FROM groups g LEFT JOIN group_members gm ON gm.group_id = g.id
         GROUP BY g.id ORDER BY g.community ASC, g.name ASC`,
     )
@@ -402,7 +402,7 @@ export async function handleGroups(request, env, ctx) {
     // Location for registration auto-assignment (0006): the system admin maps
     // each congregation's physical position; new signups near these coords
     // join that congregation automatically (auth.js → geo.js reads these live).
-    if (body.lat !== undefined || body.lng !== undefined || body.location_label !== undefined) {
+    if (body.lat !== undefined || body.lng !== undefined || body.location_label !== undefined || body.location_radius !== undefined) {
       if (!isAdmin) return errorResponse('only admins can change the group location', 403)
       // '' or null clears the location, so an admin can unlink a group from a
       // wrong area instead of being stuck with the old coordinates.
@@ -424,6 +424,13 @@ export async function handleGroups(request, env, ctx) {
       }
       if (body.location_label !== undefined) {
         sets.push('location_label=?'); vals.push(String(body.location_label).trim().slice(0, 80))
+      }
+      // How far a signup may be from the centre and still join this group.
+      // Bounded so a typo cannot claim the whole county or collapse to a dot.
+      if (body.location_radius !== undefined) {
+        const radius = Number(body.location_radius)
+        if (!Number.isFinite(radius) || radius < 50 || radius > 10000) return errorResponse('area radius must be between 50 and 10000 metres', 400)
+        sets.push('location_radius=?'); vals.push(Math.round(radius))
       }
     }
     const boolFields = [
@@ -447,7 +454,7 @@ export async function handleGroups(request, env, ctx) {
       await query(env, 'UPDATE users SET group_name=? WHERE group_name=?', [nextName, renamedFrom])
     }
     await audit(env, fresh, 'group_settings_updated', g.id, { slug: g.slug, changes: Object.keys(body) })
-    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, avatar_key, chat_background_key, created_by FROM groups WHERE id=?', [g.id])
+    const updated = await query(env, 'SELECT id, slug, name, description, community, invite_only, allow_member_edit_info, allow_member_send, allow_member_add, allow_member_invite, approve_new_members, send_message_history, invite_token, lat, lng, location_label, location_radius, avatar_key, chat_background_key, created_by FROM groups WHERE id=?', [g.id])
     return jsonResponse({ ok: true, group: updated.rows[0] })
   }
 

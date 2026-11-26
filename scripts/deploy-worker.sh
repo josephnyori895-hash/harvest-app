@@ -15,7 +15,9 @@ rm -rf workers/public/assets
 rsync -a dist/ workers/public/
 rm -f workers/public/_redirects
 
-( cd workers && npx wrangler deploy )
+# Schema before code: deploying worker code that expects a migration which was
+# never applied is how signup started returning 500 in production.
+( cd workers && npx wrangler d1 migrations apply DB --remote && npx wrangler deploy )
 
 # The worker's committed index.html is the stable entry point for the deployed
 # site; the local build's copy is not committed.

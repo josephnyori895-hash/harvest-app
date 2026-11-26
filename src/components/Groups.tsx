@@ -36,7 +36,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const [form, setForm] = useState({ name: '', description: '', admin_username: '', community: '' })
   // ── WhatsApp-style group settings (system admin) ──
   const [showSettings, setShowSettings] = useState(false)
-  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false, allowMemberEditInfo: false, allowMemberSend: true, allowMemberAdd: false, allowMemberInvite: false, approveNewMembers: true, sendMessageHistory: false, lat: '', lng: '', location_label: '' })
+  const [stForm, setStForm] = useState({ name: '', description: '', community: '', addOnly: false, allowMemberEditInfo: false, allowMemberSend: true, allowMemberAdd: false, allowMemberInvite: false, approveNewMembers: true, sendMessageHistory: false, lat: '', lng: '', location_label: '', radius: '400' })
   const [addUname, setAddUname] = useState('')
   const [addRole, setAddRole] = useState<'member' | 'admin'>('member')
   const [savingSettings, setSavingSettings] = useState(false)
@@ -245,6 +245,12 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         body.lat = latText === '' ? null : Number(latText)
         body.lng = lngText === '' ? null : Number(lngText)
         body.location_label = stForm.location_label
+        // Radius only matters with a centre; blank falls back to 400 m.
+        const radius = stForm.radius.trim() === '' ? 400 : Number(stForm.radius)
+        if (!Number.isFinite(radius) || radius < 50 || radius > 10000) {
+          throw new Error('Area radius must be between 50 and 10,000 metres')
+        }
+        body.location_radius = Math.round(radius)
       }
       const r = await fetch(`${API}/api/groups/${encodeURIComponent(openSlug || '')}/settings`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) })
       const d = await r.json().catch(() => ({}))
@@ -313,7 +319,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const startSettings = () => {
     if (!detail) return
     const g = detail.group
-    setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history, lat: g.lat === null || g.lat === undefined ? '' : String(g.lat), lng: g.lng === null || g.lng === undefined ? '' : String(g.lng), location_label: g.location_label || '' })
+    setStForm({ name: g.name, description: g.description || '', community: g.community || '', addOnly: !g.allow_member_add && !g.allow_member_invite, allowMemberEditInfo: !!g.allow_member_edit_info, allowMemberSend: !!g.allow_member_send, allowMemberAdd: !!g.allow_member_add, allowMemberInvite: !!g.allow_member_invite, approveNewMembers: !!g.approve_new_members, sendMessageHistory: !!g.send_message_history, lat: g.lat === null || g.lat === undefined ? '' : String(g.lat), lng: g.lng === null || g.lng === undefined ? '' : String(g.lng), location_label: g.location_label || '', radius: String(g.location_radius ?? 400) })
     setNewCommunity(false)
     setShowSettings(true)
   }
@@ -496,6 +502,14 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                         <label htmlFor="gst-loc" className="block text-[10px] font-bold text-ink-muted mb-1">AREA LABEL</label>
                         <input id="gst-loc" value={stForm.location_label} onChange={e => setStForm(f => ({ ...f, location_label: e.target.value }))} placeholder="e.g. Nyeri Town" className="w-full bg-white border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
                       </div>
+                      <div>
+                        <label htmlFor="gst-radius" className="block text-[10px] font-bold text-ink-muted mb-1">AREA RADIUS (METRES)</label>
+                        <div className="flex items-center gap-2">
+                          <input id="gst-radius" type="number" min={50} max={10000} step={50} value={stForm.radius} onChange={e => setStForm(f => ({ ...f, radius: e.target.value }))} className="w-24 bg-white border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
+                          <input type="range" min={50} max={2000} step={50} value={Math.min(2000, Number(stForm.radius) || 400)} onChange={e => setStForm(f => ({ ...f, radius: e.target.value }))} aria-label="Area radius slider" className="min-w-0 flex-1 accent-accent" />
+                        </div>
+                        <p className="mt-1 text-[10px] text-ink-muted">How large this group's area is drawn on the map. 400 m is the default; the picker previews it.</p>
+                      </div>
                     </div>
                   )}
                   <div className="space-y-2">
@@ -634,10 +648,11 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             <GroupLocationPicker
               initialLat={stForm.lat}
               initialLng={stForm.lng}
+              initialRadius={stForm.radius}
               groupName={stForm.name}
               onClose={() => setPickerOpen(false)}
-              onPick={(lat, lng) => {
-                setStForm(f => ({ ...f, lat, lng }))
+              onPick={(lat, lng, radius) => {
+                setStForm(f => ({ ...f, lat, lng, radius: String(radius) }))
                 setPickerOpen(false)
                 showToast('Area selected — save settings to apply it', 'success')
               }}

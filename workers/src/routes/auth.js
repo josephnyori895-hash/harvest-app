@@ -76,6 +76,12 @@ export async function handleAuth(request, env, ctx) {
           return !!r.rows[0]
         } catch { return false }
       }
+      // GPS validity is needed both for nearest-group matching below and for
+      // the INSERT: declaring it inside the else block made every signup throw
+      // "hasGps is not defined" after choosing a group.
+      const hasGps = lat !== null && lat !== undefined && lat !== '' &&
+        lng !== null && lng !== undefined && lng !== '' &&
+        Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
       let group = null
       const pickedGroup = String(groupName || '').trim()
       if (pickedGroup && await exists(pickedGroup)) {
@@ -87,9 +93,6 @@ export async function handleAuth(request, env, ctx) {
         let near = null
         // A missing coordinate is not 0,0. Number(null) is 0, which used to look
         // like a real GPS fix and assign a congregation from the Gulf of Guinea.
-        const hasGps = lat !== null && lat !== undefined && lat !== '' &&
-          lng !== null && lng !== undefined && lng !== '' &&
-          Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
         if (hasGps) {
           try {
             const located = await query(env, 'SELECT name, lat, lng FROM groups WHERE lat IS NOT NULL AND lng IS NOT NULL')
@@ -146,6 +149,9 @@ export async function handleAuth(request, env, ctx) {
       return jsonResponse({ token, role: 'member', username: uname, verified: false, group_name: group, assigned_by: pickedGroup && group === pickedGroup ? 'choice' : 'location', expiresIn: '24h' }, 201)
     } catch (e) {
       if (e?.status) throw e
+      // Keep the client message generic, but leave the real cause in the logs:
+      // a silent 500 made a schema mismatch look like "signup is broken".
+      console.error('register failed', e?.stack || e?.message || String(e))
       return errorResponse('registration failed', 500)
     }
   }

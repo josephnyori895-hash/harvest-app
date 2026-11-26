@@ -24,7 +24,7 @@ const fallbackGroupCoords: Record<string, [number, number]> = {
   'Harvest Nyeri': [-0.4197, 36.9475],
 }
 
-type GroupCentre = { lat: number; lng: number; label?: string }
+type GroupCentre = { lat: number; lng: number; label?: string; radius?: number }
 
 const groupOf = (u: any) => u.group_name || u.group || 'Harvest Nyeri'
 // null must never count as a coordinate: Number(null) is 0, which used to pin
@@ -42,7 +42,8 @@ function groupCentresOf(users: any[]): Record<string, GroupCentre> {
     if (u.group_lat === null || u.group_lat === undefined || u.group_lng === null || u.group_lng === undefined) return
     const lat = Number(u.group_lat)
     const lng = Number(u.group_lng)
-    if (Number.isFinite(lat) && Number.isFinite(lng)) out[groupOf(u)] = { lat, lng, label: u.group_location_label || '' }
+    const radius = Number(u.group_location_radius)
+    if (Number.isFinite(lat) && Number.isFinite(lng)) out[groupOf(u)] = { lat, lng, label: u.group_location_label || '', radius: Number.isFinite(radius) && radius > 0 ? radius : 400 }
   })
   return out
 }
@@ -319,14 +320,14 @@ export default function HarvestMap({
               <Circle
                 key={`area-${name}`}
                 center={[centre.lat, centre.lng]}
-                radius={400}
+                radius={centre.radius || 400}
                 pathOptions={{ color: '#EEB609', weight: 1.5, fillColor: '#EEB609', fillOpacity: 0.08 }}
               >
                 <Popup>
                   <div className="text-xs">
                     <b>{name}</b>
                     <div className="text-ink-subtle">{centre.label || 'Saved registration area'}</div>
-                    <div className="text-ink-subtle">Approximate 400 m area</div>
+                    <div className="text-ink-subtle">Approximate {centre.radius || 400} m area</div>
                   </div>
                 </Popup>
               </Circle>
