@@ -404,6 +404,14 @@ jobs:
           fi
           echo "AVD: $ANDROID_AVD_HOME/harvest-upgrade.ini"
 
+          # The emulator connects to adb at launch; with no server running it
+          # reports "Unable to connect to adb daemon on port: 5037" and the
+          # device sits at offline, so start the server first.
+          ADB="$SDK/platform-tools/adb"
+          [ -x "$ADB" ] || ADB=adb
+          "$ADB" start-server > /dev/null 2>&1 || true
+          "$ADB" devices || true
+
           nohup "$SDK/emulator/emulator" -avd harvest-upgrade \
             -no-window -gpu swiftshader_indirect -no-snapshot -noaudio \
             -no-boot-anim -camera-back none -no-metrics \
@@ -418,9 +426,25 @@ jobs:
             fail "the emulator process exited during startup"
           fi
 
+          # "offline" is a real state while the device attaches; wait for it to
+          # become usable before asking it anything.
+          ONLINE=""
+          for _ in $(seq 1 90); do
+            if [ "$("$ADB" get-state 2>/dev/null | tr -d '\r')" = "device" ]; then
+              ONLINE=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ONLINE" ]; then
+            "$ADB" devices || true
+            annotate /tmp/emulator.log emulator-log
+            fail "the emulator never became adb-visible"
+          fi
+
           BOOTED=""
           for _ in $(seq 1 100); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+            if [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
               BOOTED=1
               break
             fi
