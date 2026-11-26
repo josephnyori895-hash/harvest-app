@@ -385,18 +385,41 @@ jobs:
             fail "could not install the emulator packages"
           }
 
+          # avdmanager and emulator disagree about where AVDs live unless both
+          # are told explicitly; unset, the AVD was created outside the
+          # emulator's search path and it boot-looped on an unknown name.
+          export ANDROID_HOME_DIR="$HOME/.android"
+          export ANDROID_USER_HOME="$HOME/.android"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+
           echo no | "$AVDMGR" create avd -n harvest-upgrade -k "$IMAGE" --force > /tmp/avdmanager.log 2>&1 || {
             annotate /tmp/avdmanager.log avdmanager
             fail "could not create the AVD"
           }
 
+          if [ ! -f "$ANDROID_AVD_HOME/harvest-upgrade.ini" ]; then
+            annotate /tmp/avdmanager.log avdmanager
+            fail "the AVD was not created in $ANDROID_AVD_HOME"
+          fi
+          echo "AVD: $ANDROID_AVD_HOME/harvest-upgrade.ini"
+
           nohup "$SDK/emulator/emulator" -avd harvest-upgrade \
             -no-window -gpu swiftshader_indirect -no-snapshot -noaudio \
             -no-boot-anim -camera-back none -no-metrics \
             > /tmp/emulator.log 2>&1 &
+          EMULATOR_PID=$!
+
+          # A dead emulator process can never report boot completion, so do not
+          # burn the full timeout waiting for it.
+          sleep 30
+          if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            annotate /tmp/emulator.log emulator-log
+            fail "the emulator process exited during startup"
+          fi
 
           BOOTED=""
-          for _ in $(seq 1 300); do
+          for _ in $(seq 1 100); do
             if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
               BOOTED=1
               break
@@ -405,7 +428,7 @@ jobs:
           done
           if [ -z "$BOOTED" ]; then
             annotate /tmp/emulator.log emulator-log
-            fail "the emulator did not finish booting within 900s"
+            fail "the emulator did not finish booting within 300s"
           fi
           adb shell input keyevent 82 >/dev/null 2>&1 || true
           df -h / || true
