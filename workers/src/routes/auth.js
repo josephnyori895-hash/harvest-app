@@ -165,7 +165,7 @@ export async function handleAuth(request, env, _ctx) {
     )
     const user = found.rows[0]
     if (!user || !user.active || user.role !== 'admin') return errorResponse('admin account is not active', 403)
-    if (!isPrimaryAdmin(env, user.username)) return errorResponse('this admin account is retired — only HFC Nyeri can sign in as admin', 403)
+    if (!isPrimaryAdmin(env, user)) return errorResponse('this admin account is retired — only HFC Nyeri can sign in as admin', 403)
     const result = await verifyBrowserChallenge(env, user, body)
     if (!result.ok) return errorResponse(result.error, result.status || 400)
     return jsonResponse(await adminSessionResponse(user, { admin_kind: result.kind, admin_epoch: result.epoch }, env))
@@ -231,7 +231,7 @@ export async function handleAuth(request, env, _ctx) {
     // to the bound phone before it receives a token.
     let adminClaims = null
     if (role === 'admin') {
-      if (!isPrimaryAdmin(env, user.username)) return denied(403, 'this admin account is retired — only HFC Nyeri can sign in as admin')
+      if (!isPrimaryAdmin(env, user)) return denied(403, 'this admin account is retired — only HFC Nyeri can sign in as admin')
       if (device.error) return errorResponse('admin sign-in needs a device identifier — reopen the app and try again', 400)
       const state = await checkAdminDevice(env, user, device)
       if (!state.ok && state.needsCode) {

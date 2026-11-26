@@ -15,6 +15,8 @@ const securityMigration = await readFile(new URL('../workers/migrations/0013_sec
 const departments = await readFile(new URL('../workers/src/routes/departments.js', import.meta.url), 'utf8')
 const adminDevices = await readFile(new URL('../workers/src/lib/adminDevices.js', import.meta.url), 'utf8')
 const adminMigration = await readFile(new URL('../workers/migrations/0035_admin_device_auth.sql', import.meta.url), 'utf8')
+const adminRestore = await readFile(new URL('../workers/migrations/0038_restore_hfc_nyeri_admin.sql', import.meta.url), 'utf8')
+const workerConfig = await readFile(new URL('../workers/wrangler.toml', import.meta.url), 'utf8')
 const usersRoute = await readFile(new URL('../workers/src/routes/users.js', import.meta.url), 'utf8')
 const mediaRoute = await readFile(new URL('../workers/src/routes/media.js', import.meta.url), 'utf8')
 const realtime = await readFile(new URL('../workers/src/realtime.js', import.meta.url), 'utf8')
@@ -83,8 +85,19 @@ assert.match(adminMigration, /role = 'member'[\s\S]{0,80}username <> 'harvest_ny
 assert.match(adminMigration, /CREATE TABLE IF NOT EXISTS admin_devices/)
 assert.match(adminMigration, /UNIQUE \(user_id, kind\)/, 'one device per kind')
 assert.match(adminMigration, /admin_login_challenges/)
+assert.match(adminRestore, /WHERE id = 'f1000000-0000-4000-8000-000000000009'/, 'the real admin must be restored by immutable id')
+assert.match(adminRestore, /role = 'admin', verified = 1/, 'restore both admin role and verification')
+assert.match(workerConfig, /ADMIN_USER_ID = "f1000000-0000-4000-8000-000000000009"/, 'the primary admin id must be configured')
+assert.match(workerConfig, /ADMIN_USERNAME = "hfcnyeri"/, 'the readable admin label must match the church account')
 assert.match(adminDevices, /primaryAdminUsername/)
 assert.match(adminDevices, /ADMIN_OTP_DEV/, 'local-only code fallback must be explicit')
+
+// The primary admin is identified by id. Renaming the account must not remove
+// admin access or verification.
+const { isPrimaryAdmin } = await import('../workers/src/lib/adminDevices.js')
+assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'stable-id', username: 'renamed-admin' }), true, 'a renamed primary admin keeps access')
+assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'other-id', username: 'hfcnyeri' }), false, 'a username alone cannot claim the primary admin')
+assert.doesNotMatch(usersRoute, /isPrimaryAdmin\(env, [^)]*\.username\)/, 'role checks must not depend on a mutable username')
 assert.match(adminDevices, /installation_id=\?[\s\S]{0,600}sendToDevice\(env,[\s\S]{0,300}admin_login_code/, 'code must be pushed to the bound phone only')
 assert.match(adminDevices, /pbkdf2Verify\(code, challenge\.code_hash\)/, 'code must be verified from its hash')
 assert.match(adminDevices, /MAX_ATTEMPTS = 5/)
@@ -107,8 +120,8 @@ assert.match(routesAuth, /createBrowserChallenge\(env, user, device, ip\)/)
 assert.match(auth, /username NOT LIKE 'adminop:%'/, 'admin-operation sentinels do not count as login failures')
 
 // The primary admin can never be dropped to a 4–6 digit PIN.
-assert.match(usersRoute, /isPrimaryAdmin\(env, before\.username\)[\s\S]{0,80}password, not a PIN/)
-assert.match(usersRoute, /isPrimaryAdmin\(env, target\.rows\[0\]\.username\)[\s\S]{0,80}password, not a PIN/)
+assert.match(usersRoute, /isPrimaryAdmin\(env, before\)[\s\S]{0,80}password, not a PIN/)
+assert.match(usersRoute, /isPrimaryAdmin\(env, target\.rows\[0\]\)[\s\S]{0,80}password, not a PIN/)
 
 // Multipart abort requires the same per-account upload token as every other
 // multipart call; leaked key/uploadId alone must not cancel an upload.

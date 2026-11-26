@@ -12,11 +12,22 @@ const CODE_TTL_MS = 10 * 60 * 1000
 const MAX_ATTEMPTS = 5
 const DEVICE_RE = /^[A-Za-z0-9._:-]{8,128}$/
 
-export function primaryAdminUsername(env) {
-  return String(env.ADMIN_USERNAME || 'harvest_nyeri').trim().toLowerCase()
+export function primaryAdminId(env) {
+  return String(env.ADMIN_USER_ID || '').trim()
 }
 
-export function isPrimaryAdmin(env, username) {
+export function primaryAdminUsername(env) {
+  return String(env.ADMIN_USERNAME || 'hfcnyeri').trim().toLowerCase()
+}
+
+// Identify the primary administrator by the immutable user id, not by the
+// username. A username can be corrected or changed without the account losing
+// its admin role, password, devices or audit history.
+export function isPrimaryAdmin(env, account) {
+  const id = typeof account === 'string' ? '' : String(account?.id || '').trim()
+  const adminId = primaryAdminId(env)
+  if (adminId) return id === adminId
+  const username = typeof account === 'string' ? account : account?.username
   return String(username || '').trim().toLowerCase() === primaryAdminUsername(env)
 }
 

@@ -47,6 +47,10 @@ run_worker_first = ["/harvest-family.apk", "/harvest-family-*.apk", "/downloads/
 
 # ── Non-secret vars (APK WebView origin is https://localhost) ──
 [vars]
+# Stable identity of the one church administrator. The id survives username
+# changes; the username is only a readable fallback/error label.
+ADMIN_USER_ID = "f1000000-0000-4000-8000-000000000009"
+ADMIN_USERNAME = "hfcnyeri"
 CORS_ORIGINS = "http://localhost,https://localhost,https://harvestfamily.or.ke,capacitor://localhost"
 # Public base for absolute signed-media URLs served to the APK (relative URLs break in the WebView).
 PUBLIC_BASE_URL = "https://harvestfamily-api.harvestfamily.workers.dev"

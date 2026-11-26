@@ -216,7 +216,7 @@ export async function handleUsers(request, env, ctx, params) {
     const profile = {}
     for (const field of PROFILE_FIELDS) if (Object.prototype.hasOwnProperty.call(body, field)) profile[field] = cleanString(body[field], field === 'name' ? 120 : 160)
     const nextRole = role === undefined ? before.role : role
-    if (nextRole === 'admin' && !isPrimaryAdmin(env, before.username)) {
+    if (nextRole === 'admin' && !isPrimaryAdmin(env, before)) {
       return errorResponse(`only ${primaryAdminUsername(env)} can hold the administrator role`, 409)
     }
     const nextVerified = verified === undefined ? before.verified : verified
@@ -241,7 +241,7 @@ export async function handleUsers(request, env, ctx, params) {
     // The primary admin is the account that controls the church: it must keep a
     // real password, never drop to a 4–6 digit PIN that is trivial to guess.
     if (body.pin_reset !== undefined) {
-      if (isPrimaryAdmin(env, before.username)) return errorResponse('the primary admin must use a password, not a PIN', 400)
+      if (isPrimaryAdmin(env, before)) return errorResponse('the primary admin must use a password, not a PIN', 400)
       const pin = String(body.pin_reset).trim()
       if (!/^\d{4,6}$/.test(pin)) return errorResponse('PIN must be 4-6 digits', 400)
       sets.push('pin_hash=?')
@@ -285,7 +285,7 @@ export async function handleUsers(request, env, ctx, params) {
     if (password !== undefined && password.length < 8) return errorResponse('password must be at least 8 characters', 400)
     const target = await query(env, 'SELECT id, username FROM users WHERE username=?', [username])
     if (!target.rows[0]) return errorResponse('user not found', 404)
-    if (pin !== undefined && isPrimaryAdmin(env, target.rows[0].username)) {
+    if (pin !== undefined && isPrimaryAdmin(env, target.rows[0])) {
       return errorResponse('the primary admin must use a password, not a PIN', 400)
     }
     if (pin !== undefined) await query(env, 'UPDATE users SET pin_hash=? WHERE id=?', [await pbkdf2Hash(pin, 100000), target.rows[0].id])
