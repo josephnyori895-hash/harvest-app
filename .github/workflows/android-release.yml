@@ -358,28 +358,69 @@ jobs:
       # Install the new APK on an emulator directly over the previous release,
       # confirm data is preserved, and confirm it launches. A failure here
       # blocks publication.
+      #
+      # The emulator is driven explicitly instead of through
+      # reactivecircus/android-emulator-runner: the composite action reports a
+      # bare "step failed" annotation, and this repository's Actions logs are not
+      # readable without an interactive login, so a gate that fails inside the
+      # action is a gate nobody can diagnose. Every phase below names its own
+      # failure and dumps its log tail.
+      - name: Boot Android emulator
+        run: |
+          set -euo pipefail
+          annotate() { tail -c 1500 "$1" | tr '\r\n' '  ' | sed "s/^/::error::[$2] /"; }
+          fail() { echo "::error::[emulator] $*"; exit 1; }
+
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMGR="$(command -v sdkmanager || echo "$SDK/cmdline-tools/latest/bin/sdkmanager")"
+          AVDMGR="$(command -v avdmanager || echo "$SDK/cmdline-tools/latest/bin/avdmanager")"
+          IMAGE="system-images;android-30;default;x86_64"
+          echo "sdk=$SDK"
+          df -h / || true
+
+          # `yes` dies of SIGPIPE as soon as sdkmanager stops reading, which
+          # pipefail would report as a failed install.
+          ( set +o pipefail; yes | "$SDKMGR" --install "platform-tools" "emulator" "$IMAGE" ) > /tmp/sdkmanager.log 2>&1 || {
+            annotate /tmp/sdkmanager.log sdkmanager
+            fail "could not install the emulator packages"
+          }
+
+          echo no | "$AVDMGR" create avd -n harvest-upgrade -k "$IMAGE" --force > /tmp/avdmanager.log 2>&1 || {
+            annotate /tmp/avdmanager.log avdmanager
+            fail "could not create the AVD"
+          }
+
+          nohup "$SDK/emulator/emulator" -avd harvest-upgrade \
+            -no-window -gpu swiftshader_indirect -no-snapshot -noaudio \
+            -no-boot-anim -camera-back none -no-metrics \
+            > /tmp/emulator.log 2>&1 &
+
+          BOOTED=""
+          for _ in $(seq 1 300); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              BOOTED=1
+              break
+            fi
+            sleep 3
+          done
+          if [ -z "$BOOTED" ]; then
+            annotate /tmp/emulator.log emulator-log
+            fail "the emulator did not finish booting within 900s"
+          fi
+          adb shell input keyevent 82 >/dev/null 2>&1 || true
+          df -h / || true
+          echo "Emulator booted: $(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+
       - name: Upgrade installation test (emulator)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          target: default
-          arch: x86_64
-          disable-animations: true
-          # Keep -gpu swiftshader_indirect: overriding emulator-options replaces
-          # the action's defaults wholesale, and a headless runner has no GPU,
-          # so the emulator never finished booting and the step died at the
-          # 600s boot timeout on every release.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
-          emulator-boot-timeout: 900
-          script: |
-            set -euo pipefail
-            bash scripts/android-upgrade-test.sh \
-              "workers/downloads/${PREVIOUS_APK_FILENAME}" \
-              "android/app/build/outputs/apk/release/app-release.apk" 2>&1 |
-              tee /tmp/upgrade-test.log || {
-                tail -c 1500 /tmp/upgrade-test.log | tr '\r\n' '  ' | sed 's/^/::error::[upgrade-test] /'
-                exit 1
-              }
+        run: |
+          set -euo pipefail
+          bash scripts/android-upgrade-test.sh \
+            "workers/downloads/${PREVIOUS_APK_FILENAME}" \
+            "android/app/build/outputs/apk/release/app-release.apk" 2>&1 |
+            tee /tmp/upgrade-test.log || {
+              tail -c 1500 /tmp/upgrade-test.log | tr '\r\n' '  ' | sed 's/^/::error::[upgrade-test] /'
+              exit 1
+            }
 
       # The AVD keeps gigabytes of userdata that nothing downstream needs, and
       # it is the difference between a deploy that has room to stage the APK and
