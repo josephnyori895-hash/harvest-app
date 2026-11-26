@@ -31,6 +31,17 @@ jobs:
           node-version: 26
           cache: npm
 
+      # The emulator's system image plus its AVD need ~10 GB on a runner that
+      # has ~14 GB free, and the release died writing a 162-byte manifest right
+      # after the emulator step — the disk filling up looks exactly like that.
+      # Reclaim what this build never uses before anything is downloaded.
+      - name: Reclaim runner disk space
+        run: |
+          df -h / || true
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost 2>/dev/null || true
+          sudo apt-get clean 2>/dev/null || true
+          df -h / || true
+
       - name: Install frontend dependencies
         run: npm ci
 
@@ -370,6 +381,16 @@ jobs:
                 exit 1
               }
 
+      # The AVD keeps gigabytes of userdata that nothing downstream needs, and
+      # it is the difference between a deploy that has room to stage the APK and
+      # one that fails writing to the workspace.
+      - name: Reclaim disk after the emulator run
+        if: always()
+        run: |
+          adb kill-server 2>/dev/null || true
+          rm -rf "$HOME/.android/avd" "$HOME/.android/cache" 2>/dev/null || true
+          df -h / || true
+
       # The Worker reads the shipped version from the assets, so the
       # latest-version probe always matches the APK in this deployment. It used
       # to live only in the deploy-time RELEASE_APK_FILENAME var, which any
@@ -380,10 +401,14 @@ jobs:
       - name: Write app version manifest
         run: |
           set -euo pipefail
+          df -h / || true
           test -d workers/public || { echo "::error::workers/public was not staged"; exit 1; }
           test -n "$LOCAL_SHA" || { echo "::error::LOCAL_SHA is not set"; exit 1; }
-          printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
-            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" > workers/public/app-version.json
+          if ! printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
+            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" > workers/public/app-version.json; then
+            echo "::error::could not write workers/public/app-version.json — free space: $(df -h / | tail -1)"
+            exit 1
+          fi
           cat workers/public/app-version.json
 
       - name: Apply D1 migrations
