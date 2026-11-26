@@ -336,12 +336,21 @@ jobs:
           target: default
           arch: x86_64
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot
+          # Keep -gpu swiftshader_indirect: overriding emulator-options replaces
+          # the action's defaults wholesale, and a headless runner has no GPU,
+          # so the emulator never finished booting and the step died at the
+          # 600s boot timeout on every release.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          emulator-boot-timeout: 900
           script: |
             set -euo pipefail
             bash scripts/android-upgrade-test.sh \
               "workers/downloads/${PREVIOUS_APK_FILENAME}" \
-              "android/app/build/outputs/apk/release/app-release.apk"
+              "android/app/build/outputs/apk/release/app-release.apk" 2>&1 |
+              tee /tmp/upgrade-test.log || {
+                tail -c 1500 /tmp/upgrade-test.log | tr '\r\n' '  ' | sed 's/^/::error::[upgrade-test] /'
+                exit 1
+              }
 
       # The Worker reads the shipped version from the assets, so the
       # latest-version probe always matches the APK in this deployment. It used

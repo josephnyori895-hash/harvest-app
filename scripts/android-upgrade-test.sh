@@ -23,6 +23,33 @@ if ! adb get-state >/dev/null 2>&1; then
   fail "no device attached; the upgrade test is a release gate"
 fi
 
+# The emulator runner reports "booted" once the boot animation stops, but the
+# package manager can still be settling. Installing straight away races it and
+# fails the gate with a misleading package/signature error, so wait until the
+# system actually accepts installs.
+echo "UPGRADE TEST: waiting for the device to finish booting"
+adb wait-for-device >/dev/null 2>&1 || fail "the device never became available"
+
+BOOTED=""
+for _ in $(seq 1 150); do
+  if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+    BOOTED=1
+    break
+  fi
+  sleep 2
+done
+[ -n "$BOOTED" ] || fail "the device did not finish booting within 300s"
+
+PM_READY=""
+for _ in $(seq 1 60); do
+  if adb shell pm path android >/dev/null 2>&1; then
+    PM_READY=1
+    break
+  fi
+  sleep 2
+done
+[ -n "$PM_READY" ] || fail "the package manager did not become ready within 120s"
+
 echo "UPGRADE TEST: installing previous release"
 adb uninstall "$PKG" >/dev/null 2>&1 || true
 adb install -r "$PREV" >/dev/null || fail "could not install the previous release"
