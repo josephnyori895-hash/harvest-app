@@ -989,6 +989,28 @@ function InnerApp() {
       .catch(() => {})
   }, [])
 
+  // Register this device for push on every session start, not just on a fresh
+  // sign-in. Updating the app or restoring a stored session used to skip
+  // handleAuthSuccess entirely, so the phone never sent a token and the admin
+  // sign-in code had nowhere to land. Re-running also picks up a rotated token
+  // when the app comes back to the foreground; the server dedupes by token.
+  useEffect(() => {
+    if (!onboarded) return
+    let cancelled = false
+    const sync = () => {
+      if (cancelled) return
+      if (!(localStorage.getItem('harvest_token') || '')) return
+      void registerPush()
+    }
+    const onVisible = () => { if (document.visibilityState === 'visible') sync() }
+    sync()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [onboarded])
+
   // Verification is server-authoritative. An admin can verify (or unverify)
   // an account at any moment; the member's screen must reflect that without a
   // fresh login. Poll /api/me slowly, re-read on foreground, and react to the
