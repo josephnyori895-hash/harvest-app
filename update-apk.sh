@@ -14,12 +14,21 @@ BUILD_TYPE="debug"
 [[ "${1:-}" == "--release" ]] && BUILD_TYPE="release"
 
 JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
-# CI stamps 1000 + run number, so a local build has to stay in the low band or
-# it would advertise itself as newer than every release and the phone would stop
-# seeing CI updates. Same scheme as the fallback in android/app/build.gradle.
-GIT_COMMITS="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-LOCAL_VERSION_CODE=$(( GIT_COMMITS % 900 ))
-(( LOCAL_VERSION_CODE < 1 )) && LOCAL_VERSION_CODE=1
+# The gradle build refuses anything below the committed floor, and an installed
+# app refuses anything that does not outrank the live release. The old
+# `git rev-list --count % 900` scheme produced codes like 8 against a floor of
+# 1648, so the documented local build failed outright. Use the higher of the
+# floor and the live release + 1 instead.
+VERSION_FLOOR=1
+if [[ -f android/version-code.txt ]]; then
+  VERSION_FLOOR="$(tr -dc '0-9' < android/version-code.txt)"
+  [[ -n "$VERSION_FLOOR" ]] || VERSION_FLOOR=1
+fi
+LIVE_VERSION_CODE="$(curl -fsS --max-time 20 \
+  https://harvestfamily-api.harvestfamily.workers.dev/api/app-version 2>/dev/null \
+  | sed -E 's/.*"version_code"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/' || true)"
+[[ "$LIVE_VERSION_CODE" =~ ^[0-9]+$ ]] || LIVE_VERSION_CODE=0
+LOCAL_VERSION_CODE=$(( VERSION_FLOOR > LIVE_VERSION_CODE + 1 ? VERSION_FLOOR : LIVE_VERSION_CODE + 1 ))
 HARVEST_VERSION_CODE="${HARVEST_VERSION_CODE:-$LOCAL_VERSION_CODE}"
 HARVEST_VERSION_NAME="${HARVEST_VERSION_NAME:-1.0.${HARVEST_VERSION_CODE}}"
 export HARVEST_VERSION_CODE HARVEST_VERSION_NAME
@@ -46,6 +55,18 @@ else
   SRC="app/build/outputs/apk/debug/app-debug.apk"
 fi
 cd ..
+
+# Android only installs an update signed with the same certificate as the app
+# already on members' phones. A build signed with the developer keystore is
+# rejected with "App not installed as package conflicts with an existing
+# package", so never publish one: the release workflow holds the real signing
+# key, and this script only has whatever android/keystore.properties points at.
+if ! APKSIGNER="$(command -v apksigner || true)" node scripts/verify-apk-cert.mjs "android/$SRC"; then
+  echo "✖ Refusing to publish: this APK is not signed with the production release key."
+  echo "  Build left at android/$SRC."
+  echo "  Publish APK updates through the GitHub release workflow, which restores the release keystore."
+  exit 1
+fi
 
 echo "▸ 4/6 Staging web app, APK and version manifest…"
 STAGED="workers/downloads/harvest-family.apk"
