@@ -214,7 +214,12 @@ test('production smoke verifies the served APK digest and Range support', () => 
 test('a local build stays below the CI version band', () => {
   // 1000 + git commit count overtook CI's 1000 + run number, so a locally built
   // APK claimed to be newer than every release and the phone stopped updating.
-  assert.match(apkScript, /LOCAL_VERSION_CODE=\$\(\( GIT_COMMITS % 900 \)\)/)
+  // Take the higher of the committed floor and live + 1; both stay below the
+  // next CI run's 1000 + run number.
+  assert.match(apkScript,
+    /LOCAL_VERSION_CODE=\$\(\( VERSION_FLOOR > LIVE_VERSION_CODE \+ 1 \? VERSION_FLOOR : LIVE_VERSION_CODE \+ 1 \)\)/,
+    'local builds take the higher of the committed floor and live + 1')
+  assert.doesNotMatch(apkScript, /GIT_COMMITS % 900/)
   assert.doesNotMatch(apkScript, /1000 \+ \$\(git rev-list --count HEAD\)/)
 })
 
