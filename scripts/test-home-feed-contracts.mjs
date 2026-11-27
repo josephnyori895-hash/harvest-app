@@ -97,6 +97,8 @@ test('tapping Home waits for the fresh head before landing on the latest update'
   assert.match(feedCard, /data-created-at=\{p\.created_at \|\| ''\}/, 'cards expose the timestamp used to find the newest update')
   assert.match(home, /cards\.reduce/, 'the feed is ranked, so the newest card is selected by time, not DOM order')
   assert.match(home, /home\.closest\('\.app-content'\)/, 'scroll the real app column scroller, not the non-scrolling Home root')
+  assert.match(home, /chromeOverlap/, 'the landing must measure chrome that actually covers the scroller, not assume it sticks')
+  assert.doesNotMatch(home, /stickyChrome/, 'subtracting the full header height overshot: the header scrolls away with the feed')
   assert.match(app, /if \(tab === 'home'\) return/, 'tab scroll-memory must not restore an old feed position over the Home landing')
   assert.doesNotMatch(home, /const target = c\.querySelector\('\[data-post-id\]'\)/, 'first card is not necessarily the latest')
 })

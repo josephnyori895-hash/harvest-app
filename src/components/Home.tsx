@@ -405,14 +405,24 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       return at > best.at ? { el, at } : best
     }, { el: null, at: -1 }).el || home.querySelector('#home-community')
     if (!target) { c.scrollTo({ top: 0, behavior }); return }
-    // The brand header and the quick-action rail are sticky INSIDE this
-    // scroller, so a plain offset of 8 px parked the newest card's top edge
-    // underneath ~120 px of chrome: the member landed mid-post and it looked
-    // like Home had not moved to the latest update at all.
-    const stickyChrome = Array.from(home.querySelectorAll<HTMLElement>('header.sticky, nav.sticky'))
-      .reduce((sum, el) => sum + (el.offsetHeight || 0), 0)
-    const top = target.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - stickyChrome - 8
-    c.scrollTo({ top: Math.max(top, 0), behavior })
+    // Measure what the chrome really covers instead of assuming it sticks.
+    // The brand header and quick-action rail sit in Home's own overflow
+    // wrapper, so once the feed scrolls they move away with it (they do NOT
+    // stay pinned to the scroller). Subtracting their full height therefore
+    // undershot the target by ~130 px and the member landed inside the post
+    // rather than on its top. Only chrome that is actually overlapping the
+    // scroller's top edge is counted, so the landing is 8 px above the
+    // newest card whether or not the header ever becomes sticky again.
+    const cRect = c.getBoundingClientRect()
+    const chromeOverlap = Array.from(home.querySelectorAll<HTMLElement>('header.sticky, nav.sticky'))
+      .reduce((max, el) => {
+        const r = el.getBoundingClientRect()
+        const coversTop = r.top <= cRect.top + 1
+        const overlap = Math.min(r.bottom, cRect.bottom) - cRect.top
+        return coversTop && overlap > 0 ? Math.max(max, overlap) : max
+      }, 0)
+    const delta = target.getBoundingClientRect().top - cRect.top - chromeOverlap - 8
+    c.scrollTo({ top: Math.max(c.scrollTop + delta, 0), behavior })
   }
 
   useEffect(() => {
