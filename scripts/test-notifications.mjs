@@ -220,6 +220,14 @@ test('Capacitor plugin proxies are never resolved directly from an async functio
   assert.match(pushLib, /return \{ messaging: plugin as MessagingPlugin \}/)
 })
 
+test('the FCM token is read from the field the plugin actually returns', () => {
+  // @capacitor-firebase/messaging resolves getToken with { token }. Reading a
+  // different key produced an empty string on every device, so registration
+  // never posted and the admin sign-in code had no destination.
+  assert.match(pushLib, /getToken\(options: \{ vapidKey\?: string \}\): Promise<\{ token\?: string/)
+  assert.match(pushLib, /result\?\.token \|\| result\?\.value/)
+})
+
 test('the badge reflects the server unread total, not the loaded page size', () => {
   // A 40-row page can only count 40; the count endpoint answers for the account.
   assert.match(notificationsRoute, /SELECT COUNT\(\*\) AS unread FROM notifications WHERE user_id=\? AND read_at IS NULL/)

@@ -9,7 +9,11 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type MessagingPlugin = {
   requestPermissions(): Promise<{ receive: 'granted' | 'denied' }>
-  getToken(options: { vapidKey?: string }): Promise<{ value?: string }>
+  // @capacitor-firebase/messaging returns { token }. `value` is kept only so a
+  // different plugin build lands on the same code path instead of silently
+  // reporting "no token" — reading the wrong key here was exactly why the
+  // device table stayed empty while the phone was otherwise healthy.
+  getToken(options: { vapidKey?: string }): Promise<{ token?: string; value?: string }>
   deleteToken(): Promise<{ value?: boolean }>
   addListener(eventName: 'notificationReceived', cb: (n: any) => void): Promise<any>
   addListener(eventName: 'notificationActionPerformed', cb: (a: any) => void): Promise<any>
@@ -156,8 +160,8 @@ export async function registerPush(): Promise<PushStatus> {
     let fcmToken = ''
     try {
       const vapidKey = (import.meta.env.VITE_FCM_VAPID_KEY as string | undefined) || undefined
-      const { value } = await messaging.getToken(vapidKey ? { vapidKey } : {})
-      fcmToken = value || ''
+      const result = await messaging.getToken(vapidKey ? { vapidKey } : {})
+      fcmToken = String(result?.token || result?.value || '').trim()
     } catch (e) {
       // No Google Play services, a restricted API key, or an unregistered app
       // all land here. Keep the reason: it is the only clue on the device.
