@@ -90,21 +90,20 @@ test('Ask for prayer lands in the full Chat screen, not the quick-reply card', (
   assert.match(app, /onOpenDm=\{openFullDm\}/, 'Home is wired to the full-chat opener')
 })
 
-test('tapping Home waits for the fresh head before landing on the latest update', () => {
+test('tapping Home waits for the fresh head, then lands at the top of the feed', () => {
   assert.match(home, /const \[focusArrivedTick, setFocusArrivedTick\]/, 'the explicit-refresh acknowledgement is missing')
   assert.match(home, /if \(homeFocusPendingRef\.current\) setFocusArrivedTick/, 'the pending scroll must wait for the request to finish')
   assert.match(home, /\}, \[feedLoaded, focusArrivedTick\]\)/, 'the scroll must key off the completed refresh, not the old feed')
-  assert.match(feedCard, /data-created-at=\{p\.created_at \|\| ''\}/, 'cards expose the timestamp used to find the newest update')
-  assert.match(home, /cards\.reduce/, 'the feed is ranked, so the newest card is selected by time, not DOM order')
+  assert.match(home, /const scrollHomeToTop = \(behavior: ScrollBehavior = 'auto'\)/, 'Home must have one landing definition')
+  assert.match(home, /c\.scrollTo\(\{ top: 0, behavior \}\)/, 'the landing is the top of the page')
+  // The feed is ranked, so "newest by created_at" could sit far below the top.
+  // Tapping Home must not drop the member into the middle of the feed.
+  assert.doesNotMatch(home, /cards\.reduce/, 'do not hunt for the newest card by timestamp')
   assert.match(home, /home\.closest\('\.app-content'\)/, 'scroll the real app column scroller, not the non-scrolling Home root')
-  assert.match(home, /chromeOverlap/, 'the landing must measure chrome that actually covers the scroller')
-  assert.doesNotMatch(home, /stickyChrome/, 'subtracting a hard-coded header height overshot once the chrome became sticky')
   assert.match(home, /data-home-chrome className="sticky top-0/, 'the brand header and quick-action rail must pin as one block')
-  assert.match(home, /querySelectorAll<HTMLElement>\('\[data-home-chrome\]'\)/, 'the landing must measure the pinned block itself')
   assert.doesNotMatch(home, /ref=\{containerRef\}[^>]*overflow-auto/, 'a nested Home scroller stops sticky chrome from pinning to the app column')
   assert.match(home, /closest\('\.app-content'\) as HTMLElement \| null\n    if \(dy > 80/, 'pull-to-refresh must read the real scroller, not the non-scrolling Home root')
   assert.match(app, /if \(tab === 'home'\) return/, 'tab scroll-memory must not restore an old feed position over the Home landing')
-  assert.doesNotMatch(home, /const target = c\.querySelector\('\[data-post-id\]'\)/, 'first card is not necessarily the latest')
 })
 
 test('RS-224 (H8): pull-to-refresh needs a vertical pull and a closed screen', () => {

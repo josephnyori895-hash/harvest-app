@@ -387,37 +387,19 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [api])
 
-  // Choosing Home refreshes the head and lands on the newest thing in the feed
-  // (the latest post, reel or campaign card), not on whatever scroll position
-  // was left behind. The old version only scrolled, so “Refreshing” could finish
-  // without the new post ever appearing.
-  // One definition for "land on the latest update". The feed is ranked
-  // (engagement/affinity/pinned), so the first card is not necessarily the
-  // newest; pick the rendered card with the latest created_at. Home itself is
+  // Choosing Home refreshes the head AND returns to the top of the feed, not to
+  // whatever scroll position was left behind. The old version only scrolled, so
+  // “Refreshing” could finish without the new head ever appearing.
+  // Choosing Home returns to the top of the feed — the greeting, stories and the
+  // first card — not to the newest card by created_at. The feed is ranked
+  // (engagement/affinity/pinned), so "newest" could sit well below the top and
+  // tapping Home dropped the member into the middle of the feed. Home itself is
   // taller than its content, so the real scroller is the app column.
-  const scrollHomeToNewest = (behavior: ScrollBehavior = 'auto') => {
+  const scrollHomeToTop = (behavior: ScrollBehavior = 'auto') => {
     const home = containerRef.current
     if (!home) return
     const c = (home.closest('.app-content') as HTMLElement | null) || home
-    const cards = Array.from(home.querySelectorAll<HTMLElement>('[data-post-id]'))
-    const target = cards.reduce<{ el: HTMLElement | null; at: number }>((best, el) => {
-      const at = Date.parse(el.dataset.createdAt || '') || 0
-      return at > best.at ? { el, at } : best
-    }, { el: null, at: -1 }).el || home.querySelector('#home-community')
-    if (!target) { c.scrollTo({ top: 0, behavior }); return }
-    // Measure the chrome that actually covers the scroller's top edge rather
-    // than subtracting a hard-coded height: the brand header and quick-action
-    // rail stick as one block, so their combined measured bottom is the only
-    // honest occluder (font scaling and wrapping change its height).
-    const cRect = c.getBoundingClientRect()
-    const chromeBottom = Array.from(home.querySelectorAll<HTMLElement>('[data-home-chrome]'))
-      .reduce((lowest, el) => {
-        const r = el.getBoundingClientRect()
-        return r.bottom > cRect.top ? Math.max(lowest, r.bottom) : lowest
-      }, cRect.top)
-    const chromeOverlap = Math.max(0, Math.min(chromeBottom, cRect.bottom) - cRect.top)
-    const delta = target.getBoundingClientRect().top - cRect.top - chromeOverlap - 8
-    c.scrollTo({ top: Math.max(c.scrollTop + delta, 0), behavior })
+    c.scrollTo({ top: 0, behavior })
   }
 
   useEffect(() => {
@@ -432,7 +414,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     // Move to the newest card already on screen at once; the fresh head then
     // re-lands on the newest card after the request completes. Waiting for the
     // network left the member at the old scroll position while "Refreshing" ran.
-    const frame = requestAnimationFrame(() => requestAnimationFrame(() => scrollHomeToNewest()))
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => scrollHomeToTop()))
     // Offline/local mode has no request to wait for.
     if (!api) setFocusArrivedTick(x => x + 1)
     return () => cancelAnimationFrame(frame)
@@ -444,13 +426,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     homeFocusPendingRef.current = false
     let inner = 0
     const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => scrollHomeToNewest())
+      inner = requestAnimationFrame(() => scrollHomeToTop())
     })
-    // Media above the target can finish loading after the first scroll; two
-    // quiet corrections keep the newest card at the top instead of 180 px low.
-    const settle1 = window.setTimeout(() => scrollHomeToNewest(), 350)
-    const settle2 = window.setTimeout(() => scrollHomeToNewest(), 1000)
-    const settle3 = window.setTimeout(() => scrollHomeToNewest(), 2200)
+    // Images above the fold can still be settling, and the freshly loaded head
+    // replaces the list, so repeat the scroll to keep the page at the top.
+    const settle1 = window.setTimeout(() => scrollHomeToTop(), 350)
+    const settle2 = window.setTimeout(() => scrollHomeToTop(), 1000)
+    const settle3 = window.setTimeout(() => scrollHomeToTop(), 2200)
     return () => {
       cancelAnimationFrame(outer); cancelAnimationFrame(inner)
       window.clearTimeout(settle1); window.clearTimeout(settle2); window.clearTimeout(settle3)
