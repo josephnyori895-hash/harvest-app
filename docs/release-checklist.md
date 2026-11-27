@@ -103,19 +103,27 @@ conflicts with an existing package.”**
 - [x] Client registration layer: token acquisition, sign-in registration, sign-out disable, tap routing (`1c204e9`)
 - [x] `POST_NOTIFICATIONS` permission in manifest; conditional google-services plugin
 
-**Remaining (human steps):**
-1. Firebase console → project settings → service accounts → generate key JSON.
-2. Place `google-services.json` at `android/app/google-services.json` (gitignored — never commit it).
-3. `npx wrangler secret put FCM_SERVICE_ACCOUNT` (paste JSON);
-   `npx wrangler secret put FCM_PROJECT_ID` (or rely on the JSON's project_id).
-4. Enable: `npx wrangler secret put FCM_ENABLED` → `1` (kill switch stays off until then).
-5. Deploy → install latest APK → sign in → accept the notification permission prompt →
+**Done (2026-11-27):**
+- [x] Firebase project `harvest-church-f2ee7`, Android app `com.harvestfamily.nyeri`.
+- [x] `android/app/google-services.json` committed (public client ids only — the
+      project number, app id and API key already ship inside every APK). The
+      `GOOGLE_SERVICES_JSON` repo secret still overrides it when set.
+- [x] Worker secrets `FCM_SERVICE_ACCOUNT` (admin SDK key, project
+      `harvest-church-f2ee7`) and `FCM_ENABLED=1` are set on `harvestfamily-api`.
+      The key was verified by minting an OAuth token and posting to FCM v1
+      (`INVALID_ARGUMENT` for a made-up token = credentials accepted).
+
+**Remaining (device steps):**
+1. Ship an APK built after the config landed, install it, sign in and accept the
+   notification permission prompt — `notification_devices` must gain a row
+   (production had zero rows before this).
+2. Then the admin sign-in code is pushed to that phone.
    `POST /api/notifications/devices/test` → expect lockscreen notification.
-6. Send a real DM from another account → notification tap must deep-link into
+3. Send a real DM from another account → notification tap must deep-link into
    that conversation; `GET /api/notifications/deliveries` shows `ok:1`.
-7. Uninstall+reinstall app → resend → dead token is removed automatically
+4. Uninstall+reinstall app → resend → dead token is removed automatically
    (`invalid_tokens_removed: 1`) and the new token receives the push.
-8. Record evidence: run number, test-send timestamp, delivery-log row.
+5. Record evidence: run number, test-send timestamp, delivery-log row.
 
 ### Gate 2 — Physical Android QA (matrix in `android-qa-matrix.md`)
 

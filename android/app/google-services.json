@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "336042797426",
+    "project_id": "harvest-church-f2ee7",
+    "storage_bucket": "harvest-church-f2ee7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:336042797426:android:3197b5f25ad54c875b15eb",
+        "android_client_info": {
+          "package_name": "com.harvestfamily.nyeri"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCKfENPoDRP5hP20qEp10n6AUwa_eEg_vk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -125,24 +125,27 @@ jobs:
 
       # FCM signs the phone in to Firebase; without this file the plugin is not
       # applied, no token is issued, and the admin sign-in code has no phone to
-      # reach. Kept as a secret rather than a committed file, but a missing
-      # secret must not block a release — it only disables push.
-      - name: Restore Firebase config (FCM)
+      # reach. app/google-services.json is committed (public client ids only), and
+      # the GOOGLE_SERVICES_JSON secret overrides it when present.
+      - name: Verify Firebase config (FCM)
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "::warning::GOOGLE_SERVICES_JSON is not set — this APK cannot register for push, so admin sign-in codes cannot reach the phone."
-            exit 0
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            echo "google-services.json overridden from the GOOGLE_SERVICES_JSON secret"
           fi
-          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
           node -e "
-            const c = JSON.parse(require('fs').readFileSync('android/app/google-services.json','utf8'))
+            const fs = require('fs')
+            const path = 'android/app/google-services.json'
+            if (!fs.existsSync(path)) { console.error('google-services.json is missing — FCM cannot register, admin codes cannot be delivered'); process.exit(1) }
+            const c = JSON.parse(fs.readFileSync(path, 'utf8'))
             const pkg = c?.client?.[0]?.client_info?.android_client_info?.package_name || ''
             const want = 'com.harvestfamily.nyeri'
             if (pkg !== want) { console.error('google-services.json is for ' + (pkg || 'no package') + ', expected ' + want); process.exit(1) }
-            console.log('Firebase config restored for ' + pkg)
+            console.log('Firebase config OK for ' + pkg + ' (project ' + (c?.project_info?.project_id || 'unknown') + ', sender ' + (c?.project_info?.project_number || 'unknown') + ')')
           "
+          grep -q 'com.google.gms:google-services' android/build.gradle || { echo 'google-services Gradle plugin classpath is missing'; exit 1; }
 
       - name: Restore Android release keystore
         env:

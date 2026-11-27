@@ -157,10 +157,10 @@ test('admin sign-in approval actually reaches the admin phone', () => {
 })
 
 test('admin sign-in never waits for a code no channel can deliver', () => {
-  // The APK is built without google-services.json until Firebase is configured,
-  // so the phone has no push token. The server then answers delivery
-  // 'unavailable', and the screen used to keep saying a code was on its way —
-  // the admin waited forever for a message that could never arrive.
+  // A phone with no push token (permission denied, token not yet issued, FCM
+  // unconfigured) makes the server answer delivery 'unavailable'. The screen
+  // used to keep saying a code was on its way, so the admin waited forever for
+  // a message that could never arrive. That branch must always be handled.
   assert.match(app, /data\.delivery === 'unavailable' && Boolean\(data\.recovery_available\)/, 'the screen must react to an undeliverable code')
   assert.match(app, /setShowRecovery\(noDelivery\)/, 'an undeliverable code must open the recovery route immediately')
   assert.match(app, /adminChallenge\.delivery === 'push'/, 'only a real push may promise a sent code')

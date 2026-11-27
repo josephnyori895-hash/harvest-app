@@ -63,9 +63,11 @@ keystore.properties
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# Restored at build time from the GOOGLE_SERVICES_JSON secret (see the release
-# workflow). A committed copy would drift from the Firebase project.
-google-services.json
+# app/google-services.json IS committed on purpose: it only holds public client
+# identifiers (project id, sender id, app id, API key) that already ship inside
+# every APK. Without it the google-services Gradle plugin is skipped, no FCM
+# token is issued and admin sign-in codes have nowhere to go. The release
+# workflow can still override it from the GOOGLE_SERVICES_JSON secret.
 
 # Freeline
 freeline.py
