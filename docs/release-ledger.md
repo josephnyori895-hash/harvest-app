@@ -32,6 +32,41 @@ The two batches below were **BLOCKED** by Android Release #407, which failed whi
 | `687e396f` | Merge PR #16: Groups/Departments/Chat management and pastor work | **RELEASED** (run #473) | Was BLOCKED by Android Release #407. Released 2026-09-25 by run #473. |
 | `0bde6b98` | Repair malformed AndroidManifest.xml | **RELEASED** (run #473) | Fix verified in production by run #473. Its versioned APK has since aged out of the live asset set by design (only the current and previous releases are served), so live re-verification is no longer possible; the record relies on run #473's own gates. |
 
+## Release attempt — 2026-11-27 (unpublished)
+
+| Field | Value |
+|---|---|
+| Commits pushed | `5deaf7f` (pipeline), `9c289a1` (bundle parity gate) |
+| Live at end of attempt | versionCode `1647`, versionName `1.0.647`, APK SHA256 `0f8355724e0ceb2452e278127bb72d1d63547e93a2b953b9987e7eb504a836db` |
+| Live web entry | `assets/index-C2PTcSfN.js` (built after `36c5e98`) |
+| Live APK web entry | `assets/index-DMMo_5QW.js` (older than the site) |
+| Repo build entry | `assets/index-TWg-1L82.js` (includes `83e9635`) |
+| Status | **NOT RELEASED** — `/api/app-version` never moved; no deploy reached production |
+| Blocking gate | Android release job fails before the deploy step |
+
+### What changed and why
+
+`36c5e98` added the emulator upgrade test to the release workflow. No CI
+release has published since; the live builds above were produced by local
+deploys, which is why the site can be newer than the APK and neither matches
+the repo. The pipeline now:
+
+- allows 900s for the emulator boot (the manual loop had regressed to 300s) and
+  60 minutes for the job, and uses one resolved `adb` for both the boot checks
+  and the upgrade script;
+- falls back to the permanent `/harvest-family.apk` URL when the previous
+  release's artifact and versioned URL are unavailable;
+- rejects a release whose deployed web assets differ from the APK's bundled
+  assets (`scripts/verify-bundle-parity.mjs`);
+- prints `/dev/kvm` state and `emulator -accel-check` output so a failed boot
+  names its cause.
+
+`update-apk.sh` now builds above the version floor and refuses to publish an
+APK signed with anything but the production certificate.
+
+The next successful run must replace this section with a full release record
+(run number, versioned URL, live SHA verification, rollback drill).
+
 ## Release records
 
 ### Run #494 — current production release (2026-09-27)
