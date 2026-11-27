@@ -4,8 +4,7 @@ import { fetchMusic, useApi } from '../lib/api'
 import { startBackgroundUpload } from '../lib/backgroundUploads'
 import { useAuth } from '../state/auth'
 import {
-  playFromQueue, playTrack, togglePlay as togglePlayGlobal, seekToFraction, seekTo, closePlayer,
-  previousTrack, nextTrack, subscribePlayer, getLastPlayed,
+  playFromQueue, playTrack, togglePlay as togglePlayGlobal, seekTo, subscribePlayer, getLastPlayed,
   type PlayerState, type PlayerTrack,
 } from '../lib/audioPlayer'
 import { stopFeedPlayback } from '../lib/feedPlayback'
@@ -29,6 +28,35 @@ type Track = {
   preview?: boolean
   source: 'server' | 'online' | 'local'
   seconds?: number
+}
+
+type MusicTab = 'library' | 'online' | 'saved'
+
+type RowProgress = { id: string | null; seconds: number; duration: number }
+
+type TrackRowProps = {
+  track: Track
+  index?: number
+  shelf?: Track[]
+  playingId: string | null
+  progress: RowProgress
+  saved: Track[]
+  isAdmin: boolean
+  editingId: string | null
+  editTitle: string
+  editArtist: string
+  downloading: string
+  onTogglePlay: (track: Track) => void
+  onPlayShelf: (tracks: Track[], index?: number) => void
+  onDownload: (track: Track) => void
+  onSave: (track: Track) => void
+  onUnsave: (id: string) => void
+  onEditTitle: (value: string) => void
+  onEditArtist: (value: string) => void
+  onStartEdit: (serverId: string, title: string, artist: string) => void
+  onSaveEdit: (serverId: string) => void
+  onCancelEdit: () => void
+  onDelete: (serverId: string, title: string) => void
 }
 
 const fmt = (s: number) => (!Number.isFinite(s) || s < 0) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
@@ -64,9 +92,98 @@ function seededShuffle<T>(items: T[], seed: number, take: number): T[] {
   return arr.slice(0, Math.min(take, arr.length))
 }
 
+// Rows live at module scope on purpose. Defined inside Music they were a new
+// component type on every render, so React unmounted and re-mounted every row
+// each time the player ticked (4×/second) — artwork flickered, the list janked,
+// and the inline track editor lost focus after every keystroke.
+function TrackRow({
+  track, index, shelf, playingId, progress, saved, isAdmin,
+  editingId, editTitle, editArtist, downloading,
+  onTogglePlay, onPlayShelf, onDownload, onSave, onUnsave,
+  onEditTitle, onEditArtist, onStartEdit, onSaveEdit, onCancelEdit, onDelete,
+}: TrackRowProps) {
+  const isPlaying = playingId === track.id
+  const showBar = progress.id === track.id
+  const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
+  const serverId = track.id.startsWith('srv_') ? track.id.slice(4) : null
+  const isEditing = serverId !== null && editingId === serverId
+  const isSaved = saved.some(t => t.id === track.id)
+  if (isEditing) {
+    return (
+      <div className="rounded-card border border-line bg-surface-raised p-4" data-testid="track-editor">
+        <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Editing track</p>
+        <input value={editTitle} onChange={e => onEditTitle(e.target.value)} placeholder="Title" className="input-base mt-2" aria-label="Track title" />
+        <input value={editArtist} onChange={e => onEditArtist(e.target.value)} placeholder="Artist" className="input-base mt-2" aria-label="Track artist" />
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => serverId && onSaveEdit(serverId)} className="min-h-10 flex-1 rounded-full bg-accent text-2xs font-extrabold text-white">Save</button>
+          <button onClick={onCancelEdit} className="min-h-10 rounded-full border border-line px-4 text-2xs font-extrabold text-ink-muted">Cancel</button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-card border border-line bg-surface-raised p-2.5" data-testid="track-row">
+      <button
+        onClick={() => onTogglePlay(track)}
+        aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
+        className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-sunken"
+      >
+        <TrackArt src={track.artwork} title={track.title} className="h-full w-full" iconSize={20} />
+        <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/45' : 'bg-ink/25'}`}>
+          <Icon name={isPlaying ? 'pause' : 'play'} size={18} className="text-white" />
+        </span>
+      </button>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-caption font-extrabold text-ink">{track.title}</p>
+        <p className="truncate text-2xs text-ink-muted">
+          {track.artist}{track.seconds ? ` · ${fmt(track.seconds)}` : ''}
+          {track.source === 'server' ? ' · Church library' : track.source === 'online' ? ' · Full song' : ''}
+        </p>
+        {showBar && (
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-sunken"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div>
+            <span className="text-2xs text-ink-subtle tabular-nums">{fmt(progress.seconds)}</span>
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {shelf && shelf.length > 1 && typeof index === 'number' && (
+          <button onClick={() => onPlayShelf(shelf, index)} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken" aria-label={`Play from ${track.title}`}><Icon name="play" size={16} /></button>
+        )}
+        <button onClick={() => onDownload(track)} disabled={downloading === track.id} aria-label={`Download ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken disabled:opacity-40">
+          <Icon name="download" size={16} />
+        </button>
+        <button
+          onClick={() => (isSaved ? onUnsave(track.id) : onSave(track))}
+          aria-pressed={isSaved}
+          aria-label={isSaved ? `Remove ${track.title} from saved` : `Save ${track.title}`}
+          className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken"
+        >
+          <Icon name="heart" size={18} strokeWidth={isSaved ? 2.4 : 1.7} className={isSaved ? 'fill-current text-danger' : ''} />
+        </button>
+        {isAdmin && serverId && (
+          <button onClick={() => onStartEdit(serverId, track.title, track.artist)} aria-label={`Edit ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken">
+            <Icon name="dots" size={18} />
+          </button>
+        )}
+        {isAdmin && serverId && (
+          <button onClick={() => onDelete(serverId, track.title)} aria-label={`Delete ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-danger hover:bg-surface-sunken">
+            <Icon name="trash" size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Music() {
-  const [q, setQ] = useState('')
-  const [tab, setTab] = useState<'library' | 'online' | 'saved'>('library')
+  const [tab, setTab] = useState<MusicTab>('library')
+  // One search box per section. A query typed in Discover used to follow the
+  // member into Church library and silently filter the whole shelf to "no
+  // matches" — the box looked empty of results, not of a stale filter.
+  const [queries, setQueries] = useState<Record<MusicTab, string>>({ library: '', saved: '', online: '' })
+  const q = queries[tab]
+  const setQ = (value: string) => setQueries(prev => ({ ...prev, [tab]: value }))
   const [serverTracks, setServerTracks] = useState<Track[]>([])
   const [loadingServer, setLoadingServer] = useState(false)
   const [online, setOnline] = useState<Track[]>([])
@@ -76,7 +193,6 @@ export default function Music() {
   const [libraryError, setLibraryError] = useState('')
   const [saved, setSaved] = useState<Track[]>([])
   const [downloading, setDownloading] = useState('')
-  const [continueAt, setContinueAt] = useState(0)
   // No silence: every failure below is rendered inline and announced as a toast.
   useEffect(() => { if (libraryError) showToast(libraryError, 'error', 6000) }, [libraryError])
   const useServer = useApi()
@@ -104,6 +220,10 @@ export default function Music() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editArtist, setEditArtist] = useState('')
+  // A blob URL built during render leaked a new object URL on every keystroke;
+  // build it once per chosen file and revoke the previous one.
+  const coverPreview = useMemo(() => (upCover ? URL.createObjectURL(upCover) : ''), [upCover])
+  useEffect(() => () => { if (coverPreview) URL.revokeObjectURL(coverPreview) }, [coverPreview])
   const audioInputRef = useRef<HTMLInputElement | null>(null)
   const coverInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -156,7 +276,6 @@ export default function Music() {
   // Personal library persisted on-device.
   useEffect(() => {
     try { setSaved(JSON.parse(localStorage.getItem('harvest_saved_tracks') || '[]')) } catch {}
-    setContinueAt(getLastPlayed()?.position || 0)
   }, [])
 
   // Church library (admin uploads). A failed load is a visible, retryable state
@@ -246,7 +365,6 @@ export default function Music() {
     stopFeedPlayback()
     void playFromQueue(tracks.map(toPlayer), startIndex)
   }
-  const seek = (fraction: number) => seekToFraction(fraction)
 
   const resumeLast = () => {
     const last = getLastPlayed()
@@ -282,6 +400,30 @@ export default function Music() {
     localStorage.setItem('harvest_saved_tracks', JSON.stringify(next))
   }
 
+  // Stable props for the hoisted row component; only values change per render,
+  // the component type never does, so rows are updated instead of re-created.
+  const rowProps = {
+    playingId,
+    progress,
+    saved,
+    isAdmin,
+    editingId,
+    editTitle,
+    editArtist,
+    downloading,
+    onTogglePlay: togglePlay,
+    onPlayShelf: playShelf,
+    onDownload: (track: Track) => void doDownload(track),
+    onSave: saveTrack,
+    onUnsave: unsave,
+    onEditTitle: setEditTitle,
+    onEditArtist: setEditArtist,
+    onStartEdit: (serverId: string, title: string, artist: string) => { setEditingId(serverId); setEditTitle(title); setEditArtist(artist) },
+    onSaveEdit: (serverId: string) => void saveEdit(serverId),
+    onCancelEdit: () => setEditingId(null),
+    onDelete: (serverId: string, title: string) => void deleteTrack(serverId, title),
+  }
+
   const allLibrary = useMemo(() => {
     const seen = new Set<string>()
     return [...serverTracks, ...saved.filter(t => t.source !== 'server')].filter(t => {
@@ -294,90 +436,17 @@ export default function Music() {
   const daySeed = Math.floor(Date.now() / 86400000)
   const todaysWorship = useMemo(() => seededShuffle(allLibrary, daySeed, 8), [allLibrary, daySeed])
   const lastPlayed = useMemo(() => getLastPlayed(), [player.track?.id])
+  // Derived, not copied into state on mount: the old copy froze the position
+  // that was saved when the screen opened and never caught up after a listen.
+  const continueAt = lastPlayed?.position || 0
   const filtered = (tracks: Track[]) => {
     const needle = q.trim().toLowerCase()
     if (!needle) return tracks
     return tracks.filter(t => `${t.title} ${t.artist}`.toLowerCase().includes(needle))
   }
 
-  const TrackRow = ({ track, index, shelf }: { track: Track; index?: number; shelf?: Track[] }) => {
-    const isPlaying = playingId === track.id
-    const showBar = progress.id === track.id
-    const pct = showBar && progress.duration > 0 ? (progress.seconds / progress.duration) * 100 : 0
-    const serverId = track.id.startsWith('srv_') ? track.id.slice(4) : null
-    const isEditing = serverId !== null && editingId === serverId
-    const isSaved = saved.some(t => t.id === track.id)
-    if (isEditing) {
-      return (
-        <div className="rounded-card border border-line bg-surface-raised p-4" data-testid="track-editor">
-          <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Editing track</p>
-          <input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="Title" className="input-base mt-2" aria-label="Track title" />
-          <input value={editArtist} onChange={e => setEditArtist(e.target.value)} placeholder="Artist" className="input-base mt-2" aria-label="Track artist" />
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => serverId && void saveEdit(serverId)} className="min-h-10 flex-1 rounded-full bg-accent text-2xs font-extrabold text-white">Save</button>
-            <button onClick={() => setEditingId(null)} className="min-h-10 rounded-full border border-line px-4 text-2xs font-extrabold text-ink-muted">Cancel</button>
-          </div>
-        </div>
-      )
-    }
-    return (
-      <div className="flex items-center gap-3 rounded-card border border-line bg-surface-raised p-2.5" data-testid="track-row">
-        <button
-          onClick={() => togglePlay(track)}
-          aria-label={isPlaying ? `Pause ${track.title}` : `Play ${track.title}`}
-          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-sunken"
-        >
-          <TrackArt src={track.artwork} title={track.title} className="h-full w-full" iconSize={20} />
-          <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/45' : 'bg-ink/25'}`}>
-            <Icon name={isPlaying ? 'pause' : 'play'} size={18} className="text-white" />
-          </span>
-        </button>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-caption font-extrabold text-ink">{track.title}</p>
-          <p className="truncate text-2xs text-ink-muted">
-            {track.artist}{track.seconds ? ` · ${fmt(track.seconds)}` : ''}
-            {track.source === 'server' ? ' · Church library' : track.source === 'online' ? ' · Full song' : ''}
-          </p>
-          {showBar && (
-            <div className="mt-1.5 flex items-center gap-2">
-              <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-sunken"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div>
-              <span className="text-2xs text-ink-subtle tabular-nums">{fmt(progress.seconds)}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {shelf && shelf.length > 1 && typeof index === 'number' && (
-            <button onClick={() => playShelf(shelf, index)} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken" aria-label={`Play from ${track.title}`}><Icon name="play" size={16} /></button>
-          )}
-          <button onClick={() => void doDownload(track)} disabled={downloading === track.id} aria-label={`Download ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken disabled:opacity-40">
-            <Icon name="share" size={16} />
-          </button>
-          <button
-            onClick={() => (isSaved ? unsave(track.id) : saveTrack(track))}
-            aria-pressed={isSaved}
-            aria-label={isSaved ? `Remove ${track.title} from saved` : `Save ${track.title}`}
-            className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken"
-          >
-            <Icon name="heart" size={18} strokeWidth={isSaved ? 2.4 : 1.7} className={isSaved ? 'fill-current text-danger' : ''} />
-          </button>
-          {isAdmin && serverId && (
-            <button onClick={() => { setEditingId(serverId); setEditTitle(track.title); setEditArtist(track.artist) }} aria-label={`Edit ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-ink-muted hover:bg-surface-sunken">
-              <Icon name="dots" size={18} />
-            </button>
-          )}
-          {isAdmin && serverId && (
-            <button onClick={() => void deleteTrack(serverId, track.title)} aria-label={`Delete ${track.title}`} className="grid h-9 w-9 place-items-center rounded-full text-danger hover:bg-surface-sunken">
-              <Icon name="trash" size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const playingNow = Boolean(activeTrack)
   return (
-    <div className="min-h-full bg-surface pb-28 text-ink">
+    <div className="min-h-full bg-surface pb-40 text-ink">
       <header className="sticky top-0 z-20 border-b border-line bg-surface/95 pl-4 pr-14 pb-3 pt-4 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -427,7 +496,7 @@ export default function Music() {
           <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-accent">Add to church library</p>
           <div className="flex items-start gap-3">
             <button onClick={() => coverInputRef.current?.click()} aria-label="Choose cover art" className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-line bg-surface-sunken">
-              {upCover ? <img src={URL.createObjectURL(upCover)} alt="" className="h-full w-full object-cover" /> : <Icon name="camera" size={20} className="text-ink-muted" />}
+              {coverPreview ? <img src={coverPreview} alt="" className="h-full w-full object-cover" /> : <Icon name="camera" size={20} className="text-ink-muted" />}
             </button>
             <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setUpCover(e.target.files?.[0] || null)} className="hidden" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -486,8 +555,14 @@ export default function Music() {
             <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {todaysWorship.map((t, i) => {
                 const isPlaying = playingId === t.id
+                const isCurrent = activeTrack?.id === t.id
                 return (
-                  <button key={t.id} onClick={() => playShelf(todaysWorship, i)} className="w-28 shrink-0 text-left" aria-label={`Play ${t.title}`}>
+                  <button
+                    key={t.id}
+                    onClick={() => { if (isCurrent) void togglePlayGlobal(); else playShelf(todaysWorship, i) }}
+                    className="w-28 shrink-0 text-left"
+                    aria-label={isCurrent && player.playing ? `Pause ${t.title}` : `Play ${t.title}`}
+                  >
                     <span className="relative block h-28 w-28 overflow-hidden rounded-xl bg-surface-sunken">
                       <TrackArt src={t.artwork} title={t.title} className="h-full w-full" iconSize={22} />
                       <span className={`absolute inset-0 grid place-items-center ${isPlaying ? 'bg-ink/40' : 'bg-transparent'}`}>
@@ -525,7 +600,7 @@ export default function Music() {
                   <p className="mt-3 text-sm font-extrabold text-ink">{q ? 'No matches in the church library' : 'The church library is empty'}</p>
                   <p className="mt-1 text-2xs text-ink-muted">Worship tracks uploaded by your leaders appear here</p>
                 </div>
-              ) : filtered(allLibrary).map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={filtered(allLibrary)} />)}
+              ) : filtered(allLibrary).map((t, i) => <TrackRow key={t.id} {...rowProps} track={t} index={i} shelf={filtered(allLibrary)} />)}
           </section>
         )}
 
@@ -543,7 +618,7 @@ export default function Music() {
                   <p className="mt-3 text-sm font-extrabold text-ink">{searched ? 'No results — try another search' : 'Discover full-length worship'}</p>
                   <p className="mt-1 text-2xs text-ink-muted">Every result plays in full and downloads complete. Try “Worship”, “Gospel”, “Hymns”…</p>
                 </div>
-              ) : online.map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={online} />)}
+              ) : online.map((t, i) => <TrackRow key={t.id} {...rowProps} track={t} index={i} shelf={online} />)}
           </section>
         )}
 
@@ -559,42 +634,11 @@ export default function Music() {
                 <p className="mt-3 text-sm font-extrabold text-ink">Nothing saved yet</p>
                 <p className="mt-1 text-2xs text-ink-muted">Tap the heart on any track to keep it here</p>
               </div>
-            ) : saved.map((t, i) => <TrackRow key={t.id} track={t} index={i} shelf={saved} />)}
+            ) : saved.map((t, i) => <TrackRow key={t.id} {...rowProps} track={t} index={i} shelf={saved} />)}
           </section>
         )}
       </div>
 
-      {/* Persistent mini-player — stays while browsing tabs, seekable, dismissible */}
-      {playingNow && (
-        <div className="fixed inset-x-0 bottom-[calc(var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px))+124px)] z-30 px-3">
-          <div className="mx-auto max-w-lg rounded-2xl border border-line bg-ink px-3 py-2 text-surface shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface-sunken">
-                <TrackArt src={activeTrack?.artwork} title={activeTrack?.title} className="h-full w-full" iconSize={16} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-extrabold">{activeTrack?.title}</p>
-                <p className="truncate text-2xs text-surface/60">{activeTrack?.artist}{progress.duration > 0 ? ` · ${fmt(progress.seconds)} / ${fmt(progress.duration)}` : ''}</p>
-              </div>
-              <button onClick={() => void previousTrack()} aria-label="Previous track" disabled={!player.hasPrev} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"><Icon name="arrow-left" size={16} /></button>
-              <button onClick={() => void togglePlayGlobal()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface text-ink" aria-label={player.playing ? 'Pause' : 'Play'}>
-                <Icon name={player.playing ? 'pause' : 'play'} size={16} />
-              </button>
-              <button onClick={() => void nextTrack()} aria-label="Next track" disabled={!player.hasNext} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-surface/70 disabled:opacity-30"><Icon name="arrow-right" size={16} /></button>
-              <button onClick={closePlayer} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-surface/10 text-surface/70" aria-label="Close player"><Icon name="close" size={14} /></button>
-            </div>
-            {player.error && <p className="mt-1 text-2xs text-gold">{player.error}</p>}
-            <div
-              role="slider" aria-label="Seek" aria-valuemin={0} aria-valuemax={100}
-              aria-valuenow={progress.duration > 0 ? Math.round((progress.seconds / progress.duration) * 100) : 0}
-              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seek((e.clientX - r.left) / r.width) }}
-              className="mt-2 h-1 cursor-pointer overflow-hidden rounded-full bg-surface/20"
-            >
-              <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: progress.duration > 0 ? `${(progress.seconds / progress.duration) * 100}%` : '0%' }} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

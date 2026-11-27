@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { subscribePlayer, seekToFraction, togglePlay, closePlayer, previousTrack, nextTrack, type PlayerState } from '../lib/audioPlayer'
+import { useEffect, useRef, useState } from 'react'
+import { subscribePlayer, seekToFraction, seekTo, togglePlay, closePlayer, previousTrack, nextTrack, type PlayerState } from '../lib/audioPlayer'
 import { Icon } from '../ui'
 import TrackArt from './TrackArt'
 
@@ -12,6 +12,7 @@ import TrackArt from './TrackArt'
  */
 export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'sermons') => void }) {
   const [player, setPlayer] = useState<PlayerState>({ track: null, playing: false, currentTime: 0, duration: 0, error: null })
+  const barRef = useRef<HTMLDivElement>(null)
   useEffect(() => subscribePlayer(setPlayer), [])
   const track = player.track
   if (!track) return null
@@ -20,6 +21,15 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
     if (!Number.isFinite(sec) || sec <= 0) return '0:00'
     const m = Math.floor(sec / 60), s = Math.floor(sec % 60)
     return `${m}:${String(s).padStart(2, '0')}`
+  }
+  // Drag to scrub: the old bar only reacted to a single click, and a 4 px track
+  // is nearly impossible to hit with a thumb.
+  const seekFromClientX = (clientX: number) => {
+    const el = barRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    if (!r.width) return
+    seekToFraction(Math.min(Math.max((clientX - r.left) / r.width, 0), 1))
   }
   return (
     <div
@@ -79,15 +89,33 @@ export default function NowPlayingBar({ onOpen }: { onOpen: (tab: 'music' | 'ser
           </button>
         </div>
         <div
+          ref={barRef}
           role="slider"
+          tabIndex={0}
           aria-label="Seek"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(pct)}
-          onClick={e => { const r = e.currentTarget.getBoundingClientRect(); seekToFraction((e.clientX - r.left) / r.width) }}
-          className="mt-2 h-1 cursor-pointer overflow-hidden rounded-full bg-surface/20"
+          aria-valuetext={`${fmt(player.currentTime)} of ${fmt(player.duration)}`}
+          onPointerDown={e => {
+            e.currentTarget.setPointerCapture(e.pointerId)
+            seekFromClientX(e.clientX)
+          }}
+          onPointerMove={e => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) seekFromClientX(e.clientX)
+          }}
+          onKeyDown={e => {
+            const duration = player.duration || 0
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); seekTo(Math.min(player.currentTime + 10, duration)) }
+            else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); seekTo(Math.max(player.currentTime - 10, 0)) }
+            else if (e.key === 'Home') { e.preventDefault(); seekTo(0) }
+            else if (e.key === 'End') { e.preventDefault(); seekTo(duration) }
+          }}
+          className="relative mt-1 flex h-5 cursor-pointer touch-none items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-gold"
         >
-          <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: `${pct}%` }} />
+          <div className="h-1 w-full overflow-hidden rounded-full bg-surface/20">
+            <div className="h-full rounded-full bg-gradient-to-r from-gold to-accent" style={{ width: `${pct}%` }} />
+          </div>
         </div>
       </div>
     </div>
