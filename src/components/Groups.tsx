@@ -82,9 +82,11 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
       } catch { /* keep last known counts */ }
     }
     void refreshUnread()
+    // Unread badges are not a live ticker: 20 s keeps them current without
+    // paying for an inbox scan every three seconds on every group screen.
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshUnread()
-    }, 3000)
+    }, 20000)
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void refreshUnread()
     }

@@ -91,9 +91,11 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
       } catch { /* keep the last known counts */ }
     }
     void refreshUnread()
+    // Same budget rule as the group badges: a 3 s inbox poll per department
+    // screen exhausted D1 row reads for no visible gain.
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshUnread()
-    }, 3000)
+    }, 20000)
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void refreshUnread()
     }

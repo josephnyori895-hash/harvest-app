@@ -1897,7 +1897,10 @@ function TeamChatsRail({ onOpen }: {
       if (document.visibilityState === 'visible') void refresh()
     }
     refreshVisible()
-    const timer = window.setInterval(refreshVisible, 3000)
+    // D1 bills every row a poll scans. The rail only needs to notice a new
+    // unread count, and realtime events already refresh it immediately, so a
+    // 3 s timer multiplied into every open Chat screen was pure read waste.
+    const timer = window.setInterval(refreshVisible, 20000)
     document.addEventListener('visibilitychange', refreshVisible)
     // Join/leave + create/delete in other tabs must update this rail too.
     window.addEventListener('harvest:groups-changed', refresh)

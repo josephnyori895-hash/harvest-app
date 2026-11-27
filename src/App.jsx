@@ -118,7 +118,7 @@ function saveActivityRead(read) {
 
 // Real member directory from the server (replaces the old mock user list).
 // Auto-refreshes when verification/admin actions fire 'harvest:verified'.
-function useDirectory(enabled, refreshMs = 30000) {
+function useDirectory(enabled, refreshMs = 120000) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -927,7 +927,7 @@ function InnerApp() {
 
   // Admins get a faster directory refresh: the map's live-location view is
   // only useful if presence and pins are current.
-  const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded, isAdmin ? 15000 : 30000)
+  const [users, , directoryLoading, directoryError, refreshDirectory] = useDirectory(onboarded, isAdmin ? 60000 : 120000)
 
   const [userList, setUserList] = useState(null)
 

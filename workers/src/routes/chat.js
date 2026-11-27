@@ -8,6 +8,10 @@ import { mediaUrlOrNull } from '../lib/media.js'
 import { hasCap } from '../lib/capabilities.js'
 
 const MAX_MESSAGE_LENGTH = 4000
+// Per-member inbox result reuse (see GET /api/chat/conversations). Short on
+// purpose: it only needs to absorb the simultaneous polls from one app session.
+const CONVERSATIONS_CACHE_MS = 10000
+const conversationsCache = new Map()
 // Placeholder body stored for an attachment with no caption, so the inbox
 // preview reads like a real message instead of a blank row.
 function mediaPlaceholder(mediaType) {
@@ -176,6 +180,10 @@ export async function handleChat(request, env, ctx) {
        VALUES (?,?,?,?,?,?,?,?,?, 'sent', ?,?,?,?,?)`,
       [id, conv.kind, conv.key, fresh.id, fresh.username, conv.recipientId || null, conv.recipientUsername || null, conv.groupId || null, text || (mediaType ? mediaPlaceholder(mediaType) : ''), now, replyToId, replyPreview, mediaKey, mediaType],
     )
+    // A new message must be visible on the very next poll, so drop the short
+    // inbox reuse for the sender and the direct recipient.
+    conversationsCache.delete(fresh.id)
+    if (conv.recipientId) conversationsCache.delete(conv.recipientId)
 
     // Push fan-out (FCM delivery batch): never blocks or breaks the send.
     // Recipients are membership-resolved and authorization-checked inside the
@@ -261,6 +269,13 @@ export async function handleChat(request, env, ctx) {
   // GET /api/chat/conversations — inbox + authorized team chats with unread counts.
   if (path === '/api/chat/conversations' && method === 'GET') {
     const fresh = await requireMember(env, user)
+    // The inbox is polled by several screens at once (chat rail, unread bubble,
+    // Groups, Departments). Each copy runs the same full-message scan, and D1
+    // bills every row scanned. Collapse identical polls from the same member
+    // for a few seconds; realtime events still update the UI immediately, and
+    // a sent message shows optimistically, so nothing visible waits on this.
+    const cached = conversationsCache.get(fresh.id)
+    if (cached && Date.now() - cached.at < CONVERSATIONS_CACHE_MS) return jsonResponse(cached.payload)
     const { rows } = await query(
       env,
       `SELECT m.conversation_key,
@@ -325,7 +340,10 @@ export async function handleChat(request, env, ctx) {
       last_at: r.last_at || null,
     }))
 
-    return jsonResponse({ conversations: out, team_conversations })
+    const payload = { conversations: out, team_conversations }
+    if (conversationsCache.size >= 200) conversationsCache.clear()
+    conversationsCache.set(fresh.id, { at: Date.now(), payload })
+    return jsonResponse(payload)
   }
 
   // POST /api/chat/seen — mark a conversation's incoming messages as seen.
