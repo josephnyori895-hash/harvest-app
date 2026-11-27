@@ -67,50 +67,139 @@ async function callApi(path: string, method: string, body?: unknown): Promise<Re
   } catch { return null }
 }
 
-async function acquireToken(messaging: MessagingPlugin): Promise<string | null> {
+// Registration outcome, kept on the device so the phone itself can say why it
+// is (or is not) receiving push. Without this every failure above was silent:
+// the app looked signed in while no token ever reached the server, and the only
+// symptom was an admin sign-in code that never arrived.
+export type PushStatus = {
+  state:
+    | 'unsupported'   // web build — push is APK-only
+    | 'signed-out'    // no session to attach a token to
+    | 'plugin-missing' // @capacitor-firebase/messaging unavailable / Firebase config absent
+    | 'permission-denied'
+    | 'no-token'      // permission granted but Firebase returned no token
+    | 'unreachable'   // token obtained, server call failed
+    | 'registered'
+    | 'error'
+  detail?: string
+  at: number
+}
+
+const STATUS_KEY = 'harvest_push_status'
+const FCM_KEY = 'harvest_fcm_token'
+export const PUSH_STATUS_EVENT = 'harvest:push-status'
+
+// Listeners are bound once per app run: registerPush() is called on every
+// session start and every return to the foreground, and re-binding there would
+// stack duplicate notification handlers.
+let listenersBound = false
+
+function publish(status: PushStatus): PushStatus {
+  try { localStorage.setItem(STATUS_KEY, JSON.stringify(status)) } catch { /* private mode */ }
+  try { window.dispatchEvent(new CustomEvent(PUSH_STATUS_EVENT, { detail: status })) } catch {}
+  return status
+}
+
+export function getPushStatus(): PushStatus | null {
   try {
-    const perm = await messaging.requestPermissions()
-    if (perm?.receive !== 'granted') return null
-    const vapidKey = (import.meta.env.VITE_FCM_VAPID_KEY as string | undefined) || undefined
-    const { value } = await messaging.getToken(vapidKey ? { vapidKey } : {})
-    return value || null
+    const raw = localStorage.getItem(STATUS_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed.state === 'string' ? parsed as PushStatus : null
   } catch { return null }
+}
+
+// Last token we managed to register — shown as a short fingerprint in the UI
+// so two installs can be told apart without exposing the token.
+export function getPushTokenHint(): string {
+  try {
+    const t = localStorage.getItem(FCM_KEY) || ''
+    return t ? t.slice(-6) : ''
+  } catch { return '' }
+}
+
+/** True on the Android app; the web build never shows push controls. */
+export function isPushSupported(): boolean {
+  return isNative()
+}
+
+function message(e: unknown): string {
+  const text = e && typeof e === 'object' && 'message' in e ? String((e as { message?: unknown }).message || '') : ''
+  return text.slice(0, 120)
 }
 
 // Register (or refresh) the FCM token for the currently signed-in member.
 // Idempotent and safe to call on every sign-in and account switch; the server
 // dedupes by token and retires stale tokens from the same installation.
-export async function registerPush(): Promise<void> {
+export async function registerPush(): Promise<PushStatus> {
   try {
+    if (!isNative()) return publish({ state: 'unsupported', at: Date.now() })
     const username = localStorage.getItem('harvest_username') || ''
     const token = localStorage.getItem('harvest_token') || ''
-    if (!isNative() || !username || !token) return
+    if (!username || !token) return publish({ state: 'signed-out', at: Date.now() })
+
     const loaded = await loadMessaging()
-    if (!loaded) return
+    if (!loaded) {
+      return publish({ state: 'plugin-missing', at: Date.now() })
+    }
     const messaging = loaded.messaging
 
-    const fcmToken = await acquireToken(messaging)
-    if (!fcmToken) return
+    let granted = false
+    try {
+      const perm = await messaging.requestPermissions()
+      granted = perm?.receive === 'granted'
+    } catch (e) {
+      return publish({ state: 'permission-denied', detail: message(e), at: Date.now() })
+    }
+    if (!granted) return publish({ state: 'permission-denied', at: Date.now() })
 
-    await callApi('/api/notifications/devices', 'POST', {
+    let fcmToken = ''
+    try {
+      const vapidKey = (import.meta.env.VITE_FCM_VAPID_KEY as string | undefined) || undefined
+      const { value } = await messaging.getToken(vapidKey ? { vapidKey } : {})
+      fcmToken = value || ''
+    } catch (e) {
+      // No Google Play services, a restricted API key, or an unregistered app
+      // all land here. Keep the reason: it is the only clue on the device.
+      return publish({ state: 'no-token', detail: message(e), at: Date.now() })
+    }
+    if (!fcmToken) return publish({ state: 'no-token', at: Date.now() })
+
+    const response = await callApi('/api/notifications/devices', 'POST', {
       platform: 'android',
       fcm_token: fcmToken,
       installation_id: getInstallationId(),
       app_version: import.meta.env.VITE_APP_VERSION || null,
     })
+    if (!response || !response.ok) {
+      return publish({
+        state: 'unreachable',
+        detail: response ? `HTTP ${response.status}` : 'network',
+        at: Date.now(),
+      })
+    }
+    try { localStorage.setItem(FCM_KEY, fcmToken) } catch { /* private mode */ }
 
-    // Foreground deliveries: surface via the in-app toast channel if present.
-    await messaging.addListener('notificationReceived', (notification: any) => {
-      try { window.dispatchEvent(new CustomEvent('harvest:push-received', { detail: notification })) } catch {}
-    })
-    // Tap routing: emit a single app-level event with a normalized deep link.
-    await messaging.addListener('notificationActionPerformed', (action: any) => {
-      try {
-        const data = action?.notification?.data || {}
-        window.dispatchEvent(new CustomEvent('harvest:push-tap', { detail: normalizeDeepLink(data) }))
-      } catch {}
-    })
-  } catch { /* push must never break sign-in */ }
+    if (!listenersBound) {
+      listenersBound = true
+      // Foreground deliveries: surface via the in-app toast channel if present.
+      await messaging.addListener('notificationReceived', (notification: any) => {
+        try { window.dispatchEvent(new CustomEvent('harvest:push-received', { detail: notification })) } catch {}
+      })
+      // Tap routing: emit a single app-level event with a normalized deep link.
+      await messaging.addListener('notificationActionPerformed', (action: any) => {
+        try {
+          const data = action?.notification?.data || {}
+          window.dispatchEvent(new CustomEvent('harvest:push-tap', { detail: normalizeDeepLink(data) }))
+        } catch {}
+      })
+    }
+
+    return publish({ state: 'registered', at: Date.now() })
+  } catch (e) {
+    // push must never break sign-in
+    return publish({ state: 'error', detail: message(e), at: Date.now() })
+  }
 }
 
 // Sign-out: disable delivery for this installation without deleting the row,

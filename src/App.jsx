@@ -44,7 +44,7 @@ const HarvestMap = lazy(() => import('./components/HarvestMap'))
 const Admin = lazy(() => import('./components/Admin'))
 
 import { initNotifications, fetchFamilyActivity } from './lib/notifications'
-import { registerPush, disablePushOnLogout } from './lib/push'
+import { registerPush, disablePushOnLogout, getPushStatus, getPushTokenHint, isPushSupported, PUSH_STATUS_EVENT } from './lib/push'
 import { getUploadHistory, getUploads, subscribeUploads, clearUploadHistory } from './lib/backgroundUploads'
 // Push tap routing: a notification tap emits harvest:push-tap with a
 // normalized deep link; route it through the app's existing navigation
@@ -2080,10 +2080,41 @@ const savedAgo = iso => {
 }
 
 // Real profile: everything comes from /api/me + the member directory.
+// Plain-language meaning of the last push registration attempt. The phone is
+// the only place a blocked permission or a missing Firebase token is visible,
+// so the wording points at the next thing the member can actually do.
+function pushStatusText(status) {
+  const detail = status?.detail ? ` (${status.detail})` : ''
+  switch (status?.state) {
+    case 'registered': return 'On. Admin sign-in codes and announcements can reach this phone.'
+    case 'permission-denied': return 'Android is blocking notifications for this app. Open Settings → Apps → Harvest Family Church → Notifications, allow them, then tap Retry.'
+    case 'no-token': return `Notifications are allowed, but Android did not issue a push token${detail}. Check that Google Play services is installed and up to date, then tap Retry.`
+    case 'plugin-missing': return 'This build has no push service. Install the latest app update, then tap Retry.'
+    case 'unreachable': return `This phone could not reach the church server${detail}. Check the connection, then tap Retry.`
+    case 'signed-out': return 'Sign in to receive notifications on this phone.'
+    case 'error': return `Push setup failed${detail}. Tap Retry.`
+    default: return 'Not set up yet. Allow notifications so admin sign-in codes can reach this phone.'
+  }
+}
+
 function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity }) {
   const { isAdmin, role, username } = useAuth()
   const [me, setMe] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Push registration state, reported by lib/push so a silent failure becomes
+  // something the person holding the phone can read and act on.
+  const [pushStatus, setPushStatus] = useState(() => getPushStatus())
+  const [pushBusy, setPushBusy] = useState(false)
+  useEffect(() => {
+    const onStatus = e => setPushStatus(e?.detail || getPushStatus())
+    window.addEventListener(PUSH_STATUS_EVENT, onStatus)
+    return () => window.removeEventListener(PUSH_STATUS_EVENT, onStatus)
+  }, [])
+  const retryPush = async () => {
+    if (pushBusy) return
+    setPushBusy(true)
+    try { await registerPush() } finally { setPushBusy(false) }
+  }
   // Upload activity: live transfers + last 20 finished (successes and failures).
   const [uploads, setUploads] = useState(getUploads())
   const [history, setHistory] = useState(getUploadHistory())
@@ -2194,6 +2225,25 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           {me?.phone && <span className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-1 text-xs"><Icon name="phone" size={12} /> {me.phone}</span>}
         </div>
       </div>
+
+      {isPushSupported() && (
+        <div className="mt-4 border-t border-line px-4 pt-3" data-testid="push-status">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-accent">Notifications on this phone</h3>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${pushStatus?.state === 'registered' ? 'bg-accent/15 text-accent-strong' : 'bg-surface-sunken text-ink-muted'}`}>
+              {pushStatus?.state === 'registered' ? 'On' : 'Off'}
+            </span>
+          </div>
+          <p className="mt-1 text-[12px] leading-5 text-ink-muted">{pushStatusText(pushStatus)}</p>
+          {pushStatus?.state === 'registered' ? (
+            getPushTokenHint() && <p className="mt-1 text-[11px] text-ink-muted">Device key ends {getPushTokenHint()}</p>
+          ) : (
+            <button type="button" onClick={() => void retryPush()} disabled={pushBusy} className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-accent px-4 text-xs font-extrabold text-white disabled:opacity-60">
+              {pushBusy ? 'Connecting…' : 'Turn on notifications'}
+            </button>
+          )}
+        </div>
+      )}
 
       {isAdmin && (
         <div className="mt-4 border-t border-line px-4 pt-3">
