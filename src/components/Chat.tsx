@@ -923,6 +923,10 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
     setReplyTo(null)
     setError('')
+    // A retried voice note must stay a voice note: send() reads the kind from
+    // the ref, and a failed attachment no longer carries it in state.
+    attachKindRef.current = kind
+    setAttachKind(kind)
     void send(body, file, `chat_${String(message.id)}`)
   }
 
