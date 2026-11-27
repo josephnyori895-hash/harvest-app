@@ -269,6 +269,17 @@ export async function createBrowserChallenge(env, user, device, ip = '') {
     if (delivered.ok) break
   }
 
+  // One line per challenge so the sign-in log answers "why no code?" without
+  // guessing: which accounts were tried, and what Firebase answered.
+  console.log(JSON.stringify({
+    evt: 'admin_code_push',
+    challenge: id,
+    devices: pushRows.length,
+    delivered: delivered.ok ? 'push' : 'failed',
+    status: delivered.status,
+    error: delivered.error ? String(delivered.error).slice(0, 200) : undefined,
+  }))
+
   if (delivered.ok) return { ok: true, challengeId: id, expiresAt, delivery: 'push' }
 
   // Undeliverable push (FCM disabled/unconfigured or rejected). Rather than

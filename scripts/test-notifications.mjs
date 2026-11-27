@@ -10,6 +10,7 @@ const notificationsRoute = await readFile(new URL('../workers/src/routes/notific
 const notif = await readFile(new URL('../src/components/NotificationsScreen.jsx', import.meta.url), 'utf8')
 const lib = await readFile(new URL('../src/lib/notifications.ts', import.meta.url), 'utf8')
 const pushLib = await readFile(new URL('../src/lib/push.ts', import.meta.url), 'utf8')
+const adminCodeBanner = await readFile(new URL('../src/components/AdminCodeBanner.tsx', import.meta.url), 'utf8')
 const hook = await readFile(new URL('../src/lib/useModalFocus.ts', import.meta.url), 'utf8')
 const commentsSheet = await readFile(new URL('../src/components/Comments.tsx', import.meta.url), 'utf8')
 const homeFeed = await readFile(new URL('../src/components/Home.tsx', import.meta.url), 'utf8')
@@ -226,6 +227,20 @@ test('the FCM token is read from the field the plugin actually returns', () => {
   // never posted and the admin sign-in code had no destination.
   assert.match(pushLib, /getToken\(options: \{ vapidKey\?: string \}\): Promise<\{ token\?: string/)
   assert.match(pushLib, /result\?\.token \|\| result\?\.value/)
+})
+
+test('an admin sign-in code reaching the app while it is open is always visible', () => {
+  // Android draws no FCM notification while the app is foregrounded. The code is
+  // needed within seconds by a browser, so it cannot be a four-second toast that
+  // the admin was not looking at.
+  const banner = adminCodeBanner
+  assert.match(pushLib, /if \(data\.kind === 'admin_login_code' && data\.code\) void showAdminCodeNotification/)
+  assert.match(lib, /export async function showAdminCodeNotification/)
+  assert.match(lib, /channelId: 'admin-code'/, 'the code needs its own high-importance channel')
+  assert.match(banner, /harvest:push-received/, 'the banner must follow the push event')
+  assert.match(banner, /localStorage\.setItem\(KEY/, 'the code must survive the app being switched away')
+  assert.match(app, /<AdminCodeBanner \/>/)
+  assert.match(app, /if \(String\(n\?\.data\?\.kind \|\| ''\) === 'admin_login_code'\) return/, 'a code must not expire as a toast')
 })
 
 test('the badge reflects the server unread total, not the loaded page size', () => {

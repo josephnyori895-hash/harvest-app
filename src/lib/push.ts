@@ -4,6 +4,7 @@
 // Requires google-services.json + @capacitor-firebase/messaging; without them
 // every function below is a silent no-op, so builds and the web never break.
 import { Capacitor } from '@capacitor/core'
+import { showAdminCodeNotification } from './notifications'
 
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -188,12 +189,21 @@ export async function registerPush(): Promise<PushStatus> {
       listenersBound = true
       // Foreground deliveries: surface via the in-app toast channel if present.
       await messaging.addListener('notificationReceived', (notification: any) => {
+        // Android suppresses the tray entry for a foreground delivery. An admin
+        // code is worthless unless the admin can read it, so repost it locally.
+        const data = notification?.data || {}
+        if (data.kind === 'admin_login_code' && data.code) void showAdminCodeNotification(String(data.code))
         try { window.dispatchEvent(new CustomEvent('harvest:push-received', { detail: notification })) } catch {}
       })
       // Tap routing: emit a single app-level event with a normalized deep link.
       await messaging.addListener('notificationActionPerformed', (action: any) => {
         try {
-          const data = action?.notification?.data || {}
+          const notification = action?.notification || {}
+          const data = notification.data || {}
+          // Tapping the code notification must show the code, not just a tab.
+          if (data.kind === 'admin_login_code') {
+            window.dispatchEvent(new CustomEvent('harvest:push-received', { detail: notification }))
+          }
           window.dispatchEvent(new CustomEvent('harvest:push-tap', { detail: normalizeDeepLink(data) }))
         } catch {}
       })

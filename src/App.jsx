@@ -18,6 +18,7 @@ import Departments from './components/Departments'
 import { RequireRole } from './components/Protected'
 import UserListModal from './components/UserListModal'
 import { showToast, ToastContainer } from './components/Toast'
+import { AdminCodeBanner } from './components/AdminCodeBanner'
 import UploadPill from './components/UploadPill'
 import NowPlayingBar from './components/NowPlayingBar'
 import ErrorMessage from './components/ErrorMessage'
@@ -69,10 +70,13 @@ function usePushTapRouting(openDm, setTab, setTeamChat) {
 
 // The OS does not draw an FCM notification while the app is in the foreground,
 // so a delivery during use used to be silent. Surface it as the in-app toast.
+// Admin codes are the exception: they need to stay on screen, so they get the
+// persistent banner instead of a toast nobody can retype from.
 function useForegroundPushToast() {
   useEffect(() => {
     const onPush = (e) => {
       const n = (e && e.detail) || {}
+      if (String(n?.data?.kind || '') === 'admin_login_code') return
       const title = String(n.title || 'Harvest Family')
       const body = String(n.body || '').trim()
       showToast(body ? `${title} — ${body}` : title, 'info', 4000)
@@ -1354,6 +1358,7 @@ export default function App() {
       {/* One mount for the whole app, including onboarding: showToast() used to
           publish to zero subscribers because nothing rendered this. */}
       <ToastContainer />
+      <AdminCodeBanner />
     </AuthProvider>
   )
 }

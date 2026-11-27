@@ -77,6 +77,44 @@ export async function showMessageNotification(from: string, text: string, id: nu
   } catch { /* never crash the app over a notification */ }
 }
 
+/**
+ * Admin sign-in code as a real notification. FCM does not draw a notification
+ * while the app is foregrounded, so a code needed by the browser was silent on a
+ * phone being used at that moment. A local notification always lands in the
+ * shade, which is where the admin looks when the sign-in screen says "check the
+ * admin phone".
+ */
+export async function showAdminCodeNotification(code: string): Promise<void> {
+  const digits = String(code || '').replace(/\D/g, '').slice(0, 8)
+  if (!digits) return
+  const loaded = await loadPlugin()
+  if (!loaded) return
+  const ln = loaded.ln
+  try {
+    const current = await ln.checkPermissions()
+    if (current.display !== 'granted') return
+    await ln.createChannel({
+      id: 'admin-code',
+      name: 'Admin sign-in codes',
+      description: 'Verification codes for administrator sign-in',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+    })
+    await ln.schedule({
+      notifications: [{
+        // One stable id: a newer code replaces the previous one instead of stacking.
+        id: 730021,
+        title: 'Harvest admin sign-in code',
+        body: `${digits} — valid for 10 minutes. Type it in the browser.`,
+        channelId: 'admin-code',
+        smallIcon: 'ic_launcher',
+        ongoing: false,
+      }],
+    })
+  } catch { /* never crash the app over a notification */ }
+}
+
 /** Called once after successful sign-in. */
 export async function initNotifications(): Promise<void> {
   await ensureNotificationChannel()
