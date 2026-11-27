@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration, realtime, adminDevices, groupsScreen, payments, groupsRoute, authRoute] = await Promise.all([
+const [admin, map, badge, app, auth, users, pending, departments, contentRoute, healthRoute, home, migration, realtime, adminDevices, groupsScreen, payments, groupsRoute, authRoute, protectedScreen] = await Promise.all([
   read('src/components/Admin.tsx'),
   read('src/components/HarvestMap.tsx'),
   read('src/components/VerifiedBadge.tsx'),
@@ -26,6 +26,7 @@ const [admin, map, badge, app, auth, users, pending, departments, contentRoute, 
   read('src/components/GivingPaymentEditor.tsx'),
   read('workers/src/routes/groups.js'),
   read('workers/src/routes/auth.js'),
+  read('src/components/Protected.tsx'),
 ])
 
 test('admin centre is one redesigned shell with grouped, accessible navigation', () => {
@@ -153,6 +154,19 @@ test('admin sign-in approval actually reaches the admin phone', () => {
   assert.match(realtime, /sendToUser\(username, \{ event: String\(frame\.event\)/, 'the phone must get the approval event over its socket')
   assert.doesNotMatch(auth, /approve sign-ins from the admin phone, not a browser/, 'a trusted browser session must be able to approve too')
   assert.match(adminDevices, /this is the device asking to sign in/, 'the server must refuse a self-approval even if a client asks')
+})
+
+test('admin sign-in never waits for a code no channel can deliver', () => {
+  // The APK is built without google-services.json until Firebase is configured,
+  // so the phone has no push token. The server then answers delivery
+  // 'unavailable', and the screen used to keep saying a code was on its way —
+  // the admin waited forever for a message that could never arrive.
+  assert.match(app, /data\.delivery === 'unavailable' && Boolean\(data\.recovery_available\)/, 'the screen must react to an undeliverable code')
+  assert.match(app, /setShowRecovery\(noDelivery\)/, 'an undeliverable code must open the recovery route immediately')
+  assert.match(app, /adminChallenge\.delivery === 'push'/, 'only a real push may promise a sent code')
+  assert.match(app, /Open the Harvest app on the phone bound to/, 'the no-push path must say where the code appears')
+  assert.match(protectedScreen, /if \(data\.verification_required\)/, 'the admin gate must not report a device challenge as a failed login')
+  assert.match(protectedScreen, /sign out and sign in again to approve it/, 'the admin gate must point at the screen that can approve a device')
 })
 
 test('member verification is a first-class admin action with busy and error states', () => {

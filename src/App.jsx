@@ -1585,11 +1585,15 @@ function Onboarding({ onAuthSuccess }) {
         setAdminChallenge(data)
         setAdminCode('')
         setAdminRecovery('')
-        // Always start on the 6-digit field: an approved phone reveals that code.
-        // The recovery link is offered underneath for when the phone is unusable.
-        setShowRecovery(false)
+        // Only promise a code that can actually arrive. `delivery: 'unavailable'`
+        // means the server found no push target for the admin phone: the code
+        // can only be revealed by the app that is already open there. Start on
+        // the recovery field instead of leaving the admin waiting for a code
+        // that no channel is going to deliver.
+        const noDelivery = data.delivery === 'unavailable' && Boolean(data.recovery_available)
+        setShowRecovery(noDelivery)
         setError(''); setErrorKind('')
-        requestAnimationFrame(() => document.getElementById('admin-code')?.focus())
+        requestAnimationFrame(() => document.getElementById(noDelivery ? 'admin-recovery' : 'admin-code')?.focus())
         return
       }
       if (!response.ok || !data.token) {
@@ -1915,11 +1919,20 @@ function Onboarding({ onAuthSuccess }) {
             {adminChallenge ? (
               <>
                 <div>
-                  <h2 className="text-[17px] font-extrabold text-white">{showRecovery ? 'Approve with the recovery code' : 'Check the admin phone'}</h2>
+                  <h2 className="text-[17px] font-extrabold text-white">
+                    {showRecovery ? 'Approve with the recovery code'
+                      : adminChallenge.delivery === 'dev' ? 'Local test code'
+                        : adminChallenge.delivery === 'push' ? 'Check the admin phone'
+                          : 'Approve on the admin phone'}
+                  </h2>
                   <p className="mt-1 text-[13px] text-white/55">
                     {showRecovery
-                      ? 'The admin phone could not receive a code. Enter the recovery code to approve this browser.'
-                      : `We sent a 6-digit code to the phone bound to ${loginId || 'HFC Nyeri'}. Enter it to approve this browser.`}
+                      ? 'This phone cannot receive a code right now. Enter the recovery code to approve this browser.'
+                      : adminChallenge.delivery === 'dev'
+                        ? 'Use the local test code shown below — no message is sent in development.'
+                        : adminChallenge.delivery === 'push'
+                          ? `We sent a 6-digit code to the phone bound to ${loginId || 'HFC Nyeri'}. Enter it to approve this browser.`
+                          : `Open the Harvest app on the phone bound to ${loginId || 'HFC Nyeri'} and authorize this browser — the code appears there. If that phone has no request, use the recovery code below.`}
                   </p>
                 </div>
                 {error && (
@@ -1931,7 +1944,7 @@ function Onboarding({ onAuthSuccess }) {
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gold">Admin sign-in</p>
                   <p className="mt-1.5 text-[12px] leading-5 text-white/60">The admin account trusts two devices. This browser is approved with a code from the admin phone, and adding a third device signs out the one used longest ago.</p>
                 </div>
-                {adminChallenge.delivery !== 'push' && !showRecovery && (
+                {adminChallenge.delivery !== 'push' && adminChallenge.delivery !== 'dev' && !showRecovery && (
                   <div className="rounded-2xl border border-line bg-white/[0.05] p-4">
                     <p className="text-[12px] leading-5 text-white/70">
                       A request is waiting on the admin phone. Tap <span className="font-extrabold text-white">Authorize</span> there, then type the 6-digit code it shows here.

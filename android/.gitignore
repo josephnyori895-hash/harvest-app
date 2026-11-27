@@ -63,7 +63,9 @@ keystore.properties
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# google-services.json
+# Restored at build time from the GOOGLE_SERVICES_JSON secret (see the release
+# workflow). A committed copy would drift from the Firebase project.
+google-services.json
 
 # Freeline
 freeline.py

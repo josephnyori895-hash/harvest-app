@@ -45,6 +45,13 @@ export function RequireRole({ role, children, fallback }: { role: Role; children
       try {
         const response = await fetch(`${API}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: trimmed, username: uname, ...adminDeviceIdentity() }) })
         const data = await response.json().catch(() => ({}))
+        // A new device must finish the approval challenge on the sign-in screen;
+        // this gate has no code field, so saying "Login failed" here stranded the
+        // admin with no way forward.
+        if (data.verification_required) {
+          setErr('This device needs admin approval — sign out and sign in again to approve it.')
+          return
+        }
         if (!response.ok || !data.token) throw new Error(data.error || 'Login failed')
         localStorage.setItem('harvest_token', data.token)
         localStorage.setItem(`harvest_token_${data.username}`, data.token)

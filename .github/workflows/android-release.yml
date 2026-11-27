@@ -123,6 +123,27 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      # FCM signs the phone in to Firebase; without this file the plugin is not
+      # applied, no token is issued, and the admin sign-in code has no phone to
+      # reach. Kept as a secret rather than a committed file, but a missing
+      # secret must not block a release — it only disables push.
+      - name: Restore Firebase config (FCM)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning::GOOGLE_SERVICES_JSON is not set — this APK cannot register for push, so admin sign-in codes cannot reach the phone."
+            exit 0
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          node -e "
+            const c = JSON.parse(require('fs').readFileSync('android/app/google-services.json','utf8'))
+            const pkg = c?.client?.[0]?.client_info?.android_client_info?.package_name || ''
+            const want = 'com.harvestfamily.nyeri'
+            if (pkg !== want) { console.error('google-services.json is for ' + (pkg || 'no package') + ', expected ' + want); process.exit(1) }
+            console.log('Firebase config restored for ' + pkg)
+          "
+
       - name: Restore Android release keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
