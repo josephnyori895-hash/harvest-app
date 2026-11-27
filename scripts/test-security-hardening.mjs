@@ -58,10 +58,12 @@ assert.match(chat, /canAccessConversation/)
 // Delegated chat moderation is confined to conversations the moderator can
 // reach: the capability check must be followed by the membership check, or a
 // moderate_chat grant would let someone delete messages in rooms they are not in.
+// A sender may unsend their own message, but that is still subject to the same
+// conversation-membership check — the OR must not skip it.
 assert.match(
   chat,
-  /if \(!hasChatModeration\(fresh\)\)[\s\S]{0,240}?canAccessConversation\(env, fresh, m\.rows\[0\]\.conversation_key\)/,
-  'chat delete must check conversation membership after the capability check',
+  /if \(!isSender && !hasChatModeration\(fresh\)\)[\s\S]{0,240}?canAccessConversation\(env, fresh, m\.rows\[0\]\.conversation_key\)/,
+  'chat delete must check conversation membership after the sender/capability check',
 )
 assert.doesNotMatch(chat, /conversation_key\.startsWith\('group:'\).*\n.*conversation_key\.startsWith\('department:'/s)
 assert.match(departments, /leaders cannot demote themselves/)

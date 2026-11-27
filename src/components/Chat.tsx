@@ -791,9 +791,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     if (el) el.scrollTop = el.scrollHeight
   }, [conversationKey])
 
-  const send = async (bodyOverride?: string, fileOverride?: File | null, idempotencyKey?: string, kindOverride?: 'image' | 'audio') => {
+  const send = async (bodyOverride?: string, fileOverride?: File | null, idempotencyKey?: string) => {
     const attach = fileOverride !== undefined ? fileOverride : attachRef.current
-    const attachKind = fileOverride !== undefined ? (kindOverride || attachKindRef.current) : attachKindRef.current
+    const attachKind = attachKindRef.current
     const body = (bodyOverride ?? text).trim()
     if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
@@ -923,7 +923,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
     setReplyTo(null)
     setError('')
-    void send(body, file, `chat_${String(message.id)}`, kind)
+    void send(body, file, `chat_${String(message.id)}`)
   }
 
   const react = async (msg: any, emoji: string) => {

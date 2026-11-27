@@ -50,7 +50,7 @@ test('6. Sermons consumes harvest:sermons-updated → list refetch', () => {
 })
 
 test('7. Chat send registers the pending file for retry before the transfer starts', () => {
-  assert.match(chat, /if \(attach\) failedFileRef\.current = \{ tempId, file: attach \}/)
+  assert.match(chat, /if \(attach\) failedFileRef\.current = \{ tempId, file: attach, kind: attachKind \}/, 'retry keeps the file and its kind (photo vs voice)')
 })
 
 test('8. Chat clears the retry file on every success path', () => {

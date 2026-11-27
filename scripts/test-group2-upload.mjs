@@ -34,7 +34,7 @@ test('RS-122: the attachment chip survives a failed send', () => {
   assert.doesNotMatch(chat, /const sentReply = replyTo; setText\(''\); setReplyTo\(null\); setAttach\(null\)/, 'send must not clear the chip before the upload')
   assert.match(chat, /Confirmed \u2014 the attachment has done its job\./, 'a socket-confirmed send releases the chip')
   assert.match(chat, /Confirmed on the REST path too/, 'a REST-confirmed send releases the chip')
-  assert.match(chat, /failedFileRef\.current = \{ tempId, file: attach \}/, 'the retry keeps an in-memory copy')
+  assert.match(chat, /failedFileRef\.current = \{ tempId, file: attach, kind: attachKind \}/, 'the retry keeps an in-memory copy, with its photo/voice kind')
 })
 
 test('2. Background manager promise resolves on success / rejects on terminal failure, stays pending while waiting', () => {
