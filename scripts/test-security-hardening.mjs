@@ -108,7 +108,13 @@ const { isPrimaryAdmin } = await import('../workers/src/lib/adminDevices.js')
 assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'stable-id', username: 'renamed-admin' }), true, 'a renamed primary admin keeps access')
 assert.equal(isPrimaryAdmin({ ADMIN_USER_ID: 'stable-id' }, { id: 'other-id', username: 'hfcnyeri' }), false, 'a username alone cannot claim the primary admin')
 assert.doesNotMatch(usersRoute, /isPrimaryAdmin\(env, [^)]*\.username\)/, 'role checks must not depend on a mutable username')
-assert.match(adminDevices, /installation_id=\?[\s\S]{0,1400}sendToDevice\(env, pushRows\[0\]\.fcm_token,[\s\S]{0,300}admin_login_code/, 'code must be pushed to the bound phone only')
+// The code goes to the administrator's own push-enrolled devices. Pinning one
+// bound installation id meant a reinstall (new installation id, new token) made
+// the code undeliverable, which is how the admin phone stopped receiving it.
+assert.match(adminDevices, /WHERE user_id=\? AND enabled=1 AND fcm_token != ''/, 'delivery addresses the account\'s push devices')
+assert.match(adminDevices, /for \(const row of pushRows\)[\s\S]{0,400}admin_login_code/, 'each device is tried until one accepts the code')
+assert.match(adminDevices, /if \(device\.kind !== 'mobile'\) return \{ ok: false, needsCode: true \}/, 'a browser still needs a code')
+assert.match(adminDevices, /has no .*route back into their own phone|no route back into their own phone/, 'a phone may reclaim the mobile slot with the password')
 assert.match(adminDevices, /pbkdf2Verify\(code, challenge\.code_hash\)/, 'code must be verified from its hash')
 assert.match(adminDevices, /MAX_ATTEMPTS = 5/)
 assert.match(adminDevices, /DELETE FROM admin_devices[\s\S]{0,220}ORDER BY last_seen_at DESC LIMIT \?/, 'approving past the two-device allowance evicts the device used longest ago')

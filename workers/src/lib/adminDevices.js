@@ -113,15 +113,6 @@ async function getAllDevices(env, userId) {
   return rows
 }
 
-async function getDevice(env, userId, kind) {
-  const { rows } = await query(
-    env,
-    'SELECT id, device_id FROM admin_devices WHERE user_id=? AND kind=? ORDER BY last_seen_at DESC LIMIT 1',
-    [userId, kind],
-  )
-  return rows[0] || null
-}
-
 async function currentEpoch(env, userId, kind) {
   const column = kind === 'mobile' ? 'admin_mobile_epoch' : 'admin_web_epoch'
   const { rows } = await query(env, `SELECT ${column} AS epoch FROM users WHERE id=?`, [userId])
@@ -146,17 +137,35 @@ async function trustDevice(env, user, device, all) {
     )
     return { ok: true, kind: device.kind, epoch: await currentEpoch(env, user.id, device.kind), bound: 'existing', deviceId: device.deviceId }
   }
-  // The two-device allowance is used up: this one has to be approved with a code.
-  if (all.length >= MAX_TRUSTED_DEVICES) return { ok: false, needsCode: true }
-  // A phone can be trusted automatically while there is room, so the first
-  // phone never needs a code posted to itself. Browsers always need approval:
-  // a typed password alone must not add a browser to the trusted list.
+  // A phone can be trusted with the password alone while there is room, so the
+  // first phone never needs a code posted to itself. Browsers always need
+  // approval: a typed password must not add a browser to the trusted list.
   if (device.kind !== 'mobile') return { ok: false, needsCode: true }
+  // Replace the stale phone slot, not the browser the admin actually works in.
+  if (all.length >= MAX_TRUSTED_DEVICES) {
+    await query(env, "DELETE FROM admin_devices WHERE user_id=? AND kind='mobile'", [user.id])
+  }
   await query(
     env,
     'INSERT INTO admin_devices (id, user_id, kind, device_id, label, details, last_ip, created_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?)',
     [uuid(), user.id, device.kind, device.deviceId, device.label, device.details, device.ip, now, now],
   )
+  // The phone is the factor itself: a code sent to the phone cannot approve the
+  // phone. Reinstalling the app or clearing its data changes the installation
+  // id, which used to leave the single administrator with a full device list
+  // and no route back into their own phone. A phone that presents the admin
+  // password therefore takes the mobile slot. This prune is only the safety
+  // net that keeps the allowance at two whatever order the rows arrived in.
+  if (all.length >= MAX_TRUSTED_DEVICES) {
+    await query(
+      env,
+      `DELETE FROM admin_devices
+        WHERE user_id=? AND id NOT IN (
+          SELECT id FROM admin_devices WHERE user_id=? ORDER BY last_seen_at DESC LIMIT ?
+        )`,
+      [user.id, user.id, MAX_TRUSTED_DEVICES],
+    )
+  }
   return { ok: true, kind: 'mobile', epoch: await currentEpoch(env, user.id, 'mobile'), bound: 'new', deviceId: device.deviceId }
 }
 
@@ -177,8 +186,6 @@ export async function createBrowserChallenge(env, user, device, ip = '') {
   if (!trusted.length) {
     return { ok: false, status: 409, error: 'sign in on the admin phone once, then approve this device' }
   }
-  const phone = await getDevice(env, user.id, 'mobile')
-
   // A valid admin password should not turn into an unbounded stream of push
   // codes on the admin phone. Cap challenge creation per admin account.
   const marker = `admchallenge:${user.id}`
@@ -213,18 +220,11 @@ export async function createBrowserChallenge(env, user, device, ip = '') {
     return { ok: true, challengeId: id, expiresAt, devCode: code, delivery: 'dev' }
   }
 
-  // Target only the bound phone's push token. Sending to every notification
-  // device on the account would leak the code to a phone that is no longer the
-  // admin's trusted device.
-  const { rows: pushRows } = phone
-    ? await query(
-      env,
-      `SELECT fcm_token FROM notification_devices
-        WHERE user_id=? AND installation_id=? AND enabled=1
-        ORDER BY last_seen_at DESC LIMIT 1`,
-      [user.id, phone.device_id],
-    )
-    : { rows: [] }
+  // Deliver to every push-enrolled device on the admin account, newest first.
+  // Matching one bound installation id was too brittle: reinstalling the app
+  // issues a new installation id and a new token, so the row the server looked
+  // for no longer existed and the code went nowhere. These are still only the
+  // administrator's own devices — the account holds one admin.
   // Ask the signed-in admin phone directly (realtime socket). This needs no
   // push credentials and is the primary approval path.
   await publishLoginRequest(env, user.username, {
@@ -239,6 +239,14 @@ export async function createBrowserChallenge(env, user, device, ip = '') {
     device_id: device.deviceId,
   })
 
+  const { rows: pushRows } = await query(
+    env,
+    `SELECT fcm_token FROM notification_devices
+      WHERE user_id=? AND enabled=1 AND fcm_token != ''
+      ORDER BY last_seen_at DESC LIMIT 5`,
+    [user.id],
+  )
+
   if (!pushRows[0]) {
     // No registered phone to receive the code. Keep the challenge so the admin
     // can approve this browser with the recovery code instead of being locked
@@ -248,14 +256,18 @@ export async function createBrowserChallenge(env, user, device, ip = '') {
     return { ok: false, status: 409, error: 'the admin phone is not receiving notifications — open the Harvest app on that phone and allow notifications' }
   }
 
-  const delivered = await sendToDevice(env, pushRows[0].fcm_token, {
-    notification: {
-      title: 'Harvest admin sign-in code',
-      body: `${code} is your admin code. It expires in 10 minutes. If this wasn't you, ignore it.`,
-    },
-    data: { kind: 'admin_login_code', challenge_id: id, code },
-    collapseKey: `admin-login:${id}`,
-  })
+  let delivered = { ok: false, status: 'unavailable' }
+  for (const row of pushRows) {
+    delivered = await sendToDevice(env, row.fcm_token, {
+      notification: {
+        title: 'Harvest admin sign-in code',
+        body: `${code} is your admin code. It expires in 10 minutes. If this wasn't you, ignore it.`,
+      },
+      data: { kind: 'admin_login_code', challenge_id: id, code },
+      collapseKey: `admin-login:${id}`,
+    })
+    if (delivered.ok) break
+  }
 
   if (delivered.ok) return { ok: true, challengeId: id, expiresAt, delivery: 'push' }
 
