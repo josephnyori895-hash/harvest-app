@@ -2223,7 +2223,17 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         </div>
         <div className="text-sm space-y-1">
           <p className="font-semibold">@{me?.username || username}</p>
-          <p className="inline-flex items-center gap-1 text-xs text-ink-muted">{me?.verified ? <><VerifiedBadge size={13} /> Verified member</> : 'Account pending verification by admin'}</p>
+          {/* The member's own words, not an admin's queue state: "pending
+              verification by admin" told every new member they were waiting on
+              someone else and gave them nothing to read. The verified state
+              already shows as the chip beside the name. */}
+          {me?.faith ? (
+            <p className="line-clamp-2 max-w-[230px] text-xs italic leading-snug text-ink-muted">“{me.faith}”</p>
+          ) : (
+            <p className="max-w-[230px] text-xs text-ink-muted">
+              {me?.verified ? <span className="inline-flex items-center gap-1"><VerifiedBadge size={13} /> Verified member</span> : 'Add your faith testimony in Edit profile'}
+            </p>
+          )}
           <button onClick={() => onEditProfile?.()} className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-sunken px-4 py-1.5 text-xs font-bold text-ink active:opacity-70"><Icon name="pencil" size={13} /> Edit profile</button>
         </div>
       </div>
