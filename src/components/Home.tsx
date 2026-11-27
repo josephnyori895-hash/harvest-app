@@ -405,22 +405,17 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       return at > best.at ? { el, at } : best
     }, { el: null, at: -1 }).el || home.querySelector('#home-community')
     if (!target) { c.scrollTo({ top: 0, behavior }); return }
-    // Measure what the chrome really covers instead of assuming it sticks.
-    // The brand header and quick-action rail sit in Home's own overflow
-    // wrapper, so once the feed scrolls they move away with it (they do NOT
-    // stay pinned to the scroller). Subtracting their full height therefore
-    // undershot the target by ~130 px and the member landed inside the post
-    // rather than on its top. Only chrome that is actually overlapping the
-    // scroller's top edge is counted, so the landing is 8 px above the
-    // newest card whether or not the header ever becomes sticky again.
+    // Measure the chrome that actually covers the scroller's top edge rather
+    // than subtracting a hard-coded height: the brand header and quick-action
+    // rail stick as one block, so their combined measured bottom is the only
+    // honest occluder (font scaling and wrapping change its height).
     const cRect = c.getBoundingClientRect()
-    const chromeOverlap = Array.from(home.querySelectorAll<HTMLElement>('header.sticky, nav.sticky'))
-      .reduce((max, el) => {
+    const chromeBottom = Array.from(home.querySelectorAll<HTMLElement>('[data-home-chrome]'))
+      .reduce((lowest, el) => {
         const r = el.getBoundingClientRect()
-        const coversTop = r.top <= cRect.top + 1
-        const overlap = Math.min(r.bottom, cRect.bottom) - cRect.top
-        return coversTop && overlap > 0 ? Math.max(max, overlap) : max
-      }, 0)
+        return r.bottom > cRect.top ? Math.max(lowest, r.bottom) : lowest
+      }, cRect.top)
+    const chromeOverlap = Math.max(0, Math.min(chromeBottom, cRect.bottom) - cRect.top)
     const delta = target.getBoundingClientRect().top - cRect.top - chromeOverlap - 8
     c.scrollTo({ top: Math.max(c.scrollTop + delta, 0), behavior })
   }
@@ -676,10 +671,11 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     const dy = e.changedTouches[0].clientY - startYRef.current
     const dx = Math.abs(e.changedTouches[0].clientX - startXRef.current)
     startYRef.current = null; startXRef.current = null
-    if (dy > 80 && dx < 40 && containerRef.current && containerRef.current.scrollTop < 5 && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
+    const scroller = containerRef.current?.closest('.app-content') as HTMLElement | null
+    if (dy > 80 && dx < 40 && (!scroller || scroller.scrollTop < 5) && !refreshing) { setRefreshing(true); setApprovedTick(x => x + 1); setLikesTick(x => x + 1); setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1); showToast('Community refreshed', 'success', 1200); setTimeout(() => setRefreshing(false), 700) }
   }
 
-  return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] overflow-auto bg-surface text-ink">
+  return <div data-qa-moment={String(momentIdx)} data-qa-stories={String(allMoments.length)} ref={containerRef} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} className="min-h-[calc(100vh-72px)] bg-surface text-ink">
     {momentIdx !== null && <StoryViewer idx={momentIdx} setIdx={setMomentIdx} allStories={allMoments} users={users} onOpenUser={onOpenUser} onViewed={markStoryViewed} onDeleted={(id) => { setLiveStories(ss => ss.filter(x => String(x.id) !== String(id))) }} />}
     {showPastorPicker && (
       <div ref={pastorPickerRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-end justify-center bg-ink/45 outline-none backdrop-blur-sm" onClick={() => setShowPastorPicker(false)} role="dialog" aria-modal="true" aria-label="Choose a pastor">
@@ -780,7 +776,12 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         primary={<button type="button" onClick={() => { setShowNoPastor(false); setTab('chat') }} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-accent text-sm font-extrabold text-white">Ask for prayer in Chats</button>}
       />
     )}
-    <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
+    {/* One sticky block: an inner overflow wrapper used to make this a nested
+        scroll container, so both rows scrolled away with the feed. Pinning the
+        pair to the app column keeps the brand and the quick actions reachable
+        while the feed moves under them. */}
+    <div data-home-chrome className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
+    <header className="border-b border-line/60">
       {/* pr-14 reserves the footprint of the shell's floating notification bell,
           so the header's own actions never sit underneath it. */}
       <div className="flex items-center justify-between gap-2 py-3 pl-4 pr-14">
@@ -802,29 +803,29 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         </div>
       </div>
     </header>
+    <nav aria-label="Quick actions" className="relative border-b border-line/60 bg-surface/90 px-4 py-2 backdrop-blur-xl">
+      {/* Four chips do not fit across a 320 px phone, and a horizontal rail
+          sliced “Departments” at the right edge. Wrapping keeps every label
+          whole without hiding a destination behind a scroll gesture. */}
+      <div ref={quickRailRef} className="flex flex-wrap gap-2">
+        {quickLinks.map(q => (
+          <button
+            key={q.tab}
+            onClick={() => setTab(q.tab)}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3.5 text-2xs font-extrabold text-ink transition hover:border-accent/40 hover:text-accent-strong"
+          >
+            <Icon name={q.icon} size={15} className="text-accent" />
+            {q.title}
+          </button>
+        ))}
+      </div>
+      {/* Only while the rail actually continues: a static fade would dim a
+          last chip that already fits. */}
+      {quickRailMore && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />}
+    </nav>
+    </div>
 
     <main className="px-4 pb-8">
-      <nav aria-label="Quick actions" className="sticky top-16 z-10 -mx-4 border-b border-line/60 bg-surface/90 px-4 py-2 backdrop-blur-xl">
-        {/* Four chips do not fit across a 320 px phone, and a horizontal rail
-            sliced “Departments” at the right edge. Wrapping keeps every label
-            whole without hiding a destination behind a scroll gesture. */}
-        <div ref={quickRailRef} className="flex flex-wrap gap-2">
-          {quickLinks.map(q => (
-            <button
-              key={q.tab}
-              onClick={() => setTab(q.tab)}
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface-raised px-3.5 text-2xs font-extrabold text-ink transition hover:border-accent/40 hover:text-accent-strong"
-            >
-              <Icon name={q.icon} size={15} className="text-accent" />
-              {q.title}
-            </button>
-          ))}
-        </div>
-        {/* Only while the rail actually continues: a static fade would dim a
-            last chip that already fits. */}
-        {quickRailMore && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />}
-      </nav>
-
       <section className="pt-4">
         <div className="overflow-hidden rounded-card bg-gradient-to-br from-accent-strong via-accent to-accent-strong p-4 text-white shadow-raised">
           <p className="text-2xs font-bold uppercase tracking-[0.18em] text-gold-soft">{heroKicker}</p>
