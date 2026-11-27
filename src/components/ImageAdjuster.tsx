@@ -4,10 +4,10 @@ import { useModalFocus } from '../lib/useModalFocus'
 import { useAndroidBack } from '../lib/useAndroidBack'
 
 // ImageAdjuster — Harvest Family photo editing, modelled on Instagram's create
-// screen: a dark immersive canvas that fills the width, two tabs (Filters ·
-// Edit), zoom-to-fill so the photo always covers its crop and never shows
-// letterbox bars, and clips + filters that bake into the exported JPEG so the
-// server receives exactly what the member saw.
+// screen: a dark immersive canvas that fills the width, a bottom drawer with
+// two tabs (Filters · Edit), zoom-to-fill so the photo always covers its crop
+// and never shows letterbox bars, and clips + filters that bake into the
+// exported JPEG so the server receives exactly what the member saw.
 //
 // Pure-canvas implementation (no external libs) so it works in the APK WebView.
 
@@ -30,6 +30,32 @@ const MAX_SCALE = 5
 const MIN_RATIO = 0.8
 const MAX_RATIO = 1.91
 
+/** Instagram's edit carousel glyphs — drawn inline so the strip reads as a row
+ *  of tools instead of a form of labelled sliders. */
+function ToolGlyph({ kind }: { kind: 'brightness' | 'contrast' | 'saturate' | 'warmth' | 'fade' | 'zoom' }) {
+  const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {kind === 'brightness' && (<><circle cx="12" cy="12" r="4.2" {...common} /><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8" {...common} /></>)}
+      {kind === 'contrast' && (<><circle cx="12" cy="12" r="8.4" {...common} /><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8Z" fill="currentColor" stroke="none" /></>)}
+      {kind === 'saturate' && (<><path d="M12 3.4c3.4 4.2 6 6.8 6 9.9a6 6 0 0 1-12 0c0-3.1 2.6-5.7 6-9.9Z" {...common} /></>)}
+      {kind === 'warmth' && (<><rect x="10.4" y="3.4" width="3.2" height="17.2" rx="1.6" {...common} /><circle cx="12" cy="15" r="3.4" fill="currentColor" stroke="none" /></>)}
+      {kind === 'fade' && (<><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="3" {...common} /><path d="M3.4 12h17.2" {...common} /></>)}
+      {kind === 'zoom' && (<><circle cx="10.6" cy="10.6" r="6.4" {...common} /><path d="m15.4 15.4 4.4 4.4" {...common} /><path d="M8.2 10.6h4.8M10.6 8.2v4.8" {...common} /></>)}
+    </svg>
+  )
+}
+
+type ToolKey = keyof Adjustments | 'zoom'
+
+const ADJUST_TOOLS: { key: keyof Adjustments; label: string; min: number; max: number; scale: number }[] = [
+  { key: 'brightness', label: 'Brightness', min: 50, max: 150, scale: 100 },
+  { key: 'contrast', label: 'Contrast', min: 50, max: 150, scale: 100 },
+  { key: 'saturate', label: 'Saturation', min: 0, max: 200, scale: 100 },
+  { key: 'warmth', label: 'Warmth', min: 0, max: 100, scale: 100 },
+  { key: 'fade', label: 'Fade', min: 0, max: 100, scale: 100 },
+]
+
 export default function ImageAdjuster({
   file,
   onCancel,
@@ -49,6 +75,10 @@ export default function ImageAdjuster({
   // string works live on the stage and inside the export's ctx.filter.
   const [adjust, setAdjust] = useState<Adjustments>({ ...neutralAdjust })
   const [tab, setTab] = useState<'filters' | 'edit'>('filters')
+  // Instagram shows one tool at a time: pick from the carousel, then drag the
+  // single slider underneath. All tools stay mounted (hidden) so each keeps a
+  // stable, labelled control for keyboards and screen readers.
+  const [activeTool, setActiveTool] = useState<ToolKey>('brightness')
   const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1, rotation: 0 })
   const [zoom, setZoom] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -209,31 +239,46 @@ export default function ImageAdjuster({
   const previewFilter = composeLook(look, intensity, adjust)
   useAndroidBack(true, onCancel)
 
-  const ADJUST_TOOLS: { key: keyof Adjustments; label: string; min: number; max: number; scale: number }[] = [
-    { key: 'brightness', label: 'Brightness', min: 50, max: 150, scale: 100 },
-    { key: 'contrast', label: 'Contrast', min: 50, max: 150, scale: 100 },
-    { key: 'saturate', label: 'Saturation', min: 0, max: 200, scale: 100 },
-    { key: 'warmth', label: 'Warmth', min: 0, max: 100, scale: 100 },
-    { key: 'fade', label: 'Fade', min: 0, max: 100, scale: 100 },
-  ]
+  const activeAdjustTool = ADJUST_TOOLS.find(t => t.key === activeTool)
+  const selectedToolLabel = activeTool === 'zoom' ? 'Zoom' : activeAdjustTool?.label ?? 'Brightness'
+
+  const stageWidth = (() => {
+    const { vw, vh } = stageSize()
+    if (!vw || !vh || !imgSize) return 'auto'
+    const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+    const swapped = rotationDegrees === 90 || rotationDegrees === 270
+    const iw = swapped ? imgSize.h : imgSize.w
+    const ih = swapped ? imgSize.w : imgSize.h
+    return iw * (Math.max(vw / iw, vh / ih) || 1) * transform.scale
+  })()
+  const stageHeight = (() => {
+    const { vw, vh } = stageSize()
+    if (!vw || !vh || !imgSize) return 'auto'
+    const rotationDegrees = ((transform.rotation % 360) + 360) % 360
+    const swapped = rotationDegrees === 90 || rotationDegrees === 270
+    const iw = swapped ? imgSize.h : imgSize.w
+    const ih = swapped ? imgSize.w : imgSize.h
+    return ih * (Math.max(vw / iw, vh / ih) || 1) * transform.scale
+  })()
 
   return (
     <div ref={panelRef} tabIndex={-1} className="fixed inset-0 z-[60] flex flex-col bg-black text-white outline-none" role="dialog" aria-modal="true" aria-label="Adjust image" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))' }}>
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-2">
-        <button onClick={onCancel} className="grid h-10 w-10 place-items-center rounded-full" aria-label="Cancel">
+      {/* Instagram's create header: X on the left, "Next" in blue on the right. */}
+      <div className="flex h-14 shrink-0 items-center justify-between px-2">
+        <button onClick={onCancel} className="grid h-11 w-11 place-items-center rounded-full" aria-label="Cancel">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
-        <p className="text-base font-extrabold">Edit photo</p>
-        <button onClick={() => void save()} disabled={saving || !imgSize} className="px-2 text-base font-extrabold text-sky-400 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">
-          {saving ? 'Saving…' : 'Done'}
+        <p className="text-sm font-extrabold tracking-tight">Edit</p>
+        <button onClick={() => void save()} disabled={saving || !imgSize} className="min-h-11 px-3 text-sm font-extrabold text-sky-400 disabled:opacity-50" aria-label="Apply adjustments" data-testid="image-adjuster-save">
+          {saving ? 'Saving…' : 'Next'}
         </button>
       </div>
 
-      {/* stage — zoom-to-fill: the photo covers the crop exactly, edge to edge */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center px-0 py-4">
+      {/* stage — edge to edge, zoom-to-fill: the photo covers the crop exactly */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
         <div
           ref={stageRef}
-          className="relative overflow-hidden bg-surface-sunken touch-none select-none"
+          className="relative overflow-hidden bg-black touch-none select-none"
           style={{ aspectRatio: String(croppedDisplayRatio), maxWidth: '100%', maxHeight: '100%', width: '100%' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
           onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onDoubleClick={onDoubleClick}
@@ -246,26 +291,8 @@ export default function ImageAdjuster({
               className="absolute left-1/2 top-1/2 max-w-none pointer-events-none"
               style={{
                 filter: previewFilter === 'none' ? undefined : previewFilter,
-                width: (() => {
-                  const { vw, vh } = stageSize()
-                  if (!vw || !vh) return 'auto'
-                  const rotationDegrees = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rotationDegrees === 90 || rotationDegrees === 270
-                  const iw = swapped ? imgSize.h : imgSize.w
-                  const ih = swapped ? imgSize.w : imgSize.h
-                  const minScale = Math.max(vw / iw, vh / ih) || 1
-                  return iw * minScale * transform.scale
-                })(),
-                height: (() => {
-                  const { vw, vh } = stageSize()
-                  if (!vw || !vh) return 'auto'
-                  const rotationDegrees = ((transform.rotation % 360) + 360) % 360
-                  const swapped = rotationDegrees === 90 || rotationDegrees === 270
-                  const iw = swapped ? imgSize.h : imgSize.w
-                  const ih = swapped ? imgSize.w : imgSize.h
-                  const minScale = Math.max(vw / iw, vh / ih) || 1
-                  return ih * minScale * transform.scale
-                })(),
+                width: stageWidth,
+                height: stageHeight,
                 transform: `translate(-50%, -50%) translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg)`,
                 transition: dragRef.current ? 'none' : 'width 0.15s, height 0.15s',
               }}
@@ -281,11 +308,17 @@ export default function ImageAdjuster({
         </div>
       </div>
 
-      {/* tabs — Filters | Edit, like Instagram's own edit bottom drawer */}
-      <div className="shrink-0 border-t border-white/10 bg-black pb-[max(0.75rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))]">
-        <div className="flex items-center justify-center gap-6 px-4 pt-3" role="tablist" aria-label="Edit tools">
-          <button role="tab" aria-selected={tab === 'filters'} onClick={() => setTab('filters')} className={`rounded px-2 pb-2 pt-1 text-xs font-extrabold uppercase tracking-[0.16em] ${tab === 'filters' ? 'text-white' : 'text-white/40'}`}>Filters</button>
-          <button role="tab" aria-selected={tab === 'edit'} onClick={() => setTab('edit')} className={`rounded px-2 pb-2 pt-1 text-xs font-extrabold uppercase tracking-[0.16em] ${tab === 'edit' ? 'text-white' : 'text-white/40'}`}>Edit</button>
+      {/* bottom drawer — Instagram's Filters · Edit tabs sit over the media */}
+      <div className="shrink-0 bg-black pb-[max(0.5rem,var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))]">
+        <div className="flex items-center justify-center gap-8 px-4 pt-2" role="tablist" aria-label="Edit tools">
+          <button role="tab" aria-selected={tab === 'filters'} onClick={() => setTab('filters')} className={`flex flex-col items-center gap-1 rounded px-2 pb-2 pt-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${tab === 'filters' ? 'text-white' : 'text-white/40'}`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">            <circle cx="9" cy="9" r="5.2" /><circle cx="15.4" cy="15.4" r="5.2" /></svg>
+            <span>Filters</span>
+          </button>
+          <button role="tab" aria-selected={tab === 'edit'} onClick={() => setTab('edit')} className={`flex flex-col items-center gap-1 rounded px-2 pb-2 pt-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${tab === 'edit' ? 'text-white' : 'text-white/40'}`}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /><circle cx="8" cy="6" r="1.9" fill="currentColor" /><circle cx="15" cy="12" r="1.9" fill="currentColor" /><circle cx="13" cy="18" r="1.9" fill="currentColor" /></svg>
+            <span>Edit</span>
+          </button>
         </div>
 
         {tab === 'filters' && (
@@ -297,7 +330,7 @@ export default function ImageAdjuster({
                 aria-pressed={look === name}
                 className="flex w-16 shrink-0 flex-col items-center gap-1"
               >
-                <span className={`block h-16 w-16 overflow-hidden rounded-xl ring-2 ${look === name ? 'ring-sky-400' : 'ring-white/10'}`}>
+                <span className={`block h-16 w-16 overflow-hidden rounded-lg ring-2 ${look === name ? 'ring-sky-400' : 'ring-white/10'}`}>
                   {srcUrl && imgSize && (
                     <img
                       src={srcUrl}
@@ -315,8 +348,7 @@ export default function ImageAdjuster({
         )}
 
         {tab === 'filters' && look !== 'Original' && (
-          <div className="flex items-center gap-3 px-4 pb-1 pt-1" data-testid="image-adjuster-intensity-row">
-            <span className="w-14 shrink-0 text-2xs font-bold text-white/45" aria-hidden="true">Intensity</span>
+          <div className="flex items-center gap-3 px-4 pb-1 pt-2" data-testid="image-adjuster-intensity-row">
             <input
               type="range" min={0} max={100} step={1} value={Math.round(intensity * 100)}
               onChange={e => setIntensity(Number(e.target.value) / 100)}
@@ -329,59 +361,79 @@ export default function ImageAdjuster({
         )}
 
         {tab === 'edit' && (
-          <div className="space-y-3 px-4 pb-2 pt-3">
-            {/* Instagram's adjust tools: each slider is the same list the
-                export bakes, so what the member sets is what ships. */}
-            <div className="space-y-2">
-              {ADJUST_TOOLS.map(tool => {
-                const value = adjust[tool.key] * tool.scale
+          <div className="pt-1">
+            {/* Instagram's tool carousel: tap a tool, then drag the slider. */}
+            <div className="flex min-w-0 gap-1 overflow-x-auto px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="tablist" aria-label="Adjustment tools">
+              {(['brightness', 'contrast', 'saturate', 'warmth', 'fade', 'zoom'] as ToolKey[]).map(key => {
+                const label = key === 'zoom' ? 'Zoom' : ADJUST_TOOLS.find(t => t.key === key)?.label ?? key
+                const selected = activeTool === key
                 return (
-                  <div key={tool.key} className="flex items-center gap-3">
-                    <span className="w-20 shrink-0 text-left text-[11px] font-bold text-white/60" aria-hidden="true">{tool.label}</span>
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setActiveTool(key)}
+                    className={`flex w-16 shrink-0 flex-col items-center gap-1.5 rounded-lg py-2 transition ${selected ? 'bg-white/10 text-white' : 'text-white/50'}`}
+                  >
+                    <ToolGlyph kind={key as any} />
+                    <span className="text-[10px] font-bold">{label}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* One slider at a time, exactly like Instagram — the hidden rows
+                stay mounted so every tool keeps a labelled control. */}
+            <div className="px-4 pb-1 pt-2">
+              {ADJUST_TOOLS.map(tool => {
+                const value = Math.round(adjust[tool.key] * tool.scale)
+                return (
+                  <div key={tool.key} className={activeTool === tool.key ? 'flex items-center gap-3' : 'hidden'}>
                     <input
-                      type="range" min={tool.min} max={tool.max} step={1} value={Math.round(value)}
+                      type="range" min={tool.min} max={tool.max} step={1} value={value}
                       onChange={e => applyAdjust(tool.key, Number(e.target.value) / tool.scale)}
                       className="min-w-0 flex-1 accent-sky-400"
                       aria-label={`${tool.label} adjustment`}
                       data-testid={`image-adjuster-${tool.key}`}
                     />
-                    <span className="w-8 shrink-0 text-right text-[10px] font-bold text-white/70" aria-hidden="true">{Math.round(value)}%</span>
+                    <span className="w-8 shrink-0 text-right text-[10px] font-bold text-white/70" aria-hidden="true">{value}%</span>
                   </div>
                 )
               })}
+              <div className={activeTool === 'zoom' ? 'flex items-center gap-3' : 'hidden'}>
+                <span className="text-2xs font-bold text-white/60" aria-hidden="true">−</span>
+                <input
+                  type="range" min={MIN_SCALE} max={MAX_SCALE} step={0.01} value={zoom}
+                  onChange={e => applyZoomSlider(Number(e.target.value))}
+                  className="flex-1 accent-sky-400"
+                  aria-label="Zoom"
+                />
+                <span className="text-2xs font-bold text-white/60" aria-hidden="true">+</span>
+              </div>
+              <p className="pt-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-white/35">{selectedToolLabel}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-2xs font-bold text-white/60" aria-hidden="true">−</span>
-              <input
-                type="range" min={MIN_SCALE} max={MAX_SCALE} step={0.01} value={zoom}
-                onChange={e => applyZoomSlider(Number(e.target.value))}
-                className="flex-1 accent-sky-400"
-                aria-label="Zoom"
-              />
-              <span className="text-2xs font-bold text-white/60" aria-hidden="true">+</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={reset} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80" aria-label="Reset image adjustments">Reset</button>
-              <button onClick={rotate} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-[11px] font-bold text-white/80" aria-label="Rotate image" data-testid="image-adjuster-rotate">Rotate</button>
+
+            <div className="flex items-center gap-2 px-3 pb-1 pt-1">
+              <button onClick={rotate} className="min-h-9 shrink-0 rounded-full bg-white/10 px-3 text-[11px] font-bold text-white/85" aria-label="Rotate image" data-testid="image-adjuster-rotate">Rotate</button>
+              <button onClick={reset} className="min-h-9 shrink-0 rounded-full bg-white/10 px-3 text-[11px] font-bold text-white/85" aria-label="Reset image adjustments">Reset</button>
               <div className="flex min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {PRESETS.map(p => (
                   <button
                     key={p.id}
                     onClick={() => { setAspect(p.id); setTransform({ x: 0, y: 0, scale: 1, rotation: 0 }); setZoom(1) }}
-                    className={`flex flex-col items-center gap-1 rounded-xl px-2.5 py-1.5 ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
+                    className={`flex shrink-0 flex-col items-center gap-1 rounded-lg px-2 py-1 ${aspect === p.id ? 'bg-white/15' : 'bg-white/5'}`}
                     aria-pressed={aspect === p.id}
+                    aria-label={p.label}
                     data-testid={`image-adjuster-aspect-${p.id}`}
                   >
                     <span
                       className={`rounded-sm border-2 ${aspect === p.id ? 'border-sky-400' : 'border-white/45'}`}
-                      style={{ width: p.ratio == null ? 22 : p.ratio >= 1 ? 22 : Math.max(12, Math.round(22 * p.ratio)), height: p.ratio == null ? 22 : Math.round(22 / Math.max(p.ratio, 0.5)) }}
+                      style={{ width: p.ratio == null ? 20 : p.ratio >= 1 ? 20 : Math.max(11, Math.round(20 * p.ratio)), height: p.ratio == null ? 20 : Math.round(20 / Math.max(p.ratio, 0.5)) }}
                     />
-                    <span className={`text-[10px] font-bold ${aspect === p.id ? 'text-white' : 'text-white/55'}`}>{p.label}</span>
                   </button>
                 ))}
               </div>
             </div>
-            <p className="text-center text-[10px] text-white/35">Drag to move · pinch to zoom · double-tap to reset</p>
           </div>
         )}
       </div>

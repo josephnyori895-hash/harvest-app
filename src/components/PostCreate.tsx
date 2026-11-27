@@ -479,7 +479,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
                       onClick={() => (file?.type.startsWith('video/') ? setVideoAdjusting(true) : setAdjusting(true))}
                       className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-2xs font-extrabold text-white backdrop-blur-sm"
                     >
-                      <Icon name="pencil" size={14} /> {file?.type.startsWith('video/') ? 'Cover & trim' : 'Edit'}
+                      <Icon name="pencil" size={14} /> {file?.type.startsWith('video/') ? 'Edit cover' : 'Edit'}
                     </button>
                     <button
                       onClick={() => fileInput.current?.click()}
