@@ -58,8 +58,22 @@ Gates, in order, before deployment:
 3. `scripts/android-upgrade-test.sh <previous> <new>` on an emulator — installs
    the previous release, installs the new one with `adb install -r`, asserts
    `firstInstallTime` did not change (data preserved), and launches the app.
-4. After deploy: versioned and permanent APK URLs must serve byte-identical
+4. `scripts/verify-bundle-parity.mjs --web workers/public --apk <apk>` — the
+   Worker site and the APK must carry byte-identical hashed assets. Each
+   artifact is valid on its own, so a stale web deploy or an APK built before
+   the last frontend build only shows up when their assets are compared.
+5. After deploy: versioned and permanent APK URLs must serve byte-identical
    files, and the published SHA-256 must match the verified artifact.
+
+### Previous-release APK fallback
+
+The upgrade and compatibility gates need the previous release's APK. The
+workflow takes it from, in order: the last successful run's Actions artifact
+(14-day retention), that release's versioned production URL, then the permanent
+`/harvest-family.apk` URL. The last fallback is the build installed on members'
+phones; it exists even when a local deploy has replaced the asset set and
+dropped versioned APKs. Without it the release fails before the deploy step,
+which is indistinguishable from any other failed gate without log access.
 
 The versionCode is `max(1000 + run number, live versionCode + 1)`, so a re-run
 or a reset run counter can never publish a downgrade. The signing key is never
@@ -76,6 +90,8 @@ conflicts with an existing package.”**
 - The published certificate is pinned in `android/release-cert-sha256.txt`.
 - Before any APK is copied into `workers/public/`, run
   `node scripts/verify-apk-cert.mjs <apk>`; it exits non-zero on a mismatch.
+- `update-apk.sh` runs that check itself after building and refuses to deploy
+  a locally signed APK. A local build still succeeds; only publication stops.
 - The release workflow runs the same check before staging, so CI fails instead
   of shipping a conflicting build. If you re-stage an APK by hand, run the check
   too.

@@ -163,6 +163,16 @@ jobs:
           echo "APK size:"
           stat -c '%s bytes' "$APK"
 
+      # The Worker serves workers/public while the APK carries cap sync's copy
+      # of dist. Both are valid artifacts on their own, so a stale or mixed
+      # deployment is invisible unless their hashed assets are compared.
+      - name: Verify APK bundles the deployed web build
+        run: |
+          set -euo pipefail
+          node scripts/verify-bundle-parity.mjs \
+            --web workers/public \
+            --apk android/app/build/outputs/apk/release/app-release.apk
+
       - name: Resolve previous verified Android release
         id: previous-release
         env:
@@ -399,6 +409,14 @@ jobs:
             fail "could not install the emulator packages"
           }
 
+          # Make acceleration its own visible fact instead of a boot that just
+          # hangs. Without KVM the emulator falls back to software emulation and
+          # a 900s boot timeout reads like a mystery; this line says why.
+          echo "KVM device:"
+          ls -l /dev/kvm || echo "(no /dev/kvm)"
+          echo "Acceleration check:"
+          "$SDK/emulator/emulator" -accel-check 2>&1 | tee /tmp/accel-check.log || true
+
           # avdmanager and emulator disagree about where AVDs live unless both
           # are told explicitly; unset, the AVD was created outside the
           # emulator's search path and it boot-looped on an unknown name.
@@ -448,6 +466,7 @@ jobs:
           sleep 30
           if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
             annotate /tmp/emulator.log emulator-log
+            annotate /tmp/accel-check.log accel-check
             fail "the emulator process exited during startup"
           fi
 
@@ -480,6 +499,8 @@ jobs:
           done
           if [ -z "$BOOTED" ]; then
             annotate /tmp/emulator.log emulator-log
+            annotate /tmp/accel-check.log accel-check
+            "$ADB" devices || true
             fail "the emulator did not finish booting within 900s"
           fi
           "$ADB" shell input keyevent 82 >/dev/null 2>&1 || true
