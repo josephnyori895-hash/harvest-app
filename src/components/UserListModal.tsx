@@ -54,7 +54,7 @@ export default function UserListModal({ type, userId, users, onBack }: { type: s
             <div className="flex gap-3 items-center min-w-0">
               <div className="w-10 h-10 rounded-full bg-accent-soft text-accent flex items-center justify-center text-sm font-bold">{String(u.username)?.[0]?.toUpperCase() || 'H'}</div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={14} />}</p>
+                <p className="text-sm font-semibold truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={17} />}</p>
                 <p className="text-[11px] text-ink-muted">@{u.username} · {u.role === 'admin' ? 'Admin' : u.verified ? 'Verified member' : 'Member'}</p>
               </div>
             </div>

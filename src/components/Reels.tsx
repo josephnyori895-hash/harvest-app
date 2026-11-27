@@ -627,12 +627,12 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             className="flex items-center gap-2 text-left pointer-events-auto"
             aria-label={`View ${cur.user}'s profile`}
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gold to-accent flex items-center justify-center overflow-hidden font-bold text-xs">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gold to-accent flex items-center justify-center overflow-hidden font-bold text-sm">
               {cur.avatar
                 ? <img src={cur.avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 : String(cur.user).charAt(0).toUpperCase()}
             </div>
-            <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={14} />}</span>
+            <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={17} />}</span>
           </button>
 
           {cur.cap && (

@@ -321,8 +321,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}>
             {s.avatar
-              ? <img src={s.avatar} alt="" className="h-9 w-9 rounded-full border border-white/20 object-cover" />
-              : <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-bold text-white">{(s.name || s.username || 'H').charAt(0).toUpperCase()}</div>}
+              ? <img src={s.avatar} alt="" className="h-11 w-11 rounded-full border border-white/20 object-cover" />
+              : <div className="w-11 h-11 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-sm font-bold text-white">{(s.name || s.username || 'H').charAt(0).toUpperCase()}</div>}
             <div className="text-left"><p className="font-bold text-white text-sm">{s.name}</p><p className="text-[11px] text-stone-300">@{s.username || 'harvest'}</p></div>
           </button>
           <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50" aria-label="Delete story"><Icon name="trash" size={18} /></button>}{canEdit && <button onClick={e => { e.stopPropagation(); setEditing(true) }} className="grid min-h-11 min-w-11 place-items-center px-2 text-white" aria-label="Edit story"><Icon name="pencil" size={18} /></button>}</div>

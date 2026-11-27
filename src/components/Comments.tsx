@@ -163,7 +163,7 @@ export default function Comments({
     const mine = c.username === me
     return (
       <div className={`flex items-start gap-2.5 ${nested ? 'ml-9' : ''}`}>
-        <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
           {c.avatar_url
             ? <img src={c.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
             : initials(c.username)}
@@ -171,7 +171,7 @@ export default function Comments({
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-5 text-ink">
             <span className="font-extrabold">{c.username}</span>
-            {c.verified && <VerifiedBadge size={13} className="ml-1" />}
+            {c.verified && <VerifiedBadge size={16} className="ml-1" />}
             <span className="ml-1.5 break-words text-ink-muted">{c.body}</span>
           </p>
           <div className="mt-1 flex items-center gap-3 text-2xs text-ink-subtle">

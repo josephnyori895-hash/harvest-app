@@ -2207,7 +2207,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
         <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>
-          {role === 'admin' ? <span className="inline-flex items-center gap-1"><Icon name="shield" size={11} /> Admin</span> : me?.verified ? <span className="inline-flex items-center gap-1">Verified <VerifiedBadge size={12} /></span> : 'Member'}
+          {role === 'admin' ? <span className="inline-flex items-center gap-1"><Icon name="shield" size={11} /> Admin</span> : me?.verified ? <span className="inline-flex items-center gap-1">Verified <VerifiedBadge size={15} /></span> : 'Member'}
         </span>
       </div>
 
@@ -2231,7 +2231,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
             <p className="line-clamp-2 max-w-[230px] text-xs italic leading-snug text-ink-muted">“{me.faith}”</p>
           ) : (
             <p className="max-w-[230px] text-xs text-ink-muted">
-              {me?.verified ? <span className="inline-flex items-center gap-1"><VerifiedBadge size={13} /> Verified member</span> : 'Add your faith testimony in Edit profile'}
+              {me?.verified ? <span className="inline-flex items-center gap-1"><VerifiedBadge size={16} /> Verified member</span> : 'Add your faith testimony in Edit profile'}
             </p>
           )}
           <button onClick={() => onEditProfile?.()} className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-sunken px-4 py-1.5 text-xs font-bold text-ink active:opacity-70"><Icon name="pencil" size={13} /> Edit profile</button>

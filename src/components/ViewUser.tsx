@@ -149,7 +149,7 @@ export default function ViewUser({ user, onBack, onEditProfile }: { user: any; o
         <button onClick={onBack} aria-label="Back" className="shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-full text-2xl hover:bg-neutral-100 active:scale-95 transition">‹</button>
         <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <h1 className="min-w-0 truncate font-bold text-lg leading-6">{displayName}</h1>
-          {profile.verified && <VerifiedBadge size={20} />}
+          {profile.verified && <VerifiedBadge size={22} />}
         </div>
         <div className="shrink-0 flex items-center justify-end gap-2">
           {!isSelf && (

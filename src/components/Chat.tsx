@@ -1485,8 +1485,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <div className={`flex ${groupStart ? 'mt-3' : 'mt-[3px]'} ${mine ? 'justify-end' : 'justify-start'}`}>
                   {!mine && (
                     showAvatar
-                      ? <div className="mr-1.5 mb-1 grid h-7 w-7 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</div>
-                      : <div className="mr-1.5 w-7 shrink-0" aria-hidden="true" />
+                      ? <div className="mr-1.5 mb-1 grid h-9 w-9 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</div>
+                      : <div className="mr-1.5 w-9 shrink-0" aria-hidden="true" />
                   )}
                   <div className="group/msg relative max-w-[min(78%,34rem)]">
                     {m.reaction && <button type="button" onClick={() => react(m, '')} className={`absolute -bottom-3 ${mine ? 'left-2' : 'right-2'} z-10 inline-flex min-h-9 min-w-9 items-center justify-center rounded-full border border-line bg-surface-raised px-2 text-xs shadow-card`} aria-label="Remove reaction">{m.reaction}</button>}

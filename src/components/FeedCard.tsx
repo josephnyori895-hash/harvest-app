@@ -334,10 +334,10 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
 
   return (
     <article ref={ref} data-post-id={String(p.id ?? p.key)} data-created-at={p.created_at || ''} className="bg-surface">
-      {/* header — 32px avatar, one bold line, one meta line, overflow */}
+      {/* header — 44px avatar, one bold line, one meta line, overflow */}
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+          <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-caption font-extrabold text-accent-strong">
             {p.avatar_url
               ? <img src={p.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               : String(p.user).split(' ').map((x: string) => x[0]).slice(0, 2).join('')}
@@ -346,7 +346,7 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
           <button onClick={() => onOpenUser?.(profile)} aria-label={`View ${p.user}'s profile`} className="block min-w-0 max-w-full text-left">
             <p className="flex min-w-0 items-center gap-1 text-caption font-extrabold leading-tight text-ink">
               <span className="truncate">{p.user}</span>
-              {p.verified ? <VerifiedBadge size={15} /> : null}
+              {p.verified ? <VerifiedBadge size={18} /> : null}
             </p>
             <p className="truncate text-2xs text-ink-subtle">{[p.loc, p.time].filter(Boolean).join(' · ')}</p>
           </button>

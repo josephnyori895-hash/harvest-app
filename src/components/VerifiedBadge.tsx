@@ -11,7 +11,7 @@ import { useId } from 'react'
 //     surfaces;
 //   * the tick is a stroked path, not a filled blob, so it stays sharp at 12px.
 export function VerifiedBadge({
-  size = 16,
+  size = 18,
   className = '',
   label = 'Verified account',
 }: {

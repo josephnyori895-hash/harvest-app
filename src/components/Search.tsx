@@ -292,7 +292,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
   const MemberRow = ({ u }: { u: any }) => (
     <button key={u.username} onClick={() => onView(u)} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-gold to-accent p-[2px]"><div className="w-full h-full rounded-full bg-white flex items-center justify-center text-sm font-bold text-accent-strong border-2 border-white shadow-sm">{String(u.username)[0].toUpperCase()}</div></div>
-      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={14} />}</p><p className="text-xs text-ink-muted truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
+      <div className="flex-1 min-w-0"><p className="text-sm font-bold flex items-center gap-1 truncate">{u.name || u.username} {u.verified && <VerifiedBadge size={17} />}</p><p className="text-xs text-ink-muted truncate">@{u.username} • {u.group_name || u.group || 'Harvest'}</p></div>
       <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">View</span>
     </button>
   )
@@ -417,7 +417,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
                     </span>
                     <span className="mt-2 flex min-w-0 items-center gap-1">
                       <span className="truncate text-sm font-bold">{u.name || u.username}</span>
-                      {u.verified && <VerifiedBadge size={13} />}
+                      {u.verified && <VerifiedBadge size={16} />}
                     </span>
                     <span className="block truncate text-2xs text-ink-subtle">@{u.username}</span>
                     <span className="mt-1.5 block truncate rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-bold text-accent-strong">

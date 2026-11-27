@@ -1196,7 +1196,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1 truncate text-sm font-extrabold">
                       <span className="truncate">{u.name || u.username}</span>
-                      {u.verified && <VerifiedBadge size={14} />}
+                      {u.verified && <VerifiedBadge size={17} />}
                     </span>
                     <span className="block truncate text-2xs text-ink-muted">@{u.username} · {u.group_name || 'No group'}{u.department_name ? ` · ${u.department_name}` : ''}</span>
                     <span className="mt-1 flex flex-wrap items-center gap-1">

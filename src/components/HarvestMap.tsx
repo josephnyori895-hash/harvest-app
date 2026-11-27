@@ -375,7 +375,7 @@ export default function HarvestMap({
                   <div className="min-w-[170px] text-xs">
                     <div className="flex items-center gap-1">
                       <b>{u.name || u.username}</b>
-                      {u.verified && <VerifiedBadge size={13} />}
+                      {u.verified && <VerifiedBadge size={16} />}
                       {u.online && <span className="h-2 w-2 rounded-full bg-green-600" aria-label="Active now" />}
                     </div>
                     <div className="text-ink-subtle">@{u.username}</div>
@@ -464,7 +464,7 @@ export default function HarvestMap({
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-bold">
                           {m.username}{m.me ? ' (you)' : ''}
-                          {m.verified && <VerifiedBadge size={13} className="ml-1" />}
+                          {m.verified && <VerifiedBadge size={16} className="ml-1" />}
                         </span>
                         <span className="block truncate text-xs text-ink-muted">
                           {m.online

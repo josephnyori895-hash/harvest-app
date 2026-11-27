@@ -130,7 +130,7 @@ function Item({ notification, others = [], pending, onPress, canFollow, followin
   return <div className={`flex min-w-0 max-w-full items-center gap-1 pl-4 pr-2 transition-colors ${unread ? 'bg-accent-soft/70' : ''}`}>
     <button type="button" onClick={press} aria-label={label} aria-busy={pending}
       className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden py-3.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent active:opacity-80">
-      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-surface-sunken">
+      <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-sunken">
         {notification?.actor?.avatar_url
           ? <img src={notification.actor.avatar_url} alt="" className="block h-full w-full object-cover" loading="lazy" />
           : <span className="flex h-full w-full items-center justify-center text-ink-muted" aria-hidden="true"><Icon name={iconFor(notification?.type)} size={18} /></span>}
