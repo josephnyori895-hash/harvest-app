@@ -509,7 +509,13 @@ jobs:
 
           # The assertion runs in this same step on purpose: the emulator
           # process and its adb server do not survive into the next step, and
-          # a fresh adb there sees no device attached.
+          # a fresh adb there sees no device attached. It also calls plain
+          # `adb`, which is only on PATH if platform-tools was already present,
+          # so point PATH at the sdkmanager-installed binary explicitly.
+          export PATH="$SDK/platform-tools:$PATH"
+          export ANDROID_SERIAL="emulator-5554"
+          "$ADB" devices || true
+
           bash scripts/android-upgrade-test.sh \
             "workers/downloads/${PREVIOUS_APK_FILENAME}" \
             "android/app/build/outputs/apk/release/app-release.apk" 2>&1 |
