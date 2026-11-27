@@ -663,7 +663,7 @@ export async function handleFeed(request, env, ctx) {
     const { rows } = await query(
       env,
       `SELECT COALESCE(u.username, v.viewer_username) AS username,
-              u.name, u.verified, v.viewed_at
+              u.name, u.verified, u.avatar_key, v.viewed_at
          FROM story_views v
          LEFT JOIN users u ON u.id = v.viewer_user_id
         WHERE v.story_id=?
@@ -672,7 +672,12 @@ export async function handleFeed(request, env, ctx) {
     )
     const total = await query(env, 'SELECT COUNT(*) AS count FROM story_views WHERE story_id=?', [sid])
     rows.forEach(r => { r.verified = !!r.verified })
-    return jsonResponse({ views: rows, count: Number(total.rows[0]?.count) || 0 })
+    // The owner checking who watched should see faces, like every other list.
+    const views = await Promise.all(rows.map(async r => ({
+      ...r,
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
+    })))
+    return jsonResponse({ views, count: Number(total.rows[0]?.count) || 0 })
   }
 
   return null

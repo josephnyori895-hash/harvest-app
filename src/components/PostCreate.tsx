@@ -259,19 +259,18 @@ export default function PostCreate({ onDone, initialType }: Props) {
   // read so the controls always point at a real slot.
   const chosenPhoto = Math.min(Math.max(selectedPhoto, 0), Math.max(albumItems.length - 1, 0))
 
-  // Reordering swaps whole slots, so every preview URL is rebuilt from its own
-  // file — moving a URL between the stage and the strip would otherwise leave
-  // one of them pointing at a revoked blob.
+  // Reordering moves whole {file, url} pairs, so each preview keeps the blob
+  // URL it was created from. Rebuilding every URL made all the thumbnails
+  // remount and decode again on each tap — a visible flicker — and left the
+  // strip's keys changing for no reason.
   const movePhoto = (from: number, to: number) => {
     const items = albumItems.slice()
     if (from < 0 || from >= items.length || to < 0 || to >= items.length) return
     const [moved] = items.splice(from, 1)
     items.splice(to, 0, moved)
-    const next = items.map(x => ({ file: x.file, url: URL.createObjectURL(x.file) }))
-    for (const x of items) URL.revokeObjectURL(x.url)
-    setFile(next[0].file)
-    setPreviewUrl(next[0].url)
-    setExtras(next.slice(1))
+    setFile(items[0].file)
+    setPreviewUrl(items[0].url)
+    setExtras(items.slice(1))
     setImgRatio(null)
     setSelectedPhoto(to)
   }

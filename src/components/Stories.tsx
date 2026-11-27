@@ -4,6 +4,7 @@ import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
 
 import ErrorMessage from './ErrorMessage'
+import { VerifiedBadge } from './VerifiedBadge'
 import { Icon, Spinner } from '../ui'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
 import { useAndroidBack } from '../lib/useAndroidBack'
@@ -391,8 +392,10 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             </div>
             {views.length ? views.map((v: any) => (
               <div key={v.username || v.name} className="flex items-center gap-2.5 text-xs py-1.5">
-                <div className="w-7 h-7 shrink-0 rounded-full bg-white/15 flex items-center justify-center text-[10px] font-bold">{(v.name || v.username || 'H').charAt(0).toUpperCase()}</div>
-                <p className="min-w-0 flex-1 truncate"><b>{v.name || v.username}</b>{v.verified ? <Icon name="check" size={11} className="ml-0.5 inline text-white" /> : ''} <span className="text-stone-400">@{v.username}</span></p>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/15 text-[10px] font-bold ring-1 ring-white/20">
+                  {v.avatar_url ? <img src={v.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : (v.name || v.username || 'H').charAt(0).toUpperCase()}
+                </div>
+                <p className="min-w-0 flex-1 truncate"><b>{v.name || v.username}</b>{v.verified ? <VerifiedBadge size={14} className="ml-1 align-[-0.2em]" /> : ''} <span className="text-stone-400">@{v.username}</span></p>
                 <span className="text-[10px] text-stone-400 shrink-0">{(() => {
                   const m = Math.floor((Date.now() - new Date(v.viewed_at).getTime()) / 60000)
                   if (!Number.isFinite(m) || m < 1) return 'now'

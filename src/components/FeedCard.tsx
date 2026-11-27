@@ -267,7 +267,10 @@ function FeedAlbum({ images }: { images: string[] }) {
         onScroll={event => {
           const el = event.currentTarget
           if (!el.clientWidth) return
-          setIndex(Math.round(el.scrollLeft / el.clientWidth))
+          // iOS rubber-banding reports offsets beyond the first/last photo;
+          // clamp so the counter can never read "5/4".
+          const at = Math.round(el.scrollLeft / el.clientWidth)
+          setIndex(Math.max(0, Math.min(images.length - 1, at)))
         }}
       >
         {images.map((src, i) => (
@@ -286,7 +289,7 @@ function FeedAlbum({ images }: { images: string[] }) {
       </span>
       <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1">
         {images.map((src, i) => (
-          <span key={`${src}-dot-${i}`} className={`h-1.5 w-1.5 rounded-full ${i === index ? 'bg-white' : 'bg-white/40'}`} />
+          <span key={`${src}-dot-${i}`} className={`h-1.5 w-1.5 rounded-full shadow-[0_0_3px_rgba(0,0,0,0.55)] ${i === index ? 'bg-white' : 'bg-white/40'}`} />
         ))}
       </div>
     </div>
