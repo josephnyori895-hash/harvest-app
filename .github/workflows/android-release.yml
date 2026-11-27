@@ -365,7 +365,7 @@ jobs:
       # readable without an interactive login, so a gate that fails inside the
       # action is a gate nobody can diagnose. Every phase below names its own
       # failure and dumps its log tail.
-      - name: Boot Android emulator
+      - name: Upgrade installation test (emulator)
         run: |
           set -euo pipefail
           annotate() { tail -c 1500 "$1" | tr '\r\n' '  ' | sed "s/^/::error::[$2] /"; }
@@ -456,11 +456,11 @@ jobs:
           fi
           adb shell input keyevent 82 >/dev/null 2>&1 || true
           df -h / || true
-          echo "Emulator booted: $(adb shell getprop ro.build.version.sdk | tr -d '\r')"
+          echo "Emulator booted: $("$ADB" shell getprop ro.build.version.sdk | tr -d '\r')"
 
-      - name: Upgrade installation test (emulator)
-        run: |
-          set -euo pipefail
+          # The assertion runs in this same step on purpose: the emulator
+          # process and its adb server do not survive into the next step, and
+          # a fresh adb there sees no device attached.
           bash scripts/android-upgrade-test.sh \
             "workers/downloads/${PREVIOUS_APK_FILENAME}" \
             "android/app/build/outputs/apk/release/app-release.apk" 2>&1 |
@@ -475,6 +475,7 @@ jobs:
       - name: Reclaim disk after the emulator run
         if: always()
         run: |
+          adb emu kill >/dev/null 2>&1 || true
           adb kill-server 2>/dev/null || true
           rm -rf "$HOME/.android/avd" "$HOME/.android/cache" 2>/dev/null || true
           df -h / || true
