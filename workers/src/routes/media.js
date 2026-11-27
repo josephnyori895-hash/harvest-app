@@ -12,6 +12,7 @@ import {
 import { hmacSign, timingSafeEqualStr } from '../lib/crypto.js'
 import { hasCap } from '../lib/capabilities.js'
 import { createSermonPublication } from './publishing.js'
+import { normaliseTagged, normaliseLocation, notifyPostTags } from '../lib/postTags.js'
 const CAP_DELETE = 'delete_media'
 
 const KEY_RE = /^originals\/(avatar|post|story|reel|track|chat|sermon_audio|sermon_video)\/\d{4}\/\d{2}\/[0-9a-f-]+\.[a-z0-9]+$/i
@@ -327,6 +328,10 @@ export async function handleMedia(request, env, ctx) {
     if (!ct.includes('application/json')) return errorResponse('content-type must be application/json', 415)
     const body = await readJson(request)
     const { key, type, caption, title, artist, speaker, scripture, description, music_track_id: musicTrackId, cover_key: coverKeyRaw, duration_secs: durationSecs } = body
+    // Instagram's two optional post extras. Both are plain metadata: a short
+    // location label and the members named on the post.
+    const location = normaliseLocation(body.location)
+    const taggedUsers = normaliseTagged(body.tagged_users)
     // Optional client-picked video poster (reels): a JPEG the client captured
     // from the chosen frame, uploaded to originals/post/… before confirm.
 
@@ -466,9 +471,14 @@ export async function handleMedia(request, env, ctx) {
         const mediaKeys = [...new Set([key, ...extra])].slice(0, 10)
         await query(
           env,
-          `INSERT INTO posts (id, user_id, caption, original_key, media_keys, music_track_id, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-          [id, userId, caption || '', key, mediaKeys.length > 1 ? JSON.stringify(mediaKeys) : null, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+          `INSERT INTO posts (id, user_id, caption, original_key, media_keys, music_track_id, verified_snapshot, group_name, constituency, faith, location, tagged_users, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, userId, caption || '', key, mediaKeys.length > 1 ? JSON.stringify(mediaKeys) : null, musicTrackId || null, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, location, taggedUsers.length ? JSON.stringify(taggedUsers) : null, now],
         )
+        // Named members hear about it once, whether they were tagged in the
+        // composer or mentioned with @ in the caption.
+        const tagNotice = notifyPostTags(env, fresh, { caption, tagged: taggedUsers, postId: id, kind: 'post' })
+        if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(tagNotice)
+        else tagNotice.catch(() => {})
       } else if (type === 'reel') {
         // Optional client-picked poster (cover frame) for reels: captured by the
         // composer as a JPEG and uploaded to originals/post/… before confirm.
@@ -491,8 +501,8 @@ export async function handleMedia(request, env, ctx) {
     const id = uuid()
     await query(
       env,
-      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, poster_key, music_track_id, status) VALUES (?,?,?,?,?,?,?,'pending')`,
-      [id, type, userId, caption || '', key, type === 'reel' ? validatedPosterKey : null, musicTrackId || null],
+      `INSERT INTO pending_queue (id, type, user_id, caption, original_key, poster_key, music_track_id, location, tagged_users, status) VALUES (?,?,?,?,?,?,?,?,?,'pending')`,
+      [id, type, userId, caption || '', key, type === 'reel' ? validatedPosterKey : null, musicTrackId || null, location, taggedUsers.length ? JSON.stringify(taggedUsers) : null],
     )
     return jsonResponse({ id, status: 'pending', at: now }, 202)
   }

@@ -879,7 +879,7 @@ function InnerApp() {
     } else if (notification.type === 'sermon' && target.id) {
       setSearchSermonId(String(target.id))
       setTab('sermons')
-    } else if (notification.type === 'like' || notification.type === 'comment' || notification.type === 'comment_reply') {
+    } else if (notification.type === 'like' || notification.type === 'comment' || notification.type === 'comment_reply' || notification.type === 'mention') {
       // Instagram grammar: the tap lands on the thing that was liked/commented.
       // Posts have no detail route in this app, so a post comment opens the
       // member who wrote it instead of a dead link.

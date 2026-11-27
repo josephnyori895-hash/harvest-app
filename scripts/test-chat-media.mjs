@@ -13,7 +13,9 @@ test('chat attachments use a dedicated chat media type (never story)', () => {
 
 test('media lib admits chat type in keys, sizes and content-types', () => {
   assert.match(libMedia, /KEY_RE = .*chat/)
-  assert.match(libMedia, /chat: \['image\/jpeg', 'image\/png', 'image\/webp', 'image\/heic'\]/)
+  // Photos and voice notes share the chat attachment allowlist.
+  assert.match(libMedia, /chat: \['image\/jpeg', 'image\/png', 'image\/webp', 'image\/heic', 'audio\/webm'/)
+  assert.match(libMedia, /'audio\/mp4', 'audio\/m4a'/, 'voice notes record mp4 on iOS')
   assert.match(libMedia, /chat: 10 \* 1024 \* 1024/)
   assert.match(libMedia, /'track', 'chat', 'sermon_audio'/)
 })

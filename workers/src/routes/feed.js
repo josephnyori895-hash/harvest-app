@@ -49,7 +49,7 @@ export async function handleFeed(request, env, ctx) {
       env,
       `SELECT p.id, p.user_id, u.username, u.name, u.avatar_key, COALESCE(u.verified, p.verified_snapshot, 0) AS verified,
               p.caption, p.music_track_id, p.thumb_key, p.blurhash, p.original_key, p.media_keys, p.likes, p.comments, p.created_at,
-              p.is_pinned, p.group_name, p.constituency, p.faith, 'post' AS kind
+              p.is_pinned, p.group_name, p.constituency, p.faith, p.location, p.tagged_users, 'post' AS kind
          FROM posts p JOIN users u ON u.id = p.user_id
         WHERE p.approved_at IS NOT NULL AND p.created_at <= ?
           AND (p.expires_at IS NULL OR p.expires_at > ?)
@@ -150,8 +150,16 @@ export async function handleFeed(request, env, ctx) {
           }
         } catch { /* single-photo post */ }
       }
+      // Instagram-style post extras: the location line under the author and the
+      // members named on the post. An old row simply carries neither.
+      let tagged = []
+      if (r.tagged_users) {
+        try { const parsed = JSON.parse(String(r.tagged_users)); if (Array.isArray(parsed)) tagged = parsed.map(String).slice(0, 20) } catch { /* legacy value */ }
+      }
       return {
       ...r,
+      location: r.location || null,
+      tagged,
       media_urls: mediaUrls,
       avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
       // Reels: thumb_url must be a POSTER image, never the video itself —

@@ -481,7 +481,10 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     user: p.name || p.username || 'Harvest member',
     username: p.username,
     verified: Boolean(p.verified),
-    loc: [p.group_name, p.constituency].filter(Boolean).join(' · ') || 'Harvest Family Church',
+    // The author's chosen location wins over the congregation label, exactly
+    // like Instagram's location line; the church label stays as the fallback.
+    loc: p.location || [p.group_name, p.constituency].filter(Boolean).join(' · ') || 'Harvest Family Church',
+    tagged: Array.isArray(p.tagged) && p.tagged.length ? p.tagged : undefined,
     time: timeAgo(p.created_at, clockNow),
     created_at: p.created_at || '',
     likes: Number(p.likes) || 0,

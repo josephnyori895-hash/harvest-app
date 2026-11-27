@@ -26,8 +26,10 @@ export const ALLOW_CT = {
   // uploads failing with no usable explanation; the original file keeps its
   // native container (this Worker stores bytes, it does not transcode).
   sermon_video: ['video/mp4', 'video/webm', 'video/x-m4v', 'video/quicktime', 'video/x-matroska', 'video/3gpp', 'video/3gpp2', 'video/avi', 'video/x-msvideo', 'video/mpeg'],
-  // Chat attachments: images only, referenced directly by chat messages rows.
-  chat: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
+  // Chat attachments: photos and voice notes, referenced directly by the
+  // messages row. Recorders hand back container types, so the common audio
+  // formats of Android/iOS WebView are all accepted.
+  chat: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/3gpp', 'video/webm'],
 }
 
 // Upload keys are restricted to originals/<type>/<yyyy>/<mm>/<uuid>.<ext>.

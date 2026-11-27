@@ -53,7 +53,7 @@ const stageRatio = (type: ContentType) => (type === 'story' || type === 'video' 
 const clampStageRatio = (r: number) => Math.min(Math.max(r, 0.8), 1.91)
 
 export default function PostCreate({ onDone, initialType }: Props) {
-  const { role, isVerified, isAdmin } = useAuth()
+  const { role, isVerified, isAdmin, username: myUsername } = useAuth()
   const user = useMemo(() => ({ role, verified: isVerified }), [role, isVerified])
   // One composer, with options derived from the user's privileges.
   // Member: story. Verified: story + community media/music. Sermons additionally
@@ -82,6 +82,17 @@ export default function PostCreate({ onDone, initialType }: Props) {
   const [scripture, setScripture] = useState('')
   const [duration, setDuration] = useState(5)
   const [musicTrack, setMusicTrack] = useState<any | null>(null)
+  // Instagram's post extras: the members named on the post and an optional
+  // location line. Both are offered only on photo posts — stories and reels
+  // have their own media-first surfaces.
+  const [tagged, setTagged] = useState<{ username: string; name?: string }[]>([])
+  const [tagOpen, setTagOpen] = useState(false)
+  const [tagQuery, setTagQuery] = useState('')
+  const [people, setPeople] = useState<any[]>([])
+  const [peopleLoading, setPeopleLoading] = useState(false)
+  const [location, setLocation] = useState('')
+  const [locationOpen, setLocationOpen] = useState(false)
+  const [locationDraft, setLocationDraft] = useState('')
   const [musicResults, setMusicResults] = useState<any[]>([])
   const [musicQuery, setMusicQuery] = useState('')
   const [musicOpen, setMusicOpen] = useState(false)
@@ -119,6 +130,26 @@ export default function PostCreate({ onDone, initialType }: Props) {
   // Album thumbnails own their object URLs; release them when the selection
   // changes or the composer closes.
   useEffect(() => () => { for (const x of extras) URL.revokeObjectURL(x.url) }, [extras])
+
+  // Members are pulled once per composer session, when the tag sheet opens.
+  useEffect(() => {
+    if (!tagOpen || people.length) return
+    const token = localStorage.getItem('harvest_token') || ''
+    setPeopleLoading(true)
+    fetch(`${API}/api/users`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setPeople(Array.isArray(d?.users) ? d.users : []))
+      .catch(() => setPeople([]))
+      .finally(() => setPeopleLoading(false))
+  }, [tagOpen, people.length])
+
+  const toggleTag = (person: any) => {
+    const username = String(person?.username || '').toLowerCase()
+    if (!username) return
+    setTagged(current => current.some(t => t.username === username)
+      ? current.filter(t => t.username !== username)
+      : current.length >= 20 ? current : [...current, { username, name: person.name }])
+  }
 
   useEffect(() => {
     if (!musicOpen) return
@@ -247,6 +278,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
     for (const x of extras) URL.revokeObjectURL(x.url)
     setExtras([])
     setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null); setShare(false)
+    setTagged([]); setTagOpen(false); setTagQuery(''); setLocation(''); setLocationOpen(false)
   }
 
   const submit = async () => {
@@ -303,6 +335,8 @@ export default function PostCreate({ onDone, initialType }: Props) {
             speaker: type === 'sermon' ? artist.trim() || undefined : undefined,
             scripture: type === 'sermon' ? scripture.trim() || undefined : undefined,
             music_track_id: ['post', 'video', 'story'].includes(type) ? musicTrack?.id : undefined,
+            location: type === 'post' ? location.trim() || undefined : undefined,
+            tagged_users: type === 'post' && tagged.length ? tagged.map(t => t.username) : undefined,
             description: type === 'sermon' ? caption.trim() : undefined,
             cover_key: coverKey,
             duration_secs: type === 'story' ? duration : undefined,
@@ -570,6 +604,49 @@ export default function PostCreate({ onDone, initialType }: Props) {
               </div>
             )}
 
+            {/* Instagram's post extras sit between the caption and Share:
+                people to tag and a location line. */}
+            {type === 'post' && (
+              <div className="mt-4 space-y-2" data-testid="create-post-extras">
+                <button
+                  type="button"
+                  onClick={() => setTagOpen(true)}
+                  className="flex min-h-11 w-full items-center gap-2.5 rounded-card border border-line bg-surface-raised px-3 text-left text-sm font-bold text-ink transition hover:bg-surface-sunken"
+                >
+                  <Icon name="users" size={18} className="text-ink-muted" />
+                  <span className="flex-1">{tagged.length ? 'Tagged people' : 'Tag people'}</span>
+                  <span className="text-2xs font-extrabold text-accent-strong">{tagged.length ? `${tagged.length}` : 'Add'}</span>
+                </button>
+                {tagged.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5" data-testid="create-tagged-list">
+                    {tagged.map(person => (
+                      <span key={person.username} className="inline-flex items-center gap-1 rounded-full bg-accent-soft py-1 pl-2.5 pr-1 text-2xs font-extrabold text-accent-strong">
+                        @{person.username}
+                        <button
+                          type="button"
+                          onClick={() => toggleTag(person)}
+                          aria-label={`Remove ${person.username}`}
+                          className="grid h-6 w-6 place-items-center rounded-full hover:bg-surface-raised"
+                        >
+                          <Icon name="close" size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setLocationDraft(location); setLocationOpen(true) }}
+                  className="flex min-h-11 w-full items-center gap-2.5 rounded-card border border-line bg-surface-raised px-3 text-left text-sm font-bold text-ink transition hover:bg-surface-sunken"
+                >
+                  <Icon name="map" size={18} className="text-ink-muted" />
+                  <span className="min-w-0 flex-1 truncate">{location || 'Add location'}</span>
+                  <span className="text-2xs font-extrabold text-accent-strong">{location ? 'Edit' : 'Add'}</span>
+                </button>
+                <p className="px-1 text-[10px] leading-relaxed text-ink-subtle">Tagged members and anyone you @mention in the caption are notified when the post goes out.</p>
+              </div>
+            )}
+
             {type === 'story' && (
               <div className="mt-4">
                 <p className="text-2xs font-extrabold uppercase tracking-[0.14em] text-ink-subtle">Story length</p>
@@ -664,6 +741,86 @@ export default function PostCreate({ onDone, initialType }: Props) {
               </button>
             )
           })}
+        </div>
+      </Dialog>
+
+      <Dialog open={tagOpen} onClose={() => setTagOpen(false)} title="Tag people" description="Search your church family and tap to tag them." size="sm">
+        <input
+          value={tagQuery}
+          onChange={e => setTagQuery(e.target.value)}
+          placeholder="Search by name or @username…"
+          className="input-base"
+          autoFocus
+        />
+        <div className="mt-3 max-h-[45vh] space-y-1 overflow-auto">
+          {peopleLoading && <p className="flex items-center gap-2 px-1 py-3 text-2xs text-ink-muted"><Spinner size={13} /> Loading the family…</p>}
+          {!peopleLoading && (() => {
+            const needle = tagQuery.trim().toLowerCase()
+            const list = people
+              .filter(p => p?.username && String(p.username).toLowerCase() !== String(myUsername || '').toLowerCase())
+              .filter(p => !needle || `${p.name || ''} ${p.username}`.toLowerCase().includes(needle))
+              .slice(0, 40)
+            if (!list.length) return <p className="px-1 py-3 text-2xs text-ink-muted">{needle ? 'No member matches that search.' : 'No members to tag yet.'}</p>
+            return list.map(p => {
+              const selected = tagged.some(t => t.username === String(p.username).toLowerCase())
+              return (
+                <button
+                  key={String(p.id || p.username)}
+                  type="button"
+                  onClick={() => toggleTag(p)}
+                  aria-pressed={selected}
+                  className={`flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition ${selected ? 'border-accent bg-accent-wash' : 'border-transparent hover:bg-surface-sunken'}`}
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-accent-soft text-2xs font-extrabold text-accent-strong">
+                    {p.avatar_url ? <img src={p.avatar_url} alt="" className="h-full w-full object-cover" /> : String(p.username).slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-2xs font-extrabold text-ink">{p.name || p.username}</span>
+                    <span className="block truncate text-2xs text-ink-muted">@{p.username}</span>
+                  </span>
+                  <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${selected ? 'bg-accent text-white' : 'border border-line text-ink-subtle'}`}>
+                    {selected ? <Icon name="check" size={14} /> : <Icon name="plus" size={14} />}
+                  </span>
+                </button>
+              )
+            })
+          })()}
+        </div>
+        <button type="button" onClick={() => setTagOpen(false)} className="mt-3 min-h-11 w-full rounded-full bg-accent text-sm font-extrabold text-white transition hover:bg-accent-strong">
+          {tagged.length ? `Done · ${tagged.length} tagged` : 'Done'}
+        </button>
+      </Dialog>
+
+      <Dialog open={locationOpen} onClose={() => setLocationOpen(false)} title="Add location" description="Where was this moment? Shown under your name on the post." size="sm">
+        <input
+          value={locationDraft}
+          onChange={e => setLocationDraft(e.target.value)}
+          maxLength={120}
+          placeholder="e.g. Harvest Family Church, Nyeri"
+          className="input-base"
+          autoFocus
+          onKeyDown={e => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            setLocation(locationDraft.trim())
+            setLocationOpen(false)
+          }}
+        />
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={() => { setLocation(''); setLocationDraft(''); setLocationOpen(false) }}
+            className="min-h-11 flex-1 rounded-full border border-line bg-surface-raised text-sm font-extrabold text-ink transition hover:bg-surface-sunken"
+          >
+            Remove
+          </button>
+          <button
+            type="button"
+            onClick={() => { setLocation(locationDraft.trim()); setLocationOpen(false) }}
+            className="min-h-11 flex-1 rounded-full bg-accent text-sm font-extrabold text-white transition hover:bg-accent-strong"
+          >
+            Save
+          </button>
         </div>
       </Dialog>
 

@@ -8,6 +8,19 @@ import { mediaUrlOrNull } from '../lib/media.js'
 import { hasCap } from '../lib/capabilities.js'
 
 const MAX_MESSAGE_LENGTH = 4000
+// Placeholder body stored for an attachment with no caption, so the inbox
+// preview reads like a real message instead of a blank row.
+function mediaPlaceholder(mediaType) {
+  if (mediaType === 'audio') return '🎤 Voice message'
+  if (mediaType === 'video') return '🎬 Video'
+  if (mediaType === 'image') return '📷'
+  return '📎 Media'
+}
+function mediaPreviewLabel(mediaType) {
+  if (mediaType === 'audio') return '🎤 Voice message'
+  if (mediaType === 'video') return '🎬 Video'
+  return '📷 Photo'
+}
 
 function cleanText(value) {
   return String(value ?? '').trim().slice(0, MAX_MESSAGE_LENGTH)
@@ -151,7 +164,7 @@ export async function handleChat(request, env, ctx) {
       const ref = await query(env, 'SELECT id, sender_username, body, media_type FROM messages WHERE id=? AND conversation_key=?', [String(body.reply_to_id).slice(0, 64), conv.key])
       if (ref.rows[0]) {
         replyToId = ref.rows[0].id
-        const previewBody = ref.rows[0].media_type && !ref.rows[0].body ? `📷 ${ref.rows[0].media_type === 'image' ? 'Photo' : 'Media'}` : String(ref.rows[0].body || '').slice(0, 80)
+        const previewBody = ref.rows[0].media_type && !ref.rows[0].body ? mediaPreviewLabel(ref.rows[0].media_type) : String(ref.rows[0].body || '').slice(0, 80)
         replyPreview = `${ref.rows[0].sender_username}: ${previewBody}`
       }
     }
@@ -161,7 +174,7 @@ export async function handleChat(request, env, ctx) {
       env,
       `INSERT INTO messages (id, kind, conversation_key, sender_id, sender_username, recipient_id, recipient_username, group_id, body, status, created_at, reply_to_id, reply_preview, media_key, media_type)
        VALUES (?,?,?,?,?,?,?,?,?, 'sent', ?,?,?,?,?)`,
-      [id, conv.kind, conv.key, fresh.id, fresh.username, conv.recipientId || null, conv.recipientUsername || null, conv.groupId || null, text || (mediaType === 'image' ? '📷' : ''), now, replyToId, replyPreview, mediaKey, mediaType],
+      [id, conv.kind, conv.key, fresh.id, fresh.username, conv.recipientId || null, conv.recipientUsername || null, conv.groupId || null, text || (mediaType ? mediaPlaceholder(mediaType) : ''), now, replyToId, replyPreview, mediaKey, mediaType],
     )
 
     // Push fan-out (FCM delivery batch): never blocks or breaks the send.
@@ -174,7 +187,7 @@ export async function handleChat(request, env, ctx) {
       else if (conv.groupSlug) recipients = (await query(env, 'SELECT dm.user_id FROM department_members dm JOIN users u ON u.id=dm.user_id JOIN departments d ON d.id=dm.department_id WHERE d.slug=? AND COALESCE(u.active,1)=1', [conv.groupSlug])).rows.map(r => r.user_id)
       recipients = recipients.filter(pid => pid && pid !== fresh.id)
       if (recipients.length) {
-        const preview = (text || (mediaType === 'image' ? '📷 Photo' : '📎 Media')).slice(0, 200)
+        const preview = (text || (mediaType ? mediaPreviewLabel(mediaType) : '📎 Media')).slice(0, 200)
         const task = sendFanOut(env, {
           recipients,
           title: `@${fresh.username}`,
@@ -205,7 +218,7 @@ export async function handleChat(request, env, ctx) {
     } catch { /* push must never break chat */ }
     const [message] = await withSenderAvatars(env, [{
       id, kind: conv.kind, conversation_key: conv.key, from: fresh.username, to: conv.recipientUsername || null,
-      text: text || (mediaType === 'image' ? '📷' : ''), status: 'sent', created_at: now, at: now.slice(11, 16),
+      text: text || (mediaType ? mediaPlaceholder(mediaType) : ''), status: 'sent', created_at: now, at: now.slice(11, 16),
       reply_to_id: replyToId, reply_preview: replyPreview, media_key: mediaKey, media_type: mediaType, reaction: null,
     }])
     return jsonResponse({ message }, 201)
@@ -228,15 +241,17 @@ export async function handleChat(request, env, ctx) {
     return jsonResponse({ ok: true, reaction: rx || null })
   }
 
-  // DELETE /api/chat/messages/:id — admin/delegated moderation soft-deletes a message.
-  // Keep the row for audit/history integrity; clients receive a neutral tombstone.
+  // DELETE /api/chat/messages/:id — Instagram's "unsend": the sender removes
+  // their own message for everyone; admins and moderate_chat holders can still
+  // remove anyone's. The row stays as a neutral tombstone for history integrity.
   if (path.startsWith('/api/chat/messages/') && path.split('/').length === 5 && method === 'DELETE') {
     const fresh = await requireMember(env, user)
     const msgId = path.split('/')[4]
     const m = await query(env, 'SELECT id, conversation_key, sender_username, deleted_at FROM messages WHERE id=?', [msgId])
     if (!m.rows[0]) return errorResponse('message not found', 404)
     if (m.rows[0].deleted_at) return jsonResponse({ ok: true, deleted: true, id: msgId })
-    if (!hasChatModeration(fresh)) return errorResponse('chat moderation is reserved for the admin or members granted moderate_chat', 403)
+    const isSender = String(m.rows[0].sender_username || '') === String(fresh.username || '')
+    if (!isSender && !hasChatModeration(fresh)) return errorResponse('you can only unsend your own messages', 403)
     if (!(await canAccessConversation(env, fresh, m.rows[0].conversation_key))) return errorResponse('forbidden', 403)
     const now = new Date().toISOString()
     await query(env, 'UPDATE messages SET deleted_at=?, deleted_by=? WHERE id=? AND deleted_at IS NULL', [now, fresh.id, msgId])

@@ -4,6 +4,7 @@ import { requireAdmin, requireMember } from '../lib/auth.js'
 import { jsonResponse, errorResponse, readJson, searchParams } from '../lib/http.js'
 import { mediaUrlOrNull, purgeStaleStagedChunks } from '../lib/media.js'
 import { recordNotificationsSafe } from '../lib/notif.js'
+import { notifyPostTags } from '../lib/postTags.js'
 
 const STALE_PENDING_MS = 24 * 60 * 60 * 1000
 const REJECTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
@@ -117,9 +118,17 @@ export async function handlePending(request, env, ctx) {
     if (item.type === 'post') {
       await query(
         env,
-        `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, thumb_key, blurhash, width, height, verified_snapshot, group_name, constituency, faith, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [item.id, item.user_id, item.caption, item.original_key, item.music_track_id || null, item.thumb_key, item.blurhash, item.width, item.height, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, now],
+        `INSERT INTO posts (id, user_id, caption, original_key, music_track_id, thumb_key, blurhash, width, height, verified_snapshot, group_name, constituency, faith, location, tagged_users, approved_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [item.id, item.user_id, item.caption, item.original_key, item.music_track_id || null, item.thumb_key, item.blurhash, item.width, item.height, snap.verified ? 1 : 0, snap.group_name, snap.constituency, snap.faith, item.location || null, item.tagged_users || null, now],
       )
+      // The tags were collected before moderation; approving the post is what
+      // publishes them, so the notification is sent here rather than at submit.
+      const author = await query(env, 'SELECT id, username, name FROM users WHERE id=?', [item.user_id])
+      let tagged = []
+      try { tagged = JSON.parse(item.tagged_users || '[]') } catch { /* legacy row */ }
+      const tagNotice = notifyPostTags(env, author.rows[0] || { id: item.user_id }, { caption: item.caption, tagged, postId: item.id, kind: 'post' })
+      if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(tagNotice)
+      else tagNotice.catch(() => {})
     } else if (item.type === 'story') {
       await query(
         env,

@@ -31,6 +31,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [saved, setSaved] = useState<Record<string, boolean>>({})
   const [reelProgress, setReelProgress] = useState(0)
   const [showMore, setShowMore] = useState(false)
+  const [capExpanded, setCapExpanded] = useState(false)
   const [generatedPoster, setGeneratedPoster] = useState('')
   const [posterFailed, setPosterFailed] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
@@ -47,6 +48,16 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   const [hasMoreReels, setHasMoreReels] = useState(false)
   const [loadingMoreReels, setLoadingMoreReels] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  // Instagram-style paging: every reel is a full-height page in one scroll
+  // container with snap-mandatory, so a swipe carries one video into the next
+  // instead of swapping an absolute layer under a fixed page.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const lastScrollAt = useRef(0)
+  // A page change can come from the user's scroll or from a button/keyboard.
+  // Only the latter should move the scroll container; otherwise the smooth
+  // scroll fights an in-progress drag and the page snaps mid-gesture.
+  const idxFromScroll = useRef(false)
+  const programmaticScroll = useRef(false)
   const useServer = useApi()
   // Double-tap to encourage: IG-style big heart pulse at the tap point.
   const [heart, setHeart] = useState<{ id: number; x: number; y: number } | null>(null)
@@ -274,6 +285,39 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     })
   }, [allVideos.length, hasMoreReels, loadMoreReels])
   const prev = useCallback(() => setIdx(i => (i - 1 + allVideos.length) % allVideos.length), [allVideos.length])
+
+  // Keep the scroll position and the active reel in step. A page change from a
+  // button, keyboard, shared link or deletion scrolls the stack; a change that
+  // came from the user's own scroll already sits at the right offset.
+  useEffect(() => {
+    if (idxFromScroll.current) { idxFromScroll.current = false; return }
+    const el = scrollRef.current
+    if (!el || !el.clientHeight) return
+    const top = idx * el.clientHeight
+    if (Math.abs(el.scrollTop - top) <= 4) return
+    programmaticScroll.current = true
+    el.scrollTo({ top, behavior: 'smooth' })
+    const timer = window.setTimeout(() => { programmaticScroll.current = false }, 700)
+    return () => window.clearTimeout(timer)
+  }, [idx, allVideos.length])
+
+  // The visible page IS the current reel: no gesture thresholds, no custom
+  // momentum — the browser's snap scroll decides, exactly like Instagram.
+  const onReelsScroll = () => {
+    const el = scrollRef.current
+    if (!el || !el.clientHeight) return
+    lastScrollAt.current = Date.now()
+    const page = Math.round(el.scrollTop / el.clientHeight)
+    // Ignore the intermediate positions of a programmatic scroll: they would
+    // flip the active reel back and forth on the way to its target.
+    if (!programmaticScroll.current && page >= 0 && page < allVideos.length && page !== idx) {
+      idxFromScroll.current = true
+      setIdx(page)
+    }
+    if (page >= allVideos.length - 2 && hasMoreReels && !loadingMoreReels) void loadMoreReels(false)
+  }
+  // A finger or wheel on the stack always wins over an animation in flight.
+  const takeOverScroll = () => { programmaticScroll.current = false }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (allVideos.length === 0) return
@@ -283,17 +327,6 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [allVideos.length, next, prev])
-  // Mobile: swipe up/down to move between reels (IG-style).
-  const touchY = useRef<number | null>(null)
-  const onTouchStart = (e: React.TouchEvent) => { touchY.current = e.touches[0]?.clientY ?? null }
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchY.current == null) return
-    const dy = (e.changedTouches[0]?.clientY ?? 0) - touchY.current
-    if (dy < -60) next(); else if (dy > 60) prev()
-    // A swipe is navigation, not a double-tap candidate.
-    if (Math.abs(dy) > 60) lastTap.current = { time: 0, x: 0, y: 0 }
-    touchY.current = null
-  }
   const currentSaved = Boolean(cur?.saved ?? saved[key])
 
   const toggleSave = async () => {
@@ -376,8 +409,11 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
   }
   // Double-tap anywhere on the video = encourage (with a pulsing heart).
   const onVideoTap = (e: React.PointerEvent) => {
+    // The pointerup that ends a scroll gesture must not be read as a tap (which
+    // would pause or un-pause the reel on every swipe).
+    if (Date.now() - lastScrollAt.current < 250) { lastTap.current = { time: 0, x: 0, y: 0 }; return }
     const target = e.target as HTMLElement
-    if (target.closest('button, [role="button"], a, input, textarea')) {
+    if (target.closest('button, [role="button"], a, input, textarea, [data-seek]')) {
       lastTap.current = { time: 0, x: 0, y: 0 }
       return
     }
@@ -404,7 +440,21 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       else { v.pause(); setPaused(true) }
     }, 280)
   }
-  useEffect(() => { setPaused(false) }, [cur?.id])
+  useEffect(() => { setPaused(false); setCapExpanded(false); setShowMore(false) }, [cur?.id])
+
+  // Scrub the reel by dragging its progress bar, the way Instagram's timeline
+  // works. The hit area is taller than the 3 px track so a finger can grab it.
+  const scrubTo = (clientX: number, bar: HTMLElement) => {
+    const rect = bar.getBoundingClientRect()
+    if (!rect.width) return
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const v = videoRef.current
+    if (v && Number.isFinite(v.duration) && v.duration > 0) {
+      v.currentTime = ratio * v.duration
+      setReelProgress(ratio * 100)
+    }
+  }
+  const scrubbing = useRef(false)
 
   const bumpComments = (delta: number) => {
     setServerReels(rs => rs.map(r => (r.id === cur.id ? { ...r, comments: Math.max((Number(r.comments) || 0) + delta, 0) } : r)))
@@ -457,8 +507,6 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
       )}
 
       <section
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
         onPointerUp={onVideoTap}
         className="relative h-full w-full overflow-hidden bg-black"
         aria-label="Reel viewer"
@@ -476,7 +524,28 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           />
         )}
 
-        {cur.video ? <>
+        <div
+          ref={scrollRef}
+          onScroll={onReelsScroll}
+          onTouchStart={takeOverScroll}
+          onPointerDown={takeOverScroll}
+          onWheel={takeOverScroll}
+          className="h-full w-full snap-y snap-mandatory overflow-y-auto overscroll-contain"
+          style={{ scrollbarWidth: 'none' }}
+          data-testid="reels-pager"
+        >
+          {allVideos.map((reel, i) => {
+            const active = i === idx
+            // Only the reel in view and its immediate neighbours mount a video
+            // element; the rest are poster pages with their true scroll height.
+            const near = Math.abs(i - idx) <= 1
+            return (
+              <div
+                key={`${reel.id ?? 'reel'}-${i}`}
+                data-reel-index={i}
+                className="relative h-full w-full snap-start snap-always overflow-hidden bg-black"
+              >
+                {active ? (cur.video ? <>
           {!videoReady && !videoError && (cur.img || generatedPoster
             ? <MediaThumbnail src={cur.img || generatedPoster} alt="" className="absolute inset-0 w-full h-full object-cover" fallbackIcon={<Icon name="reels" size={28} />} />
             : <VideoThumb src={cur.video} className="absolute inset-0 w-full h-full" />)}
@@ -512,7 +581,26 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           />
         </> : (
           <MediaThumbnail src={cur.img} alt="" className="absolute inset-0 h-full w-full object-cover" fallbackIcon={<Icon name="reels" size={28} />} />
+        )) : near && reel.video ? (
+          <video
+            src={reel.video}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            poster={reel.img || undefined}
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full bg-black object-cover"
+          />
+        ) : reel.img ? (
+          <MediaThumbnail src={reel.img} alt="" className="absolute inset-0 h-full w-full object-cover" fallbackIcon={<Icon name="reels" size={28} />} />
+        ) : (
+          <div className="absolute inset-0 bg-black" />
         )}
+              </div>
+            )
+          })}
+        </div>
 
         {paused && !videoError && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
@@ -543,7 +631,21 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={14} />}</span>
           </button>
 
-          {cur.cap && <p className="mt-1.5 max-w-[min(36rem,calc(100vw-7rem))] text-[13px] sm:text-sm font-medium leading-[1.35] line-clamp-2 drop-shadow">{cur.cap}</p>}
+          {cur.cap && (
+            <div className="mt-1.5 max-w-[min(36rem,calc(100vw-7rem))]">
+              <p className={`text-[13px] font-medium leading-[1.35] drop-shadow sm:text-sm ${capExpanded ? '' : 'line-clamp-2'}`}>{cur.cap}</p>
+              {cur.cap.length > 90 && (
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); setCapExpanded(v => !v) }}
+                  className="mt-0.5 text-2xs font-extrabold text-white/85 drop-shadow"
+                  aria-expanded={capExpanded}
+                >
+                  {capExpanded ? 'less' : 'more'}
+                </button>
+              )}
+            </div>
+          )}
 
           {cur.music && (
             <div className="mt-1.5 flex max-w-[70%] items-center gap-1.5 text-2xs text-white/80">
@@ -610,8 +712,36 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         <button onClick={(e) => { e.stopPropagation(); prev() }} className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Previous video"><Icon name="chevron-down" size={18} className="rotate-180" /></button>
         <button onClick={(e) => { e.stopPropagation(); next() }} className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/20 backdrop-blur-sm z-10 opacity-40 hover:opacity-100" aria-label="Next video"><Icon name="chevron-down" size={18} /></button>
         {cur?.video && (
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15 z-10 pointer-events-none" aria-hidden>
-            <div className="h-full bg-gold/90 transition-[width] duration-150 ease-linear" style={{ width: `${reelProgress}%` }} />
+          <div
+            data-seek
+            role="slider"
+            aria-label="Seek video"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(reelProgress)}
+            tabIndex={0}
+            onPointerDown={e => {
+              e.stopPropagation()
+              scrubbing.current = true
+              try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* not supported */ }
+              scrubTo(e.clientX, e.currentTarget)
+            }}
+            onPointerMove={e => { if (scrubbing.current) scrubTo(e.clientX, e.currentTarget) }}
+            onPointerUp={e => { scrubbing.current = false; try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already released */ } }}
+            onPointerCancel={() => { scrubbing.current = false }}
+            onKeyDown={e => {
+              const v = videoRef.current
+              if (!v || !Number.isFinite(v.duration)) return
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault()
+                v.currentTime = Math.min(v.duration, Math.max(0, v.currentTime + (e.key === 'ArrowLeft' ? -5 : 5)))
+              }
+            }}
+            className="absolute inset-x-0 bottom-0 z-20 flex h-6 touch-none items-end justify-center pb-0.5"
+          >
+            <div className="h-[3px] w-full overflow-hidden bg-white/15" aria-hidden>
+              <div className="h-full bg-gold/90 transition-[width] duration-150 ease-linear" style={{ width: `${reelProgress}%` }} />
+            </div>
           </div>
         )}
       </section>

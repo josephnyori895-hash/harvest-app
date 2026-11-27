@@ -4,7 +4,7 @@ import { useAuth } from '../state/auth'
 import { useModalFocus } from '../lib/useModalFocus'
 import { showMessageNotification, ensureNotificationChannel } from '../lib/notifications'
 import { onSocket, emitSocket, connectSocket, realtimeEnabled } from '../lib/realtime'
-import { Icon, Spinner } from '../ui'
+import { Dialog, Icon, Spinner } from '../ui'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
@@ -86,6 +86,9 @@ function trimMessagesForStorage(all: Record<string, any[]>, perConversation = 60
 // minutes into a conversation. Track age, refresh before it goes stale, and
 // recover from a failed load instead of leaving a dead <img>.
 const SIGNED_URL_TTL_MS = 8 * 60 * 1000
+// A voice note is recorded in the container MediaRecorder supports on this
+// device. Android WebView usually offers webm/opus; iOS Safari gives mp4.
+const VOICE_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
 const signedUrlCache: Record<string, { url: string; at: number }> = {}
 function cachedSignedUrl(messageId: string): string | null {
   const hit = signedUrlCache[messageId]
@@ -143,6 +146,45 @@ function ChatPhoto({ messageId, onOpen }: { messageId: string; onOpen?: (src: st
     </button>
   )
 }
+
+// Voice notes reuse the same signed-URL lifecycle as chat photos: the URL
+// expires, so it is fetched when the bubble mounts and a failed tap retries.
+function ChatAudio({ messageId }: { messageId: string }) {
+  const [src, setSrc] = useState<string | null>(() => cachedSignedUrl(messageId))
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let live = true
+    setFailed(false)
+    const fresh = cachedSignedUrl(messageId)
+    if (fresh) { setSrc(fresh); return () => { live = false } }
+    setSrc(null)
+    void fetchSignedMediaUrl(messageId, true).then(u => { if (live) setSrc(u) })
+    return () => { live = false }
+  }, [messageId])
+  const retry = () => {
+    invalidateSignedUrl(messageId)
+    setFailed(false)
+    void fetchSignedMediaUrl(messageId, true).then(u => setSrc(u))
+  }
+  if (failed) return (
+    <button type="button" onClick={retry} className="mb-1 flex h-12 w-56 items-center justify-center rounded-xl bg-surface-sunken px-3 text-xs font-semibold text-ink-muted">
+      Voice note unavailable — tap to retry
+    </button>
+  )
+  if (!src) return <div className="mb-1 h-12 w-56 animate-pulse rounded-xl bg-surface-sunken" />
+  return (
+    <audio
+      controls
+      preload="metadata"
+      src={src}
+      aria-label="Voice message"
+      onError={() => { invalidateSignedUrl(messageId); setFailed(true) }}
+      className="mb-1 h-11 w-60 max-w-full rounded-full"
+    />
+  )
+}
+
+const formatSeconds = (total: number) => `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 
 function dayLabel(iso: string) {
   const d = new Date(iso)
@@ -298,12 +340,32 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const swipeStartX = useRef<number | null>(null)
   const [swipeOffset, setSwipeOffset] = useState(0)
   const [attach, setAttach] = useState<File | null>(null)
+  // Photo or voice note — the server stores the kind so the bubble renders the
+  // right player instead of guessing from the file extension.
+  const [attachKind, setAttachKind] = useState<'image' | 'audio'>('image')
   // Mirror of `attach` for retry paths: retryMessage must be able to hand the
   // exact file back to send() even though setAttach setState is asynchronous.
   const attachRef = useRef<File | null>(null)
+  const attachKindRef = useRef<'image' | 'audio'>('image')
+  // Voice notes: MediaRecorder writes chunks while the mic is open, and the
+  // finished blob becomes a normal chat attachment — the upload path is shared.
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recordChunks = useRef<Blob[]>([])
+  const recordSecondsRef = useRef(0)
+  const recordTimer = useRef<number | null>(null)
+  const recordCancelled = useRef(false)
+  // Forward: pick another conversation and re-send the same message content.
+  const [forwardFor, setForwardFor] = useState<any | null>(null)
+  const [forwardTargets, setForwardTargets] = useState<any[]>([])
+  const [forwardBusy, setForwardBusy] = useState<string | null>(null)
+  // In-conversation search filters the loaded thread; no new endpoint needed.
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false)
+  const [threadSearch, setThreadSearch] = useState('')
   // File preserved from a failed send so Retry re-uploads the media instead
   // of silently converting an attachment into a plain-text message.
-  const failedFileRef = useRef<{ tempId: string; file: File } | null>(null)
+  const failedFileRef = useRef<{ tempId: string; file: File; kind: 'image' | 'audio' } | null>(null)
   // Instagram-style people search on the chats list.
   const [peopleQuery, setPeopleQuery] = useState('')
   const [pinnedChats, setPinnedChats] = useState<string[]>(() => {
@@ -387,6 +449,12 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     ? (team.kind === 'group' ? `group:${team.slug}` : `department:${team.slug}`)
     : active ? keyFor(currentUser, active.username) : ''
   const thread = conversationKey ? (msgs[conversationKey] || []) : []
+  // In-conversation search over what this device has loaded. Instagram searches
+  // the thread, not the whole inbox — the inbox already has its own box.
+  const searchNeedle = threadSearch.trim().toLowerCase()
+  const displayThread = searchNeedle
+    ? thread.filter(m => `${m.text || ''} ${m.from || ''}`.toLowerCase().includes(searchNeedle))
+    : thread
 
   // Typing indicator over the realtime socket. The server already validates
   // access per conversation kind (DM/group/department) and stops fanout after
@@ -499,6 +567,82 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       }
       return next
     })
+  }, [])
+
+  const clearRecorder = () => {
+    const rec = recorderRef.current
+    recorderRef.current = null
+    if (recordTimer.current) { window.clearInterval(recordTimer.current); recordTimer.current = null }
+    try { rec?.stream.getTracks().forEach(track => track.stop()) } catch { /* stream already gone */ }
+  }
+
+  const stopRecording = (cancel = false) => {
+    recordCancelled.current = cancel
+    const rec = recorderRef.current
+    if (!rec || rec.state === 'inactive') { setRecording(false); return }
+    try { rec.stop() } catch { clearRecorder(); setRecording(false) }
+  }
+
+  // Hold-to-talk is optional; this records until the member taps stop, which is
+  // the same gesture Instagram uses for a hands-free voice note.
+  const startRecording = async () => {
+    if (recording || sending || attach) return
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice notes are not supported on this device — you can still send a photo or text')
+      return
+    }
+    try {
+      setError('')
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = VOICE_MIME_TYPES.find(type => { try { return MediaRecorder.isTypeSupported(type) } catch { return false } })
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      recordChunks.current = []
+      recordCancelled.current = false
+      recordSecondsRef.current = 0
+      setRecSeconds(0)
+      rec.ondataavailable = event => { if (event.data?.size) recordChunks.current.push(event.data) }
+      rec.onstop = () => {
+        const seconds = recordSecondsRef.current
+        const cancelled = recordCancelled.current
+        clearRecorder()
+        setRecording(false)
+        setRecSeconds(0)
+        if (cancelled) return
+        const type = String(rec.mimeType || recordChunks.current[0]?.type || 'audio/webm').split(';')[0]
+        const blob = new Blob(recordChunks.current, { type })
+        recordChunks.current = []
+        if (!blob.size) { setError('Nothing was recorded — hold the mic and speak, then tap stop'); return }
+        const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'
+        const file = new File([blob], `voice-${Date.now()}.${ext}`, { type })
+        setAttach(file)
+        attachRef.current = file
+        setAttachKind('audio')
+        attachKindRef.current = 'audio'
+        setNotice(`Voice note ready · ${formatSeconds(seconds)}`)
+      }
+      recorderRef.current = rec
+      setRecording(true)
+      rec.start()
+      recordTimer.current = window.setInterval(() => {
+        recordSecondsRef.current += 1
+        setRecSeconds(recordSecondsRef.current)
+        // Cap at two minutes: a chat voice note, not a voicemail box.
+        if (recordSecondsRef.current >= 120) stopRecording(false)
+      }, 1000)
+    } catch {
+      clearRecorder()
+      setRecording(false)
+      setError('Microphone access was blocked — allow it to send a voice note')
+    }
+  }
+
+  // Leaving the conversation (or unmounting) must release the microphone; a
+  // recorder left running silently keeps the device's mic indicator on.
+  useEffect(() => () => {
+    recordCancelled.current = true
+    const rec = recorderRef.current
+    if (rec && rec.state !== 'inactive') { try { rec.stop() } catch { /* already stopped */ } }
+    if (recordTimer.current) window.clearInterval(recordTimer.current)
   }, [])
 
   const refreshInbox = useCallback(async () => {
@@ -647,23 +791,24 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     if (el) el.scrollTop = el.scrollHeight
   }, [conversationKey])
 
-  const send = async (bodyOverride?: string, fileOverride?: File | null, idempotencyKey?: string) => {
+  const send = async (bodyOverride?: string, fileOverride?: File | null, idempotencyKey?: string, kindOverride?: 'image' | 'audio') => {
     const attach = fileOverride !== undefined ? fileOverride : attachRef.current
+    const attachKind = fileOverride !== undefined ? (kindOverride || attachKindRef.current) : attachKindRef.current
     const body = (bodyOverride ?? text).trim()
     if ((!active && !team) || !currentUser || sending || (!body && !attach)) return
     if (body.length > 4000) { setError('Message is limited to 4,000 characters.'); return }
     if (!localStorage.getItem('harvest_token')) { setError('Your session has expired. Please sign in again.'); return }
 
     const tempId = `tmp_${Date.now()}`
-    if (attach) failedFileRef.current = { tempId, file: attach }
+    if (attach) failedFileRef.current = { tempId, file: attach, kind: attachKind }
     const optimistic: any = {
       id: tempId, from: currentUser, to: team ? null : active.username,
-      text: attach && !body ? '📷' : body, status: 'sending',
+      text: attach && !body ? (attachKind === 'audio' ? '🎤 Voice message' : '📷') : body, status: 'sending',
       created_at: new Date().toISOString(),
       at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       reply_to_id: replyTo?.id || null,
       reply_preview: replyTo ? `${replyTo.from === currentUser ? 'You' : replyTo.from}: ${replyTo.media_type && !replyTo.text ? '📷 Photo' : String(replyTo.text || '').slice(0, 80)}` : null,
-      media_type: attach ? 'image' : null,
+      media_type: attach ? attachKind : null,
     }
     saveMessages(c => ({ ...c, [conversationKey]: [...(c[conversationKey] || []), optimistic] }))
     // RS-122: the attachment stays on the composer until the send is actually
@@ -729,6 +874,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           failedFileRef.current = null
           // Confirmed — the attachment has done its job.
           setAttach(null); attachRef.current = null
+          setAttachKind('image'); attachKindRef.current = 'image'
           void refreshInbox()
           return
         }
@@ -738,7 +884,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
         method: 'POST',
         body: JSON.stringify({
           ...teamPayload,
-          body, media_key, media_type: media_key ? 'image' : undefined,
+          body, media_key, media_type: media_key ? attachKind : undefined,
           reply_to_id: sentReply && !String(sentReply.id).startsWith('tmp_') ? sentReply.id : undefined,
         }),
       })
@@ -748,6 +894,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       failedFileRef.current = null
       // Confirmed on the REST path too — release the chip only now.
       setAttach(null); attachRef.current = null
+      setAttachKind('image'); attachKindRef.current = 'image'
       void refreshInbox()
     } catch (e) {
       const messageError = e instanceof Error ? e.message : 'Message could not be sent'
@@ -763,9 +910,10 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     const body = String(message.text || '').trim()
     const failed = failedFileRef.current
     const file = failed && String(failed.tempId) === String(message.id) ? failed.file : null
+    const kind = failed && String(failed.tempId) === String(message.id) ? failed.kind : 'image'
     if (message.media_type && !file) {
       // Original attachment is gone (e.g. after reload) — cannot safely resend.
-      if (!body || body === '📷') {
+      if (!body || body === '📷' || body === '🎤 Voice message') {
         setError('The attachment was lost when the message failed — please attach it again.')
         saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
         return
@@ -775,7 +923,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).filter(m => String(m.id) !== String(message.id)) }))
     setReplyTo(null)
     setError('')
-    void send(body, file, `chat_${String(message.id)}`)
+    void send(body, file, `chat_${String(message.id)}`, kind)
   }
 
   const react = async (msg: any, emoji: string) => {
@@ -877,6 +1025,20 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     }
   }
 
+  const removeMessage = async (m: any, notice: string) => {
+    const id = String(m?.id || '')
+    if (!id || id.startsWith('tmp_')) return
+    setActionFor(null)
+    try {
+      await api('/api/chat/messages/' + encodeURIComponent(id), { method: 'DELETE' })
+      saveMessages(c => ({ ...c, [conversationKey]: (c[conversationKey] || []).map(x => String(x.id) === id ? { ...x, deleted_at: new Date().toISOString(), text: 'This message was deleted', media_key: null, media_type: null, reaction: null } : x) }))
+      setNotice(notice)
+      window.setTimeout(() => setNotice(''), 1800)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove message')
+    }
+  }
+
   const moderateDelete = async (m: any) => {
     const id = String(m?.id || '')
     if (!id || id.startsWith('tmp_')) return
@@ -887,6 +1049,51 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
       window.setTimeout(() => setNotice(''), 1800)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not remove message')
+    }
+  }
+
+  // Forwarding re-sends the message content into another conversation through
+  // the same POST the composer uses; the server re-authorizes the target.
+  useEffect(() => {
+    if (!forwardFor) return
+    let live = true
+    const load = async () => {
+      try {
+        const r = await api<{ conversations: any[]; team_conversations: any[] }>('/api/chat/conversations')
+        if (!live) return
+        const dm = (r.conversations || []).map(c => ({ key: `dm:${c.peer}`, kind: 'dm', peer: c.peer, name: c.peer_name || c.peer, avatar_url: c.avatar_url }))
+        const team = (r.team_conversations || []).map(t => ({ key: String(t.conversation_key), kind: t.kind, slug: t.slug, name: t.name }))
+        setForwardTargets([...team, ...dm])
+      } catch {
+        if (live) setForwardTargets([])
+      }
+    }
+    void load()
+    return () => { live = false }
+  }, [forwardFor])
+
+  const forwardMessage = async (target: any) => {
+    const m = forwardFor
+    if (!m || forwardBusy) return
+    setForwardBusy(target.key)
+    const raw = String(m.text || '')
+    const placeholder = ['📷', '🎤 Voice message', '📎 Media'].includes(raw)
+    const body = placeholder && m.media_type ? '' : raw
+    const payload = target.kind === 'dm'
+      ? { peer: target.peer }
+      : target.kind === 'group' ? { group: target.slug } : { department: target.slug }
+    try {
+      await api('/api/chat/messages', {
+        method: 'POST',
+        body: JSON.stringify({ ...payload, body, media_key: m.media_key || undefined, media_type: m.media_key ? m.media_type : undefined }),
+      })
+      setForwardFor(null)
+      setNotice(`Forwarded to ${target.name}`)
+      window.setTimeout(() => setNotice(''), 2000)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not forward this message')
+    } finally {
+      setForwardBusy(null)
     }
   }
 
@@ -1181,6 +1388,16 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               <Icon name="dots" size={20} />
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => { setThreadSearchOpen(open => !open); setThreadSearch('') }}
+            className="touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink"
+            aria-label={threadSearchOpen ? 'Close search' : 'Search in conversation'}
+            aria-pressed={threadSearchOpen}
+            title="Search in conversation"
+          >
+            <Icon name="search" size={19} />
+          </button>
           {sending ? <Spinner size={14} className="text-ink-subtle" /> : null}
           {compact && onMinimize && (
             <button type="button" onClick={onMinimize} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Minimise chat" title="Minimise"><Icon name="chevron-down" size={18} /></button>
@@ -1189,6 +1406,24 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             <button type="button" onClick={onExpand} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Open full-screen chat" title="Open full-screen chat"><Icon name="arrow-right" size={18} /></button>
           )}
         </header>
+
+        {threadSearchOpen && (
+          <div className="shrink-0 border-b border-line bg-surface-raised px-3 py-2">
+            <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl bg-surface-sunken px-3 py-2">
+              <Icon name="search" size={16} className="shrink-0 text-ink-subtle" />
+              <input
+                value={threadSearch}
+                onChange={e => setThreadSearch(e.target.value)}
+                placeholder="Search this conversation"
+                aria-label="Search this conversation"
+                autoFocus
+                className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle"
+              />
+              {searchNeedle && <span className="shrink-0 text-2xs font-bold text-ink-subtle">{displayThread.length} found</span>}
+              <button type="button" onClick={() => { setThreadSearchOpen(false); setThreadSearch('') }} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-muted" aria-label="Close search"><Icon name="close" size={14} /></button>
+            </div>
+          </div>
+        )}
 
         <div className="relative min-h-0 min-w-0 flex-1">
         <div
@@ -1210,7 +1445,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <p className="mt-2 text-sm leading-6 text-ink-muted">Share an encouragement, prayer, or simple hello. Your conversation will appear here.</p>
               </div>
             </div>
-          ) : thread.map((m: any, index: number) => {
+          ) : displayThread.length === 0 ? (
+            <div className="flex min-h-full items-center justify-center py-12 text-center text-sm text-ink-muted">
+              No messages match “{threadSearch}”.
+            </div>
+          ) : displayThread.map((m: any, index: number) => {
             const mine = m.from === currentUser
             const day = dayLabel(m.created_at || m.at)
             const showDay = day !== lastDay; lastDay = day
@@ -1224,14 +1463,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               const b = new Date(m.created_at || m.at).getTime()
               return Math.abs(b - a) < 5 * 60 * 1000
             }
-            const groupStart = showDay || !sameRun(thread[index - 1])
-            const groupEnd = !sameRun(thread[index + 1])
+            const groupStart = showDay || !sameRun(displayThread[index - 1])
+            const groupEnd = !sameRun(displayThread[index + 1])
             const showMeta = groupEnd
             const showAvatar = isTeam && !mine && groupStart
             return (
               <div key={m.id}>
                 {showDay && <div className="my-5 flex items-center gap-3"><div className="h-px flex-1 bg-line" /><span className="rounded-full border border-line bg-surface-raised px-3 py-1 text-2xs font-bold uppercase tracking-wider text-ink-subtle">{day}</span><div className="h-px flex-1 bg-line" /></div>}
-                {firstUnreadIndex === index && !unreadDividerShown && !mine && (unreadDividerShown = true) && (
+                {!searchNeedle && firstUnreadIndex === index && !unreadDividerShown && !mine && (unreadDividerShown = true) && (
                   <div className="my-4 flex items-center gap-3" aria-label="Unread messages">
                     <div className="h-px flex-1 bg-accent/30" /><span className="rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-wider text-accent-strong">New messages</span><div className="h-px flex-1 bg-accent/30" />
                   </div>
@@ -1262,7 +1501,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                         <ChatPhoto messageId={String(m.id)} onOpen={src => setPhotoViewer({ src, id: String(m.id) })} />
                       )}
                       {m.media_type === 'image' && !m.media_key && <div className="mb-1.5 grid h-28 w-40 place-items-center rounded-xl bg-surface-sunken text-ink-subtle"><Icon name="camera" size={26} /></div>}
-                      {m.text && m.text !== '📷' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+                      {m.media_type === 'audio' && m.media_key && !String(m.id).startsWith('tmp_') && (
+                        <ChatAudio messageId={String(m.id)} />
+                      )}
+                      {m.media_type === 'audio' && !m.media_key && <div className="mb-1 flex h-11 w-56 items-center gap-2 rounded-full bg-surface-sunken px-3 text-2xs text-ink-subtle"><Icon name="mic" size={16} /> Voice message</div>}
+                      {m.text && m.text !== '📷' && m.text !== '🎤 Voice message' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
                       {(showMeta || (mine && (m.status === 'sending' || m.status === 'failed'))) && (
                       <div className={`mt-1 flex items-center justify-end gap-1 text-2xs ${mine ? 'text-white/75' : 'text-ink-subtle'}`}>
                         {showMeta && <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>}
@@ -1303,9 +1546,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                         <button type="button" onClick={e => { e.stopPropagation(); setReplyTo(m); setActionFor(null) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="reply" size={16} className="text-ink-muted" /> Reply</button>
                         <button type="button" onClick={e => { e.stopPropagation(); setReactingFor(String(m.id)); setActionFor(null) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="smile" size={16} className="text-ink-muted" /> React</button>
                         <button type="button" onClick={e => { e.stopPropagation(); if (m.text) void navigator.clipboard?.writeText(String(m.text)); setNotice('Message copied'); setActionFor(null); window.setTimeout(() => setNotice(''), 1800) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="copy" size={16} className="text-ink-muted" /> Copy</button>
+                        {!m.deleted_at && (
+                          <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); setForwardFor(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="send" size={16} className="text-ink-muted" /> Forward</button>
+                        )}
+                        {mine && !m.deleted_at && (
+                          <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Unsend this message for everyone?')) void removeMessage(m, 'Message unsent') }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"><Icon name="trash" size={16} /> Unsend</button>
+                        )}
                         {m.media_type === 'image' && m.media_key && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); void shareMedia(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="share" size={16} className="text-ink-muted" /> Share photo</button>}
                         {m.media_type === 'image' && m.media_key && <button type="button" onClick={async e => { e.stopPropagation(); setActionFor(null); const url = await fetchSignedMediaUrl(String(m.id)); if (url) setPhotoViewer({ src: url, id: String(m.id) }) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-ink transition hover:bg-surface-sunken"><Icon name="download" size={16} className="text-ink-muted" /> View &amp; download</button>}
-                        {isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"><Icon name="trash" size={16} /> Remove for everyone</button>}
+                        {!mine && isTeam && canModerateChat && !m.deleted_at && <button type="button" onClick={e => { e.stopPropagation(); setActionFor(null); if (window.confirm('Remove this message for everyone?')) void moderateDelete(m) }} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger-soft"><Icon name="trash" size={16} /> Remove for everyone</button>}
                       </div>
                     )}
                   </div>
@@ -1344,9 +1593,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           )}
           {attach && (
             <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-line bg-surface-sunken px-3 py-2 text-2xs text-ink-muted">
-              <Icon name="camera" size={15} />
-              <span className="truncate">{attach.name.slice(0, 32)}</span>
-              <button type="button" onClick={() => { setAttach(null); attachRef.current = null }} className="ml-auto grid h-7 w-7 place-items-center rounded-full text-ink-muted" aria-label="Remove attachment"><Icon name="close" size={14} /></button>
+              <Icon name={attachKind === 'audio' ? 'mic' : 'camera'} size={15} />
+              <span className="truncate">{attachKind === 'audio' ? 'Voice note ready' : attach.name.slice(0, 32)}</span>
+              <button type="button" onClick={() => { setAttach(null); attachRef.current = null; setAttachKind('image'); attachKindRef.current = 'image'; setRecSeconds(0) }} className="ml-auto grid h-7 w-7 place-items-center rounded-full text-ink-muted" aria-label="Remove attachment"><Icon name="close" size={14} /></button>
             </div>
           )}
           {(() => {
@@ -1365,19 +1614,72 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           <div className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-1.5 rounded-pill border border-line bg-surface-sunken p-1.5 transition focus-within:border-accent/50 focus-within:bg-surface-raised">
             <label className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-accent" title="Send a photo">
               <Icon name="camera" size={20} />
-              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] || null; setAttach(f); attachRef.current = f }} />
+              <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] || null; setAttach(f); attachRef.current = f; setAttachKind('image'); attachKindRef.current = 'image' }} />
             </label>
-            <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-              rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
-              className="min-h-11 max-h-28 min-w-0 flex-1 resize-none overflow-y-auto rounded-3xl bg-transparent px-2 py-3 text-sm text-ink outline-none placeholder:text-ink-subtle" />
-            <button type="button" onClick={() => void send()} disabled={sending || (!text.trim() && !attach)}
+            <button
+              type="button"
+              onClick={() => (recording ? stopRecording(false) : void startRecording())}
+              disabled={sending || Boolean(attach) || (!recording && text.trim().length > 0)}
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition hover:bg-surface-sunken disabled:opacity-35 ${recording ? 'bg-danger-soft text-danger' : 'text-ink-muted hover:text-accent'}`}
+              aria-label={recording ? 'Send voice note' : 'Record a voice note'}
+              title={recording ? 'Send voice note' : 'Record a voice note'}
+            >
+              <Icon name={recording ? 'check' : 'mic'} size={20} />
+            </button>
+            {recording ? (
+              <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-3xl px-2 py-2 text-sm text-ink" role="status" aria-live="polite">
+                <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger" aria-hidden="true" />
+                <span className="shrink-0 font-extrabold tabular-nums">{formatSeconds(recSeconds)}</span>
+                <span className="truncate text-2xs text-ink-muted">Recording…</span>
+                <button type="button" onClick={() => stopRecording(true)} className="ml-auto shrink-0 rounded-full px-3 py-1.5 text-2xs font-extrabold text-danger transition hover:bg-danger-soft">Cancel</button>
+              </div>
+            ) : (
+              <textarea aria-label="Message" value={text} maxLength={4000} onChange={e => { setText(e.target.value); sendTyping(e.target.value.trim().length > 0) }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
+                rows={1} placeholder={isTeam ? 'Message your team…' : 'Message…'}
+                className="min-h-11 max-h-28 min-w-0 flex-1 resize-none overflow-y-auto rounded-3xl bg-transparent px-2 py-3 text-sm text-ink outline-none placeholder:text-ink-subtle" />
+            )}
+            <button type="button" onClick={() => void send()} disabled={sending || recording || (!text.trim() && !attach)}
               className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-white shadow-card transition hover:bg-accent-strong active:scale-95 disabled:opacity-35 disabled:shadow-none" aria-label="Send">
               {sending ? <Spinner size={16} /> : <Icon name="send" size={18} strokeWidth={2} />}
             </button>
           </div>
         </div>
         </section>
+
+        <Dialog
+          open={Boolean(forwardFor)}
+          onClose={() => setForwardFor(null)}
+          title="Forward to"
+          description={forwardFor?.media_type === 'audio' ? 'Send this voice note to another conversation.' : forwardFor?.media_type === 'image' ? 'Send this photo to another conversation.' : 'Send this message to another conversation.'}
+          size="sm"
+        >
+          <div className="max-h-[55vh] space-y-1 overflow-auto">
+            {forwardTargets.length === 0 && (
+              <p className="px-1 py-3 text-2xs text-ink-muted">No other conversations yet — start a chat from the inbox first.</p>
+            )}
+            {forwardTargets.map(target => (
+              <button
+                key={target.key}
+                type="button"
+                onClick={() => void forwardMessage(target)}
+                disabled={Boolean(forwardBusy)}
+                className="flex min-h-12 w-full items-center gap-2.5 rounded-xl border border-transparent p-2 text-left transition hover:border-line hover:bg-surface-sunken disabled:opacity-50"
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-accent-soft text-2xs font-extrabold text-accent-strong">
+                  {target.avatar_url
+                    ? <img src={target.avatar_url} alt="" className="h-full w-full object-cover" />
+                    : target.name?.[0]?.toUpperCase() || '?'}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-2xs font-extrabold text-ink">{target.name}</span>
+                  <span className="block truncate text-2xs text-ink-muted">{target.kind === 'dm' ? 'Direct message' : target.kind === 'group' ? 'Group chat' : 'Department chat'}</span>
+                </span>
+                {forwardBusy === target.key ? <Spinner size={14} /> : <Icon name="send" size={15} className="shrink-0 text-ink-subtle" />}
+              </button>
+            ))}
+          </div>
+        </Dialog>
 
         {photoViewer && (
           <div

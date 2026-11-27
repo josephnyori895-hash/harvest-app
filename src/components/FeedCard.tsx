@@ -24,6 +24,8 @@ export type FeedCardPost = {
   media?: string[]
   video?: string
   caption?: string
+  /** Usernames named on the post (Instagram-style tags). */
+  tagged?: string[]
   kind?: string
   created_at?: string
   likes?: number
@@ -419,10 +421,21 @@ export default function FeedCard({ p, liked, displayLikes, menuOpen, onToggleMen
         {caption && (
           <p className="mt-1 text-caption leading-5 text-ink">
             <strong className="font-extrabold">{p.user}</strong>{' '}
-            {caption.split(/(\s+)/).map((w, i) => /#([\p{L}\p{N}_]+)/u.test(w) ? <span key={i} className="text-accent">{w}</span> : <span key={i}>{w}</span>)}
+            {caption.split(/(\s+)/).map((w, i) => /[#@]([\p{L}\p{N}_.]+)/u.test(w) ? <span key={i} className="text-accent">{w}</span> : <span key={i}>{w}</span>)}
             {longCaption && (
               <> <button type="button" onClick={() => setExpanded(x => !x)} className="text-ink-subtle" aria-label={expanded ? 'Show less' : 'Show more'}>{expanded ? 'less' : 'more'}</button></>
             )}
+          </p>
+        )}
+        {p.tagged && p.tagged.length > 0 && (
+          <p className="mt-1 text-caption leading-5 text-ink-muted" data-testid="feed-tagged">
+            with{' '}
+            {p.tagged.map((user, i) => (
+              <span key={user}>
+                <span className="font-bold text-accent-strong">@{user}</span>
+                {i < p.tagged!.length - 2 ? ', ' : i === p.tagged!.length - 2 ? ' and ' : ''}
+              </span>
+            ))}
           </p>
         )}
         {Number(p.comments) > 0 && (

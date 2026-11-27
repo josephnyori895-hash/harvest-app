@@ -30,6 +30,9 @@ export type UploadTask = {
   scripture?: string
   description?: string
   music_track_id?: string
+  /** Instagram-style post extras: a location label and the members named. */
+  location?: string
+  tagged_users?: string[]
   cover?: File | Blob
   /** Reels only: pre-uploaded poster key (client-picked cover frame). */
   cover_key?: string
@@ -555,6 +558,8 @@ async function performUpload(task: UploadTask, onPct: (p: number) => void) {
       scripture: task.scripture,
       description: task.description || task.caption,
       music_track_id: task.music_track_id,
+      location: task.location,
+      tagged_users: task.tagged_users,
       // Tracks upload their cover in this lifecycle; reels may already have
       // a pre-uploaded poster key. Prefer the newly uploaded cover when present.
       cover_key: coverKey ?? task.cover_key,
