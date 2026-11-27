@@ -27,6 +27,9 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
   const [replySent, setReplySent] = useState(false)
+  // Instagram's story bar: quick reactions and canned replies under the story.
+  const [showReactions, setShowReactions] = useState(false)
+  const showReactionsRef = useRef(false)
   const [views, setViews] = useState<any[]>([])
   const [viewCount, setViewCount] = useState(0)
   const [showViews, setShowViews] = useState(false)
@@ -68,7 +71,12 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
     } catch(e:any){ setViewerError(e?.message||'Could not delete reply') }
   }
   const loadReplies = async () => { try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{headers:t?{Authorization:'Bearer '+t}:undefined}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||'Could not load replies'); setReplies(Array.isArray(d.replies)?d.replies:[])} catch(e:any){ setViewerError(e?.message||'Could not load replies')} }
-  const sendReply = async () => { if(!reply.trim()||replyBusy||!s?.username)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json', ...(t?{Authorization:'Bearer '+t}:{}),},body:JSON.stringify({body:reply.trim()})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||'Could not send reply'); setReply(''); setReplySent(true); setTimeout(()=>setReplySent(false),1500) } catch(e:any){ setViewerError(e?.message||'Could not send reply') } finally { setReplyBusy(false) } }
+  // One send path for both a typed reply and a tapped emoji reaction — the
+  // server records a reaction as an emoji reply addressed to the author.
+  const sendText = async (value: string, reaction = false) => { const text = value.trim(); if(!text||replyBusy||!s?.username)return; setReplyBusy(true); try { const API=(import.meta.env.VITE_API_URL||'').replace(/\/$/, ''); const t=localStorage.getItem('harvest_token')||''; const r=await fetch(API+'/api/stories/'+encodeURIComponent(String(s.id))+'/replies',{method:'POST',headers:{'Content-Type':'application/json', ...(t?{Authorization:'Bearer '+t}:{}),},body:JSON.stringify(reaction ? {body:text, reaction:true} : {body:text})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error||(reaction?'Could not send reaction':'Could not send reply')); if(!reaction) setReply(''); setShowReactions(false); setIsPaused(false); setReplySent(true); setTimeout(()=>setReplySent(false),1500) } catch(e:any){ setViewerError(e?.message||'Could not send reply') } finally { setReplyBusy(false) } }
+  const sendReply = () => void sendText(reply)
+  const sendReaction = (emoji: string) => void sendText(emoji, true)
+  useEffect(() => { showReactionsRef.current = showReactions }, [showReactions])
 
   useEffect(() => {
     const vv = window.visualViewport
@@ -228,6 +236,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   // replies toggle it stayed open and followed them into other people's stories.
   useEffect(() => {
     if (!s?.id) return
+    // The reaction bar must not follow the member into the next account.
+    setShowReactions(false)
     setReplies([])
     setReply('')
     setShowReplies(false)
@@ -254,15 +264,29 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const heldRef = useRef(false)
   const lastHeldAtRef = useRef(0)
+  const heldReactionsRef = useRef(false)
   const onHoldStart = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement | null)?.closest('button, a, input, label, textarea')) return
     heldRef.current = false
+    heldReactionsRef.current = false
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current)
-    holdTimerRef.current = setTimeout(() => { heldRef.current = true; setIsPaused(true) }, 300)
+    // Instagram: hold pauses the story. Here the same hold also raises the
+    // reaction bar, so a heart is one gesture away instead of a scroll.
+    holdTimerRef.current = setTimeout(() => {
+      heldRef.current = true
+      setIsPaused(true)
+      if (!isStoryAuthor) { heldReactionsRef.current = true; setShowReactions(true) }
+    }, 300)
   }
   const onHoldEnd = () => {
     if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
-    if (heldRef.current) { heldRef.current = false; setIsPaused(false); lastHeldAtRef.current = Date.now() }
+    if (heldRef.current) {
+      heldRef.current = false
+      // While the reaction bar is up the story stays frozen behind it.
+      if (!heldReactionsRef.current) setIsPaused(false)
+      heldReactionsRef.current = false
+      lastHeldAtRef.current = Date.now()
+    }
   }
   if (!s) return null
   const isLastUserStory = idx === allStories.length - 1
@@ -386,6 +410,45 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             return <div key={r.id} className="flex items-start gap-2 text-xs py-1"><p className="min-w-0 flex-1"><b>{r.name||r.username}</b> {r.body}</p>{canRemove && <button type="button" onClick={() => void deleteReply(String(r.id))} className="text-stone-400">×</button>}</div>
           }) : <p className="text-xs text-stone-400">No replies yet.</p>}
         </div>}
+        {/* Quick reactions — one tap sends the emoji straight to the author,
+            exactly like Instagram's heart on the story reply bar. */}
+        {!isStoryAuthor && showReactions && (
+          <div onClick={e => e.stopPropagation()} className="pointer-events-auto flex items-center justify-between gap-1 rounded-full bg-black/70 px-2 py-1.5 backdrop-blur-sm" role="group" aria-label="React to this story">
+            {['❤️', '🙌', '🔥', '😂', '😮', '😢'].map(emoji => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => void sendReaction(emoji)}
+                disabled={replyBusy}
+                aria-label={`React with ${emoji}`}
+                className="grid h-10 w-10 place-items-center rounded-full text-xl transition active:scale-90 disabled:opacity-50"
+              >
+                {emoji}
+              </button>
+            ))}
+            <button type="button" onClick={() => { setShowReactions(false); setIsPaused(false) }} className="grid h-10 w-10 place-items-center rounded-full text-white/70" aria-label="Close reactions">
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Quick replies — canned lines that send on tap, hidden while typing. */}
+        {!isStoryAuthor && !showReactions && !reply.trim() && (
+          <div onClick={e => e.stopPropagation()} className="pointer-events-auto flex min-w-0 gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {['Amen 🙏', 'Beautiful 😍', 'Praying for you', 'Love this ❤️'].map(line => (
+              <button
+                key={line}
+                type="button"
+                onClick={() => void sendText(line)}
+                disabled={replyBusy}
+                className="min-h-9 shrink-0 rounded-full border border-white/25 bg-black/40 px-3 text-[11px] font-bold text-white/90 backdrop-blur-sm disabled:opacity-50"
+              >
+                {line}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div onClick={e=>e.stopPropagation()} className="pointer-events-auto flex gap-2">
           {isStoryAuthor ? (<>
             <button onClick={() => { setShowViews(v => !v); setShowReplies(false); void loadViews() }} className="flex-1 min-h-11 flex items-center justify-between gap-1 px-4 py-2 rounded-full bg-white/10 text-white">
@@ -394,7 +457,16 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             </button>
             <button onClick={()=>{setShowReplies(v=>!v); setShowViews(false); if(!showReplies)void loadReplies()}} className="min-w-11 min-h-11 rounded-full bg-white/20 text-white px-3 py-2 text-xs" aria-label="Open replies"><Icon name="chat" size={17} /></button>
           </>) : (<>
-            <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
+            <button
+              type="button"
+              onClick={() => { setShowReactions(v => !v); if (!showReactions) setIsPaused(true); else setIsPaused(false) }}
+              aria-pressed={showReactions}
+              aria-label="React to this story"
+              className={`grid min-h-11 min-w-11 shrink-0 place-items-center rounded-full ${showReactions ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
+            >
+              <Icon name="heart" size={18} className={showReactions ? 'fill-current' : ''} />
+            </button>
+            <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="min-w-0 flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
             <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-accent text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
           </>) }
         </div>

@@ -34,7 +34,7 @@ export async function handleSocial(request, env, ctx) {
     const limit = Math.min(Math.max(parseInt(qp.limit || '50', 10) || 50, 1), 100)
     const offset = Math.max(parseInt(qp.offset || '0', 10) || 0, 0)
     const { rows } = await query(env,
-      `SELECT r.*, u.username, u.name, u.verified, rs.created_at AS saved_at
+      `SELECT r.*, u.username, u.name, u.verified, u.avatar_key, rs.created_at AS saved_at
          FROM reel_saves rs
          JOIN reels r ON r.id=rs.reel_id
          JOIN users u ON u.id=r.user_id
@@ -43,6 +43,7 @@ export async function handleSocial(request, env, ctx) {
       [fresh.id, limit, offset])
     const out = await Promise.all(rows.map(async r => ({
       id:r.id, username:r.username, name:r.name, verified:!!r.verified,
+      avatar_url: r.avatar_key ? await mediaUrlOrNull(env, r.avatar_key, 900) : null,
       caption:r.caption || '', views:r.views || 0, likes:r.likes || 0, comments:r.comments || 0,
       poster_url: r.poster_key ? await mediaUrlOrNull(env,r.poster_key,900) : null,
       hls_url: r.hls_master_key ? await mediaUrlOrNull(env,r.hls_master_key,900) : null,
@@ -122,7 +123,11 @@ export async function handleSocial(request, env, ctx) {
   }
   if (reply && request.method === 'POST') {
     const fresh = await requireMember(env,user)
-    const sid=reply[1], body=await readJson(request), text=clean(body.body,1000)
+    const sid=reply[1], body=await readJson(request)
+    // Instagram story reactions are just emoji sent to the author's inbox; the
+    // flag only changes how the notification reads, so no schema change.
+    const isReaction = body?.reaction === true
+    const text=clean(body.body,isReaction ? 32 : 1000)
     if(!text) return errorResponse('reply required',400)
     const story=await query(env,'SELECT id, user_id FROM stories WHERE id=? AND expires_at>?',[sid,new Date().toISOString()])
     if(!story.rows[0]) return errorResponse('story not found',404)
@@ -136,7 +141,7 @@ export async function handleSocial(request, env, ctx) {
         type: 'story_reply',
         category: 'all',
         title: fresh.name || '@' + fresh.username,
-        body: `Replied to your story: ${text.slice(0, 160)}`,
+        body: isReaction ? `Reacted ${text} to your story` : `Replied to your story: ${text.slice(0, 160)}`,
         preview: 'Story reply',
         target: { type: 'story', id: sid, actor_user_id: fresh.id },
       }])

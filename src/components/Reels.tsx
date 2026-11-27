@@ -10,7 +10,7 @@ import VideoThumb from './VideoThumb'
 import ErrorMessage from './ErrorMessage'
 import { Icon, Spinner } from '../ui'
 import { VerifiedBadge } from './VerifiedBadge'
-type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; saved?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; music?: { title: string; artist: string; cover: string } | null }
+type Reel = { id?: string | number; user: string; verified?: boolean; liked?: boolean; saved?: boolean; likes?: number; cap: string; views?: string | number; comments?: number; img?: string; video?: string; avatar?: string; music?: { title: string; artist: string; cover: string } | null }
 
 // No demo videos: this screen shows only real approved reels from the server.
 
@@ -78,6 +78,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           .map((r: any) => ({
             id: r.id,
             user: r.username || r.user,
+            avatar: r.avatar_url || undefined,
             verified: Boolean(r.verified),
             cap: r.caption || r.cap || '',
             views: r.views || 0,
@@ -146,6 +147,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
         .map((item: any) => ({
           id: item.id,
           user: item.username || item.user,
+          avatar: item.avatar_url || undefined,
           verified: Boolean(item.verified),
           cap: item.caption || item.cap || '',
           views: item.views || 0,
@@ -625,8 +627,10 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
             className="flex items-center gap-2 text-left pointer-events-auto"
             aria-label={`View ${cur.user}'s profile`}
           >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gold to-accent flex items-center justify-center font-bold text-xs">
-              {String(cur.user).charAt(0).toUpperCase()}
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gold to-accent flex items-center justify-center overflow-hidden font-bold text-xs">
+              {cur.avatar
+                ? <img src={cur.avatar} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                : String(cur.user).charAt(0).toUpperCase()}
             </div>
             <span className="font-bold text-sm drop-shadow">{cur.user} {cur.verified && <VerifiedBadge size={14} />}</span>
           </button>

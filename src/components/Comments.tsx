@@ -11,7 +11,7 @@ const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 type Comment = {
   id: string; username: string; body: string; created_at: string; verified?: boolean
-  likes?: number; liked?: boolean; parent_id?: string | null
+  likes?: number; liked?: boolean; parent_id?: string | null; avatar_url?: string | null
 }
 
 // Comments sheet (post_comments): avatar + "username body" + quiet meta line,
@@ -163,8 +163,10 @@ export default function Comments({
     const mine = c.username === me
     return (
       <div className={`flex items-start gap-2.5 ${nested ? 'ml-9' : ''}`}>
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
-          {initials(c.username)}
+        <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+          {c.avatar_url
+            ? <img src={c.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+            : initials(c.username)}
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-5 text-ink">

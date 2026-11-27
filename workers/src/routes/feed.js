@@ -319,12 +319,13 @@ export async function handleFeed(request, env, ctx) {
     const offset = parseInt(qp.offset || '0', 10)
     const { rows } = await query(
       env,
-      `SELECT r.*, u.username, u.verified FROM reels r JOIN users u ON u.id = r.user_id
+      `SELECT r.*, u.username, u.verified, u.avatar_key FROM reels r JOIN users u ON u.id = r.user_id
         WHERE r.approved_at IS NOT NULL ORDER BY r.created_at DESC LIMIT ? OFFSET ?`,
       [limit, offset],
     )
     const out = await Promise.all(rows.map(async r => ({
       ...bool(r, 'verified', 'is_pinned'),
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 900),
       // Never expose the poster image as a video URL. If transcoding has
       // not produced an HLS key yet, the client should show the poster/fallback
       // instead of trying to decode an image as video.
@@ -452,13 +453,19 @@ export async function handleFeed(request, env, ctx) {
       `SELECT c.id, c.username, c.body, c.created_at, c.parent_id,
               (SELECT COUNT(*) FROM comment_likes l WHERE l.comment_id = c.id) AS likes,
               EXISTS(SELECT 1 FROM comment_likes l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked,
-              u.verified
+              u.verified, u.avatar_key
          FROM post_comments c LEFT JOIN users u ON u.username = c.username
         WHERE c.scope=? AND c.post_id=? ORDER BY c.created_at DESC LIMIT 300`,
       [fresh.id, scope, id],
     )
-    rows.forEach(r => { r.verified = !!r.verified; r.likes = Number(r.likes) || 0; r.liked = !!r.liked })
-    return jsonResponse({ comments: rows })
+    const withFaces = await Promise.all(rows.map(async r => ({
+      ...r,
+      verified: !!r.verified,
+      likes: Number(r.likes) || 0,
+      liked: !!r.liked,
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 900),
+    })))
+    return jsonResponse({ comments: withFaces })
   }
 
   // POST /api/comments { scope, id, body, parent_id? } — replies nest one level.
@@ -502,7 +509,14 @@ export async function handleFeed(request, env, ctx) {
         target: { type: scope, id: targetId, comment_id: cid, actor_user_id: fresh.id },
       }])
     }
-    return jsonResponse({ comment: { id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(), verified: !!fresh.verified, likes: 0, liked: false, parent_id: parentId } }, 201)
+    const myFace = await query(env, 'SELECT avatar_key FROM users WHERE id=?', [fresh.id])
+    return jsonResponse({
+      comment: {
+        id: cid, username: fresh.username, body: text, created_at: new Date().toISOString(),
+        verified: !!fresh.verified, likes: 0, liked: false, parent_id: parentId,
+        avatar_url: await mediaUrlOrNull(env, myFace.rows[0]?.avatar_key, 900),
+      },
+    }, 201)
   }
 
   // POST /api/comments/:id/like — toggle; returns the fresh state.

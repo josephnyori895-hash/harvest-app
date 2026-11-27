@@ -445,20 +445,27 @@ export async function handleUsers(request, env, ctx, params) {
     const fresh = await requireMember(env, user)
     const { rows: members } = await query(
       env,
-      `SELECT username, name, group_name, verified, created_at FROM users WHERE active=1 ORDER BY created_at DESC LIMIT 20`,
+      `SELECT username, name, group_name, verified, avatar_key, created_at FROM users WHERE active=1 ORDER BY created_at DESC LIMIT 20`,
     )
     const { rows: fIn } = await query(
       env,
-      `SELECT u.username, u.name, f.created_at FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=? ORDER BY f.created_at DESC LIMIT 20`,
+      `SELECT u.username, u.name, u.avatar_key, f.created_at FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=? ORDER BY f.created_at DESC LIMIT 20`,
       [fresh.id],
     )
     const { rows: fOut } = await query(
       env,
-      `SELECT u.username, u.name, f.created_at FROM follows f JOIN users u ON u.id=f.followee_id WHERE f.follower_id=? ORDER BY f.created_at DESC LIMIT 20`,
+      `SELECT u.username, u.name, u.avatar_key, f.created_at FROM follows f JOIN users u ON u.id=f.followee_id WHERE f.follower_id=? ORDER BY f.created_at DESC LIMIT 20`,
       [fresh.id],
     )
-    members.forEach(m => bool(m, 'verified'))
-    return jsonResponse({ new_members: members, follows_in: fIn, follows_out: fOut })
+    // The family inbox draws faces, not icons: hand each row its avatar URL so
+    // the activity rows match the profile the member set.
+    const withFaces = async rows => Promise.all(rows.map(async r => ({
+      ...r,
+      verified: r.verified === undefined ? undefined : !!r.verified,
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
+    })))
+    const [newMembers, followsIn, followsOut] = await Promise.all([withFaces(members), withFaces(fIn), withFaces(fOut)])
+    return jsonResponse({ new_members: newMembers, follows_in: followsIn, follows_out: followsOut })
   }
 
   // PATCH /api/me — self-service profile editing.

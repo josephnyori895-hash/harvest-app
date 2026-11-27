@@ -137,7 +137,7 @@ export async function fetchFamilyActivity(): Promise<any[]> {
       title: `${m.name || m.username} joined the family`,
       body: `Joined ${m.group_name || 'Harvest Family Church'}`,
       created_at: m.created_at,
-      actor: { username: m.username, name: m.name, verified: !!m.verified },
+      actor: { username: m.username, name: m.name, verified: !!m.verified, avatar_url: m.avatar_url || undefined },
       read_at: null,
     })
   }
@@ -149,7 +149,7 @@ export async function fetchFamilyActivity(): Promise<any[]> {
       title: `${f.name || f.username} started following you`,
       body: '',
       created_at: f.created_at,
-      actor: { username: f.username, name: f.name, verified: false },
+      actor: { username: f.username, name: f.name, verified: false, avatar_url: f.avatar_url || undefined },
       read_at: null,
     })
   }
@@ -161,7 +161,7 @@ export async function fetchFamilyActivity(): Promise<any[]> {
       title: `You followed ${f.name || f.username}`,
       body: '',
       created_at: f.created_at,
-      actor: { username: f.username, name: f.name, verified: false },
+      actor: { username: f.username, name: f.name, verified: false, avatar_url: f.avatar_url || undefined },
       read_at: null,
     })
   }

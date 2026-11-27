@@ -105,6 +105,10 @@ export default function PostCreate({ onDone, initialType }: Props) {
   // Which album photo is open in the editor — Instagram lets every frame of a
   // carousel be cropped and filtered on its own, not just the first.
   const [editingExtra, setEditingExtra] = useState<number | null>(null)
+  // Carousel order, cover first. Instagram lets you shuffle the selected photos
+  // before sharing; on a phone the move buttons below the strip are the
+  // reliable way to do it without fighting the horizontal scroll.
+  const [selectedPhoto, setSelectedPhoto] = useState(0)
   // Natural ratio of the previewed image, so the canvas matches the exact
   // geometry the feed will render — no black/white letterbox around a photo.
   const [imgRatio, setImgRatio] = useState<number | null>(null)
@@ -223,6 +227,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
       setNotice('')
       for (const x of extras) URL.revokeObjectURL(x.url)
       setExtras(images.slice(1).map(f => ({ file: f, url: URL.createObjectURL(f) })))
+      setSelectedPhoto(0)
       takeFile(images[0])
       return
     }
@@ -243,6 +248,32 @@ export default function PostCreate({ onDone, initialType }: Props) {
     const tooBig = next.map(f => uploadTooLarge('post', f.size)).find(Boolean)
     if (tooBig) { setNotice(tooBig); return }
     setExtras(prev => [...prev, ...next.map(f => ({ file: f, url: URL.createObjectURL(f) }))])
+  }
+
+  // The stage photo is the cover; extras follow in the member's order.
+  const albumItems = useMemo(
+    () => [...(file && previewUrl ? [{ file, url: previewUrl }] : []), ...extras],
+    [file, previewUrl, extras],
+  )
+  // Removing a photo can leave the selection past the end; clamp it for every
+  // read so the controls always point at a real slot.
+  const chosenPhoto = Math.min(Math.max(selectedPhoto, 0), Math.max(albumItems.length - 1, 0))
+
+  // Reordering swaps whole slots, so every preview URL is rebuilt from its own
+  // file — moving a URL between the stage and the strip would otherwise leave
+  // one of them pointing at a revoked blob.
+  const movePhoto = (from: number, to: number) => {
+    const items = albumItems.slice()
+    if (from < 0 || from >= items.length || to < 0 || to >= items.length) return
+    const [moved] = items.splice(from, 1)
+    items.splice(to, 0, moved)
+    const next = items.map(x => ({ file: x.file, url: URL.createObjectURL(x.file) }))
+    for (const x of items) URL.revokeObjectURL(x.url)
+    setFile(next[0].file)
+    setPreviewUrl(next[0].url)
+    setExtras(next.slice(1))
+    setImgRatio(null)
+    setSelectedPhoto(to)
   }
 
   const removeExtra = (index: number) => {
@@ -289,6 +320,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
 
   const resetFor = (next: ContentType) => {
     setType(next); setFile(null); setPreviewUrl(null); setMusicTrack(null)
+    setSelectedPhoto(0)
     for (const x of extras) URL.revokeObjectURL(x.url)
     setExtras([])
     setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null); setShare(false)
@@ -537,39 +569,85 @@ export default function PostCreate({ onDone, initialType }: Props) {
         )}
 
         {isMediaKind && type === 'post' && extras.length > 0 && !share && (
-          <div className="flex items-center gap-2 overflow-x-auto px-3 pt-2" data-testid="create-album">
-            {extras.map((x, i) => (
-              <div key={x.url} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-line">
-                <button
-                  type="button"
-                  onClick={() => setEditingExtra(i)}
-                  aria-label={`Edit photo ${i + 2}`}
-                  data-testid={`album-edit-${i}`}
-                  className="group absolute inset-0 block"
-                >
-                  <img src={x.url} alt="" className="h-full w-full object-cover" />
-                  <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-ink/55 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.08em] text-white">
-                    <Icon name="pencil" size={9} /> Edit
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeExtra(i)}
-                  aria-label={`Remove photo ${i + 2}`}
-                  className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-full bg-ink/70 text-white"
-                >
-                  <Icon name="close" size={12} />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => moreInput.current?.click()}
-              aria-label="Add more photos"
-              className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line text-ink-muted"
-            >
-              <Icon name="plus" size={18} />
-            </button>
+          <div className="px-3 pt-2" data-testid="create-album">
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {albumItems.map((x, i) => {
+                const active = chosenPhoto === i
+                return (
+                  <div
+                    key={x.url}
+                    className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border ${active ? 'border-accent ring-2 ring-accent' : 'border-line'}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPhoto(i)}
+                      aria-label={i === 0 ? 'Select the cover photo' : `Select photo ${i + 1}`}
+                      aria-pressed={active}
+                      className="absolute inset-0 block"
+                    >
+                      <img src={x.url} alt="" className="h-full w-full object-cover" />
+                      {i === 0 && (
+                        <span className="absolute inset-x-0 bottom-0 bg-ink/60 py-0.5 text-center text-[9px] font-extrabold uppercase tracking-[0.08em] text-white">Cover</span>
+                      )}
+                    </button>
+                    {i > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => removeExtra(i - 1)}
+                        aria-label={`Remove photo ${i + 1}`}
+                        className="absolute right-0.5 top-0.5 grid h-6 w-6 place-items-center rounded-full bg-ink/70 text-white"
+                      >
+                        <Icon name="close" size={12} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => moreInput.current?.click()}
+                aria-label="Add more photos"
+                className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border border-dashed border-line text-ink-muted"
+              >
+                <Icon name="plus" size={18} />
+              </button>
+            </div>
+
+            {/* Reorder + edit the selected photo. Moving a photo to the first
+                slot makes it the cover the feed shows. */}
+            <div className="mt-2 flex items-center gap-1.5" data-testid="album-reorder">
+              <span className="min-w-0 flex-1 truncate text-2xs font-bold text-ink-muted">
+                {chosenPhoto === 0 ? 'Cover photo' : `Photo ${chosenPhoto + 1} of ${albumItems.length}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => movePhoto(chosenPhoto, chosenPhoto - 1)}
+                disabled={chosenPhoto === 0}
+                aria-label="Move this photo earlier"
+                className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-raised text-ink disabled:opacity-35"
+              >
+                <Icon name="arrow-left" size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => movePhoto(chosenPhoto, chosenPhoto + 1)}
+                disabled={chosenPhoto >= albumItems.length - 1}
+                aria-label="Move this photo later"
+                className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface-raised text-ink disabled:opacity-35"
+              >
+                <Icon name="arrow-right" size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (chosenPhoto > 0) setEditingExtra(chosenPhoto - 1) }}
+                disabled={chosenPhoto === 0}
+                aria-label="Edit this photo"
+                data-testid="album-edit-selected"
+                className="inline-flex h-9 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-ink disabled:opacity-35"
+              >
+                <Icon name="pencil" size={12} /> Edit
+              </button>
+            </div>
           </div>
         )}
 
