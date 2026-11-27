@@ -1470,7 +1470,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             const groupStart = showDay || !sameRun(displayThread[index - 1])
             const groupEnd = !sameRun(displayThread[index + 1])
             const showMeta = groupEnd
-            const showAvatar = isTeam && !mine && groupStart
+            // Profile pictures on every incoming run — DMs included, the way
+            // Instagram shows the other person beside their messages.
+            const showAvatar = !mine && groupStart
             return (
               <div key={m.id}>
                 {showDay && <div className="my-5 flex items-center gap-3"><div className="h-px flex-1 bg-line" /><span className="rounded-full border border-line bg-surface-raised px-3 py-1 text-2xs font-bold uppercase tracking-wider text-ink-subtle">{day}</span><div className="h-px flex-1 bg-line" /></div>}
@@ -1481,7 +1483,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 )}
                 {isTeam && !mine && groupStart && <p className="mb-1 ml-1 text-2xs font-bold text-ink-muted">{m.from}</p>}
                 <div className={`flex ${groupStart ? 'mt-3' : 'mt-[3px]'} ${mine ? 'justify-end' : 'justify-start'}`}>
-                  {isTeam && !mine && (
+                  {!mine && (
                     showAvatar
                       ? <div className="mr-1.5 mb-1 grid h-7 w-7 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</div>
                       : <div className="mr-1.5 w-7 shrink-0" aria-hidden="true" />

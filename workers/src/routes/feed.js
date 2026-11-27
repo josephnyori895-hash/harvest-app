@@ -178,7 +178,7 @@ export async function handleFeed(request, env, ctx) {
     try {
       const s = await query(
         env,
-        `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type, s.created_at,
+        `SELECT s.id, s.user_id, u.username, u.name, u.avatar_key, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type, s.created_at,
                   CASE WHEN ? IS NOT NULL AND EXISTS (
                     SELECT 1 FROM story_views sv
                      WHERE sv.story_id = s.id
@@ -189,7 +189,7 @@ export async function handleFeed(request, env, ctx) {
           WHERE s.expires_at > ? ORDER BY s.created_at DESC LIMIT 30`,
         [user?.id || null, user?.id || null, user?.id || null, new Date().toISOString()],
       )
-      stories = await Promise.all(s.rows.map(async x => ({ ...x, music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
+      stories = await Promise.all(s.rows.map(async x => ({ ...x, avatar_url: await mediaUrlOrNull(env, x.avatar_key, 3600), music: x.music_track_id ? await (async () => { const t=await query(env,'SELECT id,title,artist,original_key,cover_thumb_key FROM tracks WHERE id=?',[x.music_track_id]); const z=t.rows[0]; return z ? {id:z.id,title:z.title,artist:z.artist,url:await mediaUrlOrNull(env,z.original_key,3600),cover_url:await mediaUrlOrNull(env,z.cover_thumb_key,3600)} : null })() : null, thumb_url: await mediaUrlOrNull(env, x.thumb_key || (String(x.media_type) === 'video' ? null : x.original_key), 600), video_url: await mediaUrlOrNull(env, x.original_key, 1800) })))
     } catch {}
     // Sponsored adverts: server-side interleaving + per-member daily caps.
     // Adverts are counted as SERVED at feed render — the two-appearance cap
@@ -289,7 +289,7 @@ export async function handleFeed(request, env, ctx) {
   if (path === '/api/stories' && request.method === 'GET') {
     const { rows } = await query(
       env,
-      `SELECT s.id, s.user_id, u.username, u.name, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type,
+      `SELECT s.id, s.user_id, u.username, u.name, u.avatar_key, s.thumb_key, s.original_key, s.expires_at, s.caption, s.music_track_id, s.duration_secs, COALESCE(s.media_type, 'image') AS media_type,
                 CASE WHEN ? IS NOT NULL AND EXISTS (
                   SELECT 1 FROM story_views sv
                    WHERE sv.story_id = s.id
@@ -301,6 +301,7 @@ export async function handleFeed(request, env, ctx) {
       [user?.id || null, user?.id || null, user?.id || null, new Date().toISOString()],
     )
     const out = await Promise.all(rows.map(async r => ({ ...r,
+      avatar_url: await mediaUrlOrNull(env, r.avatar_key, 3600),
       thumb_url: await mediaUrlOrNull(env, r.thumb_key || (String(r.media_type) === 'video' ? null : r.original_key), 600),
       video_url: String(r.media_type) === 'video' ? await mediaUrlOrNull(env, r.original_key, 1800) : null,
       music: r.music_track_id ? await (async () => {

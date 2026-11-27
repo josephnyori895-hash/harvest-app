@@ -451,23 +451,38 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     img: s.thumb_url || undefined,
     video: s.media_type === 'video' ? (s.video_url || undefined) : undefined,
     caption: s.caption,
+    avatar: s.avatar_url || undefined,
     music: s.music || null,
   })), [liveStories])
 
+  // Instagram plays one account's stories in a row, oldest first, then moves to
+  // the next account's ring. The API returns every story newest-first across
+  // all authors, so a flat list interleaved different people — finishing your
+  // friend's first story dropped you into a stranger's. Group, then flatten.
+  const allMoments = useMemo(() => {
+    const byAuthor = new Map<string, any[]>()
+    for (const m of liveMoments) {
+      const key = m.username || m.name
+      const list = byAuthor.get(key)
+      if (list) list.push(m)
+      else byAuthor.set(key, [m])
+    }
+    return [...byAuthor.values()].flatMap(items => [...items].reverse())
+  }, [liveMoments])
+
   // IG-style grouping: one ring per person, no matter how many stories they posted.
-  // Each group keeps the flat indices so tapping the ring opens that person's full
-  // sequence in the StoryViewer (which advances through everything, then the next
-  // person — exactly like Instagram).
+  // `items` stays newest-first for the ring thumbnail, while flatIndex points
+  // into the account-ordered viewer list above.
   const storyGroups = useMemo(() => {
     const map = new Map<string, { name: string; username: string; items: any[] }>()
-    liveMoments.forEach((m: any, i: number) => {
+    allMoments.forEach((m: any, i: number) => {
       const gk = m.username || m.name
       const g = map.get(gk)
-      if (g) g.items.push({ ...m, flatIndex: i })
+      if (g) g.items.unshift({ ...m, flatIndex: i })
       else map.set(gk, { name: m.name, username: m.username, items: [{ ...m, flatIndex: i }] })
     })
     return [...map.values()]
-  }, [liveMoments])
+  }, [allMoments])
 
   const liveUpdates = useMemo(() => livePosts.map((p: any) => {
     if (p.kind === 'advert') return p
@@ -507,7 +522,6 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
   // Viewer list: live stories ONLY. The 'Your moment' composer placeholder must
   // never be in here or the viewer lands on an empty black story at the end.
-  const allMoments = useMemo(() => liveMoments, [liveMoments])
   const allUpdates = useMemo(() => (liveUpdates.length ? liveUpdates : []), [liveUpdates])
   const likesTable = getLikesTable()
   // Declared BEFORE first use (story grouping below reads it).
@@ -549,6 +563,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   }
   const myStoryGroup = storyGroups.find(g => g.username === currentUser)
   const myStoryAllViewed = Boolean(myStoryGroup?.items.length) && myStoryGroup.items.every((item: any) => viewedStoryIds.has(String(item.id)))
+  // A ring opens at the oldest story you have not seen yet, so tapping resumes
+  // where you stopped inside that account rather than jumping to their newest.
+  const storyStartIndex = (items: any[]) => {
+    const chronological = [...items].reverse()
+    const target = chronological.find((item: any) => !viewedStoryIds.has(String(item.id))) || chronological[0] || items[0]
+    return Number(target?.flatIndex ?? 0)
+  }
   const toggleLike = async (key: string) => {
     if (pendingLikesRef.current.has(key)) return
     const post = livePosts.find((p: any) => `api_${p.kind}_${p.id}` === key)
@@ -875,13 +896,13 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div>{/* pr-[68px] keeps the rails clear of the floating chat button (48px + its
           12px inset), so a story's name is never parked under it. */}<div className="flex gap-3 overflow-x-auto scroll-px-3 pr-[68px] pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
-        <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; const firstUnviewed = myStoryGroup.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || myStoryGroup.items[0]).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-surface-sunken">{myStoryGroup?.items[0]?.img
+        <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; setMomentIdx(storyStartIndex(myStoryGroup.items)) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-surface-sunken">{myStoryGroup?.items[0]?.img
           ? <img src={myStoryGroup.items[0].img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
           : myStoryGroup ? <Icon name="reels" size={22} className="relative text-ink-subtle" />
           : <Icon name="plus" size={22} className="relative text-accent" />}
         </span></span></button><p className="mt-1.5 max-w-[88px] truncate text-2xs font-bold text-ink">Your story</p><p className="truncate text-2xs text-ink-subtle">{myStoryGroup ? `${myStoryGroup.items.length} live` : 'Tap to share'}</p></div>
         {/* One ring per person (all their stories play in sequence) */}
-        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); const isVideo = Boolean(first.video); const allViewed = g.items.every((item: any) => viewedStoryIds.has(String(item.id))); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => { const firstUnviewed = g.items.find((item: any) => !viewedStoryIds.has(String(item.id))); setMomentIdx((firstUnviewed || first).flatIndex) }} className={`mx-auto block rounded-[28px] p-[3px] ${allViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft">{hasPhoto
+        {storyGroups.filter(g => g.username !== currentUser).map(g => { const first = g.items[0]; const hasPhoto = Boolean(first.img); const isVideo = Boolean(first.video); const allViewed = g.items.every((item: any) => viewedStoryIds.has(String(item.id))); return <div key={g.username || g.name} className="min-w-[88px] text-center"><button onClick={() => setMomentIdx(storyStartIndex(g.items))} className={`mx-auto block rounded-[28px] p-[3px] ${allViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={`View ${g.name}'s stories`}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-accent-soft to-gold-soft">{hasPhoto
           ? <img src={first.img} alt="" loading="lazy" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
           : isVideo ? <Icon name="reels" size={22} className="relative text-ink-subtle" />
           : <span className="relative text-base font-extrabold text-accent-strong">{g.name.split(' ').map((x: string) => x[0]).slice(0, 2).join('')}</span>}

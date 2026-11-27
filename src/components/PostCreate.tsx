@@ -102,6 +102,9 @@ export default function PostCreate({ onDone, initialType }: Props) {
   // Album posts: extra photos beyond the first. Photos only — a reel, story or
   // track is still one item.
   const [extras, setExtras] = useState<{ file: File; url: string }[]>([])
+  // Which album photo is open in the editor — Instagram lets every frame of a
+  // carousel be cropped and filtered on its own, not just the first.
+  const [editingExtra, setEditingExtra] = useState<number | null>(null)
   // Natural ratio of the previewed image, so the canvas matches the exact
   // geometry the feed will render — no black/white letterbox around a photo.
   const [imgRatio, setImgRatio] = useState<number | null>(null)
@@ -250,6 +253,17 @@ export default function PostCreate({ onDone, initialType }: Props) {
     })
   }
 
+  // Replace one album photo with its edited version. The edited JPEG is a new
+  // file, so the object URL swap also refreshes the thumbnail.
+  const replaceExtra = (index: number, blob: Blob, preview: string) => {
+    const edited = new File([blob], 'photo.jpg', { type: 'image/jpeg' })
+    setExtras(prev => prev.map((x, i) => {
+      if (i !== index) return x
+      URL.revokeObjectURL(x.url)
+      return { file: edited, url: preview }
+    }))
+  }
+
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setDragging(false)
@@ -279,6 +293,7 @@ export default function PostCreate({ onDone, initialType }: Props) {
     setExtras([])
     setMusicQuery(''); setMusicOpen(false); setVideoCover(null); setNotice(''); setImgRatio(null); setShare(false)
     setTagged([]); setTagOpen(false); setTagQuery(''); setLocation(''); setLocationOpen(false)
+    setEditingExtra(null)
   }
 
   const submit = async () => {
@@ -525,7 +540,18 @@ export default function PostCreate({ onDone, initialType }: Props) {
           <div className="flex items-center gap-2 overflow-x-auto px-3 pt-2" data-testid="create-album">
             {extras.map((x, i) => (
               <div key={x.url} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-line">
-                <img src={x.url} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setEditingExtra(i)}
+                  aria-label={`Edit photo ${i + 2}`}
+                  data-testid={`album-edit-${i}`}
+                  className="group absolute inset-0 block"
+                >
+                  <img src={x.url} alt="" className="h-full w-full object-cover" />
+                  <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-ink/55 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.08em] text-white">
+                    <Icon name="pencil" size={9} /> Edit
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => removeExtra(i)}
@@ -829,6 +855,14 @@ export default function PostCreate({ onDone, initialType }: Props) {
           file={file}
           onCancel={() => setAdjusting(false)}
           onDone={applyAdjust}
+        />
+      )}
+      {editingExtra !== null && extras[editingExtra] && (
+        <ImageAdjuster
+          key={extras[editingExtra].url}
+          file={extras[editingExtra].file}
+          onCancel={() => setEditingExtra(null)}
+          onDone={(blob, preview) => { replaceExtra(editingExtra, blob, preview); setEditingExtra(null) }}
         />
       )}
       {videoAdjusting && file && file.type.startsWith('video/') && (

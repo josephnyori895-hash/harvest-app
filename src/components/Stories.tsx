@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { startBackgroundUpload, uploadTooLarge } from '../lib/backgroundUploads'
 import ImageAdjuster from './ImageAdjuster'
 import SocialEditor from './SocialEditor'
@@ -147,8 +147,46 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
     else if (videoState === 'playing') v.play().catch(() => setVideoState('blocked'))
   }, [isPaused, isVideo, videoState])
 
+  // Instagram's progress bars belong to the account you are watching: one
+  // segment per story that author posted, and the last one moves you on to the
+  // next account.
+  const authorSegments = useMemo(() => {
+    if (!s) return [] as number[]
+    const key = (x: any) => String(x?.username || x?.name || '')
+    let start = idx
+    while (start > 0 && key(allStories[start - 1]) === key(s)) start -= 1
+    let end = idx
+    while (end < allStories.length - 1 && key(allStories[end + 1]) === key(s)) end += 1
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i)
+  }, [allStories, idx, s])
+
+  // Swiping the story the way Instagram does: left moves forward (through the
+  // rest of this account, then the next), right goes back or closes at the top.
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null)
+  const swipeGuardRef = useRef(false)
+  const onSwipeStart = (e: React.TouchEvent) => {
+    swipeGuardRef.current = false
+    if (e.touches.length !== 1) { swipeStartRef.current = null; return }
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }
+  const onSwipeEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current
+    swipeStartRef.current = null
+    if (!start) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return
+    swipeGuardRef.current = true
+    if (timerRef.current) clearTimeout(timerRef.current)
+    if (dx < 0) goNext()
+    else if (idx > 0) setIdx(idx - 1)
+    else setIdx(null)
+  }
+
   const handleTap = (e: any) => {
     if (!s) return
+    if (swipeGuardRef.current) { swipeGuardRef.current = false; return }
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     if (x < rect.width / 3) {
@@ -254,11 +292,13 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   return (
     <>
       {viewerError && <div className="absolute top-3 left-3 right-3 z-[90]"><ErrorMessage message={viewerError} action={<button type="button" onClick={() => setViewerError('')} className="text-xs">Dismiss</button>} /></div>}
-      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))', paddingBottom: keyboardInset ? `${keyboardInset}px` : 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={handleTap}>
-        <div className="flex gap-1 p-2 pt-3">{allStories.map((_: any, i: number) => <div key={i} className="flex-1 h-1 bg-white/25 rounded overflow-hidden relative"><div className="h-full bg-white/90" style={{ width: i === idx ? `${progress}%` : '100%' }} /></div>)}</div>
+      <div className="fixed inset-0 bg-black z-50 flex flex-col overscroll-none select-none" style={{ paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top, 0px))', paddingBottom: keyboardInset ? `${keyboardInset}px` : 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))' }} onPointerDown={onHoldStart} onPointerUp={onHoldEnd} onPointerLeave={onHoldEnd} onPointerCancel={onHoldEnd} onClick={handleTap} onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}>
+        <div className="flex gap-1 p-2 pt-3">{(authorSegments.length ? authorSegments : [idx]).map(i => <div key={i} className="flex-1 h-1 bg-white/25 rounded overflow-hidden relative"><div className="h-full bg-white/90" style={{ width: i === idx ? `${progress}%` : i < idx ? '100%' : '0%' }} /></div>)}</div>
         <div className="flex items-center justify-between px-4 py-3">
           <button onClick={(e) => { e.stopPropagation(); onOpenUser?.({ username: s.username || s.name, name: s.name }) }} className="flex items-center gap-3" aria-label={`View ${s.name}'s profile`}>
-            <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-bold text-white">{(s.name || s.username || 'H').charAt(0).toUpperCase()}</div>
+            {s.avatar
+              ? <img src={s.avatar} alt="" className="h-9 w-9 rounded-full border border-white/20 object-cover" />
+              : <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-bold text-white">{(s.name || s.username || 'H').charAt(0).toUpperCase()}</div>}
             <div className="text-left"><p className="font-bold text-white text-sm">{s.name}</p><p className="text-[11px] text-stone-300">@{s.username || 'harvest'}</p></div>
           </button>
           <div className="flex items-center gap-2">{canDelete && <button onClick={deleteStory} disabled={deleting} className="min-w-11 min-h-11 px-2 text-white disabled:opacity-50" aria-label="Delete story"><Icon name="trash" size={18} /></button>}{canEdit && <button onClick={e => { e.stopPropagation(); setEditing(true) }} className="grid min-h-11 min-w-11 place-items-center px-2 text-white" aria-label="Edit story"><Icon name="pencil" size={18} /></button>}</div>
@@ -358,7 +398,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-accent text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
           </>) }
         </div>
-          <div className="text-center text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : '← Tap to rewind • Hold to pause • → Forward') : 'Tap to pause • hold to pause • swipe to move'}</div>
+          <div className="text-center text-[11px] text-stone-500">{isStoryAuthor ? (isLastUserStory ? 'Tap to close' : 'Tap the edges to move • swipe for the next account') : 'Tap to pause • hold to pause • swipe for the next account'}</div>
         </div>
       </div>
       {editing && <SocialEditor kind="story" id={String(s.id)} caption={s.caption||''} musicTrack={s.music} onDone={()=>{setEditing(false);window.location.reload()}} />}
