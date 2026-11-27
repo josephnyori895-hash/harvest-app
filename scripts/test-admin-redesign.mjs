@@ -260,6 +260,18 @@ test('the admin map accounts for every member, including those who never shared'
   assert.ok(map.includes("!hasCoords(m) ? 'No pin'"), 'the member list must show the pin state')
 })
 
+test('the map re-measures its container instead of trusting the mount size', () => {
+  // Leaflet measures once on mount. A lazy chunk mounted into a column that had
+  // not settled, and a WebView resized by rotation or by returning from the
+  // background, both left tiles drawn into part of the box with pins offset.
+  assert.match(map, /function KeepMapSized/, 'the map needs a container-size keeper')
+  assert.match(map, /map\.invalidateSize\(\{ animate: false \}\)/, 'resizing must re-measure Leaflet')
+  assert.match(map, /new ResizeObserver\(measure\)/, 'the container itself must be observed')
+  assert.match(map, /window\.addEventListener\('orientationchange', measure\)/, 'rotation must re-measure')
+  assert.match(map, /document\.addEventListener\('visibilitychange', measure\)/, 'returning from the background must re-measure')
+  assert.match(map, /<KeepMapSized \/>/, 'the keeper must be mounted inside the map')
+})
+
 test('no legacy emoji or dark card survives the swept screens', async () => {
   const swept = [
     'src/components/Toast.tsx', 'src/components/Protected.tsx',

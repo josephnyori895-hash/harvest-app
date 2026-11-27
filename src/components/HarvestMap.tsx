@@ -68,6 +68,40 @@ function pinPosition(u: any, i = 0, centres?: Record<string, GroupCentre>): [num
   return [gc[0] + Math.sin(angle) * radius, gc[1] + Math.cos(angle) * radius]
 }
 
+// Leaflet measures its container once, when it mounts, and never looks again.
+// This map is a lazy chunk inside a scrolling column, so it could mount before
+// the column had its final width — and the Android WebView resizes on rotation
+// and when it returns from the background. The result is the classic map
+// glitch: tiles drawn into part of the box, grey bands, and pins that do not sit
+// where the coordinates say. Re-measuring on every real size change fixes it.
+function KeepMapSized() {
+  const map = useMap()
+  useEffect(() => {
+    const measure = () => {
+      try { map.invalidateSize({ animate: false }) } catch { /* map already gone */ }
+    }
+    // One frame for layout, a later pass for the lazy chunk's fonts/CSS.
+    const frame = requestAnimationFrame(measure)
+    const late = window.setTimeout(measure, 250)
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    try { observer?.observe(map.getContainer()) } catch { /* detached */ }
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    document.addEventListener('visibilitychange', measure)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(late)
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+      document.removeEventListener('visibilitychange', measure)
+    }
+  }, [map])
+  return null
+}
+
 function FitMarkers({ users, centres }: { users: any[]; centres: Record<string, GroupCentre> }) {
   const map = useMap()
   const signature = users.map(u => `${u.id || u.username}:${u.lat}:${u.lng}:${u.group_lat}:${u.group_lng}`).join('|')
@@ -311,6 +345,7 @@ export default function HarvestMap({
       <div className="h-[320px] border-b border-line">
         <MapContainer center={[-0.4197, 36.9475]} zoom={13} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap contributors" />
+          <KeepMapSized />
           <FitMarkers users={mapUsers} centres={groupCentres} />
           {/* The saved registration area, so an admin can see the shape their
               coordinates describe instead of only a cluster of pins. */}
