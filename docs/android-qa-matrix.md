@@ -34,7 +34,7 @@ viewport. Result: 8/8 checks green at each of 320 / 360 / 390 px, no failures.
 |---|---|---|---|
 | 1.1 | APK installs over the previous release **without uninstalling** (signing continuity) | | |
 | 1.2 | App opens; version shown matches `/api/app-version` | | |
-| 1.3 | Update prompt appears when a newer release exists; "Later" hides 24h | | |
+| 1.3 | Update prompt appears when a newer release exists; "Later" quiets it for 1h in-session and it returns on the next app open | | |
 
 ## 2. Auth lifecycle
 

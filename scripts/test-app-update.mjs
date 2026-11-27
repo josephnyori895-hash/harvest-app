@@ -77,13 +77,13 @@ test('the Worker slices APK Range requests instead of forwarding them to assets'
   assert.equal(invalid.headers.get('Content-Range'), 'bytes */20')
 })
 
-test('the prompt offers update and a 24h deferral', () => {
+test('the prompt offers update and a one-hour cooldown', () => {
   assert.match(app, /Update available/)
   assert.match(app, /dismissUpdate\(update\?\.versionCode \|\| 0\)/)
   assert.match(app, /const latest = await checkForUpdate\(\)/,
     'tapping Update refreshes the manifest before downloading')
   assert.match(app, /startUpdateInstall\(target\.apkUrl, target\.sha256, setInstall\)/)
-  assert.match(update, /const DISMISS_HOURS = 24/)
+  assert.match(update, /const DISMISS_HOURS = 1/)
 })
 
 test('the update prompt cannot be dismissed while a download is running', () => {
@@ -211,6 +211,15 @@ test('production smoke verifies the served APK digest and Range support', () => 
   assert.match(smoke, /r\.status === 206/, 'a full 200 response fails the resume check')
 })
 
+test('the update is offered again on every app open', () => {
+  // A member who taps Later, closes the app and reopens it must be told about
+  // the release again; the cooldown only paces the in-session checks.
+  assert.match(app, /const check = async \(opening = false\) => \{/)
+  assert.match(app, /info\.available && \(opening \|\| !isDismissed\(info\.versionCode\)\)/,
+    'the opening check is not silenced by the snooze')
+  assert.match(app, /void check\(true\)/, 'mount runs the opening check')
+})
+
 test('a local build stays below the CI version band', () => {
   // 1000 + git commit count overtook CI's 1000 + run number, so a locally built
   // APK claimed to be newer than every release and the phone stopped updating.
@@ -223,8 +232,9 @@ test('a local build stays below the CI version band', () => {
   assert.doesNotMatch(apkScript, /1000 \+ \$\(git rev-list --count HEAD\)/)
 })
 
-test('"Remind me later" snoozes for 24h instead of muting that version forever', () => {
+test('"Remind me later" snoozes for an hour instead of muting that version forever', () => {
   // The code-only value made Later permanent and left DISMISS_HOURS unused.
+  // 24 hours then made the prompt effectively one-shot for a day.
   assert.match(update, /until: Date\.now\(\) \+ DISMISS_HOURS \* 60 \* 60 \* 1000/)
   assert.match(update, /return until > Date\.now\(\)/)
 })

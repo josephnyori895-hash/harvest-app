@@ -170,21 +170,26 @@ function UpdateGate({ children }) {
     // open, whenever the app returns to the foreground, and every ten minutes,
     // so a release published while someone is sitting on the welcome screen is
     // still offered to them. No token is required: /api/app-version is public.
-    const check = async () => {
+    //
+    // The opening check ignores "Remind me later": that button quiets the
+    // in-session checks for an hour, but a member who closed the prompt and then
+    // reopened the app is told again. Honouring the cooldown here made the
+    // prompt appear exactly once, which is how a stale install went unnoticed.
+    const check = async (opening = false) => {
       if (busy) return
       busy = true
       try {
         const { checkForUpdate, isDismissed } = await import('./lib/appUpdate')
         const info = await checkForUpdate()
         if (!live) return
-        if (info.available && !isDismissed(info.versionCode)) {
+        if (info.available && (opening || !isDismissed(info.versionCode))) {
           setUpdate(info)
           setHidden(false)
         }
       } catch { /* offline is not an update failure the user can act on */ }
       finally { busy = false }
     }
-    void check()
+    void check(true)
     const onVisible = () => { if (document.visibilityState === 'visible') void check() }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)

@@ -20,7 +20,11 @@ export type UpdateInfo = {
 }
 
 const DISMISS_KEY = 'harvest_update_dismissed_code'
-const DISMISS_HOURS = 24
+// A tap on "Remind me later" is a cooldown, not a day of silence. At 24 hours a
+// member who tapped it once heard nothing about the release until the next day,
+// which read as the prompt having appeared only once. One hour suppresses the
+// repeat checks inside a session; every app open still offers the update.
+const DISMISS_HOURS = 1
 
 export type UpdateInstallState = {
   status: 'starting' | 'permission' | 'permission-denied' | 'downloading' | 'installing' | 'error'
@@ -124,7 +128,9 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
 // "Remind me later" is a snooze, not a mute, so the prompt has to come back.
 // The first version stored only the code and compared it forever, which meant a
 // member who tapped Later was never told about that release again — and
-// DISMISS_HOURS sat unused. Store the code with an expiry and honour both.
+// DISMISS_HOURS sat unused. Store the code with a short expiry and honour both.
+// The prompt is also re-offered on every cold open (see UpdateGate), so this
+// only paces the foreground/interval checks within one session.
 export function dismissUpdate(versionCode: number) {
   try {
     localStorage.setItem(DISMISS_KEY, JSON.stringify({
