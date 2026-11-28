@@ -103,12 +103,14 @@ backfill from the migration after deploying.
 
 ## Alert
 
-`.github/workflows/d1-read-budget.yml` runs hourly and reads
-`rows_read_24h` from `wrangler d1 info harvestfamily --json`. It warns at
-3,500,000 rows (70% of the free limit) and fails the job at 4,500,000 (90%),
-which notifies the repository owner through the normal failed-workflow email.
-It uses the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets
-and can also be run manually from the Actions tab.
+`.github/workflows/d1-read-budget.yml` runs hourly. It samples `rows_read_24h`
+twice, five minutes apart, and projects the day from that burn rate — the raw
+rolling total is only printed for context, because it still contains yesterday
+for the first hours after midnight. It warns when the projection reaches
+3,500,000 rows/day and fails at 4,500,000, which notifies the repository owner
+through the normal failed-workflow email. It uses the existing
+`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and can also be run
+manually from the Actions tab.
 
 ## Operating rules
 

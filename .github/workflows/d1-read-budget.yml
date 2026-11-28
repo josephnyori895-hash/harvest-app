@@ -33,7 +33,11 @@ jobs:
       - name: Install Worker dependencies
         run: npm ci --prefix workers
 
-      - name: Check trailing 24h row reads
+      # The free-plan quota is per UTC day, but `d1 info` only reports a rolling
+      # 24h window. Right after midnight that window still holds yesterday, so
+      # the total alone produces false alarms. Instead sample twice and alert on
+      # the burn rate: a day that would read the limit if the current rate held.
+      - name: Check D1 row-read burn rate
         working-directory: workers
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -44,33 +48,48 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo "::error::CLOUDFLARE_API_TOKEN is not configured"; exit 1; }
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured"; exit 1; }
 
-          INFO="$(npx wrangler d1 info harvestfamily --json)"
-          # wrangler can print update banners around the JSON object.
-          JSON="$(printf '%s\n' "$INFO" | awk '/^\{/{on=1} on{print} /^\}/{on=0}')"
-          ROWS="$(printf '%s\n' "$JSON" | jq -r '.rows_read_24h // empty')"
-          READS="$(printf '%s\n' "$JSON" | jq -r '.read_queries_24h // empty')"
-          test -n "$ROWS" || { echo "::error::could not read rows_read_24h from wrangler"; printf '%s\n' "$INFO"; exit 1; }
+          read_rows() {
+            local info json
+            info="$(npx wrangler d1 info harvestfamily --json)"
+            # wrangler can print update banners around the JSON object.
+            json="$(printf '%s\n' "$info" | awk '/^\{/{on=1} on{print} /^\}/{on=0}')"
+            printf '%s\n' "$json" | jq -r '.rows_read_24h // empty'
+          }
+
+          FIRST="$(read_rows)"
+          test -n "$FIRST" || { echo "::error::could not read rows_read_24h from wrangler"; exit 1; }
+
+          SAMPLE_SECONDS=300
+          sleep "$SAMPLE_SECONDS"
+
+          SECOND="$(read_rows)"
+          test -n "$SECOND" || { echo "::error::could not read rows_read_24h from wrangler"; exit 1; }
 
           LIMIT=5000000
           WARN=3500000
           CRIT=4500000
-          PCT=$(( ROWS * 100 / LIMIT ))
+          DELTA=$(( SECOND - FIRST ))
+          [ "$DELTA" -lt 0 ] && DELTA=0
+          HOURLY=$(( DELTA * 3600 / SAMPLE_SECONDS ))
+          PROJECTED=$(( HOURLY * 24 ))
+          PCT=$(( PROJECTED * 100 / LIMIT ))
 
           {
             echo "### D1 read budget"
             echo ""
             echo "| metric | value |"
             echo "| --- | --- |"
-            echo "| rows read (trailing 24h) | ${ROWS} (${PCT}% of ${LIMIT}) |"
-            echo "| read queries (trailing 24h) | ${READS:-unknown} |"
-            echo "| thresholds | warn ${WARN}, fail ${CRIT} |"
+            echo "| rows read in ${SAMPLE_SECONDS}s | ${DELTA} |"
+            echo "| projected rows/day | ${PROJECTED} (${PCT}% of ${LIMIT}) |"
+            echo "| trailing 24h (context only) | ${SECOND} |"
+            echo "| thresholds | warn ${WARN}/day, fail ${CRIT}/day |"
             echo "| UTC time | $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "D1 rows_read_24h=${ROWS} (${PCT}% of ${LIMIT}), read_queries_24h=${READS:-unknown}"
+          echo "sample=${DELTA} rows/${SAMPLE_SECONDS}s, hourly=${HOURLY}, projected=${PROJECTED}/day, trailing24h=${SECOND}"
 
-          if [ "$ROWS" -ge "$CRIT" ]; then
-            echo "::error::D1 read budget at ${PCT}% (${ROWS} of ${LIMIT} rows in 24h). At 100% every Worker read fails and login breaks until 00:00 UTC. Apply the mitigations in docs/D1-READ-BUDGET.md now."
+          if [ "$PROJECTED" -ge "$CRIT" ]; then
+            echo "::error::D1 is on pace for ${PROJECTED} rows read today (${PCT}% of the free ${LIMIT}/day limit). At 100% every Worker read fails and login breaks until 00:00 UTC. Apply the mitigations in docs/D1-READ-BUDGET.md now."
             exit 1
-          elif [ "$ROWS" -ge "$WARN" ]; then
-            echo "::warning::D1 read budget at ${PCT}% (${ROWS} of ${LIMIT} rows in 24h) — review docs/D1-READ-BUDGET.md before it reaches the limit."
+          elif [ "$PROJECTED" -ge "$WARN" ]; then
+            echo "::warning::D1 is on pace for ${PROJECTED} rows read today (${PCT}% of the free ${LIMIT}/day limit) — review docs/D1-READ-BUDGET.md before it reaches the limit."
           fi
