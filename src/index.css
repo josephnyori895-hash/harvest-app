@@ -127,16 +127,28 @@ body { margin: 0; background: rgb(var(--surface)); color: rgb(var(--ink)); }
 @layer components {
   .touch-target { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
 
-  /* Cards */
+  /* Cards. The hairline stays quiet; depth comes from the navy-tinted shadow. */
   .card { @apply rounded-card bg-surface-raised border border-line shadow-card; }
   .card-muted { @apply rounded-card bg-surface-sunken border border-line; }
   .card-accent { @apply rounded-card bg-accent-wash border border-accent-soft; }
 
-  /* Buttons (legacy names preserved so existing screens inherit the new look) */
+  /* A short gold rule above a section heading — the logo's yellow used as an
+     editorial accent, never as a background. */
+  .section-flag { @apply mb-1.5 block h-[2px] w-7 rounded-full; background-image: linear-gradient(90deg, rgb(var(--gold)) 0%, rgb(var(--gold) / 0) 100%); }
+
+  /* Buttons (legacy names preserved so existing screens inherit the new look).
+     The primary button is the logo navy with a soft top bevel instead of a flat
+     fill, so it reads as a crafted surface next to the cream background. */
   .btn-primary, .btn-primary-lg {
     @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent font-semibold text-white
-           transition-colors hover:bg-accent-strong disabled:opacity-50 disabled:pointer-events-none;
+           transition-[filter,box-shadow] hover:brightness-110 disabled:opacity-50 disabled:pointer-events-none;
+    background-image: linear-gradient(180deg, rgb(var(--accent) / .82) 0%, rgb(var(--accent)) 45%, rgb(var(--accent-strong)) 100%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .16), 0 10px 22px -16px rgb(var(--accent) / .9);
   }
+  /* In dark mode the accent lifts to a light lavender, so white label text
+     would lose all contrast; the inverse ink is navy. */
+  .dark .btn-primary, .dark .btn-primary-lg { color: rgb(var(--ink-inverse)); }
+  .gold-rule { @apply h-[2px] w-full rounded-full; background-image: linear-gradient(90deg, rgb(var(--gold) / .75) 0%, rgb(var(--gold) / .18) 38%, rgb(var(--gold) / 0) 100%); }
   .btn-primary { @apply px-5 py-3 text-sm; }
   .btn-primary-lg { @apply px-6 py-3.5 text-base; }
   .btn-secondary {

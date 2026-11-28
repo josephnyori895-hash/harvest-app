@@ -422,7 +422,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
     <div className="bg-surface text-ink min-h-[70vh] pb-8">
       <div className="relative overflow-hidden px-5 pt-7 pb-6 border-b border-line bg-gradient-to-br from-accent via-[#312878] to-[#1B1445]">
         <div className="absolute -right-12 -top-16 w-44 h-44 rounded-full bg-gold/20 blur-3xl" />
-        <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-[#6B5FC7]/20 blur-3xl" />
+        <div className="absolute -left-14 bottom-0 w-40 h-28 rounded-full bg-accent/20 blur-3xl" />
         <div className="relative">
           <p className="text-[10px] uppercase tracking-[0.22em] text-gold/80 font-bold">Harvest Family · Serve together</p>
           <h1 className="text-3xl font-black tracking-tight mt-1">Departments</h1>

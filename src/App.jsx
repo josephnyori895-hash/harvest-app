@@ -2332,7 +2332,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <div className="space-y-2 px-4 mb-3">
             {uploads.map(u => (
               <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
-                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#a78bfa ${u.pct}%, #F4E8D0 0)` }}>{u.pct >= 100 ? <Icon name="check" size={12} /> : `${u.pct}`}</div>
+                <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#221A56 ${u.pct}%, #E7E1D2 0)` }}>{u.pct >= 100 ? <Icon name="check" size={12} /> : `${u.pct}`}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{u.label}</p>
                   <p className="text-[10px] text-ink-muted">{u.status === 'waiting' ? `Waiting for network — retry ${u.attempt}/5` : `Uploading… ${u.pct}%`}</p>
@@ -2553,8 +2553,11 @@ function Nav({ tab, setTab }) {
               onClick={() => setTab(item.id)}
               aria-label={item.label}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs font-semibold transition-colors ${active ? 'text-accent' : 'text-ink-subtle'}`}
+              className={`relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs transition-colors ${active ? 'font-extrabold text-accent' : 'font-semibold text-ink-muted'}`}
             >
+              {/* The logo's gold marks the current destination — the only place
+                  colour is allowed to move in the bar. */}
+              {active && <span aria-hidden="true" className="absolute inset-x-0 top-0 mx-auto h-[3px] w-9 rounded-b-full bg-gold" />}
               <Icon name={item.icon} size={22} strokeWidth={active ? 2.1 : 1.7} />
               <span className="max-w-full truncate">{item.label}</span>
             </button>
@@ -2566,8 +2569,9 @@ function Nav({ tab, setTab }) {
           aria-label="More destinations"
           aria-expanded={moreOpen}
           aria-controls="more-destinations"
-          className={`relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs font-semibold transition-colors ${secondaryActive || moreOpen ? 'text-accent' : 'text-ink-subtle'}`}
+          className={`relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-2xs transition-colors ${secondaryActive || moreOpen ? 'font-extrabold text-accent' : 'font-semibold text-ink-muted'}`}
         >
+          {(secondaryActive || moreOpen) && <span aria-hidden="true" className="absolute inset-x-0 top-0 mx-auto h-[3px] w-9 rounded-b-full bg-gold" />}
           <Icon name="dots" size={22} strokeWidth={secondaryActive ? 2.1 : 1.7} />
           <span className="max-w-full truncate">More</span>
           {secondaryActive && <span aria-hidden="true" className="absolute right-2 top-1 h-1.5 w-1.5 rounded-full bg-accent" />}
@@ -2597,9 +2601,9 @@ function Nav({ tab, setTab }) {
                   key={item.id}
                   type="button"
                   onClick={() => { setTab(item.id); setMoreOpen(false) }}
-                  className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${active ? 'bg-accent-soft text-accent-strong' : 'text-ink hover:bg-surface-sunken'}`}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${active ? 'bg-accent-soft text-accent-strong ring-1 ring-inset ring-accent/15' : 'text-ink hover:bg-surface-sunken'}`}
                 >
-                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${active ? 'bg-accent text-white' : 'bg-surface-sunken text-accent'}`}><Icon name={item.icon} size={19} /></span>
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${active ? 'bg-accent text-gold' : 'bg-surface-sunken text-accent'}`}><Icon name={item.icon} size={19} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-extrabold">{item.label}</span>
                     <span className="mt-0.5 block text-2xs text-ink-muted">{item.hint}</span>
@@ -2631,8 +2635,9 @@ function Sidebar({ tab, setTab }) {
               type="button"
               onClick={() => setTab(item.id)}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors ${active ? 'bg-accent-soft text-accent-strong' : 'text-ink-muted hover:bg-surface-sunken hover:text-ink'}`}
+              className={`relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm transition-colors ${active ? 'bg-accent font-bold text-white shadow-card' : 'font-semibold text-ink-muted hover:bg-surface-sunken hover:text-ink'}`}
             >
+              {active && <span aria-hidden="true" className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-gold" />}
               <Icon name={item.icon} size={20} strokeWidth={active ? 2.1 : 1.7} />
               <span className="truncate">{item.label}</span>
             </button>

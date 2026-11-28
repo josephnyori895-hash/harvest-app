@@ -72,10 +72,14 @@ export default {
         card: "20px",
         pill: "9999px",
       },
+      // Elevation is tinted with the logo navy, not neutral grey: on cream,
+      // a warm-grey shadow reads as dust while navy reads as depth. The gold
+      // hairline is the "premium" note carried by cards and the primary button.
       boxShadow: {
-        card: "0 1px 2px rgb(41 37 31 / 0.04), 0 8px 24px -12px rgb(41 37 31 / 0.12)",
-        raised: "0 2px 4px rgb(41 37 31 / 0.05), 0 16px 40px -16px rgb(41 37 31 / 0.18)",
+        card: "0 1px 2px rgb(34 26 86 / 0.05), 0 10px 26px -16px rgb(34 26 86 / 0.20)",
+        raised: "0 2px 4px rgb(34 26 86 / 0.06), 0 18px 44px -20px rgb(34 26 86 / 0.30)",
         focus: "0 0 0 3px rgb(var(--accent) / 0.28)",
+        gold: "inset 0 1px 0 rgb(238 182 9 / 0.45)",
       },
       keyframes: {
         "slide-up": {

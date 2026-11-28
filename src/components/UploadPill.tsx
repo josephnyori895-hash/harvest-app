@@ -31,7 +31,7 @@ export default function UploadPill() {
               <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
               <circle
                 cx="18" cy="18" r="15.5" fill="none"
-                stroke={u.pct >= 100 ? '#4ade80' : '#a78bfa'}
+                stroke={u.pct >= 100 ? '#34D399' : '#EEB609'}
                 strokeWidth="4" strokeLinecap="round"
                 strokeDasharray={`${(u.pct / 100) * 97.4} 97.4`}
                 transform="rotate(-90 18 18)"

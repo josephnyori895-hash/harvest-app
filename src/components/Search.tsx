@@ -494,7 +494,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               {(filter === 'all' ? groupHits.slice(0, 3) : groupHits).map(g => (
                 <button key={g.slug || g.id} onClick={() => onOpenGroups?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
                   <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-accent-soft to-gold-soft flex items-center justify-center text-sm font-extrabold text-accent-strong shrink-0">{String(g.name).split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase()}</div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{g.name}{g.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">MEMBER</span>}</p><p className="text-xs text-ink-muted truncate">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{g.name}{g.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-strong font-extrabold align-middle">MEMBER</span>}</p><p className="text-xs text-ink-muted truncate">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
               ))}
@@ -508,7 +508,7 @@ export default function Search({ users, onView, onOpenUser, onOpenGroups, onOpen
               {(filter === 'all' ? departmentHits.slice(0, 3) : departmentHits).map(d => (
                 <button key={d.slug || d.id} onClick={() => onOpenDepartments?.()} className="w-full flex gap-3 items-center px-3 py-3 hover:bg-surface-sunken/60 rounded-2xl text-left">
                   <div className="w-10 h-10 rounded-2xl bg-accent-soft flex items-center justify-center shrink-0"><Icon name="building" size={18} className="text-accent-strong" /></div>
-                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{d.name}{d.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold align-middle">JOINED</span>}</p><p className="text-xs text-ink-muted truncate">{d.member_count} serving{d.description ? ` · ${d.description}` : ''}</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{d.name}{d.joined && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-strong font-extrabold align-middle">JOINED</span>}</p><p className="text-xs text-ink-muted truncate">{d.member_count} serving{d.description ? ` · ${d.description}` : ''}</p></div>
                   <span className="text-xs bg-surface-sunken text-accent-strong px-4 py-1.5 rounded-full font-bold shrink-0">Open</span>
                 </button>
               ))}

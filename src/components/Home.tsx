@@ -789,16 +789,23 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         pair to the app column keeps the brand and the quick actions reachable
         while the feed moves under them. */}
     <div data-home-chrome className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
+    {/* Gold hairline along the underside of the docked chrome: the logo's
+        yellow as a quiet edge, not a stripe. */}
+    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
     <header className="border-b border-line/60">
       {/* pr-14 reserves the footprint of the shell's floating notification bell,
           so the header's own actions never sit underneath it. */}
       <div className="flex items-center justify-between gap-2 py-3 pl-4 pr-14">
         <button onClick={() => onSwitchAccount?.()} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open account switcher">
-          <img src={content.logo_url || '/logo.png'} alt="" className="h-10 w-10 shrink-0 rounded-2xl border border-line bg-surface-sunken object-contain" />
+          {/* The mark sits in a soft gold frame so the header reads as the
+              brand, not a generic app bar. */}
+          <span className="shrink-0 rounded-2xl bg-gradient-to-br from-gold/80 via-gold/25 to-transparent p-[2px]">
+            <img src={content.logo_url || '/logo.png'} alt="" className="h-10 w-10 rounded-[14px] border border-line bg-surface-raised object-contain" />
+          </span>
           <span className="min-w-0">
             {/* whitespace-nowrap: at 390px the kicker used to break into
                 "HARVEST" / "FAMILY" on two lines and shove the header taller. */}
-            <span className="block truncate whitespace-nowrap text-2xs font-bold uppercase tracking-[0.18em] text-accent">Harvest Family</span>
+            <span className="block truncate whitespace-nowrap text-2xs font-extrabold uppercase tracking-[0.18em] text-gold-strong">Harvest Family</span>
             <span className="block truncate text-heading font-extrabold leading-tight text-ink">Nyeri</span>
           </span>
         </button>
@@ -835,16 +842,19 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
     <main className="px-4 pb-8">
       <section className="pt-4">
-        <div className="overflow-hidden rounded-card bg-gradient-to-br from-accent-strong via-accent to-accent-strong p-4 text-white shadow-raised">
-          <p className="text-2xs font-bold uppercase tracking-[0.18em] text-gold-soft">{heroKicker}</p>
-          <h1 className="mt-1 text-title font-extrabold text-white">{heroTitle}</h1>
-          <p className="mt-1 text-2xs leading-5 text-white/75">{heroSubtitle}</p>
+        <div className="relative overflow-hidden rounded-card bg-gradient-to-br from-accent-strong via-accent to-accent-strong p-4 text-white shadow-raised ring-1 ring-inset ring-white/10">
+          {/* Sanctuary light in the logo's yellow, blurred into the navy. */}
+          <span aria-hidden="true" className="pointer-events-none absolute -right-12 -top-14 h-44 w-44 rounded-full bg-gold/20 blur-3xl" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold/70 to-transparent" />
+          <p className="relative text-2xs font-bold uppercase tracking-[0.18em] text-gold">{heroKicker}</p>
+          <h1 className="relative mt-1 text-title font-extrabold text-white">{heroTitle}</h1>
+          <p className="relative mt-1 text-2xs leading-5 text-white/75">{heroSubtitle}</p>
           {/* The week's verse lives here instead of taking a section of its own. */}
-          <div className="mt-3 rounded-2xl bg-white/10 p-3">
+          <div className="relative mt-3 rounded-2xl border-l-2 border-gold/80 bg-white/10 p-3">
             <p className="text-caption font-semibold leading-6 text-white">“{verseText}”</p>
             <p className="mt-1 text-2xs font-semibold text-white/70">{verseRef}</p>
           </div>
-          <button onClick={openPastorChat} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-2xs font-extrabold text-accent-strong shadow-card"><Icon name="heart" size={15} /> Ask for prayer</button>
+          <button onClick={openPastorChat} className="relative mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-surface px-4 text-2xs font-extrabold text-accent-strong shadow-card ring-1 ring-gold/50"><Icon name="heart" size={15} className="text-gold-strong" /> Ask for prayer</button>
         </div>
       </section>
 
@@ -852,6 +862,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
         <section className="mt-5" aria-label="Upcoming church events">
           <div className="mb-2 flex items-end justify-between gap-3">
             <div>
+              <span aria-hidden="true" className="section-flag" />
               <h2 className="text-heading font-extrabold text-ink">Coming up</h2>
               <p className="mt-0.5 text-2xs text-ink-muted">Times shown in Nairobi.</p>
             </div>
@@ -876,6 +887,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
 
       <section className="mt-7">
         <div className="mb-3">
+          <span aria-hidden="true" className="section-flag" />
           <h2 className="text-heading font-extrabold text-ink">Listen &amp; watch</h2>
           <p className="mt-0.5 text-2xs text-ink-muted">Recordings from Harvest Family.</p>
         </div>
@@ -895,7 +907,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </section>
 
 
-      <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div>{/* pr-[68px] keeps the rails clear of the floating chat button (48px + its
+      <section className="mt-6"><div className="mb-3 flex items-end justify-between gap-3"><div><span aria-hidden="true" className="section-flag" /><h2 className="text-heading font-extrabold text-ink">Stories</h2><p className="mt-0.5 text-2xs text-ink-muted">Live for 24 hours</p></div><button onClick={() => setTab('post')} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-2xs font-extrabold text-accent"><Icon name="plus" size={13} /> Add story</button></div>{/* pr-[68px] keeps the rails clear of the floating chat button (48px + its
           12px inset), so a story's name is never parked under it. */}<div className="flex gap-3 overflow-x-auto scroll-px-3 pr-[68px] pb-2 scrollbar-none">
         {/* Your story tile: opens your latest story sequence, or the composer if none */}
         <div className="min-w-[88px] text-center"><button onClick={() => { if (!myStoryGroup) { setTab('post'); return }; setMomentIdx(storyStartIndex(myStoryGroup.items)) }} className={`mx-auto block rounded-[28px] p-[3px] ${myStoryAllViewed ? 'bg-line' : 'bg-gradient-to-tr from-gold via-accent to-accent-strong'} shadow-sm`} aria-label={myStoryGroup ? 'View your story' : 'Add your story'}><span className="block w-[78px] h-[78px] rounded-[25px] border-2 border-surface overflow-hidden relative"><span className="absolute inset-0 flex items-center justify-center bg-surface-sunken">{myStoryGroup?.items[0]?.img
@@ -914,7 +926,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
       </div></section>
 
       {feedLoadFailed && <div className="mt-5"><ErrorMessage kind={feedFailedOffline ? 'network' : 'error'} message={feedFailedOffline ? 'You appear to be offline. Reconnect and try again.' : 'We couldn’t load the latest community updates.'} action={<button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} className="inline-flex min-h-11 items-center px-1 text-xs font-bold underline">Retry</button>} /></div>}
-      <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div>{/* aria-busy marks the region itself; the status line is what a screen
+      <section id="home-community" className="mt-7"><div className="mb-3 flex items-end justify-between gap-3"><div><span aria-hidden="true" className="section-flag" /><h2 className="text-heading font-extrabold text-ink">Community</h2><p className="mt-0.5 text-2xs text-ink-muted">Latest from your church family</p></div><button type="button" onClick={() => { setFeedLoadFailed(false); setFeedFailedOffline(false); setFeedTick(x => x + 1) }} disabled={!api} className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-3 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken disabled:opacity-40"><Icon name="retry" size={13} /> Refresh</button></div>{/* aria-busy marks the region itself; the status line is what a screen
           reader actually announces while the skeletons are aria-hidden. */}<div className="-mx-4 divide-y divide-line border-t border-line" aria-busy={Boolean(api) && !feedLoaded && !feedLoadFailed}>
         <p role="status" aria-live="polite" className="sr-only">{!api ? 'Community updates are unavailable in this build' : feedLoadFailed ? 'Community updates failed to load' : !feedLoaded ? 'Loading community updates' : `Showing ${allUpdates.length} community updates`}</p>
         {!api && <p className="px-3 py-6 text-sm leading-6 text-ink-muted">Community updates need the Harvest server. This build runs without it, so there is nothing to show here.</p>}

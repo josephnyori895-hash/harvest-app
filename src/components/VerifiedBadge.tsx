@@ -36,7 +36,7 @@ export function VerifiedBadge({
       <title>{label}</title>
       <defs>
         <linearGradient id={gradientId} x1="4" y1="2" x2="20" y2="22" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#5B4FB0" />
+          <stop offset="0" stopColor="#332B78" />
           <stop offset="0.45" stopColor="#221A56" />
           <stop offset="1" stopColor="#140F38" />
         </linearGradient>
@@ -53,7 +53,7 @@ export function VerifiedBadge({
       <path
         d="m7.5 12.15 2.85 2.9 6.2-6.2"
         fill="none"
-        stroke="#FFFFFF"
+        stroke="#EEB609"
         strokeWidth="2.15"
         strokeLinecap="round"
         strokeLinejoin="round"

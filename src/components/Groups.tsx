@@ -338,15 +338,16 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     } catch (e: any) { showToast(e?.message || 'Could not delete group') } finally { setBusy('') }
   }
 
-  // Group membership avatar colors — warm church tints, one per name.
+  // Group avatar tints stay inside the logo palette — navy, gold and cream —
+  // so a list of groups reads as one brand instead of six unrelated hues.
   const avatarTint = (name: string) => {
     const tints = [
-      'from-accent-soft to-[#C4B5FD] text-accent-strong',
-      'from-gold-soft to-gold text-gold-strong',
-      'from-[#FCE7F3] to-[#F9A8D4] text-[#9D174D]',
-      'from-[#D1FAE5] to-success text-success',
-      'from-[#DBEAFE] to-[#BFDBFE] text-[#1E40AF]',
-      'from-[#FFE4E6] to-[#FECDD3] text-[#9F1239]',
+      'from-accent-soft to-accent/25 text-accent-strong',
+      'from-gold-soft to-gold/30 text-gold-strong',
+      'from-surface-sunken to-line text-ink',
+      'from-accent-wash to-accent-soft text-accent-strong',
+      'from-gold-soft to-accent-wash text-gold-strong',
+      'from-line to-surface-sunken text-ink-muted',
     ]
     let h = 0
     for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 997
@@ -365,7 +366,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
               <p className="text-sm font-extrabold text-ink flex items-center gap-2 flex-wrap">
                 {g.name}
                 {g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent text-white font-extrabold">ADMIN</span>}
-                {g.joined && !g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0F766E] text-white font-extrabold">MEMBER</span>}
+                {g.joined && !g.is_group_admin && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent-strong font-extrabold">MEMBER</span>}
               </p>
               <p className="text-[10px] text-ink-subtle mt-0.5">{g.community ? `${g.community} · ` : ''}{g.member_count} member{g.member_count === 1 ? '' : 's'}</p>
             </div>
@@ -484,7 +485,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                     )}
                   </div>
                   {isAdmin && (
-                    <div className="p-3 rounded-xl bg-[#F5F3FF] border border-accent-soft space-y-2">
+                    <div className="p-3 rounded-xl bg-accent-wash border border-accent-soft space-y-2">
                       <p className="text-[10px] font-extrabold text-accent-strong tracking-widest">📍 REGISTRATION LOCATION</p>
                       <p className="text-[11px] text-accent-strong/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
                       <button type="button" onClick={() => setPickerOpen(true)} className="min-h-10 w-full rounded-xl border border-accent/40 bg-surface text-xs font-extrabold text-accent-strong">
@@ -597,7 +598,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                 {requests.map(q => (
                   <div key={q.id} className="flex items-center gap-2 py-1.5">
                     <div className="min-w-0 flex-1"><p className="text-sm font-semibold truncate">{q.name || q.username}</p><p className="text-[10px] text-ink-subtle">@{q.username}</p></div>
-                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, true)} className="px-3 py-1.5 rounded-full bg-[#0F766E] text-white text-[10px] font-bold disabled:opacity-50">Approve</button>
+                    <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, true)} className="px-3 py-1.5 rounded-full bg-accent text-white text-[10px] font-bold disabled:opacity-50">Approve</button>
                     <button disabled={busy === `req_${q.id}`} onClick={() => void decideRequest(detail.group.slug, q.id, false)} className="px-3 py-1.5 rounded-full bg-surface-sunken text-ink-muted text-[10px] font-bold disabled:opacity-50">Reject</button>
                   </div>
                 ))}

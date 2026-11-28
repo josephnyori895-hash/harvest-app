@@ -60,7 +60,7 @@ export default function UserListModal({ type, userId, users, onBack }: { type: s
             </div>
             {isAdmin && u.username !== viewerName && (
               <div className="flex gap-2 shrink-0">
-                <button disabled={busy} onClick={() => handleToggleVerify(u)} className="px-2.5 py-1.5 rounded-full bg-[#E6FFFA] text-[#0F766E] text-[10px] font-bold disabled:opacity-50">{u.verified ? 'Unverify' : 'Verify'}</button>
+                <button disabled={busy} onClick={() => handleToggleVerify(u)} className="px-2.5 py-1.5 rounded-full bg-success-soft text-success text-[10px] font-bold disabled:opacity-50">{u.verified ? 'Unverify' : 'Verify'}</button>
                 <button disabled={busy} onClick={() => handleToggleAdmin(u)} className="px-2.5 py-1.5 rounded-full bg-accent-soft text-accent-strong text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Member' : 'Admin'}</button>
               </div>
             )}
