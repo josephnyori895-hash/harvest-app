@@ -223,7 +223,7 @@ function chatListTime(iso: string) {
 
 export type TeamChat = { kind: 'department' | 'group'; slug: string; name: string; unread?: number; avatar_url?: string | null; chat_background_url?: string | null }
 
-export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, onActiveChange, onMinimize, onExpand, compact = false }: {
+export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, onCloseTeam, onOpenGroups, onOpenDepartments, onOpenUser, onOpenProfile, onActiveChange, onMinimize, onExpand, compact = false }: {
   onBack: () => void
   users: ChatUser[]
   teamChat?: TeamChat | null
@@ -233,6 +233,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   onOpenGroups?: () => void
   onOpenDepartments?: () => void
   onOpenUser?: (user: any) => void
+  /** Opens a member's profile from inside a conversation. Kept separate from
+      onOpenUser so a DM can be restored when the member comes back. */
+  onOpenProfile?: (user: any) => void
   /** Reports the open 1:1 peer so the mini panel can reopen it full-screen. */
   onActiveChange?: (user: ChatUser | null) => void
   /** Compact-panel-only window controls. */
@@ -420,7 +423,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     setAtBottom(true)
   }
   // Android IME can resize the WebView viewport without reliably updating 100dvh.
-  // Track the visual viewport so the composer remains inside the visible area.
+  // Track the visual viewport so the composer remains inside the visible area,
+  // but never let that height exceed the chat pane (see the style below).
   const [chatViewportHeight, setChatViewportHeight] = useState<number | null>(null)
   useEffect(() => {
     const viewport = window.visualViewport
@@ -438,6 +442,14 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const swipeStartY = useRef<number | null>(null)
   const currentUser = authUsername || localStorage.getItem('harvest_username') || ''
   const currentProfile = users.find((u: any) => u.username === currentUser)
+  // Tap a name or avatar to open that member's profile. Directory entry when we
+  // have it, otherwise the conversation's own snapshot (ViewUser fetches by
+  // username anyway).
+  const openMemberProfile = (person: any) => {
+    if (!onOpenProfile || !person?.username) return
+    const dir = (users as any[]).find(u => String(u.username || '').toLowerCase() === String(person.username).toLowerCase())
+    onOpenProfile(dir || person)
+  }
   const canModerateChat = currentProfile?.role === 'admin' || String(currentProfile?.grants || '').split(',').map((x: string) => x.trim()).includes('moderate_chat')
   // Last-seen unread counts (peer → count) + currently open conversation,
   // so the background poller can detect FRESH incoming messages.
@@ -1352,9 +1364,13 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
     return (
       <main
         className="chat-screen flex min-h-0 w-full overflow-hidden bg-surface text-ink"
+        // Fill the chat pane, never more. A raw 100dvh is taller than the pane
+        // (the app column already reserves the status-bar inset), which let the
+        // whole conversation scroll and pushed the header/composer off their
+        // edges. maxHeight keeps the IME-tracking height inside the pane too.
         style={compact
           ? { height: '100%', maxHeight: '100%' }
-          : { height: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh', maxHeight: chatViewportHeight ? `${chatViewportHeight}px` : '100dvh' }}
+          : { height: chatViewportHeight ? `${chatViewportHeight}px` : '100%', maxHeight: '100%' }}
       >
         {wide && (
           <aside className="w-[336px] shrink-0 overflow-hidden border-r border-line">
@@ -1362,24 +1378,40 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           </aside>
         )}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="z-20 flex h-[68px] shrink-0 items-center gap-3 border-b border-line bg-surface/80 pl-3 pr-3 backdrop-blur-xl">
+        {/* pr-14 clears the floating notification bell that anchors to the
+            top-right of the app column; without it the bell sat on the search
+            control. */}
+        <header className={`z-20 flex h-[68px] shrink-0 items-center gap-2 border-b border-line bg-surface/80 pl-3 backdrop-blur-xl ${compact ? 'pr-3' : 'pr-14'}`}>
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
-          <div className="relative h-11 w-11 shrink-0">
-            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent-soft font-bold text-accent-strong">
-              {isTeam
-                ? (team!.avatar_url
-                    ? <img src={team!.avatar_url} alt="" className="h-full w-full object-cover" />
-                    : <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} />)
-                : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
-            </div>
-            {!isTeam && presence[active.username]?.online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface-raised bg-success" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="flex min-w-0 items-center gap-1.5 font-bold text-ink">
-              <span className="truncate">{isTeam ? team!.name : active.name || active.username}</span>
-              {!isTeam && active.verified && <VerifiedBadge />}
-            </p>
-            <p className="truncate text-2xs text-ink-muted">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="font-semibold text-success">Active now</span> : 'Harvest church family'}</p>
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => { if (!isTeam) openMemberProfile(active) }}
+              disabled={isTeam || !onOpenProfile}
+              className={`relative h-11 w-11 shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${isTeam || !onOpenProfile ? '' : 'active:scale-95'}`}
+              aria-label={isTeam ? undefined : `View ${active.name || active.username}'s profile`}
+            >
+              <span className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-accent-soft font-bold text-accent-strong">
+                {isTeam
+                  ? (team!.avatar_url
+                      ? <img src={team!.avatar_url} alt="" className="h-full w-full object-cover" />
+                      : <Icon name={team!.kind === 'department' ? 'building' : 'users'} size={20} />)
+                  : active.avatar_url ? <img src={active.avatar_url} alt="" className="h-full w-full object-cover" /> : (active.username?.[0] || '?').toUpperCase()}
+              </span>
+              {!isTeam && presence[active.username]?.online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface-raised bg-success" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!isTeam) openMemberProfile(active) }}
+              disabled={isTeam || !onOpenProfile}
+              className={`min-w-0 flex-1 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${isTeam || !onOpenProfile ? '' : 'transition hover:bg-surface-sunken'}`}
+            >
+              <span className="flex min-w-0 items-center gap-1.5 font-bold text-ink">
+                <span className="truncate">{isTeam ? team!.name : active.name || active.username}</span>
+                {!isTeam && active.verified && <VerifiedBadge />}
+              </span>
+              <span className="block truncate text-2xs text-ink-muted">{isTeam ? (team!.kind === 'group' ? 'Group conversation' : 'Department conversation') : presence[active.username]?.online ? <span className="font-semibold text-success">Active now</span> : 'Harvest church family'}</span>
+            </button>
           </div>
           {isTeam && (team!.kind === 'department' ? onOpenDepartments : onOpenGroups) && (
             <button
@@ -1481,11 +1513,19 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     <div className="h-px flex-1 bg-accent/30" /><span className="rounded-full bg-accent-soft px-2.5 py-1 text-2xs font-extrabold uppercase tracking-wider text-accent-strong">New messages</span><div className="h-px flex-1 bg-accent/30" />
                   </div>
                 )}
-                {isTeam && !mine && groupStart && <p className="mb-1 ml-1 text-2xs font-bold text-ink-muted">{m.from}</p>}
+                {isTeam && !mine && groupStart && (
+                  <button
+                    type="button"
+                    onClick={() => openMemberProfile({ username: m.from })}
+                    className="mb-1 ml-1 rounded text-2xs font-bold text-ink-muted transition hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  >
+                    {m.from}
+                  </button>
+                )}
                 <div className={`flex ${groupStart ? 'mt-3' : 'mt-[3px]'} ${mine ? 'justify-end' : 'justify-start'}`}>
                   {!mine && (
                     showAvatar
-                      ? <div className="mr-1.5 mb-1 grid h-9 w-9 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong">{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</div>
+                      ? <button type="button" onClick={() => openMemberProfile({ username: m.from, avatar_url: m.avatar_url })} className="mr-1.5 mb-1 grid h-9 w-9 shrink-0 place-items-center self-end overflow-hidden rounded-full bg-accent-soft text-2xs font-bold text-accent-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40" aria-label={`View ${m.from}'s profile`}>{m.avatar_url ? <img src={m.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" /> : (m.from?.[0] || '?').toUpperCase()}</button>
                       : <div className="mr-1.5 w-9 shrink-0" aria-hidden="true" />
                   )}
                   <div className="group/msg relative max-w-[min(78%,34rem)]">

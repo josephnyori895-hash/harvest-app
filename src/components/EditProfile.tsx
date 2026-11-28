@@ -115,11 +115,8 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
           <Icon name="close" size={19} />
         </button>
         <p className="text-sm font-extrabold">Edit profile</p>
-        <button
-          onClick={() => void save()}
-          disabled={busy || avatarUploading || !dirty}
-          className={`min-h-11 rounded-xl px-3 text-sm font-extrabold ${busy || avatarUploading || !dirty ? 'text-ink-subtle' : 'text-accent'}`}
-        >{busy ? 'Saving…' : 'Save'}</button>
+        {/* Balances the close button so the title stays centred. */}
+        <span className="h-11 w-11 shrink-0" aria-hidden="true" />
       </div>
 
       {notice && <div className="mx-4 mt-3"><ErrorMessage message={notice} /></div>}
@@ -184,6 +181,26 @@ export default function EditProfile({ onDone }: { onDone: () => void }) {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* One obvious primary action, always reachable above the tab bar. The old
+          header "Save" read as a link and had no room to explain why it was
+          disabled. */}
+      <div
+        className="sticky z-20 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur-xl"
+        style={{ bottom: 'calc(56px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))' }}
+      >
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={busy || avatarUploading || !dirty}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-extrabold text-white shadow-card transition active:scale-[0.99] disabled:bg-surface-sunken disabled:text-ink-subtle disabled:shadow-none"
+        >
+          {busy ? 'Saving…' : avatarUploading ? 'Uploading photo…' : saved ? 'Saved' : 'Save changes'}
+        </button>
+        <p className="mt-1.5 text-center text-2xs text-ink-subtle" aria-live="polite">
+          {dirty ? 'Changes are saved only when you tap Save changes.' : 'No changes to save yet.'}
+        </p>
       </div>
     </div>
   )

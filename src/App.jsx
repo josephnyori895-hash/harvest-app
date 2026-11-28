@@ -1139,7 +1139,7 @@ function InnerApp() {
             </span>
           )}
         </button>
-        <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? 'overflow-hidden' : 'app-scroll-bottom-safe'}`}>
+        <div className={`app-content app-scroll flex-1 ${tab === 'chat' ? '!overflow-hidden' : 'app-scroll-bottom-safe'}`}>
           <div className="contents">
           {/* Home stays mounted when switching tabs (hidden, not unmounted) so
               scroll position and loaded feed state survive the round-trip —
@@ -1163,6 +1163,12 @@ function InnerApp() {
               onOpenGroups={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('groups') }}
               onOpenDepartments={() => { setChatReturnTab('chat'); setTeamChat(null); setTab('departments') }}
               onOpenUser={openProfile}
+              onOpenProfile={(u) => {
+                // Return to the same DM after viewing a profile. Team routes are
+                // already remembered by teamChat, but a DM lives in Chat state.
+                if (!teamChat && u?.username) setDmTarget({ id: String(u.id || u.username), username: String(u.username), name: u.name || String(u.username) })
+                openProfile(u)
+              }}
             />
           )}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
@@ -1274,6 +1280,7 @@ function InnerApp() {
                 onOpenGroups={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('groups') }}
                 onOpenDepartments={() => { setDmSheet(false); setChatReturnTab(tab); setTeamChat(null); setTab('departments') }}
                 onOpenUser={(u) => { setDmSheet(false); openProfile(u) }}
+                onOpenProfile={(u) => { setDmSheet(false); openProfile(u) }}
               />
             </div>
           )}
@@ -2093,17 +2100,20 @@ const savedAgo = iso => {
 // Plain-language meaning of the last push registration attempt. The phone is
 // the only place a blocked permission or a missing Firebase token is visible,
 // so the wording points at the next thing the member can actually do.
-function pushStatusText(status) {
+function pushStatusText(status, isAdmin) {
   const detail = status?.detail ? ` (${status.detail})` : ''
+  // Admin sign-in codes are an admin-only concern. A member saw the same copy
+  // and was told to expect codes that can never arrive on their phone.
+  const reachable = isAdmin ? 'Admin sign-in codes and announcements' : 'Chat messages and church announcements'
   switch (status?.state) {
-    case 'registered': return 'On. Admin sign-in codes and announcements can reach this phone.'
+    case 'registered': return `On. ${reachable} can reach this phone.`
     case 'permission-denied': return 'Android is blocking notifications for this app. Open Settings → Apps → Harvest Family Church → Notifications, allow them, then tap Retry.'
     case 'no-token': return `Notifications are allowed, but Android did not issue a push token${detail}. Check that Google Play services is installed and up to date, then tap Retry.`
     case 'plugin-missing': return 'This build has no push service. Install the latest app update, then tap Retry.'
     case 'unreachable': return `This phone could not reach the church server${detail}. Check the connection, then tap Retry.`
     case 'signed-out': return 'Sign in to receive notifications on this phone.'
     case 'error': return `Push setup failed${detail}. Tap Retry.`
-    default: return 'Not set up yet. Allow notifications so admin sign-in codes can reach this phone.'
+    default: return `Not set up yet. Allow notifications so ${reachable.toLowerCase()} can reach this phone.`
   }
 }
 
@@ -2254,7 +2264,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
               {pushStatus?.state === 'registered' ? 'On' : 'Off'}
             </span>
           </div>
-          <p className="mt-1 text-[12px] leading-5 text-ink-muted">{pushStatusText(pushStatus)}</p>
+          <p className="mt-1 text-[12px] leading-5 text-ink-muted">{pushStatusText(pushStatus, isAdmin)}</p>
           {pushStatus?.state === 'registered' ? (
             getPushTokenHint() && <p className="mt-1 text-[11px] text-ink-muted">Device key ends {getPushTokenHint()}</p>
           ) : (
