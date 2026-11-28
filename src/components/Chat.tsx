@@ -1516,7 +1516,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           onScroll={syncScrollState}
           className="chat-messages h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4"
           style={team?.chat_background_url ? {
-            backgroundImage: `linear-gradient(rgb(var(--surface) / .90), rgb(var(--surface) / .95)), url("${team.chat_background_url}")`,
+            backgroundImage: `linear-gradient(rgb(var(--surface) / .68), rgb(var(--surface) / .78)), url("${team.chat_background_url}")`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',

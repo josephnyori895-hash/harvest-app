@@ -25,6 +25,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   const [mediaRetryKey, setMediaRetryKey] = useState(0)
   const [deleting, setDeleting] = useState(false)
   const [reply, setReply] = useState('')
+  const [replyFocused, setReplyFocused] = useState(false)
+  const replyInputRef = useRef<HTMLInputElement | null>(null)
   const [replies, setReplies] = useState<any[]>([])
   const [replyBusy, setReplyBusy] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
@@ -54,8 +56,14 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   const videoRef = useRef<HTMLVideoElement | null>(null)
   // Photo stories auto-advance on the author's chosen duration; video stories
   // play in full (onEnded). Composer-chosen duration rides the upload task.
-  const storyDurationSec = Number((s as any)?.duration_secs) || Number((s as any)?.duration) || 4
+  const storyDurationSec = Math.max(5, Number((s as any)?.duration_secs) || Number((s as any)?.duration) || 5)
   const duration = isVideo ? 0 : storyDurationSec * 1000
+  // Pausing must not restart the bar: keep what is left of this story.
+  const remainingRef = useRef(duration)
+  const playingStoryRef = useRef('')
+  // Any interaction with the story (reactions, replies, viewers, typing) holds
+  // the story where it is instead of moving on underneath the member.
+  const interacting = showReactions || showReplies || showViews || replyFocused || Boolean(reply.trim()) || editing
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
   // Delete/moderation controls follow the session role, never raw storage.
   const { isAdmin } = useAuth()
@@ -113,13 +121,26 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
 
   useEffect(() => {
     if (!s || isVideo) return undefined
-    setProgress(0)
-    setIsPaused(false)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    if (isPaused) return undefined
-    timerRef.current = setTimeout(() => goNext(), duration)
-    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [idx, isPaused, setIdx, allStories.length, duration, s, isVideo])
+    // A fresh story always starts with its full time; only a pause inside the
+    // same story resumes from what was left (the reset effect runs later).
+    if (playingStoryRef.current !== String(s.id)) {
+      playingStoryRef.current = String(s.id)
+      remainingRef.current = duration
+    }
+    if (isPaused || interacting) return undefined
+    const started = Date.now()
+    const remaining = remainingRef.current
+    timerRef.current = setTimeout(() => goNext(), remaining)
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - started
+      setProgress(Math.min(100, ((duration - remaining + elapsed) / duration) * 100))
+    }, 50)
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      clearInterval(interval)
+      remainingRef.current = Math.max(0, remaining - (Date.now() - started))
+    }
+  }, [idx, isPaused, interacting, setIdx, allStories.length, duration, s, isVideo])
 
   useEffect(() => {
     setVideoState('loading')
@@ -154,9 +175,9 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   useEffect(() => {
     const v = videoRef.current
     if (!v || !isVideo || videoState === 'error') return
-    if (isPaused) v.pause()
+    if (isPaused || interacting) v.pause()
     else if (videoState === 'playing') v.play().catch(() => setVideoState('blocked'))
-  }, [isPaused, isVideo, videoState])
+  }, [isPaused, interacting, isVideo, videoState])
 
   // Instagram's progress bars belong to the account you are watching: one
   // segment per story that author posted, and the last one moves you on to the
@@ -210,18 +231,6 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   }
 
   useEffect(() => {
-    if (!s || isVideo || isPaused) return undefined
-    const start = Date.now()
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - start
-      const p = Math.min(100, (elapsed / duration) * 100)
-      setProgress(p)
-      if (p >= 100) clearInterval(interval)
-    }, 50)
-    return () => clearInterval(interval)
-  }, [idx, isPaused, duration, s, isVideo])
-
-  useEffect(() => {
     if (!s?.id) return
     onViewed?.(String(s.id))
     const token = localStorage.getItem('harvest_token') || ''
@@ -243,6 +252,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
     setShowReactions(false)
     setReplies([])
     setReply('')
+    replyInputRef.current?.blur()
     setShowReplies(false)
     if (isStoryAuthor) void loadReplies()
   }, [s?.id, isStoryAuthor])
@@ -479,7 +489,7 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
             >
               <Icon name="heart" size={18} className={showReactions ? 'fill-current' : ''} />
             </button>
-            <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="min-w-0 flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
+            <input ref={replyInputRef} value={reply} onChange={e=>setReply(e.target.value)} onFocus={()=>setReplyFocused(true)} onBlur={()=>setReplyFocused(false)} onKeyDown={e=>{if(e.key==='Enter')void sendReply()}} placeholder="Reply to this story…" className="min-w-0 flex-1 min-h-11 rounded-full border border-white/20 bg-white/10 px-4 text-white placeholder:text-stone-300" />
             <button onClick={()=>void sendReply()} disabled={replyBusy||!reply.trim()} className="min-h-11 rounded-full bg-accent text-white px-4 py-2 text-xs font-bold disabled:opacity-50">{replyBusy?'…':(replySent?'Sent':'Send')}</button>
           </>) }
         </div>

@@ -24,6 +24,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Two commits so the member-facing update label can classify what
+          # this release changed without exposing commit detail to the app.
+          fetch-depth: 2
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -119,6 +123,23 @@ jobs:
           echo "HARVEST_VERSION_CODE=${CODE}" >> "$GITHUB_ENV"
           echo "HARVEST_VERSION_NAME=1.0.${CODE}" >> "$GITHUB_ENV"
           echo "Release versionCode: ${CODE} (live was ${LIVE_CODE:-unknown})"
+
+      # Members only ever see one plain phrase such as "Chat update". Commit
+      # subjects, branch names and internal paths stay in CI.
+      - name: Label this update for members
+        run: |
+          set -euo pipefail
+          FILES="$(git diff --name-only HEAD^ HEAD 2>/dev/null || true)"
+          LABEL="App update"
+          if grep -qiE '(^|/)(auth|security|middleware)(\.|/|$)' <<< "$FILES"; then
+            LABEL="Security update"
+          elif grep -qE '^src/components/(Chat|Comments|Stories)\.tsx$|^workers/src/(routes/chat|realtime)' <<< "$FILES"; then
+            LABEL="Chat update"
+          elif grep -qE '^src/components/(PostCreate|Reels|ImageAdjuster|VideoAdjuster)\.tsx$|^src/lib/imageFilters' <<< "$FILES"; then
+            LABEL="Camera update"
+          fi
+          echo "UPDATE_LABEL=${LABEL}" >> "$GITHUB_ENV"
+          echo "Member-facing update label: ${LABEL}"
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -574,8 +595,8 @@ jobs:
           df -h / || true
           test -d workers/public || { echo "::error::workers/public was not staged"; exit 1; }
           test -n "$LOCAL_SHA" || { echo "::error::LOCAL_SHA is not set"; exit 1; }
-          if ! printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s"}\n' \
-            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" > workers/public/app-version.json; then
+          if ! printf '{"version_code": %s, "version_name": "%s", "apk_url": "/harvest-family.apk", "sha256": "%s", "update_label": "%s"}\n' \
+            "$HARVEST_VERSION_CODE" "$HARVEST_VERSION_NAME" "$LOCAL_SHA" "${UPDATE_LABEL:-App update}" > workers/public/app-version.json; then
             echo "::error::could not write workers/public/app-version.json — free space: $(df -h / | tail -1)"
             exit 1
           fi

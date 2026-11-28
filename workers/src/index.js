@@ -187,6 +187,9 @@ export default {
           version_code: manifest.version_code,
           version_name: manifest.version_name,
           apk_url: manifest.apk_url,
+          // One plain phrase for the prompt ("Chat update"); never release
+          // notes, commit text or anything administrative.
+          ...(manifest.update_label ? { update_label: String(manifest.update_label).slice(0, 40) } : {}),
           ...(manifest.sha256 ? { sha256: manifest.sha256 } : {}),
         }), env, request)
       }

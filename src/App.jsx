@@ -289,6 +289,9 @@ function UpdateGate({ children }) {
             </div>
             <p className="mt-4 text-[10px] font-extrabold uppercase tracking-[0.2em] text-gold">Harvest Family Church</p>
             <h2 id="update-prompt-title" className="mt-1.5 text-[22px] font-extrabold leading-tight">Update available</h2>
+            {update.updateLabel && (
+              <span className="mt-3 inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] text-gold">{update.updateLabel}</span>
+            )}
             <p id="update-prompt-copy" className="mx-auto mt-2 max-w-[300px] text-[13px] leading-6 text-white/60">
               A newer version of the church app is ready{update.versionName ? ` (v${update.versionName})` : ''}. Update now to keep everything working smoothly.
             </p>

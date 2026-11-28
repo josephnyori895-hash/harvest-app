@@ -17,6 +17,8 @@ export type UpdateInfo = {
   versionName?: string
   apkUrl?: string
   sha256?: string
+  // A short, member-facing phrase such as "Chat update".
+  updateLabel?: string
 }
 
 const DISMISS_KEY = 'harvest_update_dismissed_code'
@@ -114,6 +116,7 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
       available: true,
       versionCode: Number.isFinite(latest) ? latest : 0,
       versionName: latestName,
+      updateLabel: String(d.update_label || '').trim().slice(0, 40),
       apkUrl: String(d.apk_url || '/harvest-family.apk'),
       // Older manifests have no digest. The native side verifies whenever one
       // is present, so an install never has to trust a truncated download.
