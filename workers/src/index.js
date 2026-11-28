@@ -48,6 +48,7 @@ async function readAppVersionManifest(env, url) {
       version_code: code,
       version_name: String(data?.version_name || ''),
       apk_url: String(data?.apk_url || '/harvest-family.apk'),
+      update_label: String(data?.update_label || '').trim().slice(0, 40),
       sha256: /^[0-9a-f]{64}$/.test(sha256) ? sha256 : '',
     }
   } catch {

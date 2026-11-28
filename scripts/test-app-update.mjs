@@ -41,6 +41,10 @@ test('the release endpoint reports 1000 + run, matching the stamped versionCode'
   assert.match(worker, /sha256: \/\^\[0-9a-f\]\{64\}\$\/\.test\(sha256\)/,
     'the manifest digest is validated before it reaches the app')
   assert.match(worker, /sha256: manifest\.sha256/, 'the endpoint exposes the shipped APK digest')
+  assert.match(worker, /update_label: String\(data\?\.update_label \|\| ''\)/,
+    'the member-facing label survives the manifest whitelist')
+  assert.match(worker, /update_label: String\(manifest\.update_label\)/,
+    'the endpoint exposes the member-facing label')
 })
 
 test('the Worker slices APK Range requests instead of forwarding them to assets', async () => {
