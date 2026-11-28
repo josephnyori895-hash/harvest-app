@@ -1204,13 +1204,29 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
           <section className="border-b border-line px-4 pb-1 pt-4">
             <div className="flex gap-4 overflow-x-auto pb-3">
               {inbox.slice(0, 12).map(c => (
-                <button type="button" key={`rail_${c.conversation_key}`} onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }} className="w-[68px] shrink-0 text-center" aria-label={`Open chat with ${c.peer_name}`}>
-                  <div className={`relative mx-auto w-[62px] rounded-full p-[2.5px] ${c.unread > 0 ? 'bg-gradient-to-br from-gold to-accent' : 'border-2 border-line'}`}>
-                    <div className="flex h-[54px] w-[54px] items-center justify-center overflow-hidden rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{c.avatar_url ? <img src={c.avatar_url} alt="" className="h-full w-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
-                    {presence[c.peer]?.online && <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
-                  </div>
-                  <p className="mt-1 truncate text-2xs text-ink-muted">{c.peer_name?.split(' ')[0] || c.peer}</p>
-                </button>
+                <div key={`rail_${c.conversation_key}`} className="w-[68px] shrink-0 text-center">
+                  {/* Avatar opens the member's profile; the name below still
+                      opens the conversation. */}
+                  <button
+                    type="button"
+                    onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url })}
+                    className="mx-auto block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95"
+                    aria-label={`View ${c.peer_name || c.peer}'s profile`}
+                  >
+                    <div className={`relative mx-auto w-[62px] rounded-full p-[2.5px] ${c.unread > 0 ? 'bg-gradient-to-br from-gold to-accent' : 'border-2 border-line'}`}>
+                      <div className="flex h-[54px] w-[54px] items-center justify-center overflow-hidden rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{c.avatar_url ? <img src={c.avatar_url} alt="" className="h-full w-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
+                      {presence[c.peer]?.online && <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }}
+                    className="mt-1 block w-full truncate text-2xs text-ink-muted hover:text-ink"
+                    aria-label={`Open chat with ${c.peer_name || c.peer}`}
+                  >
+                    {c.peer_name?.split(' ')[0] || c.peer}
+                  </button>
+                </div>
               ))}
             </div>
           </section>
