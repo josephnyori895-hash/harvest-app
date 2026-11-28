@@ -76,6 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('harvest_token')
     clearLegacyTokenCache()
     localStorage.removeItem(LS_USERNAME)
+    // Never leave an admin sign-in code on a phone being handed to a member.
+    localStorage.removeItem('harvest_admin_code')
     localStorage.removeItem('harvest_msgs')
     localStorage.removeItem('harvest_pinned_chats')
     localStorage.setItem(LS_ROLE, 'guest')

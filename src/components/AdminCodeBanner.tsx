@@ -6,6 +6,7 @@
 // dismissed, and survives a reload for the ten minutes the code is valid.
 import { useEffect, useState } from 'react'
 import { showToast } from './Toast'
+import { useAuth } from '../state/auth'
 
 const KEY = 'harvest_admin_code'
 const TTL = 10 * 60 * 1000
@@ -41,6 +42,9 @@ function codeFromPush(detail: any): string {
 }
 
 export function AdminCodeBanner() {
+  // A sign-in code is admin-only content. Never paint it for a member, even if
+  // a previous admin session left a code behind on a shared phone.
+  const { isAdmin } = useAuth()
   const [state, setState] = useState<Stored | null>(() => load())
 
   useEffect(() => {
@@ -59,7 +63,7 @@ export function AdminCodeBanner() {
     }
   }, [])
 
-  if (!state) return null
+  if (!isAdmin || !state) return null
   const minutes = Math.max(1, Math.ceil((state.at + TTL - Date.now()) / 60_000))
 
   const copy = async () => {

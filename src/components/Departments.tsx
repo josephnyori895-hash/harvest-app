@@ -380,7 +380,7 @@ export default function Departments({ onOpenDeptChat, onOpenUser }: { onOpenDept
             )}
             {canManage && (
               <div className="mb-3 rounded-xl border border-line bg-surface-raised p-3">
-                <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Admin — add member</p>
+                <p className="mb-2 text-2xs font-extrabold uppercase tracking-[0.12em] text-gold-strong">Add a team member</p>
                 <div className="flex gap-2">
                   <input value={addUsername} onChange={e => setAddUsername(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent" />
                   <button disabled={busy.startsWith('assign')} onClick={() => void assign(detail.department.slug, addUsername, 'member')} className="px-3 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50">Add</button>

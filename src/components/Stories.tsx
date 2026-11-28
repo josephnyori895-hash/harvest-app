@@ -8,6 +8,7 @@ import { VerifiedBadge } from './VerifiedBadge'
 import { Icon, Spinner } from '../ui'
 import { toggleInlineMediaTrack, stopInlineMediaAudio, activeInlineMediaTrackId } from '../lib/inlineMediaAudio'
 import { useAndroidBack } from '../lib/useAndroidBack'
+import { useAuth } from '../state/auth'
 // STORY VIEWER — immersive full-screen, auto-advance to next USER.
 // Photo stories advance on a 4s timer; VIDEO stories play in full — the
 // progress bar tracks the video itself and the next story loads on 'ended'.
@@ -56,7 +57,8 @@ export default function StoryViewer({ idx, setIdx, allStories, users: _users = [
   const storyDurationSec = Number((s as any)?.duration_secs) || Number((s as any)?.duration) || 4
   const duration = isVideo ? 0 : storyDurationSec * 1000
   const me = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
-  const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
+  // Delete/moderation controls follow the session role, never raw storage.
+  const { isAdmin } = useAuth()
   const canDelete = Boolean(s?.id && (s.username === me || isAdmin))
   const canEdit = canDelete
   const isStoryAuthor = Boolean(s?.username && s.username === me)

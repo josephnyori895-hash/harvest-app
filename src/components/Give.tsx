@@ -7,6 +7,7 @@ import { useModalFocus } from '../lib/useModalFocus'
 import { Icon } from '../ui'
 import ErrorMessage from './ErrorMessage'
 import { describeError } from '../lib/actionFeedback'
+import { useAuth } from '../state/auth'
 
 import { parseFunds, parseQuick } from '../lib/givingDefaults'
 
@@ -272,8 +273,9 @@ export default function Give({ focusProjectId, onFocusHandled }: { focusProjectI
     } catch (e) { showToast(e instanceof Error ? e.message : 'Could not delete project', 'error') }
   }
   const apiEnabled = useApi()
-  const currentRole = (() => { try { return localStorage.getItem('harvest_role') } catch { return 'member' } })()
-  const isAdmin = currentRole === 'admin'
+  // Giving administration is gated by the session's role. Reading the raw
+  // storage key showed admin tabs to a stale or tampered client.
+  const { isAdmin } = useAuth()
 
   // Group / department / community directories for take pickers.
   useEffect(() => {

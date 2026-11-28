@@ -1,7 +1,7 @@
 import FeedCard from './FeedCard'
 import { AdvertCard } from './FeedCard'
 import { Fragment, useState, useMemo, useEffect, useRef } from 'react'
-import { getLikesTable, toggleLikeKey } from '../state/auth'
+import { getLikesTable, toggleLikeKey, useAuth } from '../state/auth'
 import { fetchFeed, useApi } from '../lib/api'
 import StoryViewer from './Stories'
 import Comments from './Comments'
@@ -526,7 +526,9 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const likesTable = getLikesTable()
   // Declared BEFORE first use (story grouping below reads it).
   const currentUser = (() => { try { return localStorage.getItem('harvest_username') || '' } catch { return '' } })()
-  const isAdmin = (() => { try { return localStorage.getItem('harvest_role') === 'admin' } catch { return false } })()
+  // Admin-only controls follow the authenticated session, not a client-writable
+  // storage key that can go stale after a role change.
+  const { isAdmin } = useAuth()
   useEffect(() => {
     if (!sharedContent || sharedContent.kind === 'reel' || !feedLoaded) return
     if (feedLoadFailed) {
