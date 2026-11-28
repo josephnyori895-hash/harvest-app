@@ -357,7 +357,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
   const filteredGroups = groups.filter(g => `${g.name || ''} ${g.description || ''} ${g.community || ''}`.toLowerCase().includes(groupQuery.trim().toLowerCase()))
 
   const GroupRow = ({ g }: { g: any }) => (
-    <div className="w-full p-4 rounded-[22px] bg-white border border-line shadow-sm hover:shadow-md transition">
+    <div className="w-full p-4 rounded-[22px] bg-surface-raised border border-line shadow-card hover:shadow-raised transition">
       <div className="flex items-center justify-between gap-3">
         <button type="button" onClick={() => openDetail(g.slug)} className="min-w-0 flex-1 text-left active:opacity-70">
           <div className="flex items-center gap-3">
@@ -396,7 +396,8 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     const me = detail?.members?.find(m => m.username === viewerName)
     return (
       <div className="group-detail-screen flex h-full min-h-0 max-h-full min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
-        <div className="flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface/95 backdrop-blur z-10">
+        <div className="relative flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface/95 backdrop-blur z-10">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
           <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-accent-strong" aria-label="Back">‹</button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
           {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
@@ -406,7 +407,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             {showSettings && canManage ? (
               /* ── WhatsApp-style group settings panel ── */
               <div className="space-y-3">
-                <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-3 shadow-sm">
+                <div className="p-4 rounded-2xl bg-surface-raised border border-accent/25 space-y-3 shadow-card">
                   <p className="text-[10px] font-extrabold text-accent tracking-widest">ADMIN — GROUP SETTINGS</p>
                   <div className="rounded-xl border border-line bg-surface-sunken p-3">
                     <p className="text-[10px] font-extrabold text-ink-subtle tracking-widest">GROUP PHOTO & CHAT BACKGROUND</p>
@@ -562,7 +563,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                     <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-surface-sunken text-ink-muted text-xs font-bold">Cancel</button>
                   </div>
                 </div>
-                <div className="p-4 rounded-2xl bg-white border border-line space-y-2 shadow-sm">
+                <div className="p-4 rounded-2xl bg-surface-raised border border-line space-y-2 shadow-card">
                   <p className="text-[10px] font-extrabold text-accent tracking-widest">ADD MEMBER DIRECTLY</p>
                   <div className="flex gap-2">
                     <input value={addUname} onChange={e => setAddUname(e.target.value)} placeholder="username" autoCapitalize="none" className="min-w-0 flex-1 bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
@@ -578,7 +579,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                 <button
                   disabled={busy === `del_${detail.group.slug}`}
                   onClick={() => void deleteGroup(detail.group.slug, detail.group.name)}
-                  className="w-full py-2.5 rounded-xl bg-white border border-red-200 text-red-600 text-xs font-bold disabled:opacity-50"
+                  className="w-full py-2.5 rounded-xl bg-danger-soft border border-danger/30 text-danger text-xs font-bold disabled:opacity-50"
                 >
                   {busy === `del_${detail.group.slug}` ? 'Deleting…' : '🗑 Delete this group'}
                 </button>
@@ -593,7 +594,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             )}
 
             {canManage && requests.length > 0 && (
-              <div className="p-3 rounded-xl bg-white border border-gold mb-2 shadow-sm">
+              <div className="p-3 rounded-xl bg-surface-raised border border-gold/60 mb-2 shadow-card">
                 <p className="text-[10px] font-extrabold text-gold-strong mb-2 tracking-widest">JOIN REQUESTS ({requests.length})</p>
                 {requests.map(q => (
                   <div key={q.id} className="flex items-center gap-2 py-1.5">
@@ -606,7 +607,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             )}
 
             {canManage && (
-              <div className="p-3 rounded-xl bg-white border border-line shadow-sm">
+              <div className="p-3 rounded-xl bg-surface-raised border border-line shadow-card">
                 <p className="text-[10px] font-extrabold text-ink-subtle tracking-widest mb-2">GROUP PERMISSIONS</p>
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
                   <span className="text-ink-muted">{detail.group.allow_member_send ? '✓ Everyone can message' : '✓ Admins only can message'}</span>
@@ -619,7 +620,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
 
             <p className="text-[10px] uppercase tracking-widest text-ink-subtle font-bold pt-1">Members ({detail.members.length})</p>
             {detail.members.map(u => (
-              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-white border border-line shadow-sm">
+              <div key={u.username} className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface-raised border border-line shadow-card">
                 <button type="button" onClick={() => onOpenUser?.({ id: u.id, username: u.username, name: u.name || u.username, group_name: u.group_name, verified: Boolean(u.verified), role: u.role })} className="min-w-0 flex-1 flex items-center gap-3 p-1 text-left active:opacity-70" aria-label={`Open ${u.name || u.username}'s profile`}>
                   <div className={`w-10 h-10 shrink-0 rounded-full bg-gradient-to-br ${avatarTint(u.name || u.username)} flex items-center justify-center text-xs font-extrabold`}>{String(u.name || u.username)[0].toUpperCase()}</div>
                   <div className="min-w-0 flex-1">
@@ -630,7 +631,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                 {canManage && u.username !== viewerName && (
                   <div className="flex gap-1.5 shrink-0">
                     <button disabled={busy.startsWith(`role_${detail.group.slug}_`)} onClick={() => void setRole(detail.group.slug, u.username, u.role === 'admin' ? 'member' : 'admin')} className="px-2.5 py-1.5 rounded-full bg-surface-sunken text-accent-strong text-[10px] font-bold disabled:opacity-50">{u.role === 'admin' ? 'Make member' : 'Make admin'}</button>
-                    <button disabled={busy.startsWith(`rm_${detail.group.slug}_`)} onClick={() => void removeMember(detail.group.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold disabled:opacity-50">Remove</button>
+                    <button disabled={busy.startsWith(`rm_${detail.group.slug}_`)} onClick={() => void removeMember(detail.group.slug, u.username)} className="px-2.5 py-1.5 rounded-full bg-danger-soft border border-danger/30 text-danger text-[10px] font-bold disabled:opacity-50">Remove</button>
                   </div>
                 )}
               </div>
@@ -639,7 +640,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
 
             <div className="pt-3">
               {me
-                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-line bg-white text-ink-muted text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
+                ? <button onClick={() => void leave(detail.group.slug)} disabled={busy === `leave_${detail.group.slug}`} className="w-full py-3 rounded-2xl border border-line bg-surface-raised text-ink-muted text-xs font-bold disabled:opacity-50">Leave this group{me.role === 'admin' ? ' (appoint another admin first if you are the only one)' : ''}</button>
                 : <button onClick={() => void join(detail.group.slug)} disabled={busy === `join_${detail.group.slug}`} className="w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm">Request to join</button>}
             </div>
               </>
@@ -689,7 +690,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         {error && <ErrorMessage message={error} kind="network" action={<button type="button" onClick={() => void load()} className="rounded-full bg-white px-3 py-1.5 text-[10px] font-extrabold text-black">Retry</button>} />}
 
         {canCreate && showCreate && (
-          <div className="p-4 rounded-2xl bg-white border-2 border-accent/30 space-y-2 shadow-sm">
+          <div className="p-4 rounded-2xl bg-surface-raised border border-accent/25 space-y-2 shadow-card">
             <p className="text-[10px] font-extrabold text-accent tracking-widest">NEW GROUP</p>
             <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Group name (e.g. Young Couples)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
             <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="w-full bg-surface-sunken border border-line rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent" />
@@ -706,18 +707,18 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         )}
 
         {loading ? (
-          <div role="status" aria-live="polite" className="rounded-2xl border border-line bg-white px-4 py-6 text-center">
+          <div role="status" aria-live="polite" className="rounded-2xl border border-line bg-surface-raised px-4 py-6 text-center">
             <div className="mx-auto w-7 h-7 rounded-full border-2 border-line border-t-accent animate-spin" aria-hidden="true" />
             <p className="mt-3 text-xs font-semibold text-ink-subtle">Loading groups…</p>
           </div>
         ) : groups.length === 0 ? (
-          <div className="rounded-3xl border border-line bg-white px-5 py-10 text-center">
+          <div className="rounded-3xl border border-line bg-surface-raised px-5 py-10 text-center">
             <div className="mx-auto w-14 h-14 rounded-2xl bg-surface-sunken flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
             <h2 className="mt-4 text-sm font-extrabold text-ink">No groups yet</h2>
             <p className="mt-2 text-xs leading-5 text-ink-subtle">Groups you can join will appear here. {canCreate ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>
         ) : (
-          <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-accent" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">No matching groups.</div>}</div>
+          <div className="space-y-3"><label className="sr-only" htmlFor="group-search">Search groups</label><input id="group-search" value={groupQuery} onChange={e => setGroupQuery(e.target.value)} placeholder="Search groups, community or purpose…" className="w-full rounded-2xl border border-line bg-surface-raised px-3 py-2.5 text-sm outline-none focus:border-accent" />{filteredGroups.map(g => <GroupRow key={g.id} g={g} />)}{filteredGroups.length === 0 && <div className="rounded-2xl border border-line bg-surface-raised p-6 text-center text-sm text-ink-muted">No matching groups.</div>}</div>
         )}
       </div>
     </div>

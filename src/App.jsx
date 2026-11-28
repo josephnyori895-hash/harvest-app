@@ -2216,9 +2216,10 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
   return (
     <div className="bg-surface text-ink pb-8">
-      <div className="px-4 pt-5 pb-3 border-b border-line flex justify-between items-center">
+      <div className="relative px-4 pt-5 pb-3 border-b border-line flex justify-between items-center">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-ink-muted font-bold">Harvest Family</p>
+          <p className="text-2xs uppercase tracking-[0.18em] text-gold-strong font-extrabold">Harvest Family</p>
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
         </div>
         <span className={`mr-12 text-[10px] px-2 py-0.5 rounded-full font-bold ${role === 'admin' ? 'bg-accent text-white' : 'bg-surface-sunken text-ink-muted'}`}>
@@ -2264,7 +2265,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       {isPushSupported() && (
         <div className="mt-4 border-t border-line px-4 pt-3" data-testid="push-status">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-accent">Notifications on this phone</h3>
+            <h3 className="text-sm font-bold text-accent"><span aria-hidden="true" className="section-flag" />Notifications on this phone</h3>
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${pushStatus?.state === 'registered' ? 'bg-accent/15 text-accent-strong' : 'bg-surface-sunken text-ink-muted'}`}>
               {pushStatus?.state === 'registered' ? 'On' : 'Off'}
             </span>
@@ -2293,15 +2294,15 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       {isAdmin && (
         <div className="mt-4 border-t border-line pt-3">
-          <h3 className="mb-2 px-4 text-sm font-bold text-accent">Verified accounts</h3>
+          <h3 className="mb-2 px-4 text-sm font-bold text-accent"><span aria-hidden="true" className="section-flag" />Verified accounts</h3>
           <div className="space-y-2 px-4">
             {users.filter(u => u.verified).map(u => (
-              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-white border border-line">
+              <div key={u.username} className="flex items-center justify-between p-2 rounded-xl bg-surface-raised border border-line">
                 <div className="flex gap-2 items-center">
                   <div className="w-8 h-8 rounded-full bg-surface-sunken flex items-center justify-center text-xs">{String(u.username)[0].toUpperCase()}</div>
                   <p className="text-xs font-semibold">{u.name || u.username}</p>
                 </div>
-                <button disabled={busy} onClick={() => void toggleVerified(u)} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white text-black">{u.verified ? 'Unverify' : 'Verify'}</button>
+                <button disabled={busy} onClick={() => void toggleVerified(u)} className="px-3 py-1 rounded-full text-[10px] font-bold bg-accent-soft text-accent-strong">{u.verified ? 'Unverify' : 'Verify'}</button>
               </div>
             ))}
             {users.filter(u => u.verified).length === 0 && <p className="text-xs text-ink-muted">No verified accounts yet.</p>}
@@ -2311,12 +2312,12 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       <div className="mt-4 border-t border-line pt-3">
         <div className="px-4 mb-2">
-          <h3 className="text-sm font-bold text-ink">My Groups</h3>
+          <h3 className="text-sm font-bold text-ink"><span aria-hidden="true" className="section-flag" />My Groups</h3>
           <p className="text-[11px] text-ink-muted">Live membership from the Groups service</p>
         </div>
         <div className="space-y-2 px-4">
           {memberGroups.map(g => (
-            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-white border border-line">
+            <div key={g.slug} className="w-full flex justify-between items-center p-3 rounded-xl bg-surface-raised border border-line">
               <div className="min-w-0"><p className="text-sm font-semibold text-ink truncate">{g.name}</p><p className="text-xs text-ink-muted">{g.my_role === 'admin' ? 'Group admin' : 'Member'}</p></div>
               <span className="grid h-7 w-7 place-items-center rounded-full bg-surface-sunken text-ink"><Icon name="users" size={14} /></span>
             </div>
@@ -2327,11 +2328,11 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
 
       {/* Uploads: live transfers + recent history */}
       <div className="mt-4 border-t border-line pt-3">
-        <h3 className="text-sm font-bold px-4 text-ink mb-2">My uploads</h3>
+        <h3 className="text-sm font-bold px-4 text-ink mb-2"><span aria-hidden="true" className="section-flag" />My uploads</h3>
         {uploads.length > 0 && (
           <div className="space-y-2 px-4 mb-3">
             {uploads.map(u => (
-              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
+              <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-surface-raised border border-line">
                 <div className="w-9 h-9 shrink-0 rounded-full border-2 border-line flex items-center justify-center text-[10px] font-bold text-ink" style={{ background: `conic-gradient(#221A56 ${u.pct}%, #E7E1D2 0)` }}>{u.pct >= 100 ? <Icon name="check" size={12} /> : `${u.pct}`}</div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{u.label}</p>
@@ -2347,8 +2348,8 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         {history.length > 0 && (
           <div className="space-y-2 px-4">
             {history.slice(0, 8).map(h => (
-              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-white border border-line">
-                <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400'}`}>{h.status === 'done' ? <Icon name="check" size={13} /> : <Icon name="close" size={13} />}</span>
+              <div key={h.id + h.at} className="flex items-center gap-3 p-3 rounded-xl bg-surface-raised border border-line">
+                <span className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${h.status === 'done' ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>{h.status === 'done' ? <Icon name="check" size={13} /> : <Icon name="close" size={13} />}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{h.label}</p>
                   {h.status === 'done'
@@ -2369,9 +2370,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
         {savedPostsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved posts…</p>}
-        {savedPostsError && <p className="text-xs text-rose-400 px-4 py-2">{savedPostsError}</p>}
+        {savedPostsError && <p className="text-xs text-danger px-4 py-2">{savedPostsError}</p>}
         {!savedPostsLoading && !savedPostsError && savedPosts.length === 0 && (
-          <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
+          <div className="mx-4 p-4 rounded-2xl bg-surface-raised border border-line">
             <p className="text-xs font-semibold">No saved posts yet.</p>
             <p className="text-[11px] text-ink-muted mt-1">Tap Save on a post to keep it here for later.</p>
           </div>
@@ -2379,7 +2380,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
         {savedPosts.length > 0 && (
           <div className="px-4 grid grid-cols-2 gap-3">
             {savedPosts.map(sp => (
-              <div key={sp.id} className="rounded-2xl overflow-hidden bg-white border border-line">
+              <div key={sp.id} className="rounded-2xl overflow-hidden bg-surface-raised border border-line">
                 {sp.thumb_url ? (
                   <img src={sp.thumb_url} alt={sp.caption || 'Saved post'} loading="lazy" className="w-full aspect-[4/3] object-cover" />
                 ) : (
@@ -2421,9 +2422,9 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
           <span className="text-[10px] text-ink-muted">Saved on every device</span>
         </div>
         {savedReelsLoading && <p className="text-xs text-ink-muted px-4 py-2">Loading saved videos…</p>}
-        {savedReelsError && <p className="text-xs text-rose-400 px-4 py-2">{savedReelsError}</p>}
+        {savedReelsError && <p className="text-xs text-danger px-4 py-2">{savedReelsError}</p>}
         {!savedReelsLoading && !savedReelsError && savedReels.length === 0 && (
-          <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
+          <div className="mx-4 p-4 rounded-2xl bg-surface-raised border border-line">
             <p className="text-xs font-semibold">Nothing saved yet.</p>
             <p className="mt-1 text-2xs text-ink-muted">Tap Save on a Reel to keep it here for later.</p>
           </div>
@@ -2454,7 +2455,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                     value={savedReelSearch}
                     onChange={e => setSavedReelSearch(e.target.value)}
                     placeholder="Search creator or caption"
-                    className="w-full min-h-11 rounded-xl bg-white border border-line px-3 pl-9 text-xs text-ink placeholder:text-ink-subtle outline-none focus:border-line-strong"
+                    className="w-full min-h-11 rounded-xl bg-surface-raised border border-line px-3 pl-9 text-xs text-ink placeholder:text-ink-subtle outline-none focus:border-line-strong"
                   />
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted text-sm" aria-hidden>⌕</span>
                 </label>
@@ -2481,7 +2482,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                   {filtered.map(r => (
                     <button key={r.id} type="button"
                       onClick={() => { window.location.href = `/?shared=reel&id=${encodeURIComponent(String(r.id))}` }}
-                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-white border border-line text-left active:scale-[0.98] transition-transform">
+                      className="relative aspect-[9/13] overflow-hidden rounded-2xl bg-surface-raised border border-line text-left active:scale-[0.98] transition-transform">
                       {r.poster_url ? <img src={r.poster_url} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <div className="absolute inset-0 grid place-items-center"><Icon name="reels" size={26} className="text-ink-subtle" /></div>}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent">
                         <p className="text-[11px] font-bold truncate">{r.username}</p>
@@ -2491,7 +2492,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
                   ))}
                 </div>
               ) : (
-                <div className="mx-4 p-4 rounded-2xl bg-white border border-line">
+                <div className="mx-4 p-4 rounded-2xl bg-surface-raised border border-line">
                   <p className="text-xs font-semibold">No saved videos match.</p>
                   <p className="text-[11px] text-ink-muted mt-1">Try a different creator, caption, or saved-date filter.</p>
                 </div>
