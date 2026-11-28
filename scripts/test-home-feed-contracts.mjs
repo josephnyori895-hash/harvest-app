@@ -7,7 +7,7 @@
 // never match, so the pattern is read out of Home.tsx and run against names.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -166,4 +166,25 @@ test('a post can carry several photos', () => {
   assert.match(uploads, /media_keys: \[audioKey, \.\.\.extraKeys\]/, 'confirm must carry the album keys')
   assert.match(feedCard, /function FeedAlbum/, 'the feed needs an album carousel')
   assert.match(home, /media: Array\.isArray\(p\.media_urls\)/, 'Home must map the album URLs onto the card')
+})
+
+// The office can save an announcement; before this the text went into the
+// database and no screen ever read it, so a Sunday notice was invisible.
+test('the admin announcement is shown first on Home and can be dismissed', () => {
+  assert.match(home, /content\.announcement_banner/, 'Home must read the saved announcement')
+  assert.match(home, /aria-label="Church announcement"/, 'the strip needs a landmark a screen reader can find')
+  assert.match(home, /harvest:announcement-dismissed/, 'dismissal must survive a reload')
+  assert.match(home, /announcement !== dismissedAnnouncement/, 'dismissal must be keyed to the exact wording, so a new notice returns')
+  assert.match(home, /aria-label="Dismiss church announcement"/, 'the dismiss control needs a label')
+})
+
+// Every photo the opening animation names must exist: 06.jpg was referenced
+// but never shipped, so every cold open paid for a 404.
+test('the opening animation only references shipped photos', () => {
+  const youth = readFileSync(join(here, '..', 'src', 'components', 'YouthChurchAnimation.tsx'), 'utf8')
+  const srcs = [...youth.matchAll(/src: '(\/landing\/[^']+)'/g)].map(m => m[1])
+  assert.ok(srcs.length >= 6, 'the animation should keep its photo fan')
+  for (const src of srcs) {
+    assert.ok(existsSync(join(here, '..', 'public', src)), `${src} is referenced but missing from public/`)
+  }
 })

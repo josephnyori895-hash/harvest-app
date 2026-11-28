@@ -20,7 +20,7 @@ const PEOPLE: Person[] = [
   { src: '/landing/03.jpg', x: '30%', y: '51%', fx: '-34vw', fy: '-14vh', rot: '-4deg', delay: '.2s' },
   { src: '/landing/04.jpg', x: '39%', y: '48%', fx: '-22vw', fy: '-22vh', rot: '6deg', delay: '.3s' },
   { src: '/landing/05.jpg', x: '61%', y: '48%', fx: '22vw', fy: '-22vh', rot: '-6deg', delay: '.3s' },
-  { src: '/landing/06.jpg', x: '70%', y: '51%', fx: '34vw', fy: '-14vh', rot: '4deg', delay: '.2s' },
+  { src: '/landing/photo_6037306249931591992_y.jpg', x: '70%', y: '51%', fx: '34vw', fy: '-14vh', rot: '4deg', delay: '.2s' },
   { src: '/landing/07.jpg', x: '79%', y: '57%', fx: '44vw', fy: '-4vh', rot: '-5deg', delay: '.1s' },
   { src: '/landing/08.jpg', x: '88%', y: '66%', fx: '52vw', fy: '8vh', rot: '7deg', delay: '0s' },
 ]

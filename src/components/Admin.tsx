@@ -225,7 +225,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     { key: 'church_phone', label: 'Church phone', hint: 'e.g. 0712 345 678', max: 60 },
     { key: 'church_email', label: 'Church email', hint: 'e.g. hello@harvestfamily.or.ke', max: 120 },
     { key: 'community_rules', label: 'Community rules', hint: 'What members agree to when they post', max: 1200, textarea: true },
-    { key: 'announcement_banner', label: 'Announcement banner', hint: 'A short notice shown across the app; leave empty to hide it', max: 400, textarea: true },
+    { key: 'announcement_banner', label: 'Announcement banner', hint: 'A short notice at the top of Home; leave empty to hide it', max: 400, textarea: true },
   ]
   // ── Give section fields ──
   const GIVE_FIELDS: { key: string; label: string; hint: string; max: number; textarea?: boolean }[] = [
@@ -286,7 +286,7 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
 
     chat_welcome: { group: 'Community & chat', label: 'Chat welcome message', where: 'First message in an empty chat', sample: 'Karibu! Say hello to the family.' },
     feed_empty: { group: 'Community & chat', label: 'Empty feed message', where: 'Shown when there are no posts yet', sample: 'No posts yet — be the first to share.' },
-    announcement_banner: { group: 'Community & chat', label: 'Announcement banner', where: 'Strip above the feed, across the app', sample: 'Sunday service starts at 9:00am' },
+    announcement_banner: { group: 'Community & chat', label: 'Announcement banner', where: 'Top of the Home screen, above the welcome card', sample: 'Sunday service starts at 9:00am' },
     community_rules: { group: 'Community & chat', label: 'Community rules', where: 'The rules screen linked from the feed', sample: 'Be kind. No politics. No advertising without permission.' },
     pastor_username: { group: 'Community & chat', label: 'Pastor username (single, legacy)', where: 'The “Pray with Pastor” card — use the list below instead', sample: 'pst.simon' },
     pastor_usernames: { group: 'Community & chat', label: 'Pastors for “Pray with Pastor”', where: 'The prayer card opens a chat with the first pastor listed', sample: 'pst.simon, pst.anne' },

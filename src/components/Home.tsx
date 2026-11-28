@@ -112,6 +112,20 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   const heroSubtitle = content.hero_subtitle || 'Get one saved, keep one saved, get another saved.'
   const verseText = content.verse_text || 'Let us consider how we may spur one another on toward love and good deeds.'
   const verseRef = content.verse_ref || 'Hebrews 10:24 · Grow together'
+  // ── Announcement strip ──
+  // The office has always been able to save `announcement_banner`, but nothing
+  // rendered it: a Sunday change (new service time, a funeral, a harvest) went
+  // into the database and members never saw it. It now sits above the welcome
+  // card — the first thing on Home. Dismissal remembers the exact wording, so
+  // the same notice stays hidden for that member, but a new notice reappears.
+  const announcement = String(content.announcement_banner || '').trim()
+  const [dismissedAnnouncement, setDismissedAnnouncement] = useState(() => {
+    try { return localStorage.getItem('harvest:announcement-dismissed') || '' } catch { return '' }
+  })
+  const dismissAnnouncement = () => {
+    setDismissedAnnouncement(announcement)
+    try { localStorage.setItem('harvest:announcement-dismissed', announcement) } catch { /* private mode */ }
+  }
   // Pastors are configured explicitly by stable username(s), not inferred from
   // display names. Legacy `pastor_username` remains supported; admins can
   // provide multiple accounts in `pastor_usernames` as a comma/newline list.
@@ -841,6 +855,20 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     </div>
 
     <main className="px-4 pb-8">
+      {announcement && announcement !== dismissedAnnouncement && (
+        <section aria-label="Church announcement" className="mt-4 flex items-start gap-2.5 rounded-2xl border border-gold/40 bg-gold-soft px-3 py-2.5">
+          <Icon name="bell" size={15} className="mt-1 shrink-0 text-gold-strong" />
+          <p className="min-w-0 flex-1 whitespace-pre-line text-caption font-semibold leading-5 text-ink">{announcement}</p>
+          <button
+            type="button"
+            onClick={dismissAnnouncement}
+            aria-label="Dismiss church announcement"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-muted transition hover:bg-surface-raised hover:text-ink"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </section>
+      )}
       <section className="pt-4">
         <div className="relative overflow-hidden rounded-card bg-gradient-to-br from-accent-strong via-accent to-accent-strong p-4 text-white shadow-raised ring-1 ring-inset ring-white/10">
           {/* Sanctuary light in the logo's yellow, blurred into the navy. */}
