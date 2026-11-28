@@ -15,7 +15,7 @@ import { Icon, Spinner, type IconName } from '../ui'
 import { useModalFocus } from '../lib/useModalFocus'
 import { useOverflowX } from '../lib/useOverflowX'
 import { initials } from '../lib/initials'
-import { formatNairobi } from '../lib/nairobiTime'
+import { formatNairobi, nextSundayLabel } from '../lib/nairobiTime'
 
 // No demo posts: the community feed renders only real posts from the API.
 // When there are no posts yet, an honest empty state is shown.
@@ -41,16 +41,6 @@ function CenterNotice({ label, icon, kicker = 'bg-accent-soft text-accent', titl
       </div>
     </div>
   )
-}
-
-// Next Sunday in Nairobi time, spelled out — members plan their week from
-// this card, and a bare "Sunday" is ambiguous on a Saturday night.
-function nextSundayLabel() {
-  const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const short = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Nairobi', weekday: 'short' }).format(new Date())
-  const day = order.indexOf(short)
-  const add = day < 0 ? 0 : (7 - day) % 7
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Nairobi', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(Date.now() + add * 86400000))
 }
 
 // One navigation surface, listed once. Prayer lives in the hero CTA and the

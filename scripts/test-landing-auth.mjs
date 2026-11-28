@@ -8,13 +8,14 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
-const [app, css, errors, reels, youth, backdrop] = await Promise.all([
+const [app, css, errors, reels, youth, backdrop, nairobi] = await Promise.all([
   read('src/App.jsx'),
   read('src/index.css'),
   read('src/components/ErrorMessage.tsx'),
   read('src/components/Reels.tsx'),
   read('src/components/YouthChurchAnimation.tsx'),
   read('src/components/LandingBackdrop.tsx'),
+  read('src/lib/nairobiTime.ts'),
 ])
 
 test('landing cards lead to real church information instead of a sign-up prompt', () => {
@@ -28,6 +29,20 @@ test('landing cards lead to real church information instead of a sign-up prompt'
   assert.match(app, /siteArt\.church_address/, 'the address must come from the office-managed content')
   assert.match(app, /onClick=\{\(\) => enter\('register'\)\}/, 'a visitor must still be able to join')
   assert.match(app, /onClick=\{\(\) => enter\('login'\)\}/, 'a visitor must still be able to sign in')
+})
+
+test('the desktop landing is specific, not a directory dump or a double apology', () => {
+  assert.match(nairobi, /export function nextSundayLabel/, 'the coming Sunday must be spelled out in Nairobi time')
+  assert.match(nairobi, /timeZone: NAIROBI_TZ,[^\n]*weekday: 'long'/, 'the label is a Nairobi weekday, not the visitor timezone')
+  assert.match(app, /Next: \{nextSundayLabel\(\)\}/, 'service times name the coming Sunday')
+  assert.match(nairobi, /const add = day < 0 \? 0 : \(7 - day\) % 7/, 'a Sunday must not roll to the next week')
+  assert.match(app, /Showing \$\{landingGroups\.length\} of \$\{landingGroupTotal\} groups/, 'a sliced grid must say how many groups exist')
+  assert.match(app, /setLandingGroupTotal\(all\.length\)/, 'the total must be measured before slicing')
+  assert.match(app, /formatNairobi\(s\.created_at, \{ hour: undefined, minute: undefined \}\)/, 'sermon cards need a date')
+  assert.match(app, /google\.com\/maps\/search\/\?api=1&query=\$\{encodeURIComponent\(siteArt\.church_address\)\}/, 'a published address needs directions')
+  assert.match(app, /!\(siteArt\.service_times \|\| siteArt\.church_address \|\| siteArt\.church_phone \|\| siteArt\.church_email\)/, 'with nothing published the section shows one note, not two empty cards')
+  assert.match(app, /Service times & location/, 'the fallback names what is missing')
+  assert.doesNotMatch(app, /Directions and contact details will be published here/, 'the duplicate apology must not return')
 })
 
 test('auth can return to the landing page and always opens at the top', () => {

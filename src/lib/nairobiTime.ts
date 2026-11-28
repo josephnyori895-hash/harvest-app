@@ -49,6 +49,15 @@ export function nairobiDay(iso?: string | null): string {
   return p ? `${p.y}-${p.m}-${p.d}` : ''
 }
 
+/** The coming Sunday in Nairobi time, e.g. "Sunday 29 November". */
+export function nextSundayLabel(now: Date = new Date()): string {
+  const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const short = new Intl.DateTimeFormat('en-GB', { timeZone: NAIROBI_TZ, weekday: 'short' }).format(now)
+  const day = order.indexOf(short)
+  const add = day < 0 ? 0 : (7 - day) % 7
+  return new Intl.DateTimeFormat('en-GB', { timeZone: NAIROBI_TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(now.getTime() + add * 86400000))
+}
+
 export function nairobiDayLabel(iso?: string | null): string {
   if (!iso) return 'No date'
   const d = new Date(iso)

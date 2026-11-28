@@ -28,6 +28,7 @@ import { VerifiedBadge } from './components/VerifiedBadge'
 import YouthChurchAnimation from './components/YouthChurchAnimation'
 import LandingBackdrop from './components/LandingBackdrop'
 import { installSessionGuard, SESSION_EXPIRED_EVENT } from './lib/session'
+import { formatNairobi, nextSundayLabel } from './lib/nairobiTime'
 import { adminDeviceIdentity } from './lib/adminDevice'
 import { connectSocket, disconnectSocket, onSocket } from './lib/realtime'
 import { describeError } from './lib/actionFeedback'
@@ -1497,13 +1498,19 @@ function Onboarding({ onAuthSuccess }) {
   // creating an account. Failures stay silent and the section shows its own
   // honest empty state rather than inventing church details.
   const [landingGroups, setLandingGroups] = useState([])
+  const [landingGroupTotal, setLandingGroupTotal] = useState(0)
   const [landingSermons, setLandingSermons] = useState([])
   useEffect(() => {
     if (mode !== 'landing') return
     let alive = true
     fetch(`${API}/api/groups`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => { if (alive) setLandingGroups(Array.isArray(d?.groups) ? d.groups.slice(0, 12) : []) })
+      .then(d => {
+        if (!alive) return
+        const all = Array.isArray(d?.groups) ? d.groups : []
+        setLandingGroupTotal(all.length)
+        setLandingGroups(all.slice(0, 12))
+      })
       .catch(() => {})
     fetch(`${API}/api/sermons?limit=3`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -1913,25 +1920,40 @@ function Onboarding({ onAuthSuccess }) {
             <section id="sundays" className="mt-12 scroll-mt-24 lg:mt-20">
               <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Sundays & location</p>
               <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Come and worship</h2>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:gap-4">
-                <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
-                  <div className="flex items-center gap-2 text-gold"><Icon name="clock" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Service times</span></div>
-                  {siteArt.service_times
-                    ? <p className="mt-3 whitespace-pre-line text-[19px] font-extrabold leading-8">{siteArt.service_times}</p>
-                    : <p className="mt-3 text-[14px] leading-6 text-white/60">The church office is updating our service times. {(siteArt.church_phone || siteArt.church_email) ? 'Call or email us and we will tell you when to come.' : 'They will appear here once published.'}</p>}
-                  <p className="mt-3 text-[12px] leading-5 text-white/40">Everyone is welcome — come as you are.</p>
+              {!(siteArt.service_times || siteArt.church_address || siteArt.church_phone || siteArt.church_email) ? (
+                /* Nothing published yet: one honest note instead of two cards
+                   that each apologise for the same missing details. */
+                <div className="mt-5 rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
+                  <div className="flex items-center gap-2 text-gold"><Icon name="clock" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Service times & location</span></div>
+                  <p className="mt-3 max-w-[560px] text-[14px] leading-6 text-white/60">The church office is updating our service times and directions. They will appear here as soon as they are published.</p>
+                  <p className="mt-2 text-[12px] leading-5 text-white/40">Everyone is welcome — come as you are.</p>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
-                  <div className="flex items-center gap-2 text-gold"><Icon name="map" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Find us</span></div>
-                  <p className="mt-3 text-[15px] font-extrabold">{churchName}</p>
-                  {siteArt.church_address && <p className="mt-2 text-[13px] leading-6 text-white/60">{siteArt.church_address}</p>}
-                  <div className="mt-3 space-y-2">
-                    {siteArt.church_phone && <a href={`tel:${siteArt.church_phone.replace(/\s+/g, '')}`} className="flex items-center gap-2 text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="phone" size={14} className="text-gold" /> {siteArt.church_phone}</a>}
-                    {siteArt.church_email && <a href={`mailto:${siteArt.church_email}`} className="flex items-center gap-2 break-all text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="send" size={14} className="text-gold" /> {siteArt.church_email}</a>}
-                    {!siteArt.church_address && !siteArt.church_phone && !siteArt.church_email && <p className="text-[13px] leading-6 text-white/60">Directions and contact details will be published here by the church office.</p>}
+              ) : (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:gap-4">
+                  <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <div className="flex items-center gap-2 text-gold"><Icon name="clock" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Service times</span></div>
+                      <span className="text-[11px] font-bold text-white/40">Next: {nextSundayLabel()}</span>
+                    </div>
+                    {siteArt.service_times
+                      ? <p className="mt-3 whitespace-pre-line text-[19px] font-extrabold leading-8">{siteArt.service_times}</p>
+                      : <p className="mt-3 text-[14px] leading-6 text-white/60">{(siteArt.church_phone || siteArt.church_email) ? 'Call or email the office and we will tell you when to come.' : 'They will appear here once published.'}</p>}
+                    <p className="mt-3 text-[12px] leading-5 text-white/40">Everyone is welcome — come as you are.</p>
+                  </div>
+                  <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
+                    <div className="flex items-center gap-2 text-gold"><Icon name="map" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Find us</span></div>
+                    <p className="mt-3 text-[15px] font-extrabold">{churchName}</p>
+                    {siteArt.church_address && <p className="mt-2 text-[13px] leading-6 text-white/60">{siteArt.church_address}</p>}
+                    <div className="mt-3 space-y-2">
+                      {siteArt.church_phone && <a href={`tel:${siteArt.church_phone.replace(/\s+/g, '')}`} className="flex items-center gap-2 text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="phone" size={14} className="text-gold" /> {siteArt.church_phone}</a>}
+                      {siteArt.church_email && <a href={`mailto:${siteArt.church_email}`} className="flex items-center gap-2 break-all text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="send" size={14} className="text-gold" /> {siteArt.church_email}</a>}
+                      {siteArt.church_address && (
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(siteArt.church_address)}`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 text-[12px] font-extrabold text-gold underline-offset-4 hover:underline">Get directions <span aria-hidden="true">→</span></a>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </section>
 
             <section id="congregations" className="mt-12 scroll-mt-24 lg:mt-20">
@@ -1940,15 +1962,21 @@ function Onboarding({ onAuthSuccess }) {
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Congregations</p>
                   <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Find your family</h2>
                 </div>
-                {landingGroups.length > 0 && <p className="text-[12px] font-semibold text-white/40">{landingGroups.length} across Nyeri</p>}
+                {landingGroups.length > 0 && (
+                  <p className="text-[12px] font-semibold text-white/40">
+                    {landingGroupTotal > landingGroups.length
+                      ? `Showing ${landingGroups.length} of ${landingGroupTotal} groups`
+                      : `${landingGroupTotal || landingGroups.length} groups across Nyeri`}
+                  </p>
+                )}
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {landingGroups.map(g => (
-                  <div key={g.id || g.slug} className="flex flex-col rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+                  <div key={g.id || g.slug} className="flex flex-col rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-4">
                     <p className="text-[15px] font-extrabold leading-snug">{g.name}</p>
                     <p className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold">{[g.community, g.location_label].filter(Boolean).join(' · ') || 'Harvest Nyeri'}</p>
                     {g.description && <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-white/55">{g.description}</p>}
-                    <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+                    <div className="mt-auto flex items-center justify-between gap-3 pt-3">
                       <span className="text-[11px] font-semibold text-white/40">{Number(g.member_count) || 0} member{Number(g.member_count) === 1 ? '' : 's'}</span>
                       <button type="button" onClick={() => enter('register')} className="rounded-full bg-white/10 px-3.5 py-2 text-[11px] font-extrabold text-white transition hover:bg-white/20">Join</button>
                     </div>
@@ -1974,6 +2002,7 @@ function Onboarding({ onAuthSuccess }) {
                     <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gold/15 text-gold"><Icon name="volume" size={18} /></div>
                     <p className="mt-3 line-clamp-2 text-[15px] font-extrabold leading-snug">{s.title || 'Sermon'}</p>
                     <p className="mt-1 text-[11px] font-semibold text-white/45">{[s.speaker, s.scripture].filter(Boolean).join(' · ') || churchName}</p>
+                    {s.created_at && <p className="mt-1 text-[11px] font-semibold text-white/30">{formatNairobi(s.created_at, { hour: undefined, minute: undefined })}</p>}
                     <div className="mt-auto pt-4">
                       {s.media_url
                         ? <a href={s.media_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-extrabold text-gold underline-offset-4 hover:underline"><Icon name="play" size={12} /> Listen</a>
