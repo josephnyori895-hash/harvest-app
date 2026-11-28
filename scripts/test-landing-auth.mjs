@@ -45,6 +45,18 @@ test('the desktop landing is specific, not a directory dump or a double apology'
   assert.doesNotMatch(app, /Directions and contact details will be published here/, 'the duplicate apology must not return')
 })
 
+test('the landing page gives a visitor a way forward without the app', () => {
+  assert.match(app, /paybill_number: String\(d\?\.content\?\.paybill_number/, 'the published M-Pesa number must load before sign-in')
+  assert.match(app, /const landingPaybill = String\(siteArt\.paybill_number/, 'only an office-published number may be shown')
+  assert.doesNotMatch(app, /4138895/, 'the old hardcoded Paybill must never reach the website')
+  assert.match(app, /\{landingPaybill && \(/, 'the M-Pesa line appears only when the office published one')
+  assert.match(app, /Account: your name/, 'a Paybill needs its account instruction')
+  assert.match(app, /setLandingSermonTotal\(Number\(d\?\.total\) \|\| 0\)/, 'the sermon archive size comes from the API')
+  assert.match(app, /\{landingSermonTotal > 0 && <span/, 'an unknown total must not be printed')
+})
+
+
+
 test('auth can return to the landing page and always opens at the top', () => {
   assert.match(app, /aria-label="Back to welcome page"/)
   assert.match(app, /<Icon name="arrow-left"/, 'the back control must use the real back icon')

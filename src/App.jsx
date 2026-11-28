@@ -1420,7 +1420,7 @@ function Onboarding({ onAuthSuccess }) {
   // Public artwork is part of the website content the church owns. It loads
   // before sign-in so the landing page uses the same logo and welcome photo as
   // the signed-in Home screen.
-  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '', landing_background_url: '', social_instagram_url: '', social_youtube_url: '', social_tiktok_url: '', church_name: '', church_tagline: '', service_times: '', church_address: '', church_phone: '', church_email: '', welcome_title: '', welcome_body: '' })
+  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '', landing_background_url: '', social_instagram_url: '', social_youtube_url: '', social_tiktok_url: '', church_name: '', church_tagline: '', service_times: '', church_address: '', church_phone: '', church_email: '', welcome_title: '', welcome_body: '', paybill_number: '', paybill_name: '', giving_fallback_method: '' })
   useEffect(() => {
     let alive = true
     const loadArtwork = () => {
@@ -1443,6 +1443,9 @@ function Onboarding({ onAuthSuccess }) {
             church_email: String(d?.content?.church_email || ''),
             welcome_title: String(d?.content?.welcome_title || ''),
             welcome_body: String(d?.content?.welcome_body || ''),
+            paybill_number: String(d?.content?.paybill_number || ''),
+            paybill_name: String(d?.content?.paybill_name || ''),
+            giving_fallback_method: String(d?.content?.giving_fallback_method || ''),
           })
         })
         .catch(() => { /* shipped artwork stays */ })
@@ -1469,6 +1472,9 @@ function Onboarding({ onAuthSuccess }) {
         church_email: next.church_email !== undefined ? String(next.church_email || '') : prev.church_email,
         welcome_title: next.welcome_title !== undefined ? String(next.welcome_title || '') : prev.welcome_title,
         welcome_body: next.welcome_body !== undefined ? String(next.welcome_body || '') : prev.welcome_body,
+        paybill_number: next.paybill_number !== undefined ? String(next.paybill_number || '') : prev.paybill_number,
+        paybill_name: next.paybill_name !== undefined ? String(next.paybill_name || '') : prev.paybill_name,
+        giving_fallback_method: next.giving_fallback_method !== undefined ? String(next.giving_fallback_method || '') : prev.giving_fallback_method,
       }))
     }
     window.addEventListener('harvest:content-updated', onUpdated)
@@ -1476,6 +1482,10 @@ function Onboarding({ onAuthSuccess }) {
   }, [])
   const brandLogo = siteArt.logo_url || '/logo.png'
   const landingHero = siteArt.landing_hero_url || '/landing/hero.jpg'
+  // A visitor who will not install the app can still give, but only if the
+  // church has actually published an M-Pesa destination. Never guess a number.
+  const landingPaybill = String(siteArt.paybill_number || '').trim()
+  const landingPayMethod = siteArt.giving_fallback_method === 'till' ? 'Till' : 'Paybill'
   // Social icons on the landing page. The admin saves either a full profile
   // link or a bare @handle; a handle is expanded to the platform's profile URL.
   // With no link saved yet the icon still shows and opens the platform itself,
@@ -1500,6 +1510,7 @@ function Onboarding({ onAuthSuccess }) {
   const [landingGroups, setLandingGroups] = useState([])
   const [landingGroupTotal, setLandingGroupTotal] = useState(0)
   const [landingSermons, setLandingSermons] = useState([])
+  const [landingSermonTotal, setLandingSermonTotal] = useState(0)
   useEffect(() => {
     if (mode !== 'landing') return
     let alive = true
@@ -1514,7 +1525,11 @@ function Onboarding({ onAuthSuccess }) {
       .catch(() => {})
     fetch(`${API}/api/sermons?limit=3`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => { if (alive) setLandingSermons(Array.isArray(d?.sermons) ? d.sermons.slice(0, 3) : []) })
+      .then(d => {
+        if (!alive) return
+        setLandingSermons(Array.isArray(d?.sermons) ? d.sermons.slice(0, 3) : [])
+        setLandingSermonTotal(Number(d?.total) || 0)
+      })
       .catch(() => {})
     return () => { alive = false }
   }, [mode])
@@ -1994,7 +2009,10 @@ function Onboarding({ onAuthSuccess }) {
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Sermons</p>
                   <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Listen again</h2>
                 </div>
-                <button type="button" onClick={() => enter('login')} className="text-[12px] font-bold text-gold underline-offset-4 hover:underline">Open the sermon library</button>
+                <div className="flex items-center gap-3">
+                  {landingSermonTotal > 0 && <span className="text-[12px] font-semibold text-white/40">{landingSermonTotal} sermon{landingSermonTotal === 1 ? '' : 's'}</span>}
+                  <button type="button" onClick={() => enter('login')} className="text-[12px] font-bold text-gold underline-offset-4 hover:underline">Open the sermon library</button>
+                </div>
               </div>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {landingSermons.map(s => (
@@ -2022,6 +2040,14 @@ function Onboarding({ onAuthSuccess }) {
                   <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Giving</p>
                   <h2 className="mt-2 text-[26px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[32px]">Support the work God is doing</h2>
                   <p className="mt-2 text-[13px] leading-6 text-white/55">Give securely through the app, with a receipt from the church treasurer.</p>
+                  {landingPaybill && (
+                    <p className="mt-3 text-[12px] leading-5 text-white/45">
+                      Or on M-Pesa — {landingPayMethod}{' '}
+                      <b className="select-all font-extrabold text-white/80">{landingPaybill}</b>
+                      {siteArt.paybill_name && <> · {siteArt.paybill_name}</>}
+                      {landingPayMethod === 'Paybill' && <> · Account: your name</>}
+                    </p>
+                  )}
                 </div>
                 <button type="button" onClick={() => enter('register')} className="mt-5 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-full bg-gold px-6 text-[14px] font-extrabold text-[#2b1c0b] transition active:scale-[0.99] lg:mt-0 lg:w-auto lg:shrink-0">Give securely <span aria-hidden="true">→</span></button>
               </div>
