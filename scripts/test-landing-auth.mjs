@@ -1,8 +1,8 @@
 // Landing and auth are the first two screens every member sees, and the WebView
 // has already broken both scroll and back navigation once. These source-contract
-// tests keep the wiring explicit: every feature card must lead to a real choice
-// sheet, auth must return to the landing page, errors must stay human, and the
-// global CSS must never reintroduce the Android scroll lock.
+// tests keep the wiring explicit: every public card must lead to real church
+// information, auth must return to the landing page, errors must stay human, and
+// the global CSS must never reintroduce the Android scroll lock.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
@@ -17,13 +17,17 @@ const [app, css, errors, reels, youth, backdrop] = await Promise.all([
   read('src/components/LandingBackdrop.tsx'),
 ])
 
-test('landing feature cards and congregation chips open the auth choice sheet', () => {
-  assert.match(app, /setLandingPrompt\(\{ title: item\.title, copy: item\.prompt \}\)/)
-  assert.match(app, /setLandingPrompt\(\{ title: g, copy:/, 'congregation chips must also lead somewhere')
-  assert.match(app, /role="dialog"/, 'the auth prompt must be a real dialog')
-  assert.match(app, /Create my account/, 'the prompt must offer sign-up')
-  assert.match(app, /I already have an account/, 'the prompt must offer sign-in')
-  assert.match(app, /onClick=\{\(\) => setLandingPrompt\(null\)\}/, 'the prompt must be dismissible')
+test('landing cards lead to real church information instead of a sign-up prompt', () => {
+  assert.match(app, /onClick=\{\(\) => scrollToLanding\(item\.id\)\}/, 'quick links must scroll to a real section')
+  for (const id of ['about', 'sundays', 'congregations', 'sermons', 'give']) {
+    assert.match(app, new RegExp(`id="${id}"`), `the landing needs a #${id} section`)
+  }
+  assert.doesNotMatch(app, /setLandingPrompt/, 'the old registration prompt must not come back')
+  assert.match(app, /aria-label="Church website"/, 'desktop visitors need public navigation')
+  assert.match(app, /siteArt\.service_times/, 'service times must come from the office-managed content')
+  assert.match(app, /siteArt\.church_address/, 'the address must come from the office-managed content')
+  assert.match(app, /onClick=\{\(\) => enter\('register'\)\}/, 'a visitor must still be able to join')
+  assert.match(app, /onClick=\{\(\) => enter\('login'\)\}/, 'a visitor must still be able to sign in')
 })
 
 test('auth can return to the landing page and always opens at the top', () => {

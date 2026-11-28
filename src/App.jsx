@@ -1419,7 +1419,7 @@ function Onboarding({ onAuthSuccess }) {
   // Public artwork is part of the website content the church owns. It loads
   // before sign-in so the landing page uses the same logo and welcome photo as
   // the signed-in Home screen.
-  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '', landing_background_url: '', social_instagram_url: '', social_youtube_url: '', social_tiktok_url: '' })
+  const [siteArt, setSiteArt] = useState({ logo_url: '', landing_hero_url: '', landing_background_url: '', social_instagram_url: '', social_youtube_url: '', social_tiktok_url: '', church_name: '', church_tagline: '', service_times: '', church_address: '', church_phone: '', church_email: '', welcome_title: '', welcome_body: '' })
   useEffect(() => {
     let alive = true
     const loadArtwork = () => {
@@ -1434,6 +1434,14 @@ function Onboarding({ onAuthSuccess }) {
             social_instagram_url: String(d?.content?.social_instagram_url || ''),
             social_youtube_url: String(d?.content?.social_youtube_url || ''),
             social_tiktok_url: String(d?.content?.social_tiktok_url || ''),
+            church_name: String(d?.content?.church_name || ''),
+            church_tagline: String(d?.content?.church_tagline || ''),
+            service_times: String(d?.content?.service_times || ''),
+            church_address: String(d?.content?.church_address || ''),
+            church_phone: String(d?.content?.church_phone || ''),
+            church_email: String(d?.content?.church_email || ''),
+            welcome_title: String(d?.content?.welcome_title || ''),
+            welcome_body: String(d?.content?.welcome_body || ''),
           })
         })
         .catch(() => { /* shipped artwork stays */ })
@@ -1442,14 +1450,25 @@ function Onboarding({ onAuthSuccess }) {
     const onUpdated = (e) => {
       const next = e?.detail
       if (!next || typeof next !== 'object') return
-      setSiteArt({
-        logo_url: String(next.logo_url || ''),
-        landing_hero_url: String(next.landing_hero_url || ''),
-        landing_background_url: String(next.landing_background_url || ''),
-        social_instagram_url: String(next.social_instagram_url || ''),
-        social_youtube_url: String(next.social_youtube_url || ''),
-        social_tiktok_url: String(next.social_tiktok_url || ''),
-      })
+      // The admin may save only the fields it touched, so merge instead of
+      // replacing the whole object (that used to blank the other artwork URLs).
+      setSiteArt(prev => ({
+        ...prev,
+        logo_url: next.logo_url !== undefined ? String(next.logo_url || '') : prev.logo_url,
+        landing_hero_url: next.landing_hero_url !== undefined ? String(next.landing_hero_url || '') : prev.landing_hero_url,
+        landing_background_url: next.landing_background_url !== undefined ? String(next.landing_background_url || '') : prev.landing_background_url,
+        social_instagram_url: next.social_instagram_url !== undefined ? String(next.social_instagram_url || '') : prev.social_instagram_url,
+        social_youtube_url: next.social_youtube_url !== undefined ? String(next.social_youtube_url || '') : prev.social_youtube_url,
+        social_tiktok_url: next.social_tiktok_url !== undefined ? String(next.social_tiktok_url || '') : prev.social_tiktok_url,
+        church_name: next.church_name !== undefined ? String(next.church_name || '') : prev.church_name,
+        church_tagline: next.church_tagline !== undefined ? String(next.church_tagline || '') : prev.church_tagline,
+        service_times: next.service_times !== undefined ? String(next.service_times || '') : prev.service_times,
+        church_address: next.church_address !== undefined ? String(next.church_address || '') : prev.church_address,
+        church_phone: next.church_phone !== undefined ? String(next.church_phone || '') : prev.church_phone,
+        church_email: next.church_email !== undefined ? String(next.church_email || '') : prev.church_email,
+        welcome_title: next.welcome_title !== undefined ? String(next.welcome_title || '') : prev.welcome_title,
+        welcome_body: next.welcome_body !== undefined ? String(next.welcome_body || '') : prev.welcome_body,
+      }))
     }
     window.addEventListener('harvest:content-updated', onUpdated)
     return () => { alive = false; window.removeEventListener('harvest:content-updated', onUpdated) }
@@ -1472,12 +1491,29 @@ function Onboarding({ onAuthSuccess }) {
   // The page backdrop is a separate set of photos that rotate on their own; the
   // hero photo never doubles as the page background. Missing files drop out, so
   // the gradient shows when nothing has been added.
-  // Anonymous visitors can see the landing, but every feature card and
-  // congregation chip must lead somewhere. Instead of dropping them on a form
-  // with no context, open a small choice sheet that explains what they get and
-  // offers both paths: create an account or sign in.
-  const [landingPrompt, setLandingPrompt] = useState(null)
   const { congregations: REG_GROUP_OPTIONS, live: groupsLive, loading: groupsLoading, retry: retryGroups } = useCongregations(true)
+  // Public landing data. Both endpoints are readable without a session, so a
+  // visitor can see service times, congregations and the latest sermons before
+  // creating an account. Failures stay silent and the section shows its own
+  // honest empty state rather than inventing church details.
+  const [landingGroups, setLandingGroups] = useState([])
+  const [landingSermons, setLandingSermons] = useState([])
+  useEffect(() => {
+    if (mode !== 'landing') return
+    let alive = true
+    fetch(`${API}/api/groups`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => { if (alive) setLandingGroups(Array.isArray(d?.groups) ? d.groups.slice(0, 12) : []) })
+      .catch(() => {})
+    fetch(`${API}/api/sermons?limit=3`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(d => { if (alive) setLandingSermons(Array.isArray(d?.sermons) ? d.sermons.slice(0, 3) : []) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [mode])
+  const churchName = siteArt.church_name || 'Harvest Family Church'
+  const churchTagline = siteArt.church_tagline || 'Compel · Raise · Release'
+  const scrollToLanding = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const [form, setForm] = useState({ username: '', name: '', phone: '', password: '', confirm: '', group_name: '' })
   const [loginId, setLoginId] = useState('')
   const [loginPass, setLoginPass] = useState('')
@@ -1529,7 +1565,6 @@ function Onboarding({ onAuthSuccess }) {
   // Switching between landing, sign-in and sign-up must not carry the other
   // form's rejection across (a signup error under "Welcome back" is nonsense).
   const enter = (next) => {
-    setLandingPrompt(null)
     setMode(next)
     setAdminChallenge(null); setAdminCode(''); setAdminRecovery(''); setShowRecovery(false)
     setError(''); setErrorKind(''); setFieldErrors({})
@@ -1713,20 +1748,59 @@ function Onboarding({ onAuthSuccess }) {
     return (
       <div className="landing-page relative isolate flex justify-center overflow-hidden bg-[#120f19] text-white" style={{ minHeight: 'var(--app-viewport-height, 100dvh)' }}>
         <LandingBackdrop variant="landing" urls={siteArt.landing_background_url} />
-        <YouthChurchAnimation />
-        <div className="relative z-10 flex w-full max-w-[460px] flex-col" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
-          <header className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
+        <div className="lg:hidden"><YouthChurchAnimation /></div>
+        <div className="relative z-10 mx-auto flex w-full max-w-[1180px] flex-col sm:px-6 lg:px-8" style={{ minHeight: 'var(--app-viewport-height, 100dvh)', paddingTop: 'var(--safe-area-inset-top, env(safe-area-inset-top))', paddingBottom: 'var(--safe-area-inset-bottom, env(safe-area-inset-bottom))' }}>
+          <header className="px-5 pt-4 pb-2 flex items-center justify-between gap-3 lg:px-0 lg:pt-6">
             <div className="flex items-center gap-2.5 min-w-0">
               <img src={brandLogo} alt="" className="w-9 h-9 shrink-0 rounded-xl object-contain bg-gold shadow-sm" />
               <div className="min-w-0 leading-tight">
-                <p className="text-[15px] font-extrabold truncate">Harvest Family Church</p>
-                <p className="text-[10px] font-bold tracking-[0.22em] text-gold">NYERI</p>
+                <p className="text-[15px] font-extrabold truncate">{churchName}</p>
+                {!/nyeri/i.test(churchName) && <p className="text-[10px] font-bold tracking-[0.22em] text-gold">NYERI</p>}
               </div>
             </div>
-            <button type="button" onClick={() => enter('login')} className="shrink-0 text-[13px] font-bold px-4 min-h-11 rounded-full border border-white/20 bg-white/10 text-white backdrop-blur active:bg-white/20">Sign in</button>
+            <nav aria-label="Church website" className="hidden items-center gap-0.5 md:flex lg:gap-1">
+              {[
+                ['about', 'About'],
+                ['sundays', 'Sundays'],
+                ['congregations', 'Congregations'],
+                ['sermons', 'Sermons'],
+                ['give', 'Give'],
+              ].map(([id, label]) => (
+                <button key={id} type="button" onClick={() => scrollToLanding(id)} className="rounded-full px-2.5 py-2 text-[12px] font-bold text-white/65 transition hover:bg-white/10 hover:text-white lg:px-3.5 lg:text-[13px]">{label}</button>
+              ))}
+            </nav>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="button" onClick={() => enter('login')} className="text-[13px] font-bold px-4 min-h-11 rounded-full border border-white/20 bg-white/10 text-white backdrop-blur active:bg-white/20">Sign in</button>
+              <button type="button" onClick={() => enter('register')} className="hidden min-h-11 rounded-full bg-gold px-5 text-[13px] font-extrabold text-[#2b1c0b] transition active:scale-[0.99] lg:block">Join us</button>
+            </div>
           </header>
 
-          <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl">
+          <div className="lg:grid lg:grid-cols-[1.02fr_.98fr] lg:items-center lg:gap-12 lg:py-8">
+          <div className="hidden lg:block">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
+            </span>
+            <h1 className="mt-6 text-[64px] font-black leading-[0.92] tracking-[-0.05em] xl:text-[76px]">A family <br />to belong to.</h1>
+            <p className="mt-5 max-w-[440px] text-[16px] leading-7 text-white/70">Come as you are. Worship with us on Sunday, grow in a congregation, and walk through life with people who care.</p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => enter('register')} className="landing-cta relative inline-flex min-h-[56px] items-center justify-center gap-2 overflow-hidden rounded-full bg-white px-8 text-[15px] font-extrabold text-[#221a56] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
+              <button type="button" onClick={() => enter('login')} className="inline-flex min-h-[56px] items-center rounded-full border border-white/20 px-7 text-[14px] font-bold text-white/80 transition hover:bg-white/10 hover:text-white">Sign in</button>
+            </div>
+            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3 text-[12px] font-semibold text-white/55">
+              <span className="inline-flex items-center gap-2"><Icon name="clock" size={14} className="text-gold" />{siteArt.service_times ? siteArt.service_times.split(/\n|;/)[0] : 'Sunday worship'}</span>
+              <button type="button" onClick={() => scrollToLanding('sundays')} className="inline-flex items-center gap-1.5 text-gold underline-offset-4 hover:underline">Plan your visit <span aria-hidden="true">→</span></button>
+            </div>
+            {socialLinks.length > 0 && (
+              <div className="mt-8 flex items-center gap-2">
+                {socialLinks.map(l => (
+                  <a key={l.key} href={l.href} target="_blank" rel="noopener noreferrer" aria-label={`${churchName} on ${l.label}`} title={l.label} className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/[0.07] text-white/70 transition hover:bg-white/15 hover:text-white">
+                    <Icon name={l.icon} size={18} />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+          <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl lg:mx-0 lg:mt-0 lg:min-h-[560px]">
             <div className="landing-sky" aria-hidden="true" />
             <img
               src={landingHero}
@@ -1744,23 +1818,24 @@ function Onboarding({ onAuthSuccess }) {
             <div className="landing-grain" aria-hidden="true" />
             <div className="landing-glow landing-glow-gold landing-float" aria-hidden="true" />
             <div className="landing-glow landing-glow-navy landing-float landing-float-slow" aria-hidden="true" />
-            <div className="relative z-10 flex min-h-[520px] flex-col justify-end p-6">
+            <div className="relative z-10 flex min-h-[520px] flex-col justify-end p-6 lg:hidden">
               <span className="landing-rise inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
               </span>
-              <h1 className="landing-rise landing-rise-2 mt-5 text-[47px] font-black leading-[0.93] tracking-[-0.055em] drop-shadow-[0_2px_18px_rgba(0,0,0,0.38)]">A family<br />to belong to.</h1>
+              <h1 className="landing-rise landing-rise-2 mt-5 text-[47px] font-black leading-[0.93] tracking-[-0.055em] drop-shadow-[0_2px_18px_rgba(0,0,0,0.38)]">A family <br />to belong to.</h1>
               <p className="landing-rise landing-rise-3 mt-4 max-w-[300px] text-[14px] leading-6 text-white/75">Come as you are. Worship with us, grow in a congregation, and walk through life with people who care.</p>
               <button type="button" onClick={() => enter('register')} className="landing-rise landing-rise-4 landing-cta relative mt-6 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white text-[15px] font-extrabold text-[#221a56] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
               <button type="button" onClick={() => enter('login')} className="landing-rise landing-rise-5 mt-2 min-h-11 text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
             </div>
           </section>
+          </div>
 
           {/* Visitors on a phone need the app itself, not just a sign-in form:
               this links to the Worker's stable APK URL (always the current
               release, served as an attachment with the versioned filename). */}
           <a
             href={`${API}/harvest-family.apk`}
-            className="mx-4 mt-3 flex min-h-[60px] items-center gap-3 rounded-[24px] border border-gold/40 bg-[#1d1629]/90 p-3.5 pl-4 shadow-[0_12px_34px_rgba(0,0,0,0.32)] backdrop-blur transition active:scale-[0.99] active:bg-[#251b34]"
+            className="mx-4 mt-3 flex min-h-[60px] items-center gap-3 rounded-[24px] border border-gold/40 bg-[#1d1629]/90 p-3.5 pl-4 shadow-[0_12px_34px_rgba(0,0,0,0.32)] backdrop-blur transition active:scale-[0.99] active:bg-[#251b34] lg:hidden"
           >
             <span aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gold text-[#2b1c0b]"><Icon name="download" size={20} /></span>
             <span className="min-w-0 flex-1">
@@ -1770,95 +1845,175 @@ function Onboarding({ onAuthSuccess }) {
             <span aria-hidden="true" className="pr-1 text-[15px] text-gold">↓</span>
           </a>
 
-          <main className="flex-1 px-5 pb-8 pt-7">
-            <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Compel · Raise · Release</p>
-            <h2 className="mt-2 max-w-[330px] text-[27px] font-extrabold leading-[1.08] tracking-[-0.03em]">More than a service.<br />A family.</h2>
-            <p className="mt-3 text-[14px] leading-6 text-white/60">Harvest Family Church Nyeri is one church across many congregations — a place to worship, belong, and serve.</p>
+          <main className="flex-1 px-5 pb-8 pt-7 lg:px-0 lg:pb-0 lg:pt-14">
+            {/* Phone-only quick links. Each one scrolls to a real section
+                instead of opening a registration prompt. */}
+            <div className="lg:hidden">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Explore</p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {[
+                  { id: 'sundays', icon: 'clock', title: 'Sundays', copy: 'Times and directions' },
+                  { id: 'congregations', icon: 'users', title: 'Congregations', copy: 'Find your family' },
+                  { id: 'sermons', icon: 'volume', title: 'Sermons', copy: 'Listen again' },
+                  { id: 'give', icon: 'gift', title: 'Give', copy: 'Support the work' },
+                ].map(item => (
+                  <button key={item.id} type="button" onClick={() => scrollToLanding(item.id)} className="group rounded-3xl border border-white/10 bg-[#191222] p-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur transition active:scale-[0.98] active:bg-[#21172e]">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-gold"><Icon name={item.icon} size={20} /></div>
+                      <span aria-hidden="true" className="text-white/30 transition group-active:translate-x-0.5 group-active:text-white/70">→</span>
+                    </div>
+                    <p className="mt-3 text-[13px] font-extrabold">{item.title}</p>
+                    <p className="mt-1 text-[12px] leading-5 text-white/55">{item.copy}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              {[
-                { icon: 'heart', title: 'Worship', copy: 'Gather with the family and grow in faith.', prompt: 'Join us for worship, sermons and moments from the life of the church.' },
-                { icon: 'users', title: 'Congregations', copy: 'Find the Harvest family nearest to you.', prompt: 'Find your congregation and stay connected with the family nearest to you.' },
-                { icon: 'chat', title: 'Community', copy: 'Stay connected through the week.', prompt: 'Stay close to your church family through chats, groups and encouragement all week.' },
-                { icon: 'gift', title: 'Give', copy: 'Support the work of the church.', prompt: 'Give securely and support the work God is doing through Harvest Family Church.' },
-              ].map(item => (
-                <button key={item.title} type="button" onClick={() => setLandingPrompt({ title: item.title, copy: item.prompt })} className="group rounded-3xl border border-white/10 bg-[#191222] p-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur transition active:scale-[0.98] active:bg-[#21172e]">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-gold"><Icon name={item.icon} size={20} /></div>
-                    <span aria-hidden="true" className="text-white/30 transition group-active:translate-x-0.5 group-active:text-white/70">→</span>
+            <section id="about" className="mt-10 scroll-mt-24 lg:mt-0 lg:grid lg:grid-cols-[.85fr_1.15fr] lg:gap-16">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">About the church</p>
+                <h2 className="mt-2 max-w-[420px] text-[30px] font-extrabold leading-[1.06] tracking-[-0.03em] lg:text-[40px]">{siteArt.welcome_title || 'More than a service. A family.'}</h2>
+              </div>
+              <div className="mt-4 lg:mt-0">
+                <p className="max-w-[560px] whitespace-pre-line text-[14px] leading-7 text-white/60 lg:text-[15px]">{siteArt.welcome_body || 'Harvest Family Church Nyeri is one family across Nyeri — a place to worship, belong and serve.'}</p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-white/70"><Icon name="building" size={12} className="text-gold" /> {churchName}</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-white/70"><Icon name="map" size={12} className="text-gold" /> Nyeri, Kenya</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-white/70"><Icon name="sparkle" size={12} className="text-gold" /> {churchTagline}</span>
+                </div>
+              </div>
+            </section>
+
+            <section id="sundays" className="mt-12 scroll-mt-24 lg:mt-20">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Sundays & location</p>
+              <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Come and worship</h2>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:gap-4">
+                <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
+                  <div className="flex items-center gap-2 text-gold"><Icon name="clock" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Service times</span></div>
+                  {siteArt.service_times
+                    ? <p className="mt-3 whitespace-pre-line text-[19px] font-extrabold leading-8">{siteArt.service_times}</p>
+                    : <p className="mt-3 text-[14px] leading-6 text-white/60">The church office is updating our service times. {(siteArt.church_phone || siteArt.church_email) ? 'Call or email us and we will tell you when to come.' : 'They will appear here once published.'}</p>}
+                  <p className="mt-3 text-[12px] leading-5 text-white/40">Everyone is welcome — come as you are.</p>
+                </div>
+                <div className="rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:p-6">
+                  <div className="flex items-center gap-2 text-gold"><Icon name="map" size={16} /><span className="text-[10px] font-extrabold uppercase tracking-[0.18em]">Find us</span></div>
+                  <p className="mt-3 text-[15px] font-extrabold">{churchName}</p>
+                  {siteArt.church_address && <p className="mt-2 text-[13px] leading-6 text-white/60">{siteArt.church_address}</p>}
+                  <div className="mt-3 space-y-2">
+                    {siteArt.church_phone && <a href={`tel:${siteArt.church_phone.replace(/\s+/g, '')}`} className="flex items-center gap-2 text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="phone" size={14} className="text-gold" /> {siteArt.church_phone}</a>}
+                    {siteArt.church_email && <a href={`mailto:${siteArt.church_email}`} className="flex items-center gap-2 break-all text-[13px] font-semibold text-white/75 transition hover:text-white"><Icon name="send" size={14} className="text-gold" /> {siteArt.church_email}</a>}
+                    {!siteArt.church_address && !siteArt.church_phone && !siteArt.church_email && <p className="text-[13px] leading-6 text-white/60">Directions and contact details will be published here by the church office.</p>}
                   </div>
-                  <p className="mt-3 text-[13px] font-extrabold">{item.title}</p>
-                  <p className="mt-1 text-[12px] leading-5 text-white/55">{item.copy}</p>
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-6 rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] backdrop-blur">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-white/60">Find your congregation</p>
-                {!groupsLive && <span className="text-[10px] font-semibold text-white/40">{groupsLoading ? 'Loading…' : 'Offline'}</span>}
+                </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {congregations.length
-                  ? congregations.map(g => (
-                    <button key={g} type="button" onClick={() => setLandingPrompt({ title: g, copy: 'Create an account to connect with this congregation and receive updates from your church family.' })} className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1.5 text-[12px] font-semibold text-white/80 transition active:scale-95 active:bg-white/15">{g}</button>
-                  ))
-                  : <p className="text-[12px] leading-5 text-white/55">{groupsLoading ? 'Loading congregations…' : 'Congregations will appear here when the church office publishes them.'}</p>}
-              </div>
-              {congregations.length > 0 && <p className="mt-3 text-[11px] leading-5 text-white/40">Tap your congregation to become part of it.</p>}
-            </div>
+            </section>
 
-            {socialLinks.length > 0 && (
-              <div className="mt-8 text-center">
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-white/40">Follow the church</p>
-                <div className="mt-3 flex items-center justify-center gap-3">
+            <section id="congregations" className="mt-12 scroll-mt-24 lg:mt-20">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Congregations</p>
+                  <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Find your family</h2>
+                </div>
+                {landingGroups.length > 0 && <p className="text-[12px] font-semibold text-white/40">{landingGroups.length} across Nyeri</p>}
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {landingGroups.map(g => (
+                  <div key={g.id || g.slug} className="flex flex-col rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+                    <p className="text-[15px] font-extrabold leading-snug">{g.name}</p>
+                    <p className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.16em] text-gold">{[g.community, g.location_label].filter(Boolean).join(' · ') || 'Harvest Nyeri'}</p>
+                    {g.description && <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-white/55">{g.description}</p>}
+                    <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+                      <span className="text-[11px] font-semibold text-white/40">{Number(g.member_count) || 0} member{Number(g.member_count) === 1 ? '' : 's'}</span>
+                      <button type="button" onClick={() => enter('register')} className="rounded-full bg-white/10 px-3.5 py-2 text-[11px] font-extrabold text-white transition hover:bg-white/20">Join</button>
+                    </div>
+                  </div>
+                ))}
+                {landingGroups.length === 0 && (
+                  <p className="rounded-3xl border border-white/10 bg-[#191222] p-5 text-[13px] leading-6 text-white/55 sm:col-span-2 lg:col-span-3">Congregations will appear here once the church office publishes them.</p>
+                )}
+              </div>
+            </section>
+
+            <section id="sermons" className="mt-12 scroll-mt-24 lg:mt-20">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Sermons</p>
+                  <h2 className="mt-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[36px]">Listen again</h2>
+                </div>
+                <button type="button" onClick={() => enter('login')} className="text-[12px] font-bold text-gold underline-offset-4 hover:underline">Open the sermon library</button>
+              </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {landingSermons.map(s => (
+                  <div key={s.id} className="flex flex-col rounded-3xl border border-white/10 bg-[#191222] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+                    <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gold/15 text-gold"><Icon name="volume" size={18} /></div>
+                    <p className="mt-3 line-clamp-2 text-[15px] font-extrabold leading-snug">{s.title || 'Sermon'}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-white/45">{[s.speaker, s.scripture].filter(Boolean).join(' · ') || churchName}</p>
+                    <div className="mt-auto pt-4">
+                      {s.media_url
+                        ? <a href={s.media_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[12px] font-extrabold text-gold underline-offset-4 hover:underline"><Icon name="play" size={12} /> Listen</a>
+                        : <button type="button" onClick={() => enter('login')} className="inline-flex items-center gap-1.5 text-[12px] font-extrabold text-gold underline-offset-4 hover:underline"><Icon name="play" size={12} /> Listen in the app</button>}
+                    </div>
+                  </div>
+                ))}
+                {landingSermons.length === 0 && (
+                  <p className="rounded-3xl border border-white/10 bg-[#191222] p-5 text-[13px] leading-6 text-white/55 sm:col-span-2 lg:col-span-3">No sermons have been published yet. Check back soon.</p>
+                )}
+              </div>
+            </section>
+
+            <section id="give" className="mt-12 scroll-mt-24 lg:mt-20">
+              <div className="rounded-[32px] border border-gold/25 bg-[#191222] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.18)] lg:flex lg:items-center lg:justify-between lg:gap-10 lg:p-8">
+                <div className="max-w-[560px]">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.24em] text-gold">Giving</p>
+                  <h2 className="mt-2 text-[26px] font-extrabold leading-tight tracking-[-0.03em] lg:text-[32px]">Support the work God is doing</h2>
+                  <p className="mt-2 text-[13px] leading-6 text-white/55">Give securely through the app, with a receipt from the church treasurer.</p>
+                </div>
+                <button type="button" onClick={() => enter('register')} className="mt-5 inline-flex min-h-[50px] w-full items-center justify-center gap-2 rounded-full bg-gold px-6 text-[14px] font-extrabold text-[#2b1c0b] transition active:scale-[0.99] lg:mt-0 lg:w-auto lg:shrink-0">Give securely <span aria-hidden="true">→</span></button>
+              </div>
+            </section>
+
+            <footer className="mt-12 border-t border-white/10 pt-8 lg:mt-20">
+              <div className="lg:flex lg:items-start lg:justify-between lg:gap-10">
+                <div className="max-w-[300px]">
+                  <div className="flex items-center gap-2.5">
+                    <img src={brandLogo} alt="" className="h-9 w-9 shrink-0 rounded-xl bg-gold object-contain" />
+                    <div className="leading-tight">
+                      <p className="text-[14px] font-extrabold">{churchName}</p>
+                      {!/nyeri/i.test(churchName) && <p className="text-[10px] font-bold tracking-[0.2em] text-gold">NYERI</p>}
+                    </div>
+                  </div>
+                  <p className="mt-3 text-[12px] leading-5 text-white/40">{churchTagline}</p>
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-2 lg:mt-0 lg:flex lg:gap-12">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/35">Visit</p>
+                    <button type="button" onClick={() => scrollToLanding('sundays')} className="block text-[12px] font-semibold text-white/65 hover:text-white">Service times</button>
+                    <button type="button" onClick={() => scrollToLanding('congregations')} className="block text-[12px] font-semibold text-white/65 hover:text-white">Congregations</button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/35">Connect</p>
+                    <button type="button" onClick={() => scrollToLanding('sermons')} className="block text-[12px] font-semibold text-white/65 hover:text-white">Sermons</button>
+                    <button type="button" onClick={() => scrollToLanding('give')} className="block text-[12px] font-semibold text-white/65 hover:text-white">Give</button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/35">The app</p>
+                    <a href={`${API}/harvest-family.apk`} className="block text-[12px] font-semibold text-white/65 hover:text-white">Download for Android</a>
+                    <button type="button" onClick={() => enter('login')} className="block text-[12px] font-semibold text-white/65 hover:text-white">Sign in</button>
+                  </div>
+                </div>
+              </div>
+              {socialLinks.length > 0 && (
+                <div className="mt-6 flex items-center gap-2">
                   {socialLinks.map(l => (
-                    <a
-                      key={l.key}
-                      href={l.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`Harvest Family Church on ${l.label}`}
-                      title={l.label}
-                      className="grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[0.07] text-white/80 transition active:scale-95 active:bg-white/15"
-                    >
-                      <Icon name={l.icon} size={21} />
+                    <a key={l.key} href={l.href} target="_blank" rel="noopener noreferrer" aria-label={`${churchName} on ${l.label}`} title={l.label} className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/[0.07] text-white/70 transition hover:bg-white/15 hover:text-white">
+                      <Icon name={l.icon} size={17} />
                     </a>
                   ))}
                 </div>
-              </div>
-            )}
-            <p className="mt-6 text-center text-[11px] font-semibold text-white/35">Harvest Family Church Nyeri</p>
+              )}
+              <p className="mt-6 text-[11px] font-semibold text-white/30">© {new Date().getFullYear()} {churchName}{/nyeri/i.test(churchName) ? '' : ', Nyeri'}</p>
+            </footer>
           </main>
-
-          {landingPrompt && (
-            <div
-              className="fixed inset-0 z-[80] flex items-end justify-center bg-black/65 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-16 backdrop-blur-sm"
-              onClick={() => setLandingPrompt(null)}
-            >
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="landing-prompt-title"
-                tabIndex={-1}
-                className="w-full max-w-[420px] rounded-[28px] border border-white/15 bg-[#1d1629] p-6 text-white shadow-2xl"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-gold">Karibu · Harvest Nyeri</p>
-                    <h2 id="landing-prompt-title" className="mt-2 text-[24px] font-extrabold leading-tight">{landingPrompt.title}</h2>
-                  </div>
-                  <button type="button" onClick={() => setLandingPrompt(null)} aria-label="Close" className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/15 bg-white/5 text-white/70 active:bg-white/15"><Icon name="close" size={18} /></button>
-                </div>
-                <p className="mt-3 text-[14px] leading-6 text-white/65">{landingPrompt.copy}</p>
-                <p className="mt-4 text-[12px] leading-5 text-white/45">Create an account to take part, or sign in if you are already part of the family.</p>
-                <button type="button" onClick={() => enter('register')} className="mt-5 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-extrabold text-[#221a56] active:scale-[0.99]">Create my account <span aria-hidden="true">→</span></button>
-                <button type="button" onClick={() => enter('login')} className="mt-2 min-h-11 w-full rounded-full text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
-                <button type="button" onClick={() => setLandingPrompt(null)} className="mt-1 min-h-10 w-full text-[12px] font-semibold text-white/40 active:text-white/70">Keep looking around</button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     )
