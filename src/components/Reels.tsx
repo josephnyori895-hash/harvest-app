@@ -505,6 +505,7 @@ export default function Reels({ onOpenUser, sharedReelId, onSharedReelHandled }:
           isAdmin={isAdmin}
           onCountChange={bumpComments}
           onClose={() => setShowComments(false)}
+          onOpenUser={onOpenUser}
         />
       )}
 

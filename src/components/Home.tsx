@@ -954,6 +954,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
               isAdmin={isAdmin}
               onCountChange={d => bumpCommentCount(commentTarget.key, d)}
               onClose={() => setCommentTarget(null)}
+              onOpenUser={onOpenUser}
             />
           </div>
         )}

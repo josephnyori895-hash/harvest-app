@@ -23,6 +23,7 @@ export default function Comments({
   isAdmin,
   onCountChange,
   onClose,
+  onOpenUser,
   inline = false,
 }: {
   scope: 'post' | 'reel' | 'sermon'
@@ -31,6 +32,7 @@ export default function Comments({
   isAdmin: boolean
   onCountChange?: (delta: number) => void
   onClose: () => void
+  onOpenUser?: (user: any) => void
   // Feed comments expand under the post — Instagram-style, not a pop-up.
   // Reels and sermons still use the floating sheet because they are full-bleed
   // players with no feed column to expand into.
@@ -161,16 +163,24 @@ export default function Comments({
 
   const Row = ({ c, nested = false }: { c: Comment; nested?: boolean }) => {
     const mine = c.username === me
+    const profile = { username: c.username, name: c.username, verified: c.verified, avatar_url: c.avatar_url }
+    const avatar = (
+      <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
+        {c.avatar_url
+          ? <img src={c.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          : initials(c.username)}
+      </span>
+    )
     return (
       <div className={`flex items-start gap-2.5 ${nested ? 'ml-9' : ''}`}>
-        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-accent-soft to-gold-soft text-2xs font-extrabold text-accent-strong">
-          {c.avatar_url
-            ? <img src={c.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-            : initials(c.username)}
-        </span>
+        {onOpenUser
+          ? <button type="button" onClick={() => onOpenUser(profile)} className="shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95" aria-label={`View ${c.username}'s profile`}>{avatar}</button>
+          : avatar}
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-5 text-ink">
-            <span className="font-extrabold">{c.username}</span>
+            {onOpenUser
+              ? <button type="button" onClick={() => onOpenUser(profile)} className="font-extrabold hover:underline" aria-label={`View ${c.username}'s profile`}>{c.username}</button>
+              : <span className="font-extrabold">{c.username}</span>}
             {c.verified && <VerifiedBadge size={16} className="ml-1" />}
             <span className="ml-1.5 break-words text-ink-muted">{c.body}</span>
           </p>

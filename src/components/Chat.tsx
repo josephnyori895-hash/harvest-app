@@ -186,8 +186,26 @@ function ChatAudio({ messageId }: { messageId: string }) {
 
 const formatSeconds = (total: number) => `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 
-function dayLabel(iso: string) {
+// The API also returns a pre-cut `at` clock string, but it is server time
+// (UTC), so it reads hours off for every member outside UTC. Always format the
+// real `created_at` in the member's own locale instead.
+function parseChatDate(value?: string | null): Date | null {
+  if (!value) return null
+  const raw = String(value).trim()
+  // D1/SQLite timestamps can arrive without a zone; they are UTC.
+  const iso = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw) ? `${raw.replace(' ', 'T')}Z` : raw
   const d = new Date(iso)
+  return Number.isFinite(d.getTime()) ? d : null
+}
+
+function messageTime(createdAt?: string | null, fallback?: string | null) {
+  const d = parseChatDate(createdAt)
+  if (d) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return fallback || ''
+}
+
+function dayLabel(iso: string) {
+  const d = parseChatDate(iso) || new Date(iso)
   const today = new Date(); const yest = new Date(Date.now() - 86400000)
   const same = (a: Date, b: Date) => a.toDateString() === b.toDateString()
   if (same(d, today)) return 'Today'
@@ -211,8 +229,8 @@ function Ticks({ status, mine }: { status: string; mine: boolean }) {
 
 // Instagram-style compact list timestamps: h:mm / weekday / date.
 function chatListTime(iso: string) {
-  const d = new Date(iso)
-  if (!Number.isFinite(d.getTime())) return ''
+  const d = parseChatDate(iso)
+  if (!d) return ''
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
   if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -1213,15 +1231,15 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     className="mx-auto block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95"
                     aria-label={`View ${c.peer_name || c.peer}'s profile`}
                   >
-                    <div className={`relative mx-auto w-[62px] rounded-full p-[2.5px] ${c.unread > 0 ? 'bg-gradient-to-br from-gold to-accent' : 'border-2 border-line'}`}>
-                      <div className="flex h-[54px] w-[54px] items-center justify-center overflow-hidden rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{c.avatar_url ? <img src={c.avatar_url} alt="" className="h-full w-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
-                      {presence[c.peer]?.online && <span className="absolute bottom-0.5 right-0.5 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
+                    <div className={`relative mx-auto w-[62px] rounded-full p-[2px] ${c.unread > 0 ? 'bg-gradient-to-br from-gold to-accent' : 'bg-line'}`}>
+                      <div className={`flex h-[58px] w-[58px] items-center justify-center overflow-hidden rounded-full font-extrabold ${c.unread > 0 ? 'bg-surface-raised text-ink' : 'bg-accent-soft text-accent-strong'}`}>{c.avatar_url ? <img src={c.avatar_url} alt="" loading="lazy" className="h-full w-full rounded-full object-cover" /> : (c.peer?.[0] || '?').toUpperCase()}</div>
+                      {presence[c.peer]?.online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
                     </div>
                   </button>
                   <button
                     type="button"
                     onClick={() => { setError(''); setActive({ username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url }) }}
-                    className="mt-1 block w-full truncate text-2xs text-ink-muted hover:text-ink"
+                    className="mt-1.5 block w-full truncate text-2xs font-semibold text-ink-muted transition hover:text-ink"
                     aria-label={`Open chat with ${c.peer_name || c.peer}`}
                   >
                     {c.peer_name?.split(' ')[0] || c.peer}
@@ -1283,8 +1301,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                 <div key={c.conversation_key} className={`mb-1 flex w-full items-center rounded-2xl transition ${compact ? 'gap-2.5 px-2 py-2.5' : 'gap-3 px-3 py-3.5'} ${unread > 0 ? 'bg-accent-wash' : 'hover:bg-surface-sunken'}`}>
                   <button
                     type="button"
-                    onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified })}
-                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    onClick={() => onOpenUser?.({ id: c.peer_id, username: c.peer, name: c.peer_name, verified: c.peer_verified, avatar_url: c.avatar_url })}
+                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95"
                     aria-label={`View ${c.peer_name || c.peer}'s profile`}
                   >
                     <div className={`flex items-center justify-center rounded-full font-extrabold ${compact ? 'h-11 w-11' : 'h-14 w-14'} ${unread > 0 ? 'bg-gradient-to-br from-gold to-accent p-[2px] text-white' : 'bg-accent-soft text-accent-strong'}`}>
@@ -1526,8 +1544,8 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             // one avatar, and the rounded "tail" only on the last bubble.
             const sameRun = (other: any) => {
               if (!other || other.from !== m.from) return false
-              const a = new Date(other.created_at || other.at).getTime()
-              const b = new Date(m.created_at || m.at).getTime()
+              const a = parseChatDate(other.created_at)?.getTime() ?? 0
+              const b = parseChatDate(m.created_at)?.getTime() ?? 0
               return Math.abs(b - a) < 5 * 60 * 1000
             }
             const groupStart = showDay || !sameRun(displayThread[index - 1])
@@ -1585,7 +1603,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                       {m.text && m.text !== '📷' && m.text !== '🎤 Voice message' && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
                       {(showMeta || (mine && (m.status === 'sending' || m.status === 'failed'))) && (
                       <div className={`mt-1 flex items-center justify-end gap-1 text-2xs ${mine ? 'text-white/75' : 'text-ink-subtle'}`}>
-                        {showMeta && <time dateTime={m.created_at}>{m.at || new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time>}
+                        {showMeta && <time dateTime={m.created_at}>{messageTime(m.created_at, m.at)}</time>}
                         {mine && m.status === 'sending' && <span className="text-white/75">Sending…</span>}
                         {mine && m.status === 'failed' && (
                           <button

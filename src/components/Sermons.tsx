@@ -44,7 +44,7 @@ function fmtDur(sec: number) {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
 }
 
-export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: boolean; verified?: boolean; focusId?: string | null; onFocused?: () => void }) {
+export default function Sermons({ isAdmin, focusId, onFocused, onOpenUser }: { isAdmin: boolean; verified?: boolean; focusId?: string | null; onFocused?: () => void; onOpenUser?: (user: any) => void }) {
   const { username } = useAuth()
   const [sermons, setSermons] = useState<any[]>([])
   const [total, setTotal] = useState(0)
@@ -764,6 +764,7 @@ export default function Sermons({ isAdmin, focusId, onFocused }: { isAdmin: bool
           isAdmin={isAdmin}
           onCountChange={delta => bumpComments(String(commentTarget.id), delta)}
           onClose={() => setCommentTarget(null)}
+          onOpenUser={onOpenUser}
         />
       )}
 

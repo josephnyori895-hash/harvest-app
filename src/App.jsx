@@ -955,6 +955,7 @@ function InnerApp() {
     localStorage.removeItem('harvest_username')
     localStorage.removeItem('harvest_role')
     localStorage.removeItem('harvest_verified')
+    localStorage.removeItem('harvest_admin_code')
     localStorage.removeItem('harvest_msgs')
     localStorage.removeItem('harvest_pinned_chats')
     // Close the realtime socket too: leaving it open kept the previous member's
@@ -972,6 +973,7 @@ function InnerApp() {
       localStorage.removeItem('harvest_username')
       localStorage.removeItem('harvest_role')
       localStorage.removeItem('harvest_verified')
+      localStorage.removeItem('harvest_admin_code')
       disconnectSocket()
       resetNotificationState()
       setOnboarded(false)
@@ -1173,7 +1175,7 @@ function InnerApp() {
           )}
           {tab === 'viewuser' && <ViewUser user={viewUser} onBack={() => setTab(backTarget)} onEditProfile={viewUser?.me || viewUser?.username === localStorage.getItem('harvest_username') ? () => setTab('editprofile') : undefined} />}
           {tab === 'music' && <Music />}
-          {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} />}
+          {tab === 'sermons' && <Sermons isAdmin={isAdmin} verified={verified} focusId={searchSermonId} onFocused={() => setSearchSermonId(null)} onOpenUser={openProfile} />}
           {tab === 'give' && <Give focusProjectId={giveFocusProject} onFocusHandled={() => setGiveFocusProject(null)} />}
           {tab === 'map' && (
             <Suspense fallback={<TabFallback label="Loading map…" />}>
