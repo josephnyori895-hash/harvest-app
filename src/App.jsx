@@ -1775,7 +1775,7 @@ function Onboarding({ onAuthSuccess }) {
             </div>
           </header>
 
-          <div className="lg:grid lg:grid-cols-[1.02fr_.98fr] lg:items-center lg:gap-12 lg:py-8">
+          <div className="lg:grid lg:grid-cols-[1.02fr_.98fr] lg:items-center lg:gap-12 lg:pt-8 lg:pb-16">
           <div className="hidden lg:block">
             <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
@@ -1785,10 +1785,6 @@ function Onboarding({ onAuthSuccess }) {
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => enter('register')} className="landing-cta relative inline-flex min-h-[56px] items-center justify-center gap-2 overflow-hidden rounded-full bg-white px-8 text-[15px] font-extrabold text-[#221a56] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
               <button type="button" onClick={() => enter('login')} className="inline-flex min-h-[56px] items-center rounded-full border border-white/20 px-7 text-[14px] font-bold text-white/80 transition hover:bg-white/10 hover:text-white">Sign in</button>
-            </div>
-            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3 text-[12px] font-semibold text-white/55">
-              <span className="inline-flex items-center gap-2"><Icon name="clock" size={14} className="text-gold" />{siteArt.service_times ? siteArt.service_times.split(/\n|;/)[0] : 'Sunday worship'}</span>
-              <button type="button" onClick={() => scrollToLanding('sundays')} className="inline-flex items-center gap-1.5 text-gold underline-offset-4 hover:underline">Plan your visit <span aria-hidden="true">→</span></button>
             </div>
             {socialLinks.length > 0 && (
               <div className="mt-8 flex items-center gap-2">
@@ -1800,24 +1796,28 @@ function Onboarding({ onAuthSuccess }) {
               </div>
             )}
           </div>
-          <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl lg:mx-0 lg:mt-0 lg:min-h-[560px]">
-            <div className="landing-sky" aria-hidden="true" />
-            <img
-              src={landingHero}
-              alt=""
-              aria-hidden="true"
-              loading="eager"
-              decoding="async"
-              className="landing-photo"
-            />
-            <div className="landing-photo-tint" aria-hidden="true" />
-            <div className="landing-aurora" aria-hidden="true" />
-            <div className="landing-beams" aria-hidden="true" />
-            <div className="landing-arches" aria-hidden="true" />
-            <div className="landing-dust" aria-hidden="true" />
-            <div className="landing-grain" aria-hidden="true" />
-            <div className="landing-glow landing-glow-gold landing-float" aria-hidden="true" />
-            <div className="landing-glow landing-glow-navy landing-float landing-float-slow" aria-hidden="true" />
+          <section className="relative mx-4 mt-2 min-h-[520px] overflow-hidden rounded-[34px] border border-white/10 shadow-2xl lg:mx-0 lg:mt-0 lg:min-h-0 lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none">
+            {/* Phones keep the full-bleed photo card; on desktop a floating
+                tinted portrait competed with the group photo behind it, so
+                the hero drops the card and shows real service details. */}
+            <div className="absolute inset-0 lg:hidden" aria-hidden="true">
+              <div className="landing-sky" />
+              <img
+                src={landingHero}
+                alt=""
+                loading="eager"
+                decoding="async"
+                className="landing-photo"
+              />
+              <div className="landing-photo-tint" />
+              <div className="landing-aurora" />
+              <div className="landing-beams" />
+              <div className="landing-arches" />
+              <div className="landing-dust" />
+              <div className="landing-grain" />
+              <div className="landing-glow landing-glow-gold landing-float" />
+              <div className="landing-glow landing-glow-navy landing-float landing-float-slow" />
+            </div>
             <div className="relative z-10 flex min-h-[520px] flex-col justify-end p-6 lg:hidden">
               <span className="landing-rise inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] backdrop-blur">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> Karibu · Nyeri
@@ -1826,6 +1826,32 @@ function Onboarding({ onAuthSuccess }) {
               <p className="landing-rise landing-rise-3 mt-4 max-w-[300px] text-[14px] leading-6 text-white/75">Come as you are. Worship with us, grow in a congregation, and walk through life with people who care.</p>
               <button type="button" onClick={() => enter('register')} className="landing-rise landing-rise-4 landing-cta relative mt-6 flex min-h-[54px] w-full items-center justify-center gap-2 overflow-hidden rounded-full bg-white text-[15px] font-extrabold text-[#221a56] shadow-xl transition active:scale-[0.99]">Join the family <span aria-hidden="true">→</span></button>
               <button type="button" onClick={() => enter('login')} className="landing-rise landing-rise-5 mt-2 min-h-11 text-[13px] font-bold text-white/70 underline-offset-4 active:text-white">I already have an account</button>
+            </div>
+
+            <div className="relative z-10 ml-auto hidden w-full max-w-[440px] lg:block">
+              <div className="rounded-[30px] border border-white/12 bg-[#151024]/70 p-7 shadow-[0_30px_80px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-extrabold uppercase tracking-[0.22em] text-gold">This Sunday</p>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">
+                    <span className="h-1.5 w-1.5 rounded-full bg-gold" /> Open to all
+                  </span>
+                </div>
+                {siteArt.service_times
+                  ? <p className="mt-4 whitespace-pre-line text-[24px] font-extrabold leading-8 tracking-[-0.02em]">{siteArt.service_times}</p>
+                  : <p className="mt-4 text-[22px] font-extrabold leading-7 tracking-[-0.02em]">Worship with us this Sunday</p>}
+                <p className="mt-3 text-[13px] leading-6 text-white/55">No need to book. Come early, sit anywhere, and say hello after the service.</p>
+                <div className="mt-5 h-px bg-white/10" />
+                <div className="mt-5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gold/15 text-gold"><Icon name="map" size={15} /></span>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-extrabold">{churchName}</p>
+                      <p className="mt-0.5 text-[12px] leading-5 text-white/50">{siteArt.church_address || 'Nyeri, Kenya'}</p>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" onClick={() => scrollToLanding('sundays')} className="mt-6 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/[0.08] px-4 text-[13px] font-extrabold text-white transition hover:bg-white/15">Plan your visit <span aria-hidden="true" className="text-gold">→</span></button>
+              </div>
             </div>
           </section>
           </div>
