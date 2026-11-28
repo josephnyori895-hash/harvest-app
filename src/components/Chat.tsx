@@ -1272,7 +1272,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
                     aria-label={`View ${c.peer_name || c.peer}'s profile`}
                   >
                     <div className={`flex items-center justify-center rounded-full font-extrabold ${compact ? 'h-11 w-11' : 'h-14 w-14'} ${unread > 0 ? 'bg-gradient-to-br from-gold to-accent p-[2px] text-white' : 'bg-accent-soft text-accent-strong'}`}>
-                      <div className={`flex h-full w-full items-center justify-center rounded-full ${unread > 0 ? 'bg-surface-raised text-ink' : ''}`}>{(c.peer?.[0] || '?').toUpperCase()}</div>
+                      <div className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full ${unread > 0 ? 'bg-surface-raised text-ink' : ''}`}>
+                        {c.avatar_url
+                          ? <img src={c.avatar_url} alt="" loading="lazy" className="h-full w-full rounded-full object-cover" />
+                          : (c.peer?.[0] || '?').toUpperCase()}
+                      </div>
                     </div>
                     {online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
                   </button>
@@ -1319,7 +1323,11 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               {usersForSection.filter((u: any) => presence[u.username]?.online).slice(0, 12).map((u: any) => (
                 <button key={`note_${u.username}`} type="button" onClick={() => onOpenUser?.(u)} className="w-[68px] shrink-0 rounded-xl text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40" aria-label={`View ${u.name || u.username}'s profile`}>
                   <div className="rounded-full bg-gradient-to-tr from-gold to-accent p-[2.5px]">
-                    <div className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">{(u.username?.[0] || '?').toUpperCase()}</div>
+                    <div className="flex h-[54px] w-[54px] items-center justify-center overflow-hidden rounded-full border-2 border-surface bg-accent-soft font-extrabold text-accent-strong">
+                      {u.avatar_url
+                        ? <img src={u.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        : (u.username?.[0] || '?').toUpperCase()}
+                    </div>
                   </div>
                   <p className="mt-1 truncate text-2xs text-ink-muted">{u.username}</p>
                 </button>
@@ -1333,21 +1341,28 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
               const online = Boolean(presence[u.username]?.online)
               const inInbox = inbox.find(c => c.peer === u.username)
               return (
-                <button type="button" key={u.username} onClick={() => { setError(''); setActive(u) }}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-surface-sunken active:bg-surface-sunken">
-                  <div className="relative shrink-0">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft font-extrabold text-accent-strong">{(u.username?.[0] || '?').toUpperCase()}</div>
+                <div key={u.username} className="flex w-full items-center gap-3 px-4 py-3 transition hover:bg-surface-sunken">
+                  {/* The avatar is the profile affordance; the name area still
+                      starts the conversation, matching the inbox rows. */}
+                  <button type="button" onClick={() => onOpenUser?.(u)}
+                    className="relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:scale-95"
+                    aria-label={`View ${u.name || u.username}'s profile`}>
+                    <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-accent-soft font-extrabold text-accent-strong">
+                      {u.avatar_url
+                        ? <img src={u.avatar_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        : (u.username?.[0] || '?').toUpperCase()}
+                    </div>
                     {online && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-surface bg-success" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
+                  </button>
+                  <button type="button" onClick={() => { setError(''); setActive(u) }} className="min-w-0 flex-1 text-left active:opacity-70">
                     <div className="flex min-w-0 items-center gap-1.5 text-[15px] font-semibold text-ink">
                       <span className="truncate">{u.name || u.username}</span>
                       {u.verified && <VerifiedBadge />}
                     </div>
                     <p className="mt-0.5 truncate text-[13px] text-ink-muted">{online ? 'Active now' : inInbox?.last_text || 'Start a conversation'}</p>
-                  </div>
+                  </button>
                   {inInbox && inInbox.unread > 0 && <UnreadBadge count={Number(inInbox.unread)} className="h-2.5 min-w-2.5 w-2.5 border-0 bg-accent p-0" />}
-                </button>
+                </div>
               )
             })}
           </section>
