@@ -273,9 +273,9 @@ export default function Admin({ onBack, users, setUsers, onOpenGroups, onOpenDep
     welcome_body: { group: 'Welcome & identity', label: 'Welcome card paragraph', where: 'Under the welcome heading', sample: 'Come as you are. Worship with us and grow in a congregation.' },
     church_name: { group: 'Welcome & identity', label: 'Church name', where: 'Page titles, share cards and the landing header', sample: 'Harvest Family Church Nyeri' },
     church_tagline: { group: 'Welcome & identity', label: 'Church tagline', where: 'Small line under the church name', sample: 'A family to belong to' },
-    service_times: { group: 'Welcome & identity', label: 'Service times', where: 'Landing page and contact details', sample: 'Sunday 9:00am & 11:00am · Wednesday 5:30pm' },
-    church_address: { group: 'Welcome & identity', label: 'Church address', where: 'Landing page contact block and the map screen', sample: 'Nyeri town, next to …' },
-    church_phone: { group: 'Welcome & identity', label: 'Church phone', where: 'Contact line and the tap-to-call button', sample: '0708 776 732' },
+    service_times: { group: 'Welcome & identity', label: 'Service times', where: 'Landing page and the “This Sunday” card on member Home', sample: 'Sunday 9:00am & 11:00am · Wednesday 5:30pm' },
+    church_address: { group: 'Welcome & identity', label: 'Church address', where: 'Landing page contact block and the “This Sunday” card', sample: 'Nyeri town, next to …' },
+    church_phone: { group: 'Welcome & identity', label: 'Church phone', where: 'Contact line, and the call button on member Home', sample: '0708 776 732' },
     church_email: { group: 'Welcome & identity', label: 'Church email', where: 'Contact line on the landing page', sample: 'info@harvestfamily.co.ke' },
 
     sermons_title: { group: 'App pages', label: 'Sermons screen heading', where: 'Top of the Sermons screen', sample: 'Sermons' },

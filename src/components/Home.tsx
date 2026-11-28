@@ -43,6 +43,16 @@ function CenterNotice({ label, icon, kicker = 'bg-accent-soft text-accent', titl
   )
 }
 
+// Next Sunday in Nairobi time, spelled out — members plan their week from
+// this card, and a bare "Sunday" is ambiguous on a Saturday night.
+function nextSundayLabel() {
+  const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const short = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Nairobi', weekday: 'short' }).format(new Date())
+  const day = order.indexOf(short)
+  const add = day < 0 ? 0 : (7 - day) % 7
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Nairobi', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(Date.now() + add * 86400000))
+}
+
 // One navigation surface, listed once. Prayer lives in the hero CTA and the
 // listen/watch destinations live in the media section, so nothing appears twice.
 const quickLinks: { tab: string; icon: IconName; title: string }[] = [
@@ -118,6 +128,18 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
   // into the database and members never saw it. It now sits above the welcome
   // card — the first thing on Home. Dismissal remembers the exact wording, so
   // the same notice stays hidden for that member, but a new notice reappears.
+  // ── This Sunday ──
+  // The office publishes Service times and Address under Content, but those
+  // values only ever reached the public website; a member inside the app had
+  // no way to check when to come or where to go. Both are shown only when the
+  // office has actually written them — this card never invents a service time.
+  const serviceTimes = String(content.service_times || '').trim()
+  const churchAddress = String(content.church_address || '').trim()
+  const churchPhone = String(content.church_phone || '').trim()
+  const hasSundayInfo = Boolean(serviceTimes || churchAddress)
+  const directionsHref = churchAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(churchAddress)}`
+    : ''
   const announcement = String(content.announcement_banner || '').trim()
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(() => {
     try { return localStorage.getItem('harvest:announcement-dismissed') || '' } catch { return '' }
@@ -885,6 +907,40 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
           <button onClick={openPastorChat} className="relative mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-surface px-4 text-2xs font-extrabold text-accent-strong shadow-card ring-1 ring-gold/50"><Icon name="heart" size={15} className="text-gold-strong" /> Ask for prayer</button>
         </div>
       </section>
+
+      {hasSundayInfo && (
+        <section className="mt-5" aria-label="This Sunday">
+          <div className="rounded-card border border-line bg-surface-raised p-4 shadow-card">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span aria-hidden="true" className="section-flag" />
+                <h2 className="text-heading font-extrabold text-ink">This Sunday</h2>
+                <p className="mt-0.5 text-2xs text-ink-muted">{nextSundayLabel()} · Nairobi time</p>
+              </div>
+              <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-soft text-gold-strong"><Icon name="clock" size={18} /></span>
+            </div>
+            {serviceTimes && <p className="mt-3 whitespace-pre-line text-heading font-extrabold leading-7 text-ink">{serviceTimes}</p>}
+            {churchAddress && (
+              <p className="mt-2 flex items-start gap-2 text-caption leading-6 text-ink-muted">
+                <Icon name="map" size={14} className="mt-1 shrink-0 text-accent" />
+                <span className="min-w-0 flex-1 whitespace-pre-line">{churchAddress}</span>
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {directionsHref && (
+                <a href={directionsHref} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full bg-accent px-4 text-2xs font-extrabold text-white transition active:scale-[.99]">
+                  <Icon name="map" size={14} /> Directions
+                </a>
+              )}
+              {churchPhone && (
+                <a href={`tel:${churchPhone.replace(/\s+/g, '')}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-line bg-surface px-4 text-2xs font-extrabold text-accent-strong transition hover:bg-surface-sunken">
+                  <Icon name="phone" size={14} /> Call the office
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {churchEvents.length > 0 && (
         <section className="mt-5" aria-label="Upcoming church events">

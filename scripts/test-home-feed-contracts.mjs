@@ -178,6 +178,23 @@ test('the admin announcement is shown first on Home and can be dismissed', () =>
   assert.match(home, /aria-label="Dismiss church announcement"/, 'the dismiss control needs a label')
 })
 
+// The office fills Service times / Address once; before this those values only
+// reached the public website, so a member inside the app could not check when
+// to come or where to go. The card must stay honest: no invented service time.
+test('member Home shows the published service times and directions', () => {
+  assert.match(home, /content\.service_times/, 'Home must read the office service times')
+  assert.match(home, /content\.church_address/, 'Home must read the office address')
+  assert.match(home, /aria-label="This Sunday"/, 'the card needs a landmark')
+  assert.match(home, /hasSundayInfo = Boolean\(serviceTimes \|\| churchAddress\)/, 'the card appears only when the office has published something')
+  assert.match(home, /\{hasSundayInfo && \(/, 'an empty office must not render an empty card')
+  assert.match(home, /service_times \|\| ''\)\.trim\(\)/, 'times must be read as display text, not a default')
+  assert.doesNotMatch(home, /Sunday 9:00am|serviceTimes \|\| 'Sunday/, 'service times must never be invented in the app')
+  assert.match(home, /https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=\$\{encodeURIComponent\(churchAddress\)\}/, 'directions must search the saved address')
+  assert.match(home, /target="_blank" rel="noopener noreferrer"/, 'the map link must open safely')
+  assert.match(home, /tel:\$\{churchPhone\.replace/, 'a saved phone number must be tappable')
+  assert.match(home, /min-h-11 items-center gap-1\.5 rounded-full bg-accent/, 'Directions must meet the 40 px rule')
+})
+
 // Every photo the opening animation names must exist: 06.jpg was referenced
 // but never shipped, so every cold open paid for a 404.
 test('the opening animation only references shipped photos', () => {
