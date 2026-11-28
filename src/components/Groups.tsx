@@ -6,6 +6,7 @@ import { useGrants } from '../lib/useGrants'
 
 import ErrorMessage from './ErrorMessage'
 import UnreadBadge from './UnreadBadge'
+import { Icon } from '../ui'
 const API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 // Map code is only downloaded when an admin opens the picker.
 const GroupLocationPicker = lazy(() => import('./GroupLocationPicker'))
@@ -376,14 +377,14 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         <div className="shrink-0 flex flex-col items-end gap-1.5">
           {g.joined && onOpenChat && (
             <button type="button" onClick={() => onOpenChat(g.slug, g.name)} className="relative px-3 py-1.5 rounded-full bg-accent text-white text-[10px] font-extrabold active:opacity-70 shadow-sm">
-              💬 Chat
+              <span className="inline-flex items-center gap-1"><Icon name="chat" size={12} /> Chat</span>
               {Number(unreadByGroup[g.slug]) > 0 && <UnreadBadge count={Number(unreadByGroup[g.slug])} className="absolute -right-1.5 -top-1.5" />}
             </button>
           )}
           {g.joined
             ? <button type="button" onClick={() => void leave(g.slug)} disabled={busy === `leave_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold border border-line bg-surface-sunken text-ink-muted ${busy === `leave_${g.slug}` ? 'opacity-50' : ''}`}>Leave</button>
             : g.my_request === 'pending'
-              ? <span className="px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-gold-soft text-gold-strong border border-gold">⏳ Requested</span>
+              ? <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-gold-soft text-gold-strong border border-gold"><Icon name="clock" size={11} /> Requested</span>
               : <button type="button" onClick={() => void join(g.slug)} disabled={busy === `join_${g.slug}`} className={`px-3 py-1.5 rounded-full text-[10px] font-extrabold bg-accent text-white shadow-sm ${busy === `join_${g.slug}` ? 'opacity-50' : ''}`}>Request</button>}
         </div>
       </div>
@@ -397,10 +398,10 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
     return (
       <div className="group-detail-screen flex h-full min-h-0 max-h-full min-w-0 flex-col overflow-hidden bg-surface text-ink pb-0">
         <div className="relative flex items-center gap-3 h-14 shrink-0 border-b border-line pl-3 pr-14 bg-surface/95 backdrop-blur z-10">
-          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
-          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="text-2xl w-10 h-10 text-accent-strong" aria-label="Back">‹</button>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
+          <button onClick={() => { setOpenSlug(null); setDetail(null); setShowSettings(false) }} className="grid h-10 w-10 place-items-center rounded-full text-accent-strong transition hover:bg-surface-sunken" aria-label="Back"><Icon name="arrow-left" size={20} /></button>
           <h1 className="font-extrabold text-sm truncate flex-1">{detail?.group?.name || '…'}</h1>
-          {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="text-xl px-2" aria-label="Group settings" title="Group settings">⚙️</button>}
+          {canManage && detail?.group && !showSettings && <button onClick={startSettings} className="grid h-10 w-10 place-items-center rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink" aria-label="Group settings" title="Group settings"><Icon name="pencil" size={18} /></button>}
         </div>
         {!detail ? <p className="text-ink-subtle text-sm text-center py-10">Loading…</p> : (
           <div className="group-detail-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 pb-[calc(1rem+var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] space-y-2">
@@ -487,7 +488,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                   </div>
                   {isAdmin && (
                     <div className="p-3 rounded-xl bg-accent-wash border border-accent-soft space-y-2">
-                      <p className="text-[10px] font-extrabold text-accent-strong tracking-widest">📍 REGISTRATION LOCATION</p>
+                      <p className="inline-flex items-center gap-1 text-[10px] font-extrabold text-accent-strong tracking-widest"><Icon name="map" size={12} /> REGISTRATION LOCATION</p>
                       <p className="text-[11px] text-accent-strong/80">New members who sign up near these GPS coordinates automatically join this congregation.</p>
                       <button type="button" onClick={() => setPickerOpen(true)} className="min-h-10 w-full rounded-xl border border-accent/40 bg-surface text-xs font-extrabold text-accent-strong">
                         Pick the area on a map
@@ -559,7 +560,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm">{savingSettings ? 'Saving…' : '💾 Save settings'}</button>
+                    <button disabled={savingSettings} onClick={() => void saveSettings()} className="flex-1 py-2.5 rounded-xl bg-accent text-white text-xs font-bold disabled:opacity-50 shadow-sm"><span className="inline-flex items-center gap-1.5"><Icon name="check" size={13} />{savingSettings ? 'Saving…' : 'Save settings'}</span></button>
                     <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-xl bg-surface-sunken text-ink-muted text-xs font-bold">Cancel</button>
                   </div>
                 </div>
@@ -590,7 +591,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
             {detail.group.description && <p className="text-xs text-ink-muted pb-1 leading-5">{detail.group.description}</p>}
 
             {me && onOpenChat && (
-              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm"><span className="flex items-center justify-center gap-2">💬 Open group chat <UnreadBadge count={Number(unreadByGroup[detail.group.slug])} /></span></button>
+              <button onClick={() => onOpenChat(detail.group.slug, detail.group.name)} className="w-full py-3 rounded-2xl bg-accent text-white text-xs font-bold active:opacity-70 mb-2 shadow-sm"><span className="flex items-center justify-center gap-2"><Icon name="chat" size={14} /> Open group chat <UnreadBadge count={Number(unreadByGroup[detail.group.slug])} /></span></button>
             )}
 
             {canManage && requests.length > 0 && (
@@ -680,8 +681,8 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
         </div>
         {(() => { const joined = groups.filter((g: any) => g.joined).length; return groups.length > 0 ? (
           <div className="mt-4 flex gap-2">
-            <span className="px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold">👥 {groups.length} groups</span>
-            <span className="px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold">✓ {joined} joined</span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold"><Icon name="users" size={12} /> {groups.length} groups</span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-[11px] font-bold"><Icon name="check" size={12} /> {joined} joined</span>
           </div>
         ) : null })()}
       </div>
@@ -713,7 +714,7 @@ export default function Groups({ onOpenChat, onOpenUser }: { onOpenChat?: (slug:
           </div>
         ) : groups.length === 0 ? (
           <div className="rounded-3xl border border-line bg-surface-raised px-5 py-10 text-center">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-surface-sunken flex items-center justify-center text-2xl" aria-hidden="true">👥</div>
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-surface-sunken text-ink-subtle" aria-hidden="true"><Icon name="users" size={24} /></div>
             <h2 className="mt-4 text-sm font-extrabold text-ink">No groups yet</h2>
             <p className="mt-2 text-xs leading-5 text-ink-subtle">Groups you can join will appear here. {canCreate ? 'Create the first one from above.' : 'Check back when a new group is available.'}</p>
           </div>

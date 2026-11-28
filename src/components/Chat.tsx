@@ -1171,7 +1171,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
   const inboxPane = (
     <>
       <header className={`sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl ${compact ? 'px-3 py-2.5' : 'pl-4 pr-14 pb-3 pt-4'}`}>
-        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
         <div className="mx-auto max-w-3xl">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -1194,7 +1194,9 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             </div>
           </div>
           {tab === 'inbox' && !compact && (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-0.5">
+            // Wrap, never clip: at 390 px four pills overflowed and the last
+            // one showed as a half-word under the bell.
+            <div className="mt-4 flex flex-wrap gap-2 pb-0.5">
               <button type="button" onClick={() => setChatView('chats')} className={`shrink-0 rounded-full px-4 py-2 text-2xs font-extrabold transition ${chatView === 'chats' ? 'bg-accent text-white shadow-card' : 'border border-line bg-surface-raised text-ink-muted hover:bg-surface-sunken'}`}>Chats{totalUnread > 0 && <UnreadBadge count={totalUnread} className="ml-1 align-middle" />}</button>
               <button type="button" onClick={() => onOpenGroups?.()} className="shrink-0 rounded-full border border-line bg-surface-raised px-4 py-2 text-2xs font-extrabold text-ink-muted transition hover:bg-surface-sunken">Groups</button>
               <button type="button" onClick={() => onOpenDepartments?.()} className="shrink-0 rounded-full border border-line bg-surface-raised px-4 py-2 text-2xs font-extrabold text-ink-muted transition hover:bg-surface-sunken">Departments</button>
@@ -1432,7 +1434,7 @@ export default function Chat({ onBack, users, teamChat, dmTarget, onDmOpened, on
             top-right of the app column; without it the bell sat on the search
             control. */}
         <header className={`relative z-20 flex h-[68px] shrink-0 items-center gap-2 border-b border-line bg-surface/80 pl-3 backdrop-blur-xl ${compact ? 'pr-3' : 'pr-14'}`}>
-          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
           <button type="button" onClick={() => { if (isTeam) { setTeam(null); onCloseTeam?.() } else { setActive(null) } setReplyTo(null); setReactingFor(null) }} className={`touch-target shrink-0 rounded-full text-ink-muted transition hover:bg-surface-sunken hover:text-ink active:scale-95 ${compact ? '' : 'lg:hidden'}`} aria-label="Back"><Icon name="arrow-left" size={20} /></button>
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <button

@@ -2217,7 +2217,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
   return (
     <div className="bg-surface text-ink pb-8">
       <div className="relative px-4 pt-5 pb-3 border-b border-line flex justify-between items-center">
-        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
         <div>
           <p className="text-2xs uppercase tracking-[0.18em] text-gold-strong font-extrabold">Harvest Family</p>
           <h1 className="text-2xl font-extrabold">{displayName}</h1>
@@ -2228,7 +2228,7 @@ function Profile({ users, onOpenAdmin, onSignOut, onEditProfile, onOpenActivity 
       </div>
 
       <div className="px-4 mt-4 flex gap-4 items-center">
-        <div className="w-[86px] h-[86px] rounded-full bg-gradient-to-tr from-gold to-accent p-[3px]">
+        <div className="brand-avatar-ring w-[86px] h-[86px] rounded-full p-[3px]">
           {me?.avatar_url ? (
             <img src={me.avatar_url} alt="" className="w-full h-full rounded-full object-cover border-[3px] border-surface" />
           ) : (

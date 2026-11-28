@@ -149,6 +149,9 @@ body { margin: 0; background: rgb(var(--surface)); color: rgb(var(--ink)); }
      would lose all contrast; the inverse ink is navy. */
   .dark .btn-primary, .dark .btn-primary-lg { color: rgb(var(--ink-inverse)); }
   .gold-rule { @apply h-[2px] w-full rounded-full; background-image: linear-gradient(90deg, rgb(var(--gold) / .75) 0%, rgb(var(--gold) / .18) 38%, rgb(var(--gold) / 0) 100%); }
+  /* Profile portrait ring: a crisp gold arc over the logo navy. A plain
+     gold-to-navy blend passed through olive and read as tarnish at 3 px. */
+  .brand-avatar-ring { background: conic-gradient(from 288deg, rgb(var(--gold)) 0deg 86deg, rgb(var(--accent)) 120deg 360deg); }
   .btn-primary { @apply px-5 py-3 text-sm; }
   .btn-primary-lg { @apply px-6 py-3.5 text-base; }
   .btn-secondary {

@@ -791,7 +791,7 @@ export default function Home({ setTab, users, directoryLoading, directoryError, 
     <div data-home-chrome className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur-xl">
     {/* Gold hairline along the underside of the docked chrome: the logo's
         yellow as a quiet edge, not a stripe. */}
-    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-px bg-gradient-to-r from-transparent via-gold/45 to-transparent" />
+    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
     <header className="border-b border-line/60">
       {/* pr-14 reserves the footprint of the shell's floating notification bell,
           so the header's own actions never sit underneath it. */}
