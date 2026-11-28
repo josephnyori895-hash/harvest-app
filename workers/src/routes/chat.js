@@ -180,6 +180,20 @@ export async function handleChat(request, env, ctx) {
        VALUES (?,?,?,?,?,?,?,?,?, 'sent', ?,?,?,?,?)`,
       [id, conv.kind, conv.key, fresh.id, fresh.username, conv.recipientId || null, conv.recipientUsername || null, conv.groupId || null, text || (mediaType ? mediaPlaceholder(mediaType) : ''), now, replyToId, replyPreview, mediaKey, mediaType],
     )
+    // Keep the inbox summary written with the message itself, so the inbox
+    // never has to scan message history to find the latest preview.
+    await query(
+      env,
+      `INSERT INTO chat_threads (conversation_key, last_message_id, last_at, last_text, last_from)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(conversation_key) DO UPDATE SET
+         last_message_id=excluded.last_message_id,
+         last_at=excluded.last_at,
+         last_text=excluded.last_text,
+         last_from=excluded.last_from
+        WHERE excluded.last_at >= chat_threads.last_at`,
+      [conv.key, id, now, text || (mediaType ? mediaPlaceholder(mediaType) : ''), fresh.username],
+    )
     // A new message must be visible on the very next poll, so drop the short
     // inbox reuse for the sender and the direct recipient.
     conversationsCache.delete(fresh.id)
@@ -276,19 +290,23 @@ export async function handleChat(request, env, ctx) {
     // a sent message shows optimistically, so nothing visible waits on this.
     const cached = conversationsCache.get(fresh.id)
     if (cached && Date.now() - cached.at < CONVERSATIONS_CACHE_MS) return jsonResponse(cached.payload)
+    // Reads: one chat_threads row per conversation, plus an unread count that
+    // only touches messages newer than this member's read cursor. The old query
+    // grouped over every message row in the conversation.
     const { rows } = await query(
       env,
-      `SELECT m.conversation_key,
-              MAX(m.created_at) AS last_at,
-              (SELECT body FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
-              (SELECT sender_username FROM messages b WHERE b.conversation_key = m.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              SUM(CASE WHEN m.sender_username != ? AND mr.message_id IS NULL THEN 1 ELSE 0 END) AS unread,
-              COUNT(*) AS total
-         FROM messages m
-        LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
-        WHERE m.conversation_key LIKE 'harvest:chat:%' AND (m.conversation_key LIKE ? OR m.conversation_key LIKE ?)
-        GROUP BY m.conversation_key
-        ORDER BY last_at DESC LIMIT 50`,
+      `SELECT t.conversation_key, t.last_at, t.last_text, t.last_from,
+              (SELECT COUNT(*)
+                 FROM messages m
+                WHERE m.conversation_key = t.conversation_key
+                  AND m.sender_username != ?
+                  AND m.created_at > COALESCE(c.last_read_at, '')) AS unread
+         FROM chat_threads t
+         LEFT JOIN chat_read_cursors c
+                ON c.user_id = ? AND c.conversation_key = t.conversation_key
+        WHERE t.conversation_key LIKE 'harvest:chat:%'
+          AND (t.conversation_key LIKE ? OR t.conversation_key LIKE ?)
+        ORDER BY t.last_at DESC LIMIT 50`,
       [fresh.username, fresh.id, `harvest:chat:${fresh.username}:%`, `harvest:chat:%:${fresh.username}`],
     )
     const out = []
@@ -317,16 +335,17 @@ export async function handleChat(request, env, ctx) {
           WHERE gm.user_id = ? OR ? = 'admin'
        )
        SELECT a.conversation_key, a.kind, a.slug, a.name,
-              MAX(m.created_at) AS last_at,
-              (SELECT body FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_text,
-              (SELECT sender_username FROM messages b WHERE b.conversation_key = a.conversation_key ORDER BY b.created_at DESC LIMIT 1) AS last_from,
-              COALESCE(SUM(CASE WHEN m.sender_username != ? AND mr.message_id IS NULL THEN 1 ELSE 0 END), 0) AS unread,
-              COUNT(m.id) AS total
+              t.last_at, t.last_text, t.last_from,
+              (SELECT COUNT(*)
+                 FROM messages m
+                WHERE m.conversation_key = a.conversation_key
+                  AND m.sender_username != ?
+                  AND m.created_at > COALESCE(c.last_read_at, '')) AS unread
          FROM authorized a
-         LEFT JOIN messages m ON m.conversation_key = a.conversation_key
-         LEFT JOIN message_reads mr ON mr.message_id = m.id AND mr.user_id = ?
-        GROUP BY a.conversation_key, a.kind, a.slug, a.name
-        ORDER BY last_at DESC`,
+         LEFT JOIN chat_threads t ON t.conversation_key = a.conversation_key
+         LEFT JOIN chat_read_cursors c
+                ON c.user_id = ? AND c.conversation_key = a.conversation_key
+        ORDER BY t.last_at DESC`,
       [fresh.id, fresh.role, fresh.id, fresh.role, fresh.username, fresh.id],
     )
     const team_conversations = teamResult.rows.map(r => ({
@@ -360,6 +379,23 @@ export async function handleChat(request, env, ctx) {
         WHERE conversation_key=? AND sender_username != ?
        ON CONFLICT(message_id, user_id) DO UPDATE SET read_at=excluded.read_at`,
       [fresh.id, new Date().toISOString(), conv.key, fresh.username],
+    )
+    // One cursor per member and conversation. The inbox counts unread rows
+    // newer than this timestamp, so it reads a few messages instead of every
+    // message ever sent in the chat. Cursor = newest incoming message seen.
+    await query(
+      env,
+      `INSERT INTO chat_read_cursors (user_id, conversation_key, last_read_at)
+       SELECT ?, ?, latest.last_at
+         FROM (SELECT MAX(created_at) AS last_at
+                 FROM messages
+                WHERE conversation_key = ? AND sender_username != ?) latest
+        WHERE latest.last_at IS NOT NULL
+       ON CONFLICT(user_id, conversation_key) DO UPDATE SET
+         last_read_at = CASE
+           WHEN excluded.last_read_at > chat_read_cursors.last_read_at THEN excluded.last_read_at
+           ELSE chat_read_cursors.last_read_at END`,
+      [fresh.id, conv.key, conv.key, fresh.username],
     )
     return jsonResponse({ ok: true })
   }

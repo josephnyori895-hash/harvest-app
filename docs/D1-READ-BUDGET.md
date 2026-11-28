@@ -74,19 +74,41 @@ Not a traffic spike. Three things multiplied the cost of a normal session:
   The cache is invalidated for the sender and recipient on every message send.
 - Migration `0046_read_budget_indexes.sql` indexes the cron delete predicates.
 
-## Phase 2 (recommended before the next growth step)
+## Phase 2 — chat summaries and read cursors (shipped)
 
-The inbox query still scans message history. If daily read volume climbs again:
+The phase 1 cache cut duplicate polls, but each remaining inbox query still
+scanned message history to build previews and unread counts. Migration
+`0047_chat_thread_summaries.sql` and the matching inbox rewrite remove that:
 
-1. Add `chat_threads(conversation_key PRIMARY KEY, last_at, last_text, last_from)`
-   maintained on send, removing the per-conversation message scan for previews.
-2. Add `chat_read_cursors(user_id, conversation_key, last_read_at,
-   PRIMARY KEY(user_id, conversation_key))` updated by `/api/chat/seen`.
-   Unread becomes an indexed count of messages newer than the cursor — usually
-   a handful of rows — instead of a join over every message.
-3. Cache `/api/users/map` per viewer for 60 s (it is a map, not a live feed).
-4. Consider a second D1 database or a read replica only if the free budget
-   becomes structurally insufficient.
+1. `chat_threads(conversation_key PRIMARY KEY, last_message_id, last_at,
+   last_text, last_from)` is upserted in the same request as every send, so an
+   inbox preview is one row per conversation instead of a "latest message"
+   scan. Migration backfills one row per existing conversation.
+2. `chat_read_cursors(user_id, conversation_key, last_read_at,
+   PRIMARY KEY(user_id, conversation_key))` is updated by `/api/chat/seen` to
+   the newest incoming message. Unread is `COUNT(*)` of messages newer than the
+   cursor — normally a handful of rows read through
+   `idx_messages_conv_created` — instead of a join across all history.
+   Cursors are backfilled from `message_reads` so existing unread badges do not
+   change. `/api/chat/seen` still writes `message_reads`, so a Worker rollback
+   to the old inbox keeps working.
+3. A conversation with no cursor counts all incoming messages, which matches
+   the old "never opened" behaviour.
+4. Still open if volume climbs again: cache `/api/users/map` per viewer for
+   60 s, and only then consider a second database or read replica.
+
+One deploy-window caveat: a message sent between the migration and the new
+Worker going live is not in `chat_threads`. If that matters, re-run the
+backfill from the migration after deploying.
+
+## Alert
+
+`.github/workflows/d1-read-budget.yml` runs hourly and reads
+`rows_read_24h` from `wrangler d1 info harvestfamily --json`. It warns at
+3,500,000 rows (70% of the free limit) and fails the job at 4,500,000 (90%),
+which notifies the repository owner through the normal failed-workflow email.
+It uses the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets
+and can also be run manually from the Actions tab.
 
 ## Operating rules
 
@@ -94,4 +116,8 @@ The inbox query still scans message history. If daily read volume climbs again:
   rows. Use `wrangler d1 info harvestfamily` (`rows_read_24h`) and the GraphQL
   query above.
 - Watch `rows_read_24h` after each release. Budget ~200k rows/hour.
+- The hourly **D1 read budget** workflow warns at 70% and fails at 90%; do not
+  ignore its warning just because `/health` is green.
 - New polling endpoint? Add a server-side coalescing window in the same PR.
+- Anything that shows "latest message per conversation" or "unread count"
+  must use `chat_threads` / `chat_read_cursors`, not a scan of `messages`.
